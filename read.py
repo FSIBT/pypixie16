@@ -2,6 +2,7 @@
 
 import mpmath
 import ctypes
+import json
 import numpy as np
 from collections import namedtuple
 import sys
@@ -173,3 +174,30 @@ def read_setting(filename: str):
         results.append([outsetting, outread])
 
     return results
+
+def compare_module_setting(modA, modB, quiet=False):
+    """Compare the settings of two modules
+
+    Print the difference.
+
+    If quiet is True, then just return True/False
+
+    The functions assumes that both settings have the same structure.
+    """
+
+    assert type(modA)== dict, 'The inputs need to be dictionaries'
+    assert type(modB)== dict, 'The inputs need to be dictionaries'
+    
+    if not quiet:
+        for k in modA.keys():
+            if type(modA[k]) == list:
+                if not all([x==y for x, y in zip(modA[k], modB[k])]):
+                    print('{} differs:'.format(k))
+                    for x, y in zip(modA[k], modB[k]):
+                        print('   {} <-> {}'.format(x, y))
+            else:
+                if modA[k] != modB[k]:
+                    print('{} differs: {} != {}'.format(k, modA[k], modB[k]))
+                
+    # convert to a sorted json string to make deep comparison possible
+    return json.dumps(modA, sort_keys=True) == json.dumps(modB, sort_keys=True)
