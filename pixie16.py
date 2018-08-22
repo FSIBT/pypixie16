@@ -474,12 +474,12 @@ def WriteModParam(ModParName,ModParData, module):
 def converter_IEEE754_to_ulong(x):
     a = (ctypes.c_float*1)(x)
     b = ctypes.cast(a, ctypes.POINTER(ctypes.c_ulong))
-    return b
+    return b.contents
 
 def converter_ulong_to_IEEE754(x):
     a = (ctypes.c_ulong*1)(x)
     b = ctypes.cast(a, ctypes.POINTER(ctypes.c_float))
-    return b
+    return b.contents
 
 ##### WriteRunTime
 write_run_time_prototype = ctypes.WINFUNCTYPE(ctypes.c_int,
@@ -500,7 +500,7 @@ def WriteRunTime(RunTime, module):
 
     # convert to ctypes for library call
     CModParName = ctypes.c_char_p(bytes('HOST_RT_PRESET', 'utf8'))
-    CRunTime = converter_IEEE754_to_ulong(RunTime).contents
+    CRunTime = converter_IEEE754_to_ulong(RunTime)
     Cmodule = ctypes.c_ushort(module)
 
 
@@ -582,7 +582,7 @@ def ReadRunTime(module):
     else:
         print("got an error in ReadChanParam")
 
-    return np.ctypeslib.as_array(converter_ulong_to_IEEE754(CRunTime).contents)
+    return np.ctypeslib.as_array(converter_ulong_to_IEEE754(CRunTime))
 
 ##### Pixie16StartHistogramRun
 start_hist_run_prototype = ctypes.WINFUNCTYPE(ctypes.c_int,
