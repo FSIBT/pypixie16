@@ -1,6 +1,7 @@
 """Read data files from XIA pixie16 instruments"""
 
 import mpmath
+import ctypes
 import numpy as np
 from collections import namedtuple
 import sys
@@ -12,6 +13,16 @@ Event = namedtuple('Event', ['channel', 'crate', 'slot', 'time', 'energy', 'trac
 
 # set precision to 30 digits
 mpmath.mp.dps = 30
+
+def converter_IEEE754_to_ulong(x):
+    a = (ctypes.c_float*1)(x)
+    b = ctypes.cast(a, ctypes.POINTER(ctypes.c_ulong))
+    return b.contents.value
+
+def converter_ulong_to_IEEE754(x):
+    a = (ctypes.c_ulong*1)(x)
+    b = ctypes.cast(a, ctypes.POINTER(ctypes.c_float))
+    return b.contents.value
 
 
 def read_list_mode_data(filename, progress=False, keep_trace=False):
@@ -93,16 +104,72 @@ def read_mca_mode_data(filename):
     return results
 
 
-def read_setting(filename):
-    """Read setting data files: 24 x 1280 data points, each 32 bit"""
+def read_setting(filename: str):
+    """Read setting data files: 24 x 1280 data points, each 32 bit
 
-    results = {}
+    We return a list with data for each of the 24 modules. The list contains
+    two dictionaries. The first one has all the settings that are writebale,
+    the second one contains all the read_only settings.
+    """
+
+    # all numbers are stored as ulong (32bit unsigned integer) but
+    # some should be read back as IEEE754 floats. Keep a list of
+    # variables, where we need to convert
+    FLOATS = ['PreampTau']
+
+    results = []
+    setting_description = 'Pixie16DSP_revfgeneral_14b500m_r35207.var'
+    names = []  # list of names, and lenght of setting
+    with open(setting_description, 'r') as f:
+        for i, l in enumerate(f):
+            position, name = l.split()
+            position = int(position, 0)
+            if i == 0:
+                oldpos = 0x0004a000
+                length = 1
+            else:
+                length = position-oldpos
+                names[-1][1] = length
+                oldpos = position
+            names.append([name, None])
+        names[-1][1] = length
+
+    rawmodules = []
     with open(filename, 'rb') as f:
         for module in range(24):
-            setting = []
+            rawsetting = []
             for i in range(1280):
                 data = f.read(4)
                 s = (((((data[3] << 8) + data[2]) << 8) + data[1]) << 8) + data[0]
-                setting.append(s)
-            results[module] = setting
+                rawsetting.append(s)
+            rawmodules.append(rawsetting)
+
+    for mod in rawmodules:
+        outsetting = {}
+        outread = {}
+        i = 0  # index in rawsetting
+        for n, length in names:
+            if n in FLOATS:
+                value =  [converter_ulong_to_IEEE754(mod[i+k]) for k in range(length)]
+            else:
+                value =  [mod[i+k] for k in range(length)]
+            if length == 1:
+                if i < 832:
+                    outsetting[n] = value[0]
+                else:
+                    outread[n] = value[0]
+            else:
+                if i < 832:
+                    outsetting[n] = value
+                else:
+                    outread[n] = value
+            i += length
+        outread['LiveTime'] = [(outread['LiveTimeA'][i] * 2**32 + outread['LiveTimeB'][i]) * 16 *10e-9 for i in range(16)]
+        outread['FastPeaks'] = [outread['FastPeaksA'][i] * 2**32 + outread['FastPeaksB'][i] for i in range(16)]
+        outread['RealTime'] = (outread['RealTimeA'] * 2**32 + outread['RealTimeB']) * 10e-9
+        outread['RunTime'] = (outread['RunTimeA'] * 2**32 + outread['RunTimeB']) * 10e-9
+
+        outsetting['OffsetVoltage'] = [1.5 * ((32768-outsetting['OffsetDAC'][i]) / 32768) for i in range(16)]
+        results.append([outsetting, outread])
+
     return results
