@@ -1,5 +1,6 @@
 """Read data files from XIA pixie16 instruments"""
 
+import mpmath
 import numpy as np
 from collections import namedtuple
 import sys
@@ -8,6 +9,9 @@ import logging
 # logger = logging.logger(__name__)
 
 Event = namedtuple('Event', ['channel', 'crate', 'slot', 'time', 'energy', 'trace'])
+
+# set precision to 30 digits
+mpmath.mp.dps = 30
 
 
 def read_list_mode_data(filename, progress=False, keep_trace=False):
@@ -60,16 +64,18 @@ def read_list_mode_data(filename, progress=False, keep_trace=False):
                 trace = []
             if not keep_trace:
                 trace = []
-            evt = 2**32 * eventtime_hi + eventtime_lo
+            evt = 2**32 * mpmath.mpf(eventtime_hi) + mpmath.mpf(eventtime_lo)
             if cfd_trigger_bits == 7:
-                TS = evt*1e-8
+                TS = None  # invalid CFD time stamp
             else:
-                TS = (evt*5 + cfd_trigger_bits-1 + cfd_fractional/8192)*2e-9
+                TS = evt*10e-9 + mpmath.mpf(cfd_trigger_bits-1 + cfd_fractional/8192)*2e-9
             yield Event(channel_nr, crate_id, slot_id, TS, event_energy, trace)
     return
 
+
 def read_all_list_mode_data(filename, progress=False, keep_trace=False):
     return list(read_list_mode_data(filename, progress, keep_trace))
+
 
 def read_mca_mode_data(filename):
     """Read MCA data files: 32k 32bit words for 16 channels"""
