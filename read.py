@@ -7,6 +7,7 @@ import numpy as np
 from collections import namedtuple
 import sys
 import logging
+import pkg_resources
 
 # logger = logging.logger(__name__)
 
@@ -121,7 +122,8 @@ def read_setting(filename: str):
     FLOATS = ['PreampTau']
 
     results = []
-    setting_description = 'Pixie16DSP_revfgeneral_14b500m_r35207.var'
+    setting_description = pkg_resources.resource_filename(
+        'ROOTS.XIA', 'Pixie16DSP_revfgeneral_14b500m_r35207.var')
     names = []  # list of names, and lenght of setting
     with open(setting_description, 'r') as f:
         for i, l in enumerate(f):
