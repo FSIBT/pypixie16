@@ -10,7 +10,7 @@ import logging
 
 # logger = logging.logger(__name__)
 
-Event = namedtuple('Event', ['channel', 'crate', 'slot', 'time', 'energy', 'trace'])
+Event = namedtuple('Event', ['channel', 'crate', 'slot', 'time', 'energy', 'trace', 'CFD_error'])
 
 # set precision to 30 digits
 mpmath.mp.dps = 30
@@ -76,12 +76,14 @@ def read_list_mode_data(filename, progress=False, keep_trace=False):
                 trace = []
             if not keep_trace:
                 trace = []
-            evt = 2**32 * mpmath.mpf(eventtime_hi) + mpmath.mpf(eventtime_lo)
+            TS = 2**32 * mpmath.mpf(eventtime_hi) + mpmath.mpf(eventtime_lo)
+            TS*= 10e-9
+            CFD_error = False
             if cfd_trigger_bits == 7:
-                TS = None  # invalid CFD time stamp
+                CFD_error = True
             else:
-                TS = evt*10e-9 + mpmath.mpf(cfd_trigger_bits-1 + cfd_fractional/8192)*2e-9
-            yield Event(channel_nr, crate_id, slot_id, TS, event_energy, trace)
+                TS += mpmath.mpf(cfd_trigger_bits-1 + cfd_fractional/8192)*2e-9
+            yield Event(channel_nr, crate_id, slot_id, TS, event_energy, trace, CFD_error)
     return
 
 
