@@ -70,7 +70,7 @@ def read_list_mode_data(filename, progress=False, keep_trace=False):
                 # about 300x faster than multiple f.read(2)
                 trace = np.fromfile(f, '({},2)<u2'.format(event_length-header_length), count=1)[0, :, :]
                 # need to swap columns and flatten array
-                if not keep_trace:
+                if keep_trace:
                     trace[:, 0], trace[:, 1] = trace[:, 1], trace[:, 0].copy()
                     trace = trace.flatten()
             else:
