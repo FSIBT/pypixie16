@@ -55,7 +55,7 @@ def read_list_mode_data(filename, progress=False, keep_trace=False):
             data = f.read(4)
             s = (data[3] << 8) + data[2]
             cfd_trigger_bits = (s & (0b111 << 13)) >> 13
-            cfd_fractional = s & ((1 << 12)-1)
+            cfd_fractional = s & ((1 << 13)-1)
             eventtime_hi = (data[1] << 8) + data[0]
             data = f.read(4)
             s = (data[3] << 8) + data[2]
