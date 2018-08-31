@@ -16,10 +16,12 @@ Event = namedtuple('Event', ['channel', 'crate', 'slot', 'time', 'energy', 'trac
 # set precision to 30 digits
 mpmath.mp.dps = 30
 
+
 def converter_IEEE754_to_ulong(x):
     a = (ctypes.c_float*1)(x)
     b = ctypes.cast(a, ctypes.POINTER(ctypes.c_ulong))
     return b.contents.value
+
 
 def converter_ulong_to_IEEE754(x):
     a = (ctypes.c_ulong*1)(x)
@@ -78,7 +80,7 @@ def read_list_mode_data(filename, progress=False, keep_trace=False):
             if not keep_trace:
                 trace = []
             TS = 2**32 * mpmath.mpf(eventtime_hi) + mpmath.mpf(eventtime_lo)
-            TS*= 10e-9
+            TS *= 10e-9
             CFD_error = False
             if cfd_trigger_bits == 7:
                 CFD_error = True
@@ -155,9 +157,9 @@ def read_setting(filename: str):
         i = 0  # index in rawsetting
         for n, length in names:
             if n in FLOATS:
-                value =  [converter_ulong_to_IEEE754(mod[i+k]) for k in range(length)]
+                value = [converter_ulong_to_IEEE754(mod[i+k]) for k in range(length)]
             else:
-                value =  [mod[i+k] for k in range(length)]
+                value = [mod[i+k] for k in range(length)]
             if length == 1:
                 if i < 832:
                     outsetting[n] = value[0]
@@ -169,8 +171,10 @@ def read_setting(filename: str):
                 else:
                     outread[n] = value
             i += length
-        outread['LiveTime'] = [(outread['LiveTimeA'][i] * 2**32 + outread['LiveTimeB'][i]) * 16 *10e-9 for i in range(16)]
-        outread['FastPeaks'] = [outread['FastPeaksA'][i] * 2**32 + outread['FastPeaksB'][i] for i in range(16)]
+        outread['LiveTime'] = [(outread['LiveTimeA'][i] * 2**32 + outread['LiveTimeB']
+                                [i]) * 16 * 10e-9 for i in range(16)]
+        outread['FastPeaks'] = [outread['FastPeaksA'][i] * 2 **
+                                32 + outread['FastPeaksB'][i] for i in range(16)]
         outread['RealTime'] = (outread['RealTimeA'] * 2**32 + outread['RealTimeB']) * 10e-9
         outread['RunTime'] = (outread['RunTimeA'] * 2**32 + outread['RunTimeB']) * 10e-9
 
@@ -178,6 +182,7 @@ def read_setting(filename: str):
         results.append([outsetting, outread])
 
     return results
+
 
 def compare_module_setting(modA, modB, quiet=False):
     """Compare the settings of two modules
@@ -189,19 +194,19 @@ def compare_module_setting(modA, modB, quiet=False):
     The functions assumes that both settings have the same structure.
     """
 
-    assert type(modA)== dict, 'The inputs need to be dictionaries'
-    assert type(modB)== dict, 'The inputs need to be dictionaries'
-    
+    assert type(modA) == dict, 'The inputs need to be dictionaries'
+    assert type(modB) == dict, 'The inputs need to be dictionaries'
+
     if not quiet:
         for k in modA.keys():
             if type(modA[k]) == list:
-                if not all([x==y for x, y in zip(modA[k], modB[k])]):
+                if not all([x == y for x, y in zip(modA[k], modB[k])]):
                     print('{} differs:'.format(k))
                     for x, y in zip(modA[k], modB[k]):
                         print('   {} <-> {}'.format(x, y))
             else:
                 if modA[k] != modB[k]:
                     print('{} differs: {} != {}'.format(k, modA[k], modB[k]))
-                
+
     # convert to a sorted json string to make deep comparison possible
     return json.dumps(modA, sort_keys=True) == json.dumps(modB, sort_keys=True)
