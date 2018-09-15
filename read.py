@@ -13,7 +13,8 @@ from .. import helper
 
 # logger = logging.logger(__name__)
 
-Event = namedtuple('Event', ['channel', 'crate', 'slot', 'time', 'energy', 'trace', 'CFD_error'])
+Event = namedtuple('Event', ['channel', 'crate', 'slot', 'time', 'clock_time',
+                             'energy', 'trace', 'CFD_error'])
 
 # set precision to 30 digits
 mpmath.mp.dps = 30
@@ -75,7 +76,6 @@ def read_list_mode_data(filename, progress=False, keep_trace=False):
                 trace = np.fromfile(f, '({},2)<u2'.format(event_length-header_length), count=1)[0, :, :]
                 # need to swap columns and flatten array
                 if keep_trace:
-                    trace[:, 0], trace[:, 1] = trace[:, 1], trace[:, 0].copy()
                     trace = trace.flatten()
             else:
                 trace = []
@@ -84,11 +84,12 @@ def read_list_mode_data(filename, progress=False, keep_trace=False):
             TS = 2**32 * mpmath.mpf(eventtime_hi) + mpmath.mpf(eventtime_lo)
             TS *= 10e-9
             CFD_error = False
+            CFD_time = TS
             if cfd_trigger_bits == 7:
                 CFD_error = True
             else:
-                TS += mpmath.mpf(cfd_trigger_bits-1 + cfd_fractional/8192)*2e-9
-            yield Event(channel_nr, crate_id, slot_id, TS, event_energy, trace, CFD_error)
+                CFD_time = TS + mpmath.mpf(cfd_trigger_bits-1 + cfd_fractional/8192)*2e-9
+            yield Event(channel_nr, crate_id, slot_id, CFD_time, TS, event_energy, trace, CFD_error)
     return
 
 
