@@ -5,7 +5,7 @@ Functions to help analyze PIXIE-16 data
 import numpy as np
 
 
-def calculate_CFD(traces, t=None, CFD_threshold=None, w=1, B=5, D=5, L=1):
+def calculate_CFD(traces, t=None, CFD_threshold=None, w=1, B=5, D=5, L=1, Nbkgd=100):
     """Calculate the CFD trace as is done by the PIXIE
 
     Also provide the option to change parameters used in the calculations
@@ -53,8 +53,8 @@ def calculate_CFD(traces, t=None, CFD_threshold=None, w=1, B=5, D=5, L=1):
     for i, CFDtrace in enumerate(CFD):
         # check that the first N points (noise) is below threshold
         # 100 is an arbitrary number here, but the PIXIE should always record some noise first
-        if CFDtrace[:100].max() > CFD_threshold:
-            print('Warning: CFD analysis theshold too low?', CFDtrace[:100].max())
+        if CFDtrace[:Nbkgd].max() > CFD_threshold:
+            print('Warning: CFD analysis theshold too low?', CFDtrace[:Nbkgd].max())
 
         # all zero crossings
         zero_crossings = np.where(np.diff(np.signbit(CFDtrace)))[0]
