@@ -29,6 +29,7 @@ def calculate_CFD(traces, t=None, CFD_threshold=None, w=1, B=5, D=5, L=1, Nbkgd=
     else:
         one_dim = False
 
+    traces = traces.astype(np.int64)
     NR_traces, length = traces.shape
 
     # we are skipping the first B+D data points, so the CFD array will
@@ -108,6 +109,7 @@ def calculate_filter(traces, L=1, G=1):
     else:
         one_dim = False
 
+    traces = traces.astype(np.int64)
     NR_traces, length = traces.shape
 
     # create an empty array of the correct length
