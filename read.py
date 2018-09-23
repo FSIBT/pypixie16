@@ -206,6 +206,9 @@ class XIASetting():
             self.writeable = results_w[self.modulenr]
             self.readable = results_r[self.modulenr]
 
+    def __repr__(self):
+        return f'XIASetting: {self.filename}'
+
 
 def compare_module_setting(modA, modB, quiet=False):
     """Compare the settings of two modules
