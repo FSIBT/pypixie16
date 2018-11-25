@@ -32,7 +32,7 @@ if not initfile.exists():
 # in the following we supply python functions for some of the library
 # functions in the PixieAppDLL
 
-##### Pixie16ReadHistogramFromFile
+# Pixie16ReadHistogramFromFile
 read_histogram_prototype = ctypes.WINFUNCTYPE(ctypes.c_int,
                                               ctypes.c_char_p,
                                               ctypes.POINTER(ctypes.c_ulong),
@@ -41,6 +41,7 @@ read_histogram_prototype = ctypes.WINFUNCTYPE(ctypes.c_int,
                                               ctypes.c_ushort)
 
 CReadHistogram = read_histogram_prototype(("Pixie16ReadHistogramFromFile", PixieAppDLL))
+
 
 def ReadHistogramFromFile(filename, module, channel, N=32768):
     """Uses the XIA library to read a single channel histogram from a file.
@@ -90,14 +91,13 @@ def ReadHistogramFromFileAll(filename, module, N=32768):
     return np.array(all)
 
 
-
-###### Pixie16GetModuleEvents
-
+# Pixie16GetModuleEvents
 GetModuleEvents_prototype = ctypes.WINFUNCTYPE(ctypes.c_int,
                                                ctypes.c_char_p,
                                                ctypes.POINTER(ctypes.c_ulong))
 
 CGetModuleEvents = GetModuleEvents_prototype(("Pixie16GetModuleEvents", PixieAppDLL))
+
 
 def GetModuleEvents(filename, max_number_of_modules=14):
     """Uses the XIA library to read the number of events in a list mode data file.
@@ -127,7 +127,7 @@ def GetModuleEvents(filename, max_number_of_modules=14):
     return np.ctypeslib.as_array(result)
 
 
-####### Pixie16GetEventsInfo
+# Pixie16GetEventsInfo
 
 GetEventsInfo_prototype = ctypes.WINFUNCTYPE(ctypes.c_int,
                                              ctypes.c_char_p,
@@ -137,22 +137,21 @@ GetEventsInfo_prototype = ctypes.WINFUNCTYPE(ctypes.c_int,
 CGetEventsInfo = GetEventsInfo_prototype(("Pixie16GetEventsInfo", PixieAppDLL))
 
 # see page 32 of Programmer Manual
-EventsInfo = namedtuple('EventsInfo',[
-              'EventNumber',
-              'ChannelNumber',
-              'SlotNumber',
-              'CrateNumber',
-              'HeaderLength',
-              'EventLength',
-              'FinishCode',
-              'EventTimestamp_lower_32_bit',
-              'EventTimestamp_upper_16_bit',
-              'EventEnergy',
-              'TraceLength',
-              'TraceLocation',
-              'EventTimestamp'
-              ])
-
+EventsInfo = namedtuple('EventsInfo', [
+    'EventNumber',
+    'ChannelNumber',
+    'SlotNumber',
+    'CrateNumber',
+    'HeaderLength',
+    'EventLength',
+    'FinishCode',
+    'EventTimestamp_lower_32_bit',
+    'EventTimestamp_upper_16_bit',
+    'EventEnergy',
+    'TraceLength',
+    'TraceLocation',
+    'EventTimestamp'
+])
 
 
 def GetEventsInfo(filename, module):
@@ -197,7 +196,7 @@ def GetEventsInfo(filename, module):
     return events
 
 
-##### Pixie16ReadListModeTrace
+# Pixie16ReadListModeTrace
 
 ReadListModeTrace_prototype = ctypes.WINFUNCTYPE(ctypes.c_int,
                                                  ctypes.c_char_p,
@@ -207,6 +206,7 @@ ReadListModeTrace_prototype = ctypes.WINFUNCTYPE(ctypes.c_int,
 
 CReadListModeTrace = ReadListModeTrace_prototype(("Pixie16ReadListModeTrace",
                                                   PixieAppDLL))
+
 
 def ReadListModeTrace(filename, Event):
     """Uses the XIA library to read a list mode race from a data file.
@@ -236,15 +236,14 @@ def ReadListModeTrace(filename, Event):
     return result
 
 
-
-
-##### Pixie16InitSystem
+# Pixie16InitSystem
 init_sys_prototype = ctypes.WINFUNCTYPE(ctypes.c_int,
                                         ctypes.c_ushort,
                                         ctypes.POINTER(ctypes.c_ushort),
                                         ctypes.c_ushort)
 
 Cinit_sys = init_sys_prototype(("Pixie16InitSystem", PixieAppDLL))
+
 
 def InitSys(NumModules, PXISlotMap, OfflineMode):
     """Uses the XIA library to initialize the system.
@@ -265,7 +264,7 @@ def InitSys(NumModules, PXISlotMap, OfflineMode):
 
     for i, slot in enumerate(PXISlotMap):
         CPXISlotMap[i] = slot
-        
+
     ret = Cinit_sys(CNumModules,
                     CPXISlotMap,
                     COfflineMode)
@@ -278,23 +277,22 @@ def InitSys(NumModules, PXISlotMap, OfflineMode):
     return ret
 
 
-
-##### Pixie16BootModule
+# Pixie16BootModule
 boot_module_prototype = ctypes.WINFUNCTYPE(ctypes.c_int,
-                                              ctypes.c_char_p,
-                                              ctypes.c_char_p,
-                                              ctypes.c_char_p,
-                                              ctypes.c_char_p,
-                                              ctypes.c_char_p,
-                                              ctypes.c_char_p,
-                                              ctypes.c_ushort,
-                                              ctypes.c_ushort)
+                                           ctypes.c_char_p,
+                                           ctypes.c_char_p,
+                                           ctypes.c_char_p,
+                                           ctypes.c_char_p,
+                                           ctypes.c_char_p,
+                                           ctypes.c_char_p,
+                                           ctypes.c_ushort,
+                                           ctypes.c_ushort)
 
 Cboot_module = boot_module_prototype(("Pixie16BootModule", PixieAppDLL))
 
-def BootModule(ComFPGAConfigFile, SPFPGAConfigFile, TrigFPGAConfigFile, 
-               DSPCodeFile, DSPParFile, DSPVarFile, ModNum, BootPattern):
 
+def BootModule(ComFPGAConfigFile, SPFPGAConfigFile, TrigFPGAConfigFile,
+               DSPCodeFile, DSPParFile, DSPVarFile, ModNum, BootPattern):
     """Uses the XIA library to boot the module.
 
     ComFPGAConfigFile:   config file found under Firmware
@@ -319,21 +317,23 @@ def BootModule(ComFPGAConfigFile, SPFPGAConfigFile, TrigFPGAConfigFile,
     CModNum = ctypes.c_ushort(ModNum)
     CBootPattern = ctypes.c_ushort(BootPattern)
 
-    ret = Cboot_module(CComFPGAConfigFile, CSPFPGAConfigFile, CTrigFPGAConfigFile, 
+    ret = Cboot_module(CComFPGAConfigFile, CSPFPGAConfigFile, CTrigFPGAConfigFile,
                        CDSPCodeFile, CDSPParFile, CDSPVarFile, CModNum, CBootPattern)
     if ret == 0:
         print('Boot Success!')
     else:
         print("got an error in BootModule")
-        print('ret=',ret)
+        print('ret=', ret)
 
     return ret
 
-##### Pixie16ExitSystem 
+
+# Pixie16ExitSystem
 exit_sys_prototype = ctypes.WINFUNCTYPE(ctypes.c_int,
                                         ctypes.c_ushort)
 
 Cexit_sys = exit_sys_prototype(("Pixie16ExitSystem", PixieAppDLL))
+
 
 def ExitSys(ModNum):
     """Uses the XIA library to exit the system.
@@ -343,9 +343,9 @@ def ExitSys(ModNum):
     """
     # convert to ctypes for library call
     CModNum = ctypes.c_ushort(ModNum)
-       
+
     ret = Cexit_sys(CModNum)
-    
+
     if ret == 0:
         print('Exit system Success!')
     else:
@@ -355,23 +355,20 @@ def ExitSys(ModNum):
     return ret
 
 
-
-
-
-
-##### Pixie16WriteSglChanPar
+# Pixie16WriteSglChanPar
 write_chan_param_prototype = ctypes.WINFUNCTYPE(ctypes.c_int,
-                                              ctypes.c_char_p,
-                                              ctypes.c_double,
-                                              ctypes.c_ushort,
-                                              ctypes.c_ushort)
+                                                ctypes.c_char_p,
+                                                ctypes.c_double,
+                                                ctypes.c_ushort,
+                                                ctypes.c_ushort)
 
 CChanParam = write_chan_param_prototype(("Pixie16WriteSglChanPar", PixieAppDLL))
+
 
 def WriteChanParam(ChanParName, ChanParData, module, channel):
     """Uses the XIA library to change a parameter in one channel in a module.
  see pg. 67 of the programmers manual for a list of parameters available.
- 
+
     ChanParName:    parameter name
     ChanParData:    value of the parameter you wish to set
     module:         module number
@@ -385,11 +382,10 @@ def WriteChanParam(ChanParName, ChanParData, module, channel):
     Cmodule = ctypes.c_ushort(module)
     Cchannel = ctypes.c_ushort(channel)
 
-
     ret = CChanParam(CChanParName,
-                         CChanParData,
-                         Cmodule,
-                         Cchannel)
+                     CChanParData,
+                     Cmodule,
+                     Cchannel)
     if ret == 0:
         print('Change Chan Param Success!')
     else:
@@ -398,31 +394,30 @@ def WriteChanParam(ChanParName, ChanParData, module, channel):
     return ret
 
 
-##### Pixie16ReadSglChanPar
+# Pixie16ReadSglChanPar
 read_chan_param_prototype = ctypes.WINFUNCTYPE(ctypes.c_int,
-                                              ctypes.c_char_p,
-                                              ctypes.POINTER(ctypes.c_double),
-                                              ctypes.c_ushort,
-                                              ctypes.c_ushort)
+                                               ctypes.c_char_p,
+                                               ctypes.POINTER(ctypes.c_double),
+                                               ctypes.c_ushort,
+                                               ctypes.c_ushort)
 
 CReadChanParam = read_chan_param_prototype(("Pixie16ReadSglChanPar", PixieAppDLL))
+
 
 def ReadChanParam(ChanParName, module, channel):
     """Uses the XIA library to read a parameter in one channel in a module.
  see pg. 51 of the programmers manual for a list of parameters available.
- 
+
     ChanParName:    parameter name
     module:         module number
     channel:        channel number
     """
-
 
     # convert to ctypes for library call
     CChanParName = ctypes.c_char_p(bytes(ChanParName, 'utf8'))
     Cmodule = ctypes.c_ushort(module)
     Cchannel = ctypes.c_ushort(channel)
     CChanParData = (ctypes.c_double)()
-
 
     ret = CReadChanParam(CChanParName,
                          CChanParData,
@@ -436,18 +431,19 @@ def ReadChanParam(ChanParName, module, channel):
     return np.ctypeslib.as_array(CChanParData)
 
 
-##### Pixie16WriteSglModPar
+# Pixie16WriteSglModPar
 write_mod_param_prototype = ctypes.WINFUNCTYPE(ctypes.c_int,
-                                              ctypes.c_char_p,
-                                              ctypes.c_ulong,
-                                              ctypes.c_ushort)
+                                               ctypes.c_char_p,
+                                               ctypes.c_ulong,
+                                               ctypes.c_ushort)
 
 CModParam = write_mod_param_prototype(("Pixie16WriteSglModPar", PixieAppDLL))
 
-def WriteModParam(ModParName,ModParData, module):
+
+def WriteModParam(ModParName, ModParData, module):
     """Uses the XIA library to change a parameter in one module.
  see pg. 69 of the programmers manual for a list of parameters available.
- 
+
     ModParName:    parameter name
     ModParData:    value of the parameter you wish to set
     module:         module number
@@ -459,29 +455,31 @@ def WriteModParam(ModParName,ModParData, module):
     CModParData = ctypes.c_ulong(ModParData)
     Cmodule = ctypes.c_ushort(module)
 
-
     ret = CModParam(CModParName,
-                         CModParData,
-                         Cmodule)
+                    CModParData,
+                    Cmodule)
     if ret == 0:
         print('Change Mod Param Success!')
     else:
         print("got an error in WriteModParam")
-        print('ret=',ret)
+        print('ret=', ret)
 
     return ret
+
 
 def converter_IEEE754_to_ulong(x):
     a = (ctypes.c_float*1)(x)
     b = ctypes.cast(a, ctypes.POINTER(ctypes.c_ulong))
     return b.contents
 
+
 def converter_ulong_to_IEEE754(x):
     a = (ctypes.c_ulong*1)(x)
     b = ctypes.cast(a, ctypes.POINTER(ctypes.c_float))
     return b.contents
 
-##### WriteRunTime
+
+# WriteRunTime
 write_run_time_prototype = ctypes.WINFUNCTYPE(ctypes.c_int,
                                               ctypes.c_char_p,
                                               ctypes.c_ulong,
@@ -489,10 +487,11 @@ write_run_time_prototype = ctypes.WINFUNCTYPE(ctypes.c_int,
 
 CwriteRunTime = write_run_time_prototype(("Pixie16WriteSglModPar", PixieAppDLL))
 
+
 def WriteRunTime(RunTime, module):
     """Uses the XIA library to change run time for one module.
  see pg. 69 of the programmers manual for a list of parameters available.
- 
+
     RunTime:        value in seconds
     module:         module number
     """
@@ -503,23 +502,19 @@ def WriteRunTime(RunTime, module):
     CRunTime = converter_IEEE754_to_ulong(RunTime)
     Cmodule = ctypes.c_ushort(module)
 
-
     ret = CwriteRunTime(CModParName,
-                         CRunTime,
-                         Cmodule)
+                        CRunTime,
+                        Cmodule)
     if ret == 0:
         print('Change Run Time Success!')
     else:
         print("got an error in WriteRunTime")
-        print('ret=',ret)
+        print('ret=', ret)
 
     return ret
 
 
-
-
-
-##### Pixie16ReadSglModPar
+# Pixie16ReadSglModPar
 read_mod_param_prototype = ctypes.WINFUNCTYPE(ctypes.c_int,
                                               ctypes.c_char_p,
                                               ctypes.POINTER(ctypes.c_ulong),
@@ -527,24 +522,23 @@ read_mod_param_prototype = ctypes.WINFUNCTYPE(ctypes.c_int,
 
 CReadModParam = read_mod_param_prototype(("Pixie16ReadSglModPar", PixieAppDLL))
 
+
 def ReadModParam(ModParName, module):
     """Uses the XIA library to read a parameter in one module.
  see pg. 53 of the programmers manual for a list of parameters available.
- 
+
     ModParName:    parameter name
     module:         module number
     """
-
 
     # convert to ctypes for library call
     CModParName = ctypes.c_char_p(bytes(ModParName, 'utf8'))
     Cmodule = ctypes.c_ushort(module)
     CModParData = (ctypes.c_ulong)()
 
-
     ret = CReadModParam(CModParName,
-                         CModParData,
-                         Cmodule)
+                        CModParData,
+                        Cmodule)
     if ret == 0:
         print('Read Chan Param Success!')
     else:
@@ -552,31 +546,31 @@ def ReadModParam(ModParName, module):
 
     return np.ctypeslib.as_array(CModParData)
 
-##### ReadRunTime
+
+# ReadRunTime
 read_run_time_prototype = ctypes.WINFUNCTYPE(ctypes.c_int,
-                                              ctypes.c_char_p,
-                                              ctypes.POINTER(ctypes.c_ulong),
-                                              ctypes.c_ushort)
+                                             ctypes.c_char_p,
+                                             ctypes.POINTER(ctypes.c_ulong),
+                                             ctypes.c_ushort)
 
 CReadRunTime = read_run_time_prototype(("Pixie16ReadSglModPar", PixieAppDLL))
+
 
 def ReadRunTime(module):
     """Uses the XIA library to read run time in one module.
  see pg. 53 of the programmers manual for a list of parameters available.
- 
+
     module:         module number
     """
-
 
     # convert to ctypes for library call
     CModParName = ctypes.c_char_p(bytes('HOST_RT_PRESET', 'utf8'))
     Cmodule = ctypes.c_ushort(module)
     CRunTime = (ctypes.c_ulong)()
 
-
     ret = CReadRunTime(CModParName,
-                         CRunTime,
-                         Cmodule)
+                       CRunTime,
+                       Cmodule)
     if ret == 0:
         print('Read Chan Param Success!')
     else:
@@ -584,28 +578,28 @@ def ReadRunTime(module):
 
     return np.ctypeslib.as_array(converter_ulong_to_IEEE754(CRunTime))
 
-##### Pixie16StartHistogramRun
+
+# Pixie16StartHistogramRun
 start_hist_run_prototype = ctypes.WINFUNCTYPE(ctypes.c_int,
                                               ctypes.c_ushort,
                                               ctypes.c_ushort)
 
 CStartHistRun = start_hist_run_prototype(("Pixie16StartHistogramRun", PixieAppDLL))
 
+
 def StartHistRun(module, mode):
     """Uses the XIA library to start an MCA run in one channel in a module.
- 
+
     module:         module number
     channel:        channel number
     """
-
 
     # convert to ctypes for library call
     Cmodule = ctypes.c_ushort(module)
     Cmode = ctypes.c_ushort(mode)
 
-
     ret = CStartHistRun(Cmodule,
-                         Cmode)
+                        Cmode)
     if ret == 0:
         print('Start Hist Run Success!')
     else:
@@ -613,26 +607,26 @@ def StartHistRun(module, mode):
 
     return ret
 
-##### Pixie16CheckRunStatus 
+
+# Pixie16CheckRunStatus
 check_run_status_prototype = ctypes.WINFUNCTYPE(ctypes.c_int,
-                                              ctypes.c_ushort)
+                                                ctypes.c_ushort)
 
 CCheckRunStatus = check_run_status_prototype(("Pixie16CheckRunStatus", PixieAppDLL))
 
+
 def CheckRunStatus(module):
     """Uses the XIA library to check the run status of a module.
- 
+
     module:         module number
     channel:        channel number
     """
 
-
     # convert to ctypes for library call
     Cmodule = ctypes.c_ushort(module)
 
-
     ret = CCheckRunStatus(Cmodule)
-    
+
 # =============================================================================
 #     if ret == 0:
 #         print('No run is in progress')
@@ -646,19 +640,15 @@ def CheckRunStatus(module):
     return ret
 
 
-
-
-
-
-
-##### Pixie16ReadHistogramFromModule
+# Pixie16ReadHistogramFromModule
 read_hist_mod_prototype = ctypes.WINFUNCTYPE(ctypes.c_int,
-                                              ctypes.POINTER(ctypes.c_ulong),
-                                              ctypes.c_ulong,
-                                              ctypes.c_ushort,
-                                              ctypes.c_ushort)
+                                             ctypes.POINTER(ctypes.c_ulong),
+                                             ctypes.c_ulong,
+                                             ctypes.c_ushort,
+                                             ctypes.c_ushort)
 
 CReadHistogramMod = read_hist_mod_prototype(("Pixie16ReadHistogramFromModule", PixieAppDLL))
+
 
 def ReadHistogramFromModule(module, channel, N=32768):
     """Uses the XIA library to read a single channel histogram from the module.
@@ -670,16 +660,15 @@ def ReadHistogramFromModule(module, channel, N=32768):
     return a 1D-numpy array with the histogram data
     """
 
-
     # convert to ctypes for library call
     Cmodule = ctypes.c_ushort(module)
     Cchannel = ctypes.c_ushort(channel)
     result = (ctypes.c_ulong * N)()
 
     ret = CReadHistogramMod(result,
-                         ctypes.c_ulong(N),
-                         Cmodule,
-                         Cchannel)
+                            ctypes.c_ulong(N),
+                            Cmodule,
+                            Cchannel)
     if ret == 0:
         print('Read Hist from Mod Success!')
 
@@ -689,11 +678,12 @@ def ReadHistogramFromModule(module, channel, N=32768):
     return np.ctypeslib.as_array(result)
 
 
-##### Pixie16EndRun  
+# Pixie16EndRun
 end_run_prototype = ctypes.WINFUNCTYPE(ctypes.c_int,
-                                        ctypes.c_ushort)
+                                       ctypes.c_ushort)
 
 Cend_run = end_run_prototype(("Pixie16EndRun", PixieAppDLL))
+
 
 def EndRun(ModNum):
     """Uses the XIA library to end the current measurement run.
@@ -702,9 +692,9 @@ def EndRun(ModNum):
     """
     # convert to ctypes for library call
     CModNum = ctypes.c_ushort(ModNum)
-       
+
     ret = Cend_run(CModNum)
-    
+
     if ret == 0:
         print('End run Success!')
     else:
@@ -714,11 +704,12 @@ def EndRun(ModNum):
     return ret
 
 
-#### Pixie16SaveDSPParametersToFile 
+# Pixie16SaveDSPParametersToFile
 save_dsp_param_prototype = ctypes.WINFUNCTYPE(ctypes.c_int,
-                                               ctypes.c_char_p)
+                                              ctypes.c_char_p)
 
 Csave_dsp_param = save_dsp_param_prototype(("Pixie16SaveDSPParametersToFile", PixieAppDLL))
+
 
 def SaveParam(newfilename):
     """Uses the XIA library to save the current DSP parameters to a file.
@@ -726,13 +717,13 @@ def SaveParam(newfilename):
     Filename:     DSP parameter file name (with complete path)
     """
     Cfilename = ctypes.c_char_p(bytes(newfilename, 'utf8'))
-    
+
     ret = Csave_dsp_param(Cfilename)
-    
+
     if ret == 0:
         print('Save Parameters Success!')
     else:
         print('got an error in Saveparam')
         print('ret=', ret)
-        
+
     return ret
