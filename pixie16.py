@@ -746,7 +746,7 @@ def CheckRunStatus(module):
     if ret == 0:
         log.debug('No run is in progress')
     elif ret == 1:
-        log.error('Run is still in progress')
+        log.debug('Run is still in progress')
     else:
         log.error('Got return value -1')
         log.error('Invalid Pixie-16 module number. Try:  Correct ModNum')
@@ -837,7 +837,12 @@ def SaveParam(newfilename):
     if ret == 0:
         log.debug('Save Parameters Success!')
     else:
-        log.error('got an error in Saveparam')
-        log.error('ret=', ret)
+        log.error('Error in Saveparam')
+        errors = {-1: ['Failed to read DSP parameter values from the Pixie-16 modules',
+                       'Reboot the modules'],
+                  -2: ['Failed to open the DSP parameters file',
+                       'Correct the DSP parameters file name']}
+        message, solution = errors[ret]
+        log.error(message, 'Try:', solution)
 
     return ret
