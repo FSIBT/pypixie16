@@ -86,6 +86,7 @@ valid_channel_parameter_names = ['TRIGGER_RISETIME',
                                  'QDCLen6',
                                  'QDCLen7',
                                  'ExtTrigStretch',
+                                 'ChanTrigStretch',
                                  'MultiplicityMaskL',
                                  'MultiplicityMaskH',
                                  'ExternDelayLen',
@@ -271,7 +272,7 @@ CReadListModeTrace = ReadListModeTrace_prototype(("Pixie16ReadListModeTrace",
 
 
 def ReadListModeTrace(filename, Event):
-    """Uses the XIA library to read a list mode race from a data file.
+    """Uses the XIA library to read a list mode trace from a data file.
 
     filename: list mode data file
     Event:    EventsInfo namedtuple (from GetEventsInfo)
@@ -552,8 +553,12 @@ def ReadChanParam(ChanParName, module, channel):
                          Cchannel)
     if ret == 0:
         log.debug('Read Chan Param Success!')
-    else:
-        log.error("got an error in ReadChanParam")
+    elif ret == -1:
+        log.error("got an error in ReadChanParam, Correct module")
+    elif ret == -2:
+        log.error("got an error in ReadChanParam, Correct channel")
+    elif ret == -3:
+        log.error("got an error in ReadChanParam, Correct ChanParName")
 
     return np.ctypeslib.as_array(CChanParData)
 
@@ -719,6 +724,46 @@ def start_histogram_run(module=None, resume=False):
         log.debug('Start Hist Run Success!')
     else:
         log.error("got an error in StartHistRun")
+
+    return ret
+
+# Pixie16StartListModeRun
+start_listmode_run_prototype = ctypes.WINFUNCTYPE(ctypes.c_int,
+                                              ctypes.c_ushort,
+                                              ctypes.c_ushort,
+                                              ctypes.c_ushort)
+
+CStartListModeRun = start_listmode_run_prototype(("Pixie16StartListModeRun", PixieAppDLL))
+
+
+def start_listmode_run(module=None, runtype=0x100, resume=False):
+    """Uses the XIA library to start a list mode run in one channel in a module.
+
+    module:         module number
+                    0,..., k-1 to start individual modules, k to start all modules
+                    None to use module wide definition of number_of_modules
+    channel:        channel number
+    """
+
+    if module is None:
+        module = number_of_modules
+    if module is None:
+        log.error('need to set number of modules')
+
+    # convert to ctypes for library call
+    Cmodule = ctypes.c_ushort(module)
+    CrunType = ctypes.c_ushort(0x100)
+    if resume:
+        Cmode = ctypes.c_ushort(0)
+    else:
+        Cmode = ctypes.c_ushort(1)
+
+    ret = CStartListModeRun(Cmodule, CrunType,
+                        Cmode)
+    if ret == 0:
+        log.debug('Start List Mode Run Success!')
+    else:
+        log.error("got an error in StartListModeRun")
 
     return ret
 
