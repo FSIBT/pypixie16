@@ -90,7 +90,8 @@ valid_channel_parameter_names = ['TRIGGER_RISETIME',
                                  'MultiplicityMaskL',
                                  'MultiplicityMaskH',
                                  'ExternDelayLen',
-                                 'FtrigoutDelay']
+                                 'FtrigoutDelay',
+                                 'VetoStretch']
 
 # in the following we supply python functions for some of the library
 # functions in the PixieAppDLL
