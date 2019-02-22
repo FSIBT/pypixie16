@@ -32,7 +32,69 @@ def converter_ulong_to_IEEE754(x):
     return b.contents.value
 
 
-def read_list_mode_data(filename, progress=False, keep_trace=False):
+class myIO():
+    """Class to use for read_list_mode_data when all data is in memory
+
+    This might speed up reading from a HD, but it hasn't really
+    changed the speed on a solid state drive.
+
+    The only function that needs to be implemented is the read function.
+
+    """
+
+    def __init__(self, data):
+        self.data = data
+        self.pos = 0
+
+    def read(self, N):
+        out = self.data[self.pos:self.pos+N]
+        self.pos += N
+        return out
+
+
+class PixieTime():
+    """Class to keep the 48 bit timestamp and the CFD time information without losing precision
+
+    Using our own class instead of mpmath directly makes things about 5x faster.
+    """
+
+    def __init__(self, low, hi, CFD):
+        """Store everything internally as multiples of 2 ns time steps."""
+
+        self.TS = (low + (hi << 32))*5
+        self.CFD = CFD
+
+    def as_float(self):
+        return self.__float__()
+
+    def __float__(self):
+        return (self.TS+self.CFD)*2e-9
+
+    def as_mpmath(self):
+        """Return a high precision mpmath.mpf object
+
+        using *2/1e9 gives better precision than using 2e-9
+
+        """
+        return (mpmath.mpf(self.TS)+mpmath.mpf(self.CFD))*2/1e9
+
+    def __add__(self, x):
+        res = PixieTime(0, 0, 0)
+        res.TS = self.TS + x.TS
+        res.CFD = self.CFD + x.CFD
+        return res
+
+    def __sub__(self, x):
+        res = PixieTime(0, 0, 0)
+        res.TS = self.TS - x.TS
+        res.CFD = self.CFD - x.CFD
+        return res
+
+    def __repr__(self):
+        return f'(PixieTime: {self.as_mpmath()})'
+
+
+def read_list_mode_data(filename, progress=False, keep_trace=False, in_memory=False):
     """Read list mode data from binary file
 
     See section 4.4.2 in Manual, page 70
@@ -41,6 +103,10 @@ def read_list_mode_data(filename, progress=False, keep_trace=False):
     all_event = []
     nr_event = 0
     with open(filename, 'rb') as f:
+
+        if in_memory:
+            f = myIO(f.read())
+
         while True:
             nr_event += 1
             if progress and nr_event % 10000 == 0:
@@ -70,26 +136,32 @@ def read_list_mode_data(filename, progress=False, keep_trace=False):
             event_energy = (data[1] << 8) + data[0]
             for i in range(header_length-4):
                 data = f.read(4)
-            if event_length-header_length > 0:
-                # read the whole trace in one go to make reading faster than reading byte by byte
-                # about 300x faster than multiple f.read(2)
-                trace = np.fromfile(f, '({},2)<u2'.format(event_length-header_length), count=1)[0, :, :]
-                # need to swap columns and flatten array
+            trace_data_length = event_length-header_length
+            if trace_data_length > 0:
                 if keep_trace:
+                    if in_memory:
+                        data = f.read(4*trace_data_length)
+                        trace = np.frombuffer(data, f'({trace_data_length},2)<u2', count=1)[0, :, :]
+                    else:
+                        # read the whole trace in one go to make reading faster than reading byte by byte
+                        # about 300x faster than multiple f.read(2)
+                        trace = np.fromfile(f, f'({trace_data_length},2)<u2', count=1)[0, :, :]
                     trace = trace.flatten()
+                else:
+                    f.read(4*trace_data_length)
+                    trace = []
             else:
                 trace = []
-            if not keep_trace:
-                trace = []
-            TS = 2**32 * mpmath.mpf(eventtime_hi) + mpmath.mpf(eventtime_lo)
-            TS *= 10e-9
+
             CFD_error = False
-            CFD_time = TS
+            TS = PixieTime(eventtime_lo, eventtime_hi, 0)
             if cfd_trigger_bits == 7:
                 CFD_error = True
+                CFD = PixieTime(eventtime_lo, eventtime_hi, 0)
             else:
-                CFD_time = TS + mpmath.mpf(cfd_trigger_bits-1 + cfd_fractional/8192)*2e-9
-            yield Event(channel_nr, crate_id, slot_id, CFD_time, TS, event_energy, trace, CFD_error)
+                CFD = PixieTime(eventtime_lo, eventtime_hi, cfd_trigger_bits-1 + cfd_fractional/8192)
+
+            yield Event(channel_nr, crate_id, slot_id, CFD, TS, event_energy, trace, CFD_error)
     return
 
 
