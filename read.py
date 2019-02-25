@@ -333,7 +333,7 @@ def compare_module_setting(modA, modB, quiet=False):
                         if x != y:
                             if k in hex:
                                 if k == 'TrigConfig':
-                                    print(f'  {prefix}{i:02d}:   {x:#011_x} <-> {y:#011_x}')
+                                    print(f'  {prefix}{i:02d}:   a:{x:#011_x} <-> b:{y:#011_x}')
                                     for v in [x, y]:
                                         bin_string = bin(v)[2:]
                                         l = len(bin_string)
@@ -344,21 +344,21 @@ def compare_module_setting(modA, modB, quiet=False):
                                             print(bin_string[31-pos:31-next_pos]+' ', end='')
                                         print(bin_string[31-next_pos:])
                                 else:
-                                    print(f'  {prefix}{i:02d}:   {x:#011_x} <-> {y:#011_x}')
-                                    for v in [x, y]:
+                                    print(f'  {prefix}{i:02d}:   a:{x:#011_x} <-> b:{y:#011_x}')
+                                    for v, name in zip([x, y], ['a', 'b']):
                                         bin_string = bin(v)[2:]
                                         l = len(bin_string)
                                         if l < 32:
                                             bin_string = '0'*(32-l)+bin_string
-                                        print('          ', end='')
+                                        print(f'          {name}:', end='')
                                         for pos, next_pos in helper.iterate_pairs(hex[k]):
                                             print(bin_string[31-pos:31-next_pos]+' ', end='')
                                         print(bin_string[31-next_pos:])
                             else:
-                                print(f'{prefix}{i:02d}:   {x} <-> {y}')
+                                print(f'{prefix}{i:02d}:   a:{x} <-> b:{y}')
             else:
                 if modA[k] != modB[k]:
-                    print('{} differs: {} != {}'.format(k, modA[k], modB[k]))
+                    print('{} differs: a:{} != b:{}'.format(k, modA[k], modB[k]))
 
     # convert to a sorted json string to make deep comparison possible
     return json.dumps(modA, sort_keys=True) == json.dumps(modB, sort_keys=True)
