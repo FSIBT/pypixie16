@@ -14,7 +14,8 @@ from .. import helper
 # logger = logging.logger(__name__)
 
 Event = namedtuple('Event', ['channel', 'crate', 'slot', 'time', 'clock_time',
-                             'energy', 'trace', 'CFD_error'])
+                             'energy', 'trace', 'CFD_error', 'trace_flag',
+                             'Esum_trailing', 'Esum_leading', 'Esum_gap', 'baseline'])
 
 # set precision to 30 digits
 mpmath.mp.dps = 30
@@ -68,7 +69,7 @@ class PixieTime():
         return self.__float__()
 
     def __float__(self):
-        return (self.TS+self.CFD)*2e-9
+        return (self.TS+self.CFD)*2.0
 
     def as_mpmath(self):
         """Return a high precision mpmath.mpf object
@@ -76,7 +77,7 @@ class PixieTime():
         using *2/1e9 gives better precision than using 2e-9
 
         """
-        return (mpmath.mpf(self.TS)+mpmath.mpf(self.CFD))*2/1e9
+        return (mpmath.mpf(self.TS)+mpmath.mpf(self.CFD))*2.0
 
     def __add__(self, x):
         res = PixieTime(0, 0, 0)
@@ -94,7 +95,7 @@ class PixieTime():
         return f'(PixieTime: {self.as_mpmath()})'
 
 
-def read_list_mode_data(filename, progress=False, keep_trace=False, in_memory=False):
+def read_list_mode_data(filename, progress=False, keep_trace=False, trailing_sums=False, in_memory=False):
     """Read list mode data from binary file
 
     See section 4.4.2 in Manual, page 70
@@ -134,8 +135,22 @@ def read_list_mode_data(filename, progress=False, keep_trace=False, in_memory=Fa
             trace_flag = (s & (1 << 15)) >> 15
             trace_length = s & ((1 << 16) - 1)
             event_energy = (data[1] << 8) + data[0]
-            for i in range(header_length-4):
+            if trailing_sums:
                 data = f.read(4)
+                Esum_trailing = (((((data[3] << 8) + data[2]) << 8) + data[1]) << 8) + data[0]
+                data = f.read(4)
+                Esum_leading = (((((data[3] << 8) + data[2]) << 8) + data[1]) << 8) + data[0]
+                data = f.read(4)
+                Esum_gap = (((((data[3] << 8) + data[2]) << 8) + data[1]) << 8) + data[0]
+                data = f.read(4)
+                baseline = converter_IEEE754_to_ulong((((((data[3] << 8) + data[2]) << 8) + data[1]) << 8) + data[0])
+            else:
+                for i in range(header_length-4):
+                    data = f.read(4)
+                Esum_trailing = 0
+                Esum_leading = 0
+                Esum_gap = 0
+                baseline = 0
             trace_data_length = event_length-header_length
             if trace_data_length > 0:
                 if keep_trace:
@@ -161,7 +176,8 @@ def read_list_mode_data(filename, progress=False, keep_trace=False, in_memory=Fa
             else:
                 CFD = PixieTime(eventtime_lo, eventtime_hi, cfd_trigger_bits-1 + cfd_fractional/8192)
 
-            yield Event(channel_nr, crate_id, slot_id, CFD, TS, event_energy, trace, CFD_error)
+            yield Event(channel_nr, crate_id, slot_id, CFD, TS, event_energy, trace, CFD_error, trace_flag, 
+                        Esum_trailing, Esum_leading, Esum_gap, baseline)
     return
 
 
