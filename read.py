@@ -130,36 +130,28 @@ def read_list_mode_data(filename, progress=False, keep_trace=False, trailing_sum
             if data == b'':
                 # no more data available
                 break
-            s = (((((data[3] << 8) + data[2]) << 8) + data[1]) << 8) + data[0]
-            finish_code = (s & (1 << 31)) >> 31 # 1 if pile-up event
-            pileup = finish_code
+            s = int.from_bytes(data, byteorder='little')
+            pileup = (s & (1 << 31)) >> 31  # 1 if pile-up event
             event_length = (s & ((1 << 14)-1) << 17) >> 17
             header_length = (s & (0b11111 << 12)) >> 12
             crate_id = (s & (0b1111 << 8)) >> 8
             slot_id = (s & (0b1111 << 4)) >> 4
             channel_nr = s & 0b1111
-            data = f.read(4)
-            eventtime_lo = (((((data[3] << 8) + data[2]) << 8) + data[1]) << 8) + data[0]
-            data = f.read(4)
-            s = (data[3] << 8) + data[2]
+            eventtime_lo = int.from_bytes(f.read(4), byteorder='little')
+            eventtime_hi = int.from_bytes(f.read(2), byteorder='little')
+            s = int.from_bytes(f.read(2), byteorder='little')
             cfd_trigger_bits = (s & (0b111 << 13)) >> 13
             cfd_fractional = s & ((1 << 13)-1)
-            eventtime_hi = (data[1] << 8) + data[0]
-            data = f.read(4)
-            s = (data[3] << 8) + data[2]
-            trace_flag = (s & (1 << 15)) >> 15 # 1 if trace out of ADC range (clipped)
+            event_energy = int.from_bytes(f.read(2), byteorder='little')
+            s = int.from_bytes(f.read(2), byteorder='little')
+            trace_flag = (s & (1 << 15)) >> 15  # 1 if trace out of ADC range (clipped)
             trace_length = s & ((1 << 16) - 1)
-            event_energy = (data[1] << 8) + data[0]
-            #if trailing_sums[channel_nr]:
+            # if trailing_sums[channel_nr]:
             if trailing_sums:
-                data = f.read(4)
-                Esum_trailing = (((((data[3] << 8) + data[2]) << 8) + data[1]) << 8) + data[0]
-                data = f.read(4)
-                Esum_leading = (((((data[3] << 8) + data[2]) << 8) + data[1]) << 8) + data[0]
-                data = f.read(4)
-                Esum_gap = (((((data[3] << 8) + data[2]) << 8) + data[1]) << 8) + data[0]
-                data = f.read(4)
-                baseline = (((((data[3] << 8) + data[2]) << 8) + data[1]) << 8) + data[0]
+                Esum_trailing = int.from_bytes(f.read(4), byteorder='little')
+                Esum_leading = int.from_bytes(f.read(4), byteorder='little')
+                Esum_gap = int.from_bytes(f.read(4), byteorder='little')
+                baseline = int.from_bytes(f.read(4), byteorder='little')
                 baseline = converter_IEEE754_to_ulong(baseline)
             else:
                 for i in range(header_length-4):
@@ -210,9 +202,7 @@ def read_mca_mode_data(filename):
         for channel in range(16):
             spectrum = []
             for i in range(32*1024):
-                data = f.read(4)
-                s = (((((data[3] << 8) + data[2]) << 8) + data[1]) << 8) + data[0]
-                spectrum.append(s)
+                spectrum.append(int.from_bytes(f.read(4), byteorder='little'))
             spectrum = np.array(spectrum)
             results[channel] = spectrum
     return results
@@ -267,9 +257,7 @@ class XIASetting():
             for module in range(24):
                 rawsetting = []
                 for i in range(1280):
-                    data = f.read(4)
-                    s = (((((data[3] << 8) + data[2]) << 8) + data[1]) << 8) + data[0]
-                    rawsetting.append(s)
+                    rawsetting.append(int.from_bytes(f.read(4), byteorder='little'))
                 rawmodules.append(rawsetting)
 
         for mod in rawmodules:
@@ -294,8 +282,8 @@ class XIASetting():
                 i += length
             outread['LiveTime'] = [(outread['LiveTimeA'][i] * 2**32 + outread['LiveTimeB']
                                     [i]) * 16 * 10e-9 for i in range(16)]
-            outread['FastPeaks'] = [outread['FastPeaksA'][i] * 2 **
-                                    32 + outread['FastPeaksB'][i] for i in range(16)]
+            outread['FastPeaks'] = [outread['FastPeaksA'][i] * 2
+                                    ** 32 + outread['FastPeaksB'][i] for i in range(16)]
             outread['RealTime'] = (outread['RealTimeA'] * 2**32 + outread['RealTimeB']) * 10e-9
             outread['RunTime'] = (outread['RunTimeA'] * 2**32 + outread['RunTimeB']) * 10e-9
 
