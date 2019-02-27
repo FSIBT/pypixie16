@@ -14,7 +14,7 @@ from .. import helper
 # logger = logging.logger(__name__)
 
 Event = namedtuple('Event', ['channel', 'crate', 'slot', 'time', 'clock_time',
-                             'energy', 'trace', 'CFD_error', 'trace_flag', 'Esum_trailing',
+                             'energy', 'trace', 'CFD_error', 'pileup', 'trace_flag', 'Esum_trailing',
                              'Esum_leading', 'Esum_gap', 'baseline'])
 
 
@@ -108,6 +108,13 @@ def read_list_mode_data(filename, progress=False, keep_trace=False, trailing_sum
     See section 4.4.2 in Manual, page 70
     """
 
+#    if trailing_sum is bool:
+#        trailing_sum = [trailing_sum]*16
+#    else is type(trailing_sum) == list:
+#        if not len(trailing_sum) == 16:
+#            print('error')
+#            return StopIteration
+
     all_event = []
     nr_event = 0
     with open(filename, 'rb') as f:
@@ -124,7 +131,8 @@ def read_list_mode_data(filename, progress=False, keep_trace=False, trailing_sum
                 # no more data available
                 break
             s = (((((data[3] << 8) + data[2]) << 8) + data[1]) << 8) + data[0]
-            finish_code = (s & (1 << 31)) >> 31
+            finish_code = (s & (1 << 31)) >> 31 # 1 if pile-up event
+            pileup = finish_code
             event_length = (s & ((1 << 14)-1) << 17) >> 17
             header_length = (s & (0b11111 << 12)) >> 12
             crate_id = (s & (0b1111 << 8)) >> 8
@@ -139,9 +147,10 @@ def read_list_mode_data(filename, progress=False, keep_trace=False, trailing_sum
             eventtime_hi = (data[1] << 8) + data[0]
             data = f.read(4)
             s = (data[3] << 8) + data[2]
-            trace_flag = (s & (1 << 15)) >> 15
+            trace_flag = (s & (1 << 15)) >> 15 # 1 if trace out of ADC range (clipped)
             trace_length = s & ((1 << 16) - 1)
             event_energy = (data[1] << 8) + data[0]
+            #if trailing_sums[channel_nr]:
             if trailing_sums:
                 data = f.read(4)
                 Esum_trailing = (((((data[3] << 8) + data[2]) << 8) + data[1]) << 8) + data[0]
@@ -150,7 +159,8 @@ def read_list_mode_data(filename, progress=False, keep_trace=False, trailing_sum
                 data = f.read(4)
                 Esum_gap = (((((data[3] << 8) + data[2]) << 8) + data[1]) << 8) + data[0]
                 data = f.read(4)
-                baseline = converter_IEEE754_to_ulong((((((data[3] << 8) + data[2]) << 8) + data[1]) << 8) + data[0])
+                baseline = (((((data[3] << 8) + data[2]) << 8) + data[1]) << 8) + data[0]
+                baseline = converter_IEEE754_to_ulong(baseline)
             else:
                 for i in range(header_length-4):
                     data = f.read(4)
@@ -183,7 +193,7 @@ def read_list_mode_data(filename, progress=False, keep_trace=False, trailing_sum
             else:
                 CFD = PixieTime(eventtime_lo, eventtime_hi, cfd_trigger_bits-1 + cfd_fractional/8192)
 
-            yield Event(channel_nr, crate_id, slot_id, CFD, TS, event_energy, trace, CFD_error, trace_flag,
+            yield Event(channel_nr, crate_id, slot_id, CFD, TS, event_energy, trace, CFD_error, pileup, trace_flag,
                         Esum_trailing, Esum_leading, Esum_gap, baseline)
     return
 
