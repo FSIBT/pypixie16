@@ -152,7 +152,7 @@ def read_list_mode_data(filename, progress=False, keep_trace=False, trailing_sum
                 Esum_leading = int.from_bytes(f.read(4), byteorder='little')
                 Esum_gap = int.from_bytes(f.read(4), byteorder='little')
                 baseline = int.from_bytes(f.read(4), byteorder='little')
-                baseline = converter_IEEE754_to_ulong(baseline)
+                baseline = converter_ulong_to_IEEE754(baseline)
             else:
                 for i in range(header_length-4):
                     data = f.read(4)
