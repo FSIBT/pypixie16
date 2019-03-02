@@ -47,8 +47,8 @@ def calculate_CFD(traces, t=None, CFD_threshold=None, w=1, B=5, D=5, L=1, Nbkgd=
     # should get rid of the for-loop here too, just not sure at the
     # moment how to do it
     for k in range(B+D, length-L):
-        CFD[:, k-B-D] = (w*(traces[:, k:k+L+1].sum(axis=1)-traces[:, k-B:k-B+L+1].sum(axis=1))
-                        - (traces[:, k-D:k-D+L+1].sum(axis=1)-traces[:, k-D-B:k-D-B+L+1].sum(axis=1)))
+        CFD[:, k-B-D] = (w*(traces[:, k:k+L+1].sum(axis=1)-traces[:, k-B:k-B+L+1].sum(axis=1)) -
+                         (traces[:, k-D:k-D+L+1].sum(axis=1)-traces[:, k-D-B:k-D-B+L+1].sum(axis=1)))
 #        fastf = calculate_filter(traces[k])
 #        FF.append(fastf)
 #    FF = np.array(FF)
@@ -63,7 +63,7 @@ def calculate_CFD(traces, t=None, CFD_threshold=None, w=1, B=5, D=5, L=1, Nbkgd=
         FF.append(FF0)
         # check that the first N points of the fast filter (noise) is below threshold
         # 100 is an arbitrary number here, but the PIXIE should always record some noise first
-        #if CFDtrace[:Nbkgd].max() > CFD_threshold:
+        # if CFDtrace[:Nbkgd].max() > CFD_threshold:
         if FF0[:Nbkgd].max() > CFD_threshold:
             #print('Warning: CFD analysis theshold too low?', CFDtrace[:Nbkgd].max(),i)
             low += 1
@@ -83,10 +83,10 @@ def calculate_CFD(traces, t=None, CFD_threshold=None, w=1, B=5, D=5, L=1, Nbkgd=
         if CFDtrace[left] > CFDtrace[right]:
             zer = t2[left] + CFDtrace[left] * (t2[right]-t2[left])/(CFDtrace[left]-CFDtrace[right])
         else:
-#            print('CFD Error: not at a zero crossing from positive to negative values ')
-#            print('   This should not happen!!')
-#            print('   Trace index:', i)
-#            print('   CFD values:', CFDtrace[left], CFDtrace[right])
+            #            print('CFD Error: not at a zero crossing from positive to negative values ')
+            #            print('   This should not happen!!')
+            #            print('   Trace index:', i)
+            #            print('   CFD values:', CFDtrace[left], CFDtrace[right])
             zer = t2[left]
             CFDerror += 1
         cfdtime.append(zer)
@@ -101,7 +101,7 @@ def calculate_CFD(traces, t=None, CFD_threshold=None, w=1, B=5, D=5, L=1, Nbkgd=
     return CFD, cfdtime, FF, low
 
 
-def calculate_filter(traces, L=1, G=1):
+def calculate_filter(traces, L=5, G=5):
     """Calculate the fast and slow filter response from the PIXIE
 
     This implements the filter response as discribted on page 81 in
@@ -117,25 +117,38 @@ def calculate_filter(traces, L=1, G=1):
     output:
        result   (N, M-2L-G+1)
     """
+
     if len(traces.shape) == 1:
         traces = traces[np.newaxis, :]
         one_dim = True
     else:
         one_dim = False
 
+    assert (L % 5 == 0) and (G % 5 == 0), 'Filter settings needs to be multiple of 5 (FPGA clock cycles)'
+
     traces = traces.astype(np.int64)
     NR_traces, length = traces.shape
 
-    # create an empty array of the correct length
-    result = np.zeros((NR_traces, length-2*L-G+1))
+    assert length % 5 == 0, 'Filter trace length needs to be a multiple of 5'
 
+    # scale to 10 ns FPGA clock cycles, e.g. 5 time steps per cycle
+    L = L//5
+    G = G//5
+    traces = np.reshape(traces, (NR_traces, length//5, 5))
+    traces = traces.sum(axis=2)
+    NR_traces, length = traces.shape
+
+    # create an empty array of the correct length
+    result = np.zeros((NR_traces, length - 2*L-G+1))
 
     # do as much as possible using numpy, one probably can and should
     # get rid of the for-loop here too, just not sure at the moment
     # how to do it
     for k in range(2*L+G-1, length):
         result[:, k-2*L-G+1] = traces[:, k-L+1:k+1].sum(axis=1)-traces[:, k-2*L-G+1:k-L-G+1].sum(axis=1)
-    result = result / L
+
+    # scale back to 2 ns timesteps
+    result = np.repeat(result, 5, axis=1)
 
     if one_dim:
         result = result[0]
