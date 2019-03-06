@@ -21,14 +21,16 @@ if sys.maxsize > 2**32:
     print('WARNING: need to run 32bit python to use this library')
     sys.exit()
 
-lib = Path('C:/Program Files (x86)/XIA/Pixie16_VB 2.1.0/PixieAppDLL.dll')
+lib_app = Path('C:/Program Files (x86)/XIA/Pixie16_VB 2.1.0/PixieAppDLL.dll')
+lib_sys = Path('C:/Program Files (x86)/XIA/Pixie16_VB 2.1.0/Pixie16SysDLL.dll')
 
 # make sure the library directory in the path, so that we can find
 # dependencies, otherwise we get a "[WinError 126] The specified
 # module could not be found" error
-os.environ['PATH'] = str(lib.parent) + ';' + os.environ['PATH']
+os.environ['PATH'] = str(lib_app.parent) + ';' + os.environ['PATH']
 
-PixieAppDLL = ctypes.cdll.LoadLibrary(str(lib))
+PixieAppDLL = ctypes.cdll.LoadLibrary(str(lib_app))
+PixieSysDLL = ctypes.cdll.LoadLibrary(str(lib_sys))
 
 # set up logging
 log = logging.getLogger(__name__)
@@ -892,3 +894,68 @@ def SaveParam(newfilename):
         log.error(message, 'Try:', solution)
 
     return ret
+
+
+
+################################
+# pixie sys functions          #
+################################
+
+
+Pixie_Read_ExtFIFOStatus_prototype = ctypes.CFUNCTYPE(ctypes.c_int,
+                                                      ctypes.POINTER(ctypes.c_uint),
+                                                      ctypes.c_ushort)
+
+CReadFIFOStatus = Pixie_Read_ExtFIFOStatus_prototype(("Pixie_Read_ExtFIFOStatus", PixieSysDLL))
+
+
+def ReadFIFOStatus(module):
+    """Uses the XIA library to read how many 32bit words are available on module N
+
+    module:   module number
+
+    return number of 32 bit words available
+    """
+
+    # convert to ctypes for library call
+    Cmodule = ctypes.c_ushort(module)
+    Cwords = (ctypes.c_uint)()
+
+    ret = CReadFIFOStatus(Cwords, Cmodule)
+    if ret >= 0:
+        log.debug('Read FIFO status from Mod Success!')
+    else:
+        log.error("got an error in ReadFIFOStatus")
+
+    return Cwords.value
+
+
+Pixie_ExtFIFO_Read_prototype = ctypes.CFUNCTYPE(ctypes.c_int,
+                                                ctypes.POINTER(ctypes.c_uint),
+                                                ctypes.c_uint,
+                                                ctypes.c_ushort)
+
+CReadFIFO = Pixie_ExtFIFO_Read_prototype(("Pixie_ExtFIFO_Read", PixieSysDLL))
+
+
+def ReadFIFO(module, words):
+    """Uses the XIA library to read how many 32bit words are available on module N
+
+    module:   module number
+
+    return number of 32 bit words available
+    """
+
+    # convert to ctypes for library call
+    Cmodule = ctypes.c_ushort(module)
+    Cwords = ctypes.c_uint(words)
+    Cdata = (ctypes.c_uint*words)()
+
+    ret = CReadFIFO(Cdata, Cwords, Cmodule)
+    if ret >= 0:
+        log.debug('Read FIFO from Mod Success!')
+    else:
+        log.error("got an error in ReadFIFO")
+
+    return np.ctypeslib.as_array(Cdata)
+
