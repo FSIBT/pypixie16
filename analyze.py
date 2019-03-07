@@ -90,7 +90,7 @@ def calculate_CFD(traces, t=None, CFD_threshold=None, w=1, B=5, D=5, L=1, Nbkgd=
         CFD = CFD[0]
         errors = errors[0]
 
-    return CFD, cfdtime, errors
+    return CFD, cfdtrigger, errors
 
 
 def calculate_CFD_using_FF(traces, t=None, CFD_threshold=None, w=1, B=5, D=5, L=1, Nbkgd=100):
