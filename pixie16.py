@@ -16,6 +16,7 @@ import numpy as np
 from pathlib import Path
 import os
 import sys
+import time
 
 if sys.maxsize > 2**32:
     print('WARNING: need to run 32bit python to use this library')
@@ -42,8 +43,12 @@ initfile = current_dir / 'pxisys.ini'
 if not initfile.exists():
     log.error(f'Error: please copy the pxisys.ini file into the directory: {current_dir}')
 
-# module global that keeps track of the number of modules used
-number_of_modules = None
+# module global that keeps track of some information for us, so that we don't have to pass it to every function
+modules = []  # list of PCI slot numbers, should start with 2, e.g. [2, 3]
+init_done = False
+boot_done = False
+
+# end globals
 
 valid_module_parameter_names = ['MODULE_NUMBER',
                                 'MODULE_CSRA',
@@ -311,21 +316,27 @@ init_sys_prototype = ctypes.WINFUNCTYPE(ctypes.c_int,
 Cinit_sys = init_sys_prototype(("Pixie16InitSystem", PixieAppDLL))
 
 
-def InitSys(NumModules, PXISlotMap, OfflineMode=False):
+def InitSys(PXISlotMap=None, OfflineMode=False):
     """Uses the XIA library to initialize the system.
 
-    NumModules:   total number of pixie-16 modules
     PXISlotMap:   array containing the slot numbers of each module
     OfflineMode:  specify to use online or offline mode
 
     """
     # convert to ctypes for library call
-    global number_of_modules
-    CNumModules = ctypes.c_ushort(NumModules)
+    global modules
+    global init_done
+
+    if init_done:
+        log.warning('Init already done')
+        return 0
 
     # set this module wide
-    if number_of_modules is None:
-        number_of_modules = NumModules
+    if PXISlotMap is not None:
+        modules = PXISlotMap
+
+    NumModules = len(modules)
+    CNumModules = ctypes.c_ushort(NumModules)
 
     CPXISlotMap = (ctypes.c_ushort * (NumModules))()
     if OfflineMode:
@@ -333,11 +344,7 @@ def InitSys(NumModules, PXISlotMap, OfflineMode=False):
     else:
         COfflineMode = ctypes.c_ushort(0)
 
-    if len(PXISlotMap) != NumModules:
-        log.error("Error: PXISlotMap needs to have on entry for each module")
-        return
-
-    for i, slot in enumerate(PXISlotMap):
+    for i, slot in enumerate(modules):
         CPXISlotMap[i] = slot
 
     ret = Cinit_sys(CNumModules,
@@ -345,6 +352,7 @@ def InitSys(NumModules, PXISlotMap, OfflineMode=False):
                     COfflineMode)
     if ret == 0:
         log.debug('Initialize Success!')
+        init_done = True
     else:
         errors = {-1: ['Invalid total number of Pixie-16 modules',
                        'Check if NumModules <= PRESET_MAX_MODULES'],
@@ -390,11 +398,17 @@ def BootModule(DSPParFile,
     DSPVarFile:          config file found under DSP
     ModNum:              location of module you want to boot
                          (either 0,...,k-1 for individual modules or k for all modules)
-                         if None, check module variable number_of_modules to boot all modules
+                         if None, check global modules variable to boot all modules
     BootPattern:         boot pattern mask. 0x7F to boot all on-board chips.
 
     See page 13 of the programming manual.
     """
+
+    global boot_done
+
+    if boot_done:
+        log.warning('boot already done')
+        return 0
 
     # convert to ctypes for library call
     CComFPGAConfigFile = ctypes.c_char_p(bytes(ComFPGAConfigFile, 'utf8'))
@@ -404,11 +418,11 @@ def BootModule(DSPParFile,
     CDSPParFile = ctypes.c_char_p(bytes(DSPParFile, 'utf8'))
     CDSPVarFile = ctypes.c_char_p(bytes(DSPVarFile, 'utf8'))
     if ModNum is None:
-        if number_of_modules is None:
-            log.error('You need to set ModNum or the module wide variable number_of_modules')
+        if modules is None:
+            log.error('You need to set ModNum or the global variable modules need to be set!')
             return -1
         else:
-            CModNum = ctypes.c_ushort(number_of_modules)
+            CModNum = ctypes.c_ushort(len(modules))
     else:
         CModNum = ctypes.c_ushort(ModNum)
     CBootPattern = ctypes.c_ushort(BootPattern)
@@ -417,6 +431,7 @@ def BootModule(DSPParFile,
                        CDSPCodeFile, CDSPParFile, CDSPVarFile, CModNum, CBootPattern)
     if ret == 0:
         log.debug('Boot Success!')
+        boot_done = True
     else:
         errors = {-1: ['Invalid Pixie-16 module number', 'Correct ModNum'],
                   -2: ['Size of ComFPGAConfigFile is invalid', 'Correct ComFPGAConfigFile'],
@@ -465,6 +480,9 @@ def ExitSys(ModNum):
 
     For k modules, the number is either 0,...,k-1 for individual modules or k for all modules.
     """
+    global init_done
+    global boot_done
+
     # convert to ctypes for library call
     CModNum = ctypes.c_ushort(ModNum)
 
@@ -472,6 +490,8 @@ def ExitSys(ModNum):
 
     if ret == 0:
         log.debug('Exit system Success!')
+        boot_done = False
+        init_done = False
     else:
         errors = {-1: ['Invalid Pixie-16 module number',
                        'Correct ModNum (it should not be greater than the total number of modules in the system)'],
@@ -705,12 +725,12 @@ def start_histogram_run(module=None, resume=False):
 
     module:         module number
                     0,..., k-1 to start individual modules, k to start all modules
-                    None to use module wide definition of number_of_modules
+                    None to use module wide definition of modules
     channel:        channel number
     """
 
     if module is None:
-        module = number_of_modules
+        module = len(modules)
     if module is None:
         log.error('need to set number of modules')
 
@@ -744,12 +764,12 @@ def start_listmode_run(module=None, runtype=0x100, resume=False):
 
     module:         module number
                     0,..., k-1 to start individual modules, k to start all modules
-                    None to use module wide definition of number_of_modules
+                    None to use module wide definition of modules
     channel:        channel number
     """
 
     if module is None:
-        module = number_of_modules
+        module = len(modules)
     if module is None:
         log.error('need to set number of modules')
 
@@ -925,7 +945,7 @@ def ReadFIFOStatus(module):
     if ret >= 0:
         log.debug('Read FIFO status from Mod Success!')
     else:
-        log.error("got an error in ReadFIFOStatus")
+        log.error("got an error in ReadFIFOStatus {ret}")
 
     return Cwords.value
 
@@ -959,3 +979,46 @@ def ReadFIFO(module, words):
 
     return np.ctypeslib.as_array(Cdata)
 
+
+##############################################
+# create an interface that feels pythonic    #
+##############################################
+
+def run_list_mode(filename, runtime=5):
+
+    if filename is not None:
+        filename = Path(filename)
+        if filename.exists():
+            print('filename already exists...exiting')
+            return
+
+    with filename.open('wb') as outfile:
+        start_listmode_run()
+        start = time.time()
+        stop = start+runtime
+
+        while time.time() < stop:
+            tic = time.time()
+            for i, slot in enumerate(modules):
+                number_of_words = ReadFIFOStatus(i)
+                if number_of_words > 1024:
+                    print(f'got {number_of_words} words')
+                    data = ReadFIFO(i, number_of_words)
+                    print(f'got data {data}')
+                    data.newbyteorder('S').tofile(outfile)
+            toc = time.time()
+            print(f' elapsed time  {toc-tic:.6f}')
+
+
+        for i, slot in enumerate(modules):
+            EndRun(i)
+        time.sleep(0.4)
+
+        # read final data
+        for i, slot in enumerate(modules):
+            number_of_words = ReadFIFOStatus(i)
+            if number_of_words > 0:
+                print(f'got remaining {number_of_words} words')
+                data = ReadFIFO(i, number_of_words)
+                print(f'got data {data}')
+                data.newbyteorder('S').tofile(outfile)
