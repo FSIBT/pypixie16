@@ -9,7 +9,9 @@ Currently only support Rev-B-D
 
 """
 
+import appdirs
 from collections import namedtuple
+import datetime
 import ctypes
 import logging
 import numpy as np
@@ -22,8 +24,34 @@ if sys.maxsize > 2**32:
     print('WARNING: need to run 32bit python to use this library')
     sys.exit()
 
-lib_app = Path('C:/Program Files (x86)/XIA/Pixie16_VB 2.1.0/PixieAppDLL.dll')
-lib_sys = Path('C:/Program Files (x86)/XIA/Pixie16_VB 2.1.0/Pixie16SysDLL.dll')
+dirs = appdirs.AppDirs("PIXIE16")
+inifile = Path(dirs.user_config_dir) / "config.ini"
+
+config = configparser.ConfigParser()
+config.read(inifile)
+
+
+def config_get_parameters(section, name):
+    try:
+        path = config.get(section, name).replace('"', '')
+        path = path.replace("'", "")
+        path = Path(path)
+    except (configparser.NoOptionError, configparser.NoSectionError):
+        path = None
+        print()
+        print(f"No {name} found in {section}, please add it to {inifile}")
+        print(f"   The file should contain something like:")
+        print(f"       [{section}]")
+        print(f"       {name} = <path to {name}>")
+        print()
+        sys.exit()
+    return path
+
+
+lib_app = config_get_parameters('Libraries', 'app')
+lib_sys = config_get_parameters('Libraries', 'sys')
+
+data_dir = config_get_parameters('Data', 'datadir')
 
 # make sure the library directory in the path, so that we can find
 # dependencies, otherwise we get a "[WinError 126] The specified
@@ -750,11 +778,12 @@ def start_histogram_run(module=None, resume=False):
 
     return ret
 
+
 # Pixie16StartListModeRun
 start_listmode_run_prototype = ctypes.WINFUNCTYPE(ctypes.c_int,
-                                              ctypes.c_ushort,
-                                              ctypes.c_ushort,
-                                              ctypes.c_ushort)
+                                                  ctypes.c_ushort,
+                                                  ctypes.c_ushort,
+                                                  ctypes.c_ushort)
 
 CStartListModeRun = start_listmode_run_prototype(("Pixie16StartListModeRun", PixieAppDLL))
 
@@ -782,7 +811,7 @@ def start_listmode_run(module=None, runtype=0x100, resume=False):
         Cmode = ctypes.c_ushort(1)
 
     ret = CStartListModeRun(Cmodule, CrunType,
-                        Cmode)
+                            Cmode)
     if ret == 0:
         log.debug('Start List Mode Run Success!')
     else:
@@ -916,11 +945,9 @@ def SaveParam(newfilename):
     return ret
 
 
-
 ################################
 # pixie sys functions          #
 ################################
-
 
 Pixie_Read_ExtFIFOStatus_prototype = ctypes.CFUNCTYPE(ctypes.c_int,
                                                       ctypes.POINTER(ctypes.c_uint),
@@ -984,13 +1011,56 @@ def ReadFIFO(module, words):
 # create an interface that feels pythonic    #
 ##############################################
 
-def run_list_mode(filename, runtime=5):
+def run_list_mode(filename=None, runtime=5):
+    """Run the pixie16 in list mode
 
-    if filename is not None:
-        filename = Path(filename)
-        if filename.exists():
-            print('filename already exists...exiting')
-            return
+    Start and stop a list mode run. The module needs to be
+    initialized.  Data will be written to a file. If the filename
+    doesn't end with '.bin' the ending will be added. We use the same
+    dataformat as the pixie uses internally.  We also add a '000' or
+    higher number before the '.bin' file ending automatically to avoid
+    overiding an existing file.  The file gets placed in a the
+    directory specified in the config file and within that directory
+    in a subdirectory of the form YYYY-MM-DD, which gets created if it
+    doesn't exist.
+
+
+    Inputs
+    ------
+       filename:   the filename
+       runtime:    The time to take data for in seconds
+
+    """
+
+    YYYYMMDD = datetime.datetime.today().strftime('%Y-%m-%d')
+    if filename is None:
+        filename = 'pixie16-data'
+
+    # remove .bin, will add it back in a bit
+    if filename.endswith('.bin'):
+        filename = filename[:-4]
+    # check if filename has 3 digits at the end
+    number = filename[-3:]
+    try:
+        number = int(number)+1
+    except ValueError:
+        number = 0
+    if number > 999:
+        print('list-mode-data: filenumber too large. Use a new filename....existing!')
+        sys.exit()
+
+    filename = f'{filename[-3:]}{number:03d}.bin'
+
+    if not filename.startswith(YYYYMMDD):
+        filename = f'{YYYYMMDD}-{filename}'
+    # add correct directory
+    filename = data_dir / YYYYMMDD / filename
+    # make sure directory exists
+    filename.parent.mkdir(parents=True, exist_ok=True)
+
+    if filename.exists():
+        print(f'filename {filename} already exists...exiting')
+        return
 
     with filename.open('wb') as outfile:
         start_listmode_run()
@@ -1008,7 +1078,6 @@ def run_list_mode(filename, runtime=5):
                     data.newbyteorder('S').tofile(outfile)
             toc = time.time()
             print(f' elapsed time  {toc-tic:.6f}')
-
 
         for i, slot in enumerate(modules):
             EndRun(i)
