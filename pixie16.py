@@ -10,6 +10,7 @@ Currently only support Rev-B-D
 """
 
 import appdirs
+import configparser
 from collections import namedtuple
 import datetime
 import ctypes
@@ -19,6 +20,8 @@ from pathlib import Path
 import os
 import sys
 import time
+
+from . import variables
 
 if sys.maxsize > 2**32:
     print('WARNING: need to run 32bit python to use this library')
@@ -950,24 +953,36 @@ def SaveParam(newfilename):
 ################################
 
 # read/write setting in pixie directly
-pixie_DSP_memory_io_prototype = ctypes.WINFUNCTYPE(ctypes.c_int,
-                                                   ctypes.POINTER(ctypes.c_uint),
-                                                   ctypes.c_uint,
-                                                   ctypes.c_uint,
-                                                   ctypes.c_ushort,
-                                                   ctypes.c_ushort)
+pixie_DSP_memory_io_prototype = ctypes.CFUNCTYPE(ctypes.c_int,
+                                                 ctypes.POINTER(ctypes.c_uint),
+                                                 ctypes.c_uint,
+                                                 ctypes.c_uint,
+                                                 ctypes.c_ushort,
+                                                 ctypes.c_ushort)
 
-Cpixie_DSP_memory_io = pixie_DSP_memory_io_prototype("Pixie_DSP_Memory_IO", PixieSysDLL)
+Cpixie_DSP_memory_io = pixie_DSP_memory_io_prototype(("Pixie_DSP_Memory_IO", PixieSysDLL))
 
 
-def read_raw_settings(module, N=1):
+def read_raw_settings(module, N=832, start=0x4a000):
+    """Read the raw data from the pixie for the settings
+
+    These are blocks of uint values that depending on the setting need
+    to be converted to float or bit values
+
+    The functions reads out N uint (4 bytes) starting at memory
+    locations 0x4a000.
+
+    By default we read out all settings for a module that can be
+    changed, e.g. the first 832 settings, but by changing the start
+    and length, one can read out single settings too.
+
+    """
+
     Cmodule = ctypes.c_ushort(module)
     Cdirection = ctypes.c_ushort(1)  # SYS_MOD_READ = 1 for read operations
 
-    # todo: figure out how many bytes to read (either all or what's given in the call)
-    # todo: need new default for N
     Cwords = ctypes.c_uint(N)
-    Caddress = ctypes.c_uint()
+    Caddress = ctypes.c_uint(start)
     Cdata = (ctypes.c_uint * N)()
 
     ret = Cpixie_DSP_memory_io(Cdata, Caddress, Cwords, Cdirection, Cmodule)
@@ -984,23 +999,28 @@ def read_raw_settings(module, N=1):
 
     return None
 
-
-def write_raw_settings(module, setting):
+def write_raw_settings(module, setting, start=0x4a000):
     Cmodule = ctypes.c_ushort(module)
     Cdirection = ctypes.c_ushort(0)  # SYS_MOD_WRITE = 0
 
-    # should setting be a dict or already a numpy array?
-    # todo: need to convert
+    if not type(setting) == np.ndarray:
+        print('Error: setting needs to be a uint32 numpy array')
+        return
+
+    if not setting.dtype == '<u4':
+        print('Error: setting needs to be a uint32 numpy array in little endian (<u4)')
+        return
+
     N = len(setting)
     Cwords = ctypes.c_uint(N)
-    Caddress = ctypes.c_uint()
-    Cdata = (ctypes.c_uint * N)(setting)
+    Caddress = ctypes.c_uint(start)
+    Cdata = setting.ctypes.data_as(ctypes.POINTER(ctypes.c_uint))
 
     ret = Cpixie_DSP_memory_io(Cdata, Caddress, Cwords, Cdirection, Cmodule)
 
     if ret == 0:
         log.debug('Read mod settings success!')
-        return np.ctypeslib.as_array(Cdata)
+        return True
     elif ret == -1:
         log.error(f'Reading DSP memory blocks failed. mod={module}')
     elif ret == -2:
@@ -1008,8 +1028,29 @@ def write_raw_settings(module, setting):
     else:
         log.error(f'pixie_DSP_memory_io error {ret} -- should not happen')
 
-    return None
+    return False
 
+def change_setting(name, value, channel=None, module=0):
+    """Changes the value of a single setting
+
+    First reads all values, changes one and then sends the new setting
+    back to the pixie
+
+    """
+    setting = read_raw_settings(0, N=832)
+
+    if name in variables.settings:
+        start, length = variables.settings[name]
+        if channel is None:
+            for k in range(length):
+                idx = start + k
+                setting[idx] = value
+        else:
+            idx = start + channel
+            setting[idx] = value
+        write_raw_settings(module, setting)
+    else:
+        log.error(f'change_setting: wrong channel name {name}')
 
 # read data directly for list mode
 Pixie_Read_ExtFIFOStatus_prototype = ctypes.CFUNCTYPE(ctypes.c_int,
