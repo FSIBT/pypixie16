@@ -216,7 +216,7 @@ class XIASetting():
         self.readonly = None
         self.read_setting(filename)
 
-    def __repr__():
+    def __repr__(self):
         return self.writeable.__repr__() + self.readonly.__repr__()
 
     def read_setting(self, filename: str):
