@@ -1035,7 +1035,7 @@ def ReadFIFOStatus(module):
     if ret >= 0:
         log.debug('Read FIFO status from Mod Success!')
     else:
-        log.error("got an error in ReadFIFOStatus {ret}")
+        log.error(f"got an error in ReadFIFOStatus {ret}")
 
     return Cwords.value
 
