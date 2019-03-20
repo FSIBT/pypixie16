@@ -90,10 +90,10 @@ def calculate_CFD(traces, t=None, CFD_threshold=None, w=1, B=5, D=5, L=1, Nbkgd=
         CFD = CFD[0]
         errors = errors[0]
 
-    return CFD, cfdtrigger, errors
+    return CFD, cfdtime, errors
 
 
-def calculate_CFD_using_FF(traces, t=None, CFD_threshold=None, w=1, B=5, D=5, L=1, Nbkgd=100):
+def calculate_CFD_using_FF(traces, t=None, CFD_threshold=None, FF_threshold=None, Lf=10, Gf=10, w=1, B=5, D=5, L=1, Nbkgd=10):
     """Calculate the CFD trace as is done by the PIXIE
 
     Also provide the option to change parameters used in the calculations
@@ -119,6 +119,8 @@ def calculate_CFD_using_FF(traces, t=None, CFD_threshold=None, w=1, B=5, D=5, L=
 
     traces = traces.astype(np.int64)
     NR_traces, length = traces.shape
+    
+    FF_threshold = FF_threshold/Lf # actually how it's done in the pixie
 
     # we are skipping the first B+D data points, so the CFD array will
     # be shorter, adjusting the time array accordingly
@@ -145,12 +147,14 @@ def calculate_CFD_using_FF(traces, t=None, CFD_threshold=None, w=1, B=5, D=5, L=
     low = 0
     FF = []
     CFDerror = 0
+    IDXerr = []
+    cfdtimeIDX = []
     for i, CFDtrace in enumerate(CFD):
-        FF0 = calculate_filter(traces[i])
+        FF0 = calculate_filter(traces[i], Lf, Gf)
         FF0 = FF0[B+D+L-1:]
         FF.append(FF0)
         # check that the first N points of the fast filter (noise) is below threshold
-        # 100 is an arbitrary number here, but the PIXIE should always record some noise first
+        # 30 is an arbitrary number here, but the PIXIE should always record some noise first
         # if CFDtrace[:Nbkgd].max() > CFD_threshold:
         if FF0[:Nbkgd].max() > CFD_threshold:
             #print('Warning: CFD analysis theshold too low?', CFDtrace[:Nbkgd].max(),i)
@@ -158,14 +162,31 @@ def calculate_CFD_using_FF(traces, t=None, CFD_threshold=None, w=1, B=5, D=5, L=
 
         # all zero crossings
         zero_crossings = np.where(np.diff(np.signbit(CFDtrace)))[0]
-        # find first index where the fast filter signal is above the threshold
-        CFD_trigger_index = np.where(FF0 >= CFD_threshold)[0][0]
+        if zero_crossings.size == 0:
+            CFDerror += 1
+            IDXerr.append(i)
+            continue
+        
+        # if FF is not above FF threshold, CFD error
+        if sum(FF0 >= FF_threshold) == 0:
+            CFDerror += 1
+            IDXerr.append(i)
+            continue
+        # if CFD trace is not above CFD threshold, CFD error
+        elif sum(CFDtrace >= CFD_threshold) == 0:
+            CFDerror += 1
+            IDXerr.append(i)
+            continue
+        else:
+            # find first index where the CFD trace is above the threshold
+            CFD_trigger_index = np.where(CFDtrace >= CFD_threshold)[0][0]
         # first zero crossing at later time than the threshold
+        if sum(zero_crossings > CFD_trigger_index) == 0:
+            CFDerror += 1
+            IDXerr.append(i)
+            continue
         left = zero_crossings[zero_crossings > CFD_trigger_index][0]
         right = left+1
-#        if i < 10 :
-#            print('left: ', left)
-#            print('right: ', right)
 
         # sanity check
         if CFDtrace[left] > CFDtrace[right]:
@@ -178,6 +199,7 @@ def calculate_CFD_using_FF(traces, t=None, CFD_threshold=None, w=1, B=5, D=5, L=
             zer = t2[left]
             CFDerror += 1
         cfdtime.append(zer)
+        cfdtimeIDX.append(i)
 
     cfdtime = np.array(cfdtime)
     FF = np.array(FF)
@@ -185,11 +207,16 @@ def calculate_CFD_using_FF(traces, t=None, CFD_threshold=None, w=1, B=5, D=5, L=
     if one_dim:
         cfdtime = cfdtime[0]
         CFD = CFD[0]
+        
+    # delete events with CFD error
+    CFD2 = np.delete(CFD,IDXerr, axis=0)
+    print('Calculated CFD errors = ', CFDerror)
+    print('Events triggered by noise = ', low)
 
-    return CFD, cfdtime, FF, low
+    return CFD2, cfdtime, FF, IDXerr
 
 
-def calculate_filter(traces, L=5, G=5):
+def calculate_filter(traces, L=10, G=10):
     """Calculate the fast and slow filter response from the PIXIE
 
     This implements the filter response as discribted on page 81 in
@@ -237,6 +264,7 @@ def calculate_filter(traces, L=5, G=5):
 
     # scale back to 2 ns timesteps
     result = np.repeat(result, 5, axis=1)
+    result = result/L
 
     if one_dim:
         result = result[0]
