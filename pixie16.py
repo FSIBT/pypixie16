@@ -949,6 +949,69 @@ def SaveParam(newfilename):
 # pixie sys functions          #
 ################################
 
+# read/write setting in pixie directly
+pixie_DSP_memory_io_prototype = ctypes.WINFUNCTYPE(ctypes.c_int,
+                                                   ctypes.POINTER(ctypes.c_uint),
+                                                   ctypes.c_uint,
+                                                   ctypes.c_uint,
+                                                   ctypes.c_ushort,
+                                                   ctypes.c_ushort)
+
+Cpixie_DSP_memory_io = pixie_DSP_memory_io_prototype("Pixie_DSP_Memory_IO", PixieSysDLL)
+
+
+def read_raw_settings(module, N=1):
+    Cmodule = ctypes.c_ushort(module)
+    Cdirection = ctypes.c_ushort(1)  # SYS_MOD_READ = 1 for read operations
+
+    # todo: figure out how many bytes to read (either all or what's given in the call)
+    # todo: need new default for N
+    Cwords = ctypes.c_uint(N)
+    Caddress = ctypes.c_uint()
+    Cdata = (ctypes.c_uint * N)()
+
+    ret = Cpixie_DSP_memory_io(Cdata, Caddress, Cwords, Cdirection, Cmodule)
+
+    if ret == 0:
+        log.debug('Read mod settings success!')
+        return np.ctypeslib.as_array(Cdata)
+    elif ret == -1:
+        log.error(f'Reading DSP memory blocks failed. mod={module}')
+    elif ret == -2:
+        log.error(f'Reading DSP memory remaining words failed. mod={module}')
+    else:
+        log.error(f'pixie_DSP_memory_io error {ret} -- should not happen')
+
+    return None
+
+
+def write_raw_settings(module, setting):
+    Cmodule = ctypes.c_ushort(module)
+    Cdirection = ctypes.c_ushort(0)  # SYS_MOD_WRITE = 0
+
+    # should setting be a dict or already a numpy array?
+    # todo: need to convert
+    N = len(setting)
+    Cwords = ctypes.c_uint(N)
+    Caddress = ctypes.c_uint()
+    Cdata = (ctypes.c_uint * N)(setting)
+
+    ret = Cpixie_DSP_memory_io(Cdata, Caddress, Cwords, Cdirection, Cmodule)
+
+    if ret == 0:
+        log.debug('Read mod settings success!')
+        return np.ctypeslib.as_array(Cdata)
+    elif ret == -1:
+        log.error(f'Reading DSP memory blocks failed. mod={module}')
+    elif ret == -2:
+        log.error(f'Reading DSP memory remaining words failed. mod={module}')
+    else:
+        log.error(f'pixie_DSP_memory_io error {ret} -- should not happen')
+
+    return None
+
+
+# read data directly for list mode
 Pixie_Read_ExtFIFOStatus_prototype = ctypes.CFUNCTYPE(ctypes.c_int,
                                                       ctypes.POINTER(ctypes.c_uint),
                                                       ctypes.c_ushort)
