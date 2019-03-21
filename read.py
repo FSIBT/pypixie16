@@ -99,6 +99,7 @@ class PixieTime():
 #        return res
 
     def __repr__(self):
+        return f'(PixieTime: {self.TS} {self.CFD})'
         return f'(PixieTime: {self.as_mpmath()})'
 
 
