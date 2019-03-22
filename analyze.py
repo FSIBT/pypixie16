@@ -48,16 +48,15 @@ def calculate_CFD(traces, t=None, CFD_threshold=None, w=1, B=5, D=5, L=1, Nbkgd=
     # moment how to do it
     for k in range(B+D, length-L):
         CFD[:, k-B-D] = (w*(traces[:, k:k+L+1].sum(axis=1)-traces[:, k-B:k-B+L+1].sum(axis=1))
-                         - (traces[:, k-D:k-D+L+1].sum(axis=1)-traces[:, k-D-B:k-D-B+L+1].sum(axis=1)))
+                        - (traces[:, k-D:k-D+L+1].sum(axis=1)-traces[:, k-D-B:k-D-B+L+1].sum(axis=1)))
 #        fastf = calculate_filter(traces[k])
 #        FF.append(fastf)
 #    FF = np.array(FF)
 
     # now find the zero crossing
     low = 0
-    #print('FF: ', FF.shape)
-    #print('CFD: ', CFD.shape)
     FF = []
+    CFDerror = 0
     for i, CFDtrace in enumerate(CFD):
         FF0 = calculate_filter(traces[i])
         FF0 = FF0[B+D+L-1:]
@@ -71,12 +70,8 @@ def calculate_CFD(traces, t=None, CFD_threshold=None, w=1, B=5, D=5, L=1, Nbkgd=
 
         # all zero crossings
         zero_crossings = np.where(np.diff(np.signbit(CFDtrace)))[0]
-
-        # find first index where the CFD signal is above the threshold
+        # find first index where the fast filter signal is above the threshold
         CFD_trigger_index = np.where(FF0 >= CFD_threshold)[0][0]
-#        if i < 10:
-#            print('CFD_trigger_index: ', CFD_trigger_index)
-
         # first zero crossing at later time than the threshold
         left = zero_crossings[zero_crossings > CFD_trigger_index][0]
         right = left+1
@@ -93,6 +88,7 @@ def calculate_CFD(traces, t=None, CFD_threshold=None, w=1, B=5, D=5, L=1, Nbkgd=
 #            print('   Trace index:', i)
 #            print('   CFD values:', CFDtrace[left], CFDtrace[right])
             zer = t2[left]
+            CFDerror += 1
         cfdtime.append(zer)
 
     cfdtime = np.array(cfdtime)
@@ -132,7 +128,7 @@ def calculate_filter(traces, L=1, G=1):
 
     # create an empty array of the correct length
     result = np.zeros((NR_traces, length-2*L-G+1))
-    
+
 
     # do as much as possible using numpy, one probably can and should
     # get rid of the for-loop here too, just not sure at the moment

@@ -14,8 +14,9 @@ from .. import helper
 # logger = logging.logger(__name__)
 
 Event = namedtuple('Event', ['channel', 'crate', 'slot', 'time', 'clock_time',
-                             'energy', 'trace', 'CFD_error', 'trace_flag',
-                             'Esum_trailing', 'Esum_leading', 'Esum_gap', 'baseline'])
+                             'energy', 'trace', 'CFD_error', 'trace_flag', 'Esum_trailing',
+                             'Esum_leading', 'Esum_gap', 'baseline'])
+
 
 # set precision to 30 digits
 mpmath.mp.dps = 30
@@ -90,6 +91,12 @@ class PixieTime():
         res.TS = self.TS - x.TS
         res.CFD = self.CFD - x.CFD
         return res
+
+#    def __mul__(self, x):
+#        res = PixieTime(0, 0, 0)
+#        res.TS = self.TS*x
+#        res.CFD = self.CFD*x
+#        return res
 
     def __repr__(self):
         return f'(PixieTime: {self.as_mpmath()})'
@@ -176,7 +183,7 @@ def read_list_mode_data(filename, progress=False, keep_trace=False, trailing_sum
             else:
                 CFD = PixieTime(eventtime_lo, eventtime_hi, cfd_trigger_bits-1 + cfd_fractional/8192)
 
-            yield Event(channel_nr, crate_id, slot_id, CFD, TS, event_energy, trace, CFD_error, trace_flag, 
+            yield Event(channel_nr, crate_id, slot_id, CFD, TS, event_energy, trace, CFD_error, trace_flag,
                         Esum_trailing, Esum_leading, Esum_gap, baseline)
     return
 
