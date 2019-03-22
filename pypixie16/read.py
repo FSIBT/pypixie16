@@ -9,13 +9,21 @@ import sys
 import logging
 import pkg_resources
 
-from .. import helper
-
 # logger = logging.logger(__name__)
 
 Event = namedtuple('Event', ['channel', 'crate', 'slot', 'time', 'clock_time',
                              'energy', 'trace', 'CFD_error', 'pileup', 'trace_flag', 'Esum_trailing',
                              'Esum_leading', 'Esum_gap', 'baseline'])
+
+
+def iterate_pairs(mylist):
+    '''Go through an iterable and return the current item and the next'''
+
+    if len(mylist) < 2:
+        return
+    for i, d in enumerate(mylist[:-1]):
+        yield mylist[i], mylist[i+1]
+    return
 
 
 # set precision to 30 digits
@@ -283,8 +291,8 @@ class XIASetting():
                 i += length
             outread['LiveTime'] = [(outread['LiveTimeA'][i] * 2**32 + outread['LiveTimeB']
                                     [i]) * 16 * 10e-9 for i in range(16)]
-            outread['FastPeaks'] = [outread['FastPeaksA'][i] * 2
-                                    ** 32 + outread['FastPeaksB'][i] for i in range(16)]
+            outread['FastPeaks'] = [outread['FastPeaksA'][i] * 2 **
+                                    32 + outread['FastPeaksB'][i] for i in range(16)]
             outread['RealTime'] = (outread['RealTimeA'] * 2**32 + outread['RealTimeB']) * 10e-9
             outread['RunTime'] = (outread['RunTimeA'] * 2**32 + outread['RunTimeB']) * 10e-9
 
@@ -346,7 +354,7 @@ def compare_module_setting(modA, modB, quiet=False):
                                         if l < 32:
                                             bin_string = '0'*(32-l)+bin_string
                                         print('          ', end='')
-                                        for pos, next_pos in helper.iterate_pairs(hex[k][i]):
+                                        for pos, next_pos in iterate_pairs(hex[k][i]):
                                             print(bin_string[31-pos:31-next_pos]+' ', end='')
                                         print(bin_string[31-next_pos:])
                                 else:
@@ -357,7 +365,7 @@ def compare_module_setting(modA, modB, quiet=False):
                                         if l < 32:
                                             bin_string = '0'*(32-l)+bin_string
                                         print(f'          {name}:', end='')
-                                        for pos, next_pos in helper.iterate_pairs(hex[k]):
+                                        for pos, next_pos in iterate_pairs(hex[k]):
                                             print(bin_string[31-pos:31-next_pos]+' ', end='')
                                         print(bin_string[31-next_pos:])
                             else:
