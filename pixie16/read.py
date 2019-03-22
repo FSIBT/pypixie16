@@ -7,7 +7,8 @@ import numpy as np
 from collections import namedtuple
 import sys
 import logging
-import pkg_resources
+
+from .variables import settings
 
 # logger = logging.logger(__name__)
 
@@ -244,22 +245,7 @@ class XIASetting():
         results_w = []
         results_r = []
 
-        setting_description = pkg_resources.resource_filename(
-            'ROOTS.XIA', 'Pixie16DSP_revfgeneral_14b500m_r35207.var')
-        names = []  # list of names, and length of setting
-        with open(setting_description, 'r') as f:
-            for i, l in enumerate(f):
-                position, name = l.split()
-                position = int(position, 0)
-                if i == 0:
-                    oldpos = 0x0004a000
-                    length = 1
-                else:
-                    length = position-oldpos
-                    names[-1][1] = length
-                    oldpos = position
-                names.append([name, None])
-            names[-1][1] = length
+        names = settings
 
         rawmodules = []
         with open(filename, 'rb') as f:
@@ -272,23 +258,21 @@ class XIASetting():
         for mod in rawmodules:
             outsetting = {}
             outread = {}
-            i = 0  # index in rawsetting
-            for n, length in names:
+            for n, [pos, length] in names.items():
                 if n in FLOATS:
-                    value = [converter_ulong_to_IEEE754(mod[i+k]) for k in range(length)]
+                    value = [converter_ulong_to_IEEE754(mod[pos+k]) for k in range(length)]
                 else:
-                    value = [mod[i+k] for k in range(length)]
+                    value = [mod[pos+k] for k in range(length)]
                 if length == 1:
-                    if i < 832:
+                    if pos < 832:
                         outsetting[n] = value[0]
                     else:
                         outread[n] = value[0]
                 else:
-                    if i < 832:
+                    if pos < 832:
                         outsetting[n] = value
                     else:
                         outread[n] = value
-                i += length
             outread['LiveTime'] = [(outread['LiveTimeA'][i] * 2**32 + outread['LiveTimeB']
                                     [i]) * 16 * 10e-9 for i in range(16)]
             outread['FastPeaks'] = [outread['FastPeaksA'][i] * 2 **
