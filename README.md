@@ -14,6 +14,20 @@ prompt you with instructions on how to create one.
 
 See Licence.txt and Copyright.txt for more information.
 
+# Content
+
+read.py: functions to read output file from the pixie using example program.
+         Especially .bin files and .set files
+
+analyze.py: calculate fast trigger and CFD from traces
+
+control.py: control the pixie using python. This needs to be imported
+            separately, e.g. "import pixie16.control" and it needs a
+            32bit python, since all libraries are 32 bit.
+
+variables.py: list of the variables in a settings file, including file position and number of values
+              This can be recreated if needed from the included script create_variable_list.py.
+
 # Known issues
 
 We use revision F of the 500 MHz Pixie16 and the code has only been
@@ -33,9 +47,10 @@ Pull requests are welcome.
 
 https://github.com/pixie16
 
-## fork of pixie16
+## Fork of pixie16
 
 https://github.com/spaulaus/paass-lc
+
 ## Peking University
 
 https://github.com/pkuNucExp/PKUXIADAQ
