@@ -223,11 +223,11 @@ class XIASetting():
         self.filename = filename
         self.modulenr = modulenr
         self.writeable = None
-        self.readonly = None
+        self.readable = None
         self.read_setting(filename)
 
     def __repr__(self):
-        return self.writeable.__repr__() + self.readonly.__repr__()
+        return self.writeable.__repr__() + self.readable.__repr__()
 
     def read_setting(self, filename: str):
         """Read setting data files: 24 x 1280 data points, each 32 bit
@@ -306,9 +306,6 @@ def compare_module_setting(modA, modB, quiet=False):
     The functions assumes that both settings have the same structure.
     """
 
-    assert type(modA) == dict, 'The inputs need to be a dictionary.'
-    assert type(modB) == dict, 'The inputs need to be a dictionary.'
-
     # list of settings that save binary data, list the start points of each group of bits
     hex = {'ChanCSRa': [21, 20, 19, 18, 17, 16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0],
            'MultiplicityMaskH': [31, 30, 27, 24, 21, 16, 15],
@@ -318,45 +315,79 @@ def compare_module_setting(modA, modB, quiet=False):
                           [31, 27, 26, 25, 24, 23, 21, 19, 17, 15, 11, 7, 3],
                           []]}
 
+    if type(modA) != type(modB):
+        print(f'compare_module_setting: both items need to have the same type')
+        return None
+
+    if type(modA) == XIASetting:
+        OrigA = modA
+        OrigB = modB
+
+        # check if we have settings for all modules or for just one
+        if modA.writeable is not None:
+            modA = [modA.writeable, modA.readable]
+            modB = [modB.writeable, modB.readable]
+        else:
+            modA = [val for sublist in zip(modA.writeable_list, modA.readable_list) for val in sublist]
+            modB = [val for sublist in zip(modB.writeable_list, modB.readable_list) for val in sublist]
+
     if not quiet:
-        for k in modA.keys():
-            if type(modA[k]) == list:
-                if len(modA[k]) == 16:
-                    prefix = 'CH'
-                else:
-                    prefix = '#'
-                if not all([x == y for x, y in zip(modA[k], modB[k])]):
-                    print('{} differs:'.format(k))
-                    for i, (x, y) in enumerate(zip(modA[k], modB[k])):
-                        if x != y:
-                            if k in hex:
-                                if k == 'TrigConfig':
-                                    print(f'  {prefix}{i:02d}:   a:{x:#011_x} <-> b:{y:#011_x}')
-                                    for v in [x, y]:
-                                        bin_string = bin(v)[2:]
-                                        l = len(bin_string)
-                                        if l < 32:
-                                            bin_string = '0'*(32-l)+bin_string
-                                        print('          ', end='')
+        modulesA = OrigA.modulenr if OrigA.modulenr else 'all'
+        modulesB = OrigB.modulenr if OrigB.modulenr else 'all'
+        print('Comparing settings:')
+        print(f'  a: {OrigA.filename.name} {modulesA}')
+        print(f'  b: {OrigB.filename.name} {modulesB}')
+        print('')
+        for nr, [A, B] in enumerate(zip(modA, modB)):
+            print(f'Module {nr//2} ---------------- ')
+            for k in A.keys():
+                if type(A[k]) == list:
+                    if len(A[k]) == 16:
+                        prefix = 'CH'
+                    else:
+                        prefix = '#'
+                    if not all([x == y for x, y in zip(A[k], B[k])]):
+                        print('{} differs:'.format(k))
+                        for i, (x, y) in enumerate(zip(A[k], B[k])):
+                            if x != y:
+                                if k in hex:
+                                    if k == 'TrigConfig':
+                                        print(f'  {prefix}{i:02d}:    a:{x:#011_x} <-> b:{y:#011_x}')
+                                        print('            ', end='')
+                                        bin_string = '10987654321098765432109876543210'
                                         for pos, next_pos in iterate_pairs(hex[k][i]):
                                             print(bin_string[31-pos:31-next_pos]+' ', end='')
                                         print(bin_string[31-next_pos:])
-                                else:
-                                    print(f'  {prefix}{i:02d}:   a:{x:#011_x} <-> b:{y:#011_x}')
-                                    for v, name in zip([x, y], ['a', 'b']):
-                                        bin_string = bin(v)[2:]
-                                        l = len(bin_string)
-                                        if l < 32:
-                                            bin_string = '0'*(32-l)+bin_string
-                                        print(f'          {name}:', end='')
+                                        for v, name in zip([x, y], ['a', 'b']):
+                                            bin_string = bin(v)[2:]
+                                            l = len(bin_string)
+                                            if l < 32:
+                                                bin_string = '0'*(32-l)+bin_string
+                                            print(f'          {name}:', end='')
+                                            for pos, next_pos in iterate_pairs(hex[k][i]):
+                                                print(bin_string[31-pos:31-next_pos]+' ', end='')
+                                            print(bin_string[31-next_pos:])
+                                    else:
+                                        print(f'  {prefix}{i:02d}:   a:{x:#011_x} <-> b:{y:#011_x}')
+                                        print('            ', end='')
+                                        bin_string = '10987654321098765432109876543210'
                                         for pos, next_pos in iterate_pairs(hex[k]):
                                             print(bin_string[31-pos:31-next_pos]+' ', end='')
                                         print(bin_string[31-next_pos:])
-                            else:
-                                print(f'{prefix}{i:02d}:   a:{x} <-> b:{y}')
-            else:
-                if modA[k] != modB[k]:
-                    print('{} differs: a:{} != b:{}'.format(k, modA[k], modB[k]))
+                                        for v, name in zip([x, y], ['a', 'b']):
+                                            bin_string = bin(v)[2:]
+                                            l = len(bin_string)
+                                            if l < 32:
+                                                bin_string = '0'*(32-l)+bin_string
+                                            print(f'          {name}:', end='')
+                                            for pos, next_pos in iterate_pairs(hex[k]):
+                                                print(bin_string[31-pos:31-next_pos]+' ', end='')
+                                            print(bin_string[31-next_pos:])
+                                else:
+                                    print(f'{prefix}{i:02d}:   a:{x} <-> b:{y}')
+                else:
+                    if A[k] != B[k]:
+                        print('{} differs: a:{} != b:{}'.format(k, A[k], B[k]))
 
     # convert to a sorted json string to make deep comparison possible
-    return json.dumps(modA, sort_keys=True) == json.dumps(modB, sort_keys=True)
+    return [json.dumps(A, sort_keys=True) == json.dumps(B, sort_keys=True) for A, B in zip(modA, modB)]
