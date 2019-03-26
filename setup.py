@@ -17,6 +17,8 @@ setup(name='pypixie16',
       license='modified BSD',
       packages=['pixie16'],
       install_requires=['docopt', 'numpy', 'appdirs', 'mpmath'],
+      setup_requires=['pytest-runner'],
+      tests_require=['pytest'],
       python_requires='>=3.6',
       classifiers=[
           'Development Status :: 3 - Alpha',
