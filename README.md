@@ -37,6 +37,12 @@ modules or even might work, but there is no garantee.
 We also always use certain settings for some parameters and these
 might also influence some of the analysis code (e.g. FastFilterRange).
 
+# Tests
+
+We should have a lot more of them ;)
+
+Use 'python -m pytest' to run tests.
+
 # Contribution
 
 Pull requests are welcome.
