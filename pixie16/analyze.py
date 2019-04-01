@@ -93,7 +93,8 @@ def calculate_CFD(traces, t=None, CFD_threshold=None, w=1, B=5, D=5, L=1, Nbkgd=
     return CFD, cfdtime, errors
 
 
-def calculate_CFD_using_FF(traces, t=None, CFD_threshold=None, FF_threshold=None, Lf=10, Gf=10, w=1, B=5, D=5, L=1, Nbkgd=10):
+def calculate_CFD_using_FF(traces, t=None, CFD_threshold=None, FF_threshold=None, Lf=10, Gf=10, w=1, B=5, D=5, L=1,
+                           Nbkgd=10, FF_delay=0, CFD_delay=0):
     """Calculate the CFD trace as is done by the PIXIE
 
     Also provide the option to change parameters used in the calculations
@@ -107,7 +108,9 @@ def calculate_CFD_using_FF(traces, t=None, CFD_threshold=None, FF_threshold=None
 
     output:
        CFD  (N, M-B-D-L+1)  numpy array
-       zero_crossing        (N, 1) numpy array: the time of the zero crossing
+       cfdtime        (N, 1) numpy array: the time of the zero crossing
+       FF       numpy array: fast filter used for the calculation
+       IDXerr   numpy array: index of CFD errors
 
     """
 
@@ -125,7 +128,8 @@ def calculate_CFD_using_FF(traces, t=None, CFD_threshold=None, FF_threshold=None
     # we are skipping the first B+D data points, so the CFD array will
     # be shorter, adjusting the time array accordingly
     if t is None:
-        t2 = np.arange(0, length-B-D)*2e-9
+        t2 = np.linspace(0, 2*(traces.shape[1]-1), traces.shape[1])  # in ns
+        t2 = t2[B+D:]
     else:
         t2 = t[B+D:]
 
@@ -139,81 +143,57 @@ def calculate_CFD_using_FF(traces, t=None, CFD_threshold=None, FF_threshold=None
     for k in range(B+D, length-L):
         CFD[:, k-B-D] = (w*(traces[:, k:k+L+1].sum(axis=1)-traces[:, k-B:k-B+L+1].sum(axis=1)) -
                          (traces[:, k-D:k-D+L+1].sum(axis=1)-traces[:, k-D-B:k-D-B+L+1].sum(axis=1)))
-#        fastf = calculate_filter(traces[k])
-#        FF.append(fastf)
-#    FF = np.array(FF)
 
     # now find the zero crossing
     low = 0
-    FF = []
     CFDerror = 0
     IDXerr = []
     cfdtimeIDX = []
-    for i, CFDtrace in enumerate(CFD):
-        FF0 = calculate_filter(traces[i], Lf, Gf)
-        FF0 = FF0[B+D+L-1:]
-        FF.append(FF0)
+    fast_filter = calculate_filter(traces, Lf, Gf)
+    for i, (CFDtrace, FFtrace) in enumerate(zip(CFD,fast_filter)):
+        FFtrace = FFtrace[FF_delay:]
+        CFDtrace = CFDtrace[CFD_delay:]
+        
         # check that the first N points of the fast filter (noise) is below threshold
         # 30 is an arbitrary number here, but the PIXIE should always record some noise first
-        # if CFDtrace[:Nbkgd].max() > CFD_threshold:
-        if FF0[:Nbkgd].max() > CFD_threshold:
+        if FFtrace[:Nbkgd].max() > FF_threshold or CFDtrace[:Nbkgd].max() > CFD_threshold:
             #print('Warning: CFD analysis theshold too low?', CFDtrace[:Nbkgd].max(),i)
             low += 1
 
-        # all zero crossings
-        zero_crossings = np.where(np.diff(np.signbit(CFDtrace)))[0]
+        # all zero crossings from poitive to negative
+        zero_crossings = np.where(np.diff(np.signbit(CFDtrace).astype(np.int)) >  0)[0]
         if zero_crossings.size == 0:
             CFDerror += 1
+            cfdtime.append(None)
+            IDXerr.append(i)
+            continue
+            
+       # find first index where the CFD trace is above the threshold
+        try:
+            FF_trigger_index = np.where(FFtrace >= FF_threshold)[0][0]
+            CFD_trigger_index = np.where(np.diff(CFDtrace >= CFD_threshold).astype(np.int) > 0 )[0]+1
+            CFD_trigger_index = CFD_trigger_index[CFD_trigger_index > FF_trigger_index][0]
+            left = zero_crossings[zero_crossings > CFD_trigger_index][0]
+            right = left+1
+            zer = t2[left] + CFDtrace[left] * (t2[right]-t2[left])/(CFDtrace[left]-CFDtrace[right])
+        except IndexError:
+            CFDerror += 1
+            cfdtime.append(None)
             IDXerr.append(i)
             continue
         
-        # if FF is not above FF threshold, CFD error
-        if sum(FF0 >= FF_threshold) == 0:
-            CFDerror += 1
-            IDXerr.append(i)
-            continue
-        # if CFD trace is not above CFD threshold, CFD error
-        elif sum(CFDtrace >= CFD_threshold) == 0:
-            CFDerror += 1
-            IDXerr.append(i)
-            continue
-        else:
-            # find first index where the CFD trace is above the threshold
-            CFD_trigger_index = np.where(CFDtrace >= CFD_threshold)[0][0]
-        # first zero crossing at later time than the threshold
-        if sum(zero_crossings > CFD_trigger_index) == 0:
-            CFDerror += 1
-            IDXerr.append(i)
-            continue
-        left = zero_crossings[zero_crossings > CFD_trigger_index][0]
-        right = left+1
-
-        # sanity check
-        if CFDtrace[left] > CFDtrace[right]:
-            zer = t2[left] + CFDtrace[left] * (t2[right]-t2[left])/(CFDtrace[left]-CFDtrace[right])
-        else:
-            #            print('CFD Error: not at a zero crossing from positive to negative values ')
-            #            print('   This should not happen!!')
-            #            print('   Trace index:', i)
-            #            print('   CFD values:', CFDtrace[left], CFDtrace[right])
-            zer = t2[left]
-            CFDerror += 1
         cfdtime.append(zer)
         cfdtimeIDX.append(i)
-
     cfdtime = np.array(cfdtime)
-    FF = np.array(FF)
 
     if one_dim:
         cfdtime = cfdtime[0]
         CFD = CFD[0]
-        
-    # delete events with CFD error
-    CFD2 = np.delete(CFD,IDXerr, axis=0)
+    
     print('Calculated CFD errors = ', CFDerror)
     print('Events triggered by noise = ', low)
 
-    return CFD2, cfdtime, FF, IDXerr
+    return CFD, cfdtime, fast_filter, IDXerr
 
 
 def calculate_filter(traces, L=10, G=10):
