@@ -1,6 +1,6 @@
 """
 Usage:
-  change_setting.py set <name> <value> <module> <channel> <file> <outfile>
+  change_setting.py set <name> <value> <module> <channel> <file> [<outfile>]
   change_setting.py read <name> <module> <file>
   change_setting.py load <file>
   change_setting.py list
@@ -33,18 +33,25 @@ if commands['set']:
         sys.exit(1)
 
     value = int(value)
-    channel = int(channel)
+    if '-' in channel:
+        start, stop = channel.split('-')
+        channel = list(range(int(start), int(stop)+1))
+    else:
+        channel = [int(channel)]
     module = int(module)
 
-    out = Path(outfile)
-    if out.exists():
-        print('Error: outfile exists already')
-        sys.exit(2)
+    if outfile:
+        out = Path(outfile)
+        if out.exists():
+            print('Error: outfile exists already')
+            sys.exit(2)
 
     pixie16.control.InitSys(PXISlotMap=[2, 3])
     pixie16.control.BootModule(settingfile)
-    pixie16.control.change_setting(name, value, channel, module)
-    pixie16.control.SaveParam(outfile)
+    for c in channel:
+        pixie16.control.change_setting(name, value, c, module)
+    if outfile:
+        pixie16.control.SaveParam(outfile)
     pixie16.control.ExitSys(0)
 
 elif commands['read']:
