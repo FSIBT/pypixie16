@@ -4,7 +4,9 @@ import mpmath
 import ctypes
 import json
 import numpy as np
+from contextlib import contextmanager
 from collections import namedtuple
+from pathlib import Path
 import sys
 import logging
 
@@ -51,6 +53,14 @@ class myIO():
 
     The only function that needs to be implemented is the read function.
 
+    We also make it work as a drop in replacement for files
+    in a contexmanager with open-calls, e.g.
+
+    >>> data = myIO(data)
+    >>> with open(data, 'rb') as f:
+          f.read()
+
+
     """
 
     def __init__(self, data):
@@ -61,6 +71,19 @@ class myIO():
         out = self.data[self.pos:self.pos+N]
         self.pos += N
         return out
+
+    def seek(self, N, pos):
+        if pos == 0:
+            self.pos = N
+        elif pos == 1:
+            self.pos += N
+        else:
+            raise NotImplementedError
+
+    @contextmanager
+    def open(self, modus):
+        """This enables the use of myIO.open('rb')so this can be a drop in for a pathlib object"""
+        yield self
 
 
 class PixieTime():
@@ -116,22 +139,19 @@ def read_list_mode_data(filename, progress=False, keep_trace=False, trailing_sum
     """Read list mode data from binary file
 
     See section 4.4.2 in Manual, page 70
+
+    filename can be either a pathlib.Path object or a myIO object defined in pixie16.read.
     """
 
-#    if trailing_sum is bool:
-#        trailing_sum = [trailing_sum]*16
-#    else is type(trailing_sum) == list:
-#        if not len(trailing_sum) == 16:
-#            print('error')
-#            return StopIteration
+    if not (isinstance(filename, Path) or isinstance(filename, myIO)):
+        print(f'Error: filename {filename} needs to be a pathlib.Path or myIO object')
+        return
+
+    in_memory = isinstance(filename, myIO)
 
     all_event = []
     nr_event = 0
-    with open(filename, 'rb') as f:
-
-        if in_memory:
-            f = myIO(f.read())
-
+    with filename.open('rb') as f:
         while True:
             nr_event += 1
             if progress and nr_event % 10000 == 0:
