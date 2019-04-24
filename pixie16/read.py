@@ -2,6 +2,7 @@
 
 import mpmath
 import ctypes
+import struct
 import json
 import numpy as np
 from contextlib import contextmanager
@@ -135,7 +136,7 @@ class PixieTime():
         return f'(PixieTime: {self.as_mpmath()})'
 
 
-def read_list_mode_data(filename, progress=False, keep_trace=False, trailing_sums=False, in_memory=False):
+def read_list_mode_data(filename, keep_trace=False, trailing_sums=False):
     """Read list mode data from binary file
 
     See section 4.4.2 in Manual, page 70
@@ -151,45 +152,48 @@ def read_list_mode_data(filename, progress=False, keep_trace=False, trailing_sum
 
     all_event = []
     nr_event = 0
+
     with filename.open('rb') as f:
         while True:
             nr_event += 1
-            if progress and nr_event % 10000 == 0:
-                print('.', end='')
-            data = f.read(4)
-            if data == b'':
+            try:
+                [pileup_bits, eventtime_lo, eventtime_hi,
+                 cfd_bits, event_energy, trace_bits] = struct.unpack_from('<IIHHHH', f.read(4*4))
+
+                s = pileup_bits
+                pileup = (s & (1 << 31)) >> 31  # 1 if pile-up event
+                event_length = (s & ((1 << 14)-1) << 17) >> 17
+                header_length = (s & (0b11111 << 12)) >> 12
+                crate_id = (s & (0b1111 << 8)) >> 8
+                slot_id = (s & (0b1111 << 4)) >> 4
+                channel_nr = s & 0b1111
+
+                s = cfd_bits
+                cfd_trigger_bits = (s & (0b111 << 13)) >> 13
+                cfd_fractional = s & ((1 << 13)-1)
+
+                s = trace_bits
+                trace_flag = (s & (1 << 15)) >> 15  # 1 if trace out of ADC range (clipped)
+                trace_length = s & ((1 << 16) - 1)
+
+                if header_length == 4:
+                    # already read all information
+                    Esum_trailing, Esum_leading, Esum_gap, baseline = 0, 0, 0, 0.0
+                elif header_length == 8:
+                    # energy sums
+                    if trailing_sums:
+                        [Esum_trailing, Esum_leading, Esum_gap,
+                         baseline] = struct.unpack_from('<IIIf', f.read(4*4))
+                    else:
+                        Esum_trailing, Esum_leading, Esum_gap, baseline = 0, 0, 0, 0.0
+                        f.seek(4, 1)
+                else:
+                    raise NotImplementedError
+
+            except struct.error:
                 # no more data available
                 break
-            s = int.from_bytes(data, byteorder='little')
-            pileup = (s & (1 << 31)) >> 31  # 1 if pile-up event
-            event_length = (s & ((1 << 14)-1) << 17) >> 17
-            header_length = (s & (0b11111 << 12)) >> 12
-            crate_id = (s & (0b1111 << 8)) >> 8
-            slot_id = (s & (0b1111 << 4)) >> 4
-            channel_nr = s & 0b1111
-            eventtime_lo = int.from_bytes(f.read(4), byteorder='little')
-            eventtime_hi = int.from_bytes(f.read(2), byteorder='little')
-            s = int.from_bytes(f.read(2), byteorder='little')
-            cfd_trigger_bits = (s & (0b111 << 13)) >> 13
-            cfd_fractional = s & ((1 << 13)-1)
-            event_energy = int.from_bytes(f.read(2), byteorder='little')
-            s = int.from_bytes(f.read(2), byteorder='little')
-            trace_flag = (s & (1 << 15)) >> 15  # 1 if trace out of ADC range (clipped)
-            trace_length = s & ((1 << 16) - 1)
-            # if trailing_sums[channel_nr]:
-            if trailing_sums:
-                Esum_trailing = int.from_bytes(f.read(4), byteorder='little')
-                Esum_leading = int.from_bytes(f.read(4), byteorder='little')
-                Esum_gap = int.from_bytes(f.read(4), byteorder='little')
-                baseline = int.from_bytes(f.read(4), byteorder='little')
-                baseline = converter_ulong_to_IEEE754(baseline)
-            else:
-                for i in range(header_length-4):
-                    data = f.read(4)
-                Esum_trailing = 0
-                Esum_leading = 0
-                Esum_gap = 0
-                baseline = 0
+
             trace_data_length = event_length-header_length
             if trace_data_length > 0:
                 if keep_trace:
@@ -202,7 +206,7 @@ def read_list_mode_data(filename, progress=False, keep_trace=False, trailing_sum
                         trace = np.fromfile(f, f'({trace_data_length},2)<u2', count=1)[0, :, :]
                     trace = trace.flatten()
                 else:
-                    f.read(4*trace_data_length)
+                    f.seek(4*trace_data_length, 1)
                     trace = []
             else:
                 trace = []
@@ -220,8 +224,8 @@ def read_list_mode_data(filename, progress=False, keep_trace=False, trailing_sum
     return
 
 
-def read_all_list_mode_data(filename, progress=False, keep_trace=False):
-    return list(read_list_mode_data(filename, progress, keep_trace))
+def read_all_list_mode_data(filename, keep_trace=False):
+    return list(read_list_mode_data(filename, keep_trace))
 
 
 def read_mca_mode_data(filename):
