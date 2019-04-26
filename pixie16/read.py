@@ -1,6 +1,5 @@
 """Read data files from XIA pixie16 instruments"""
 
-import mpmath
 import ctypes
 import struct
 import json
@@ -15,6 +14,7 @@ from .variables import settings
 
 # logger = logging.logger(__name__)
 
+
 Event = namedtuple('Event', ['channel', 'crate', 'slot', 'time', 'clock_time',
                              'energy', 'trace', 'CFD_error', 'pileup', 'trace_flag', 'Esum_trailing',
                              'Esum_leading', 'Esum_gap', 'baseline'])
@@ -28,22 +28,6 @@ def iterate_pairs(mylist):
     for i, d in enumerate(mylist[:-1]):
         yield mylist[i], mylist[i+1]
     return
-
-
-# set precision to 30 digits
-mpmath.mp.dps = 30
-
-
-def converter_IEEE754_to_ulong(x):
-    a = (ctypes.c_float*1)(x)
-    b = ctypes.cast(a, ctypes.POINTER(ctypes.c_ulong))
-    return b.contents.value
-
-
-def converter_ulong_to_IEEE754(x):
-    a = (ctypes.c_ulong*1)(x)
-    b = ctypes.cast(a, ctypes.POINTER(ctypes.c_float))
-    return b.contents.value
 
 
 class myIO():
@@ -105,14 +89,6 @@ class PixieTime():
     def __float__(self):
         return (self.TS+self.CFD)*2.0
 
-    def as_mpmath(self):
-        """Return a high precision mpmath.mpf object
-
-        using *2/1e9 gives better precision than using 2e-9
-
-        """
-        return (mpmath.mpf(self.TS)+mpmath.mpf(self.CFD))*2.0
-
     def __add__(self, x):
         res = PixieTime(0, 0, 0)
         res.TS = self.TS + x.TS
@@ -133,7 +109,6 @@ class PixieTime():
 
     def __repr__(self):
         return f'(PixieTime: {self.TS} {self.CFD})'
-        return f'(PixieTime: {self.as_mpmath()})'
 
 
 def read_list_mode_data(filename, keep_trace=False, trailing_sums=False):
