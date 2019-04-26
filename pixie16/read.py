@@ -71,47 +71,7 @@ class myIO():
         yield self
 
 
-class PixieTime():
-    """Class to keep the 48 bit timestamp and the CFD time information without losing precision
-
-    Using our own class instead of mpmath directly makes things about 5x faster.
-    """
-
-    def __init__(self, low, hi, CFD):
-        """Store everything internally as multiples of 2 ns time steps."""
-
-        self.TS = (low + (hi << 32))*5
-        self.CFD = CFD
-
-    def as_float(self):
-        return self.__float__()
-
-    def __float__(self):
-        return (self.TS+self.CFD)*2.0
-
-    def __add__(self, x):
-        res = PixieTime(0, 0, 0)
-        res.TS = self.TS + x.TS
-        res.CFD = self.CFD + x.CFD
-        return res
-
-    def __sub__(self, x):
-        res = PixieTime(0, 0, 0)
-        res.TS = self.TS - x.TS
-        res.CFD = self.CFD - x.CFD
-        return res
-
-#    def __mul__(self, x):
-#        res = PixieTime(0, 0, 0)
-#        res.TS = self.TS*x
-#        res.CFD = self.CFD*x
-#        return res
-
-    def __repr__(self):
-        return f'(PixieTime: {self.TS} {self.CFD})'
-
-
-def read_list_mode_data(filename, keep_trace=False, trailing_sums=False):
+def read_list_mode_data(filename, keep_trace=False, trailing_sums=False, return_namedtuple=True):
     """Read list mode data from binary file
 
     See section 4.4.2 in Manual, page 70
@@ -139,19 +99,19 @@ def read_list_mode_data(filename, keep_trace=False, trailing_sums=False):
                  cfd_bits, event_energy, trace_bits] = HEADER.unpack_from(f.read(4*4))
 
                 s = pileup_bits
-                pileup = (s & (1 << 31)) >> 31  # 1 if pile-up event
-                event_length = (s & ((1 << 14)-1) << 17) >> 17
-                header_length = (s & (0b11111 << 12)) >> 12
-                crate_id = (s & (0b1111 << 8)) >> 8
-                slot_id = (s & (0b1111 << 4)) >> 4
+                pileup = s >> 31   # 1 if pile-up event
+                event_length = (s >> 17) & ((1 << 14)-1)
+                header_length = (s >> 12) & 0b11111
+                crate_id = (s >> 8) & 0b1111
+                slot_id = (s >> 4) & 0b1111
                 channel_nr = s & 0b1111
 
                 s = cfd_bits
-                cfd_trigger_bits = (s & (0b111 << 13)) >> 13
+                cfd_trigger_bits = (s >> 13) & 0b111
                 cfd_fractional = s & ((1 << 13)-1)
 
                 s = trace_bits
-                trace_flag = (s & (1 << 15)) >> 15  # 1 if trace out of ADC range (clipped)
+                trace_flag = s >> 15  # 1 if trace out of ADC range (clipped)
                 trace_length = s & ((1 << 16) - 1)
 
                 if header_length == 4:
@@ -190,15 +150,20 @@ def read_list_mode_data(filename, keep_trace=False, trailing_sums=False):
                 trace = []
 
             CFD_error = False
-            TS = PixieTime(eventtime_lo, eventtime_hi, 0)
+            TS = (eventtime_lo + (eventtime_hi << 32))*5
             if cfd_trigger_bits == 7:
                 CFD_error = True
-                CFD = PixieTime(eventtime_lo, eventtime_hi, 0)
+                CFD_fraction = 0
             else:
-                CFD = PixieTime(eventtime_lo, eventtime_hi, cfd_trigger_bits-1 + cfd_fractional/8192)
+                CFD_fraction = cfd_trigger_bits-1 + cfd_fractional/8192
 
-            yield Event(channel_nr, crate_id, slot_id, CFD, TS, event_energy, trace, CFD_error, pileup, trace_flag,
-                        Esum_trailing, Esum_leading, Esum_gap, baseline)
+            if return_namedtuple:
+                yield Event(channel_nr, crate_id, slot_id, CFD_fraction, TS, event_energy, trace, CFD_error, pileup, trace_flag,
+                            Esum_trailing, Esum_leading, Esum_gap, baseline)
+            else:
+                yield (channel_nr, crate_id, slot_id, CFD_fraction, TS, event_energy, trace, CFD_error, pileup, trace_flag,
+                       Esum_trailing, Esum_leading, Esum_gap, baseline)
+
     return
 
 
@@ -277,8 +242,8 @@ class XIASetting():
                         outread[n] = value
             outread['LiveTime'] = [(outread['LiveTimeA'][i] * 2**32 + outread['LiveTimeB']
                                     [i]) * 16 * 10e-9 for i in range(16)]
-            outread['FastPeaks'] = [outread['FastPeaksA'][i] * 2 **
-                                    32 + outread['FastPeaksB'][i] for i in range(16)]
+            outread['FastPeaks'] = [outread['FastPeaksA'][i] * 2
+                                    ** 32 + outread['FastPeaksB'][i] for i in range(16)]
             outread['RealTime'] = (outread['RealTimeA'] * 2**32 + outread['RealTimeB']) * 10e-9
             outread['RunTime'] = (outread['RunTimeA'] * 2**32 + outread['RunTimeB']) * 10e-9
 
