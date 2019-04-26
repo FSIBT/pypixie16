@@ -153,12 +153,15 @@ def read_list_mode_data(filename, keep_trace=False, trailing_sums=False):
     all_event = []
     nr_event = 0
 
+    HEADER = struct.Struct('<2I4H')
+    SUMS = struct.Struct('<3If')
+
     with filename.open('rb') as f:
         while True:
             nr_event += 1
             try:
                 [pileup_bits, eventtime_lo, eventtime_hi,
-                 cfd_bits, event_energy, trace_bits] = struct.unpack_from('<IIHHHH', f.read(4*4))
+                 cfd_bits, event_energy, trace_bits] = HEADER.unpack_from(f.read(4*4))
 
                 s = pileup_bits
                 pileup = (s & (1 << 31)) >> 31  # 1 if pile-up event
@@ -183,7 +186,7 @@ def read_list_mode_data(filename, keep_trace=False, trailing_sums=False):
                     # energy sums
                     if trailing_sums:
                         [Esum_trailing, Esum_leading, Esum_gap,
-                         baseline] = struct.unpack_from('<IIIf', f.read(4*4))
+                         baseline] = SUMS.unpack_from(f.read(4*4))
                     else:
                         Esum_trailing, Esum_leading, Esum_gap, baseline = 0, 0, 0, 0.0
                         f.seek(4, 1)
