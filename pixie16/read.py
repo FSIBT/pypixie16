@@ -167,10 +167,6 @@ def read_list_mode_data(filename, keep_trace=False, trailing_sums=False, return_
     return
 
 
-def read_all_list_mode_data(filename, keep_trace=False):
-    return list(read_list_mode_data(filename, keep_trace))
-
-
 def read_mca_mode_data(filename):
     """Read MCA data files: 32k 32bit words for 16 channels"""
 
