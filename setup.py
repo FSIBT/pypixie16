@@ -7,7 +7,7 @@ with open(path.join(this_directory, 'README.md'), encoding='utf-8') as f:
 
 
 setup(name='pypixie16',
-      version='0.1',
+      version='0.2',
       description='Python library to control a pixie16 module from XIA',
       long_description=long_description,
       long_description_content_type='text/markdown',

@@ -15,9 +15,9 @@ from .variables import settings
 # logger = logging.logger(__name__)
 
 
-Event = namedtuple('Event', ['channel', 'crate', 'slot', 'time', 'clock_time',
-                             'energy', 'trace', 'CFD_error', 'pileup', 'trace_flag', 'Esum_trailing',
-                             'Esum_leading', 'Esum_gap', 'baseline'])
+Event = namedtuple('Event', ['channel', 'crate', 'slot', 'timestamp', 'CFD_fraction',
+                             'energy', 'trace', 'CFD_error', 'pileup', 'trace_flag',
+                             'Esum_trailing', 'Esum_leading', 'Esum_gap', 'baseline'])
 
 
 def iterate_pairs(mylist):
@@ -119,15 +119,9 @@ def read_list_mode_data(filename, keep_trace=False, trailing_sums=False, return_
                     Esum_trailing, Esum_leading, Esum_gap, baseline = 0, 0, 0, 0.0
                 elif header_length == 8:
                     # energy sums
-                    if trailing_sums:
-                        [Esum_trailing, Esum_leading, Esum_gap,
-                         baseline] = SUMS.unpack_from(f.read(4*4))
-                    else:
-                        Esum_trailing, Esum_leading, Esum_gap, baseline = 0, 0, 0, 0.0
-                        f.seek(4, 1)
+                    [Esum_trailing, Esum_leading, Esum_gap, baseline] = SUMS.unpack_from(f.read(4*4))
                 else:
                     raise NotImplementedError
-
             except struct.error:
                 # no more data available
                 break
@@ -158,10 +152,10 @@ def read_list_mode_data(filename, keep_trace=False, trailing_sums=False, return_
                 CFD_fraction = cfd_trigger_bits-1 + cfd_fractional/8192
 
             if return_namedtuple:
-                yield Event(channel_nr, crate_id, slot_id, CFD_fraction, TS, event_energy, trace, CFD_error, pileup, trace_flag,
+                yield Event(channel_nr, crate_id, slot_id, TS, CFD_fraction, event_energy, trace, CFD_error, pileup, trace_flag,
                             Esum_trailing, Esum_leading, Esum_gap, baseline)
             else:
-                yield (channel_nr, crate_id, slot_id, CFD_fraction, TS, event_energy, trace, CFD_error, pileup, trace_flag,
+                yield (channel_nr, crate_id, slot_id, TS, CFD_fraction, event_energy, trace, CFD_error, pileup, trace_flag,
                        Esum_trailing, Esum_leading, Esum_gap, baseline)
 
     return
