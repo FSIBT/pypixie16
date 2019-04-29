@@ -123,7 +123,7 @@ def calculate_CFD_using_FF(traces, t=None, CFD_threshold=None, FF_threshold=None
     traces = traces.astype(np.int64)
     NR_traces, length = traces.shape
     
-    FF_threshold = FF_threshold/Lf # actually how it's done in the pixie
+    #FF_threshold = FF_threshold/Lf # actually how it's done in the pixie
 
     # we are skipping the first B+D data points, so the CFD array will
     # be shorter, adjusting the time array accordingly
@@ -155,7 +155,7 @@ def calculate_CFD_using_FF(traces, t=None, CFD_threshold=None, FF_threshold=None
         CFDtrace = CFDtrace[CFD_delay:]
         
         # check that the first N points of the fast filter (noise) is below threshold
-        # 30 is an arbitrary number here, but the PIXIE should always record some noise first
+        # 10 is an arbitrary number here, but the PIXIE should always record some noise first
         if FFtrace[:Nbkgd].max() > FF_threshold or CFDtrace[:Nbkgd].max() > CFD_threshold:
             #print('Warning: CFD analysis theshold too low?', CFDtrace[:Nbkgd].max(),i)
             low += 1
@@ -171,7 +171,7 @@ def calculate_CFD_using_FF(traces, t=None, CFD_threshold=None, FF_threshold=None
        # find first index where the CFD trace is above the threshold
         try:
             FF_trigger_index = np.where(FFtrace >= FF_threshold)[0][0]
-            CFD_trigger_index = np.where(np.diff(CFDtrace >= CFD_threshold).astype(np.int) > 0 )[0]+1
+            CFD_trigger_index = np.where(np.diff(CFDtrace >= CFD_threshold).astype(np.int) > 0 )[0]
             CFD_trigger_index = CFD_trigger_index[CFD_trigger_index > FF_trigger_index][0]
             left = zero_crossings[zero_crossings > CFD_trigger_index][0]
             right = left+1
@@ -244,7 +244,7 @@ def calculate_filter(traces, L=10, G=10):
 
     # scale back to 2 ns timesteps
     result = np.repeat(result, 5, axis=1)
-    result = result/L
+    #result = result/L
 
     if one_dim:
         result = result[0]
