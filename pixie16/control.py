@@ -5,6 +5,8 @@ and a more pythonic interface. The goal is to slowly make this more pythonic.
 
 Currently also some path are hardcoded, better would be to read from a setting file.
 
+At the moment this also only supports Windows and needs python32 to run.
+
 Currently only support Rev-B-D
 
 """
@@ -45,7 +47,7 @@ def config_get_parameters(section, name):
         print(f"No {name} found in {section}, please add it to {inifile}")
         print(f"   The file should contain something like:")
         print(f"       [{section}]")
-        print(f"       {name} = <path to {name}>")
+        print(f"       {name} = <setting for  {name}>")
         print()
         sys.exit()
     return path
@@ -487,7 +489,7 @@ def BootModule(DSPParFile,
                   -17: ['Size of DSPParFile is invalid', 'Correct DSPParFile'],
                   -18: ['Failed to open DSPParFile', 'Correct DSPParFile'],
                   -19: ['Cannot initialize DSP variable indices', 'Correct DSPVarFile'],
-                  -20: ['Cannpt copy DSP variable indices', 'Check log file (Pixie16msg.txt)'],
+                  -20: ['Cannot copy DSP variable indices', 'Check log file (Pixie16msg.txt)'],
                   -21: ['Failed to program Fippi in a module', 'Check log file (Pixie16msg.txt)'],
                   -22: ['Failed to set DACs in a module', 'Check log file (Pixie16msg.txt)'],
                   }
@@ -999,6 +1001,7 @@ def read_raw_settings(module, N=832, start=0x4a000):
 
     return None
 
+
 def write_raw_settings(module, setting, start=0x4a000):
     Cmodule = ctypes.c_ushort(module)
     Cdirection = ctypes.c_ushort(0)  # SYS_MOD_WRITE = 0
@@ -1030,6 +1033,7 @@ def write_raw_settings(module, setting, start=0x4a000):
 
     return False
 
+
 def change_setting(name, value, channel=None, module=0):
     """Changes the value of a single setting
 
@@ -1051,6 +1055,7 @@ def change_setting(name, value, channel=None, module=0):
         write_raw_settings(module, setting)
     else:
         log.error(f'change_setting: wrong channel name {name}')
+
 
 # read data directly for list mode
 Pixie_Read_ExtFIFOStatus_prototype = ctypes.CFUNCTYPE(ctypes.c_int,
