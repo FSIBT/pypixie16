@@ -71,7 +71,7 @@ class myIO():
         yield self
 
 
-def read_list_mode_data(filename, keep_trace=False, trailing_sums=False, return_namedtuple=True):
+def read_list_mode_data(filename, keep_trace=False, return_namedtuple=True):
     """Read list mode data from binary file
 
     See section 4.4.2 in Manual, page 70
