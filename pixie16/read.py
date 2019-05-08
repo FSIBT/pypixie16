@@ -121,7 +121,7 @@ def read_list_mode_data(filename, keep_trace=False, return_namedtuple=True):
                     # energy sums
                     [Esum_trailing, Esum_leading, Esum_gap, baseline] = SUMS.unpack_from(f.read(4*4))
                 else:
-                    raise NotImplementedError
+                    raise NotImplementedError(f'Do not know what to do with header_length {header_length}')
             except struct.error:
                 # no more data available
                 break
