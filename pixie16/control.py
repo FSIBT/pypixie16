@@ -562,6 +562,10 @@ def WriteChanParam(ChanParName, ChanParData, module, channel):
 
     assert ChanParName in valid_channel_parameter_names, 'Not a valid channel parameter name'
 
+    if ChanParName in ['CHANNEL_CSRA', 'CHANNEL_CSRB', 'MultiplicityMaskL', 'MultiplicityMaskH']:
+        data = [str(int(x)) for x in ChanParData]
+        ChanParData = int(''.join(data), 2)
+
     # convert to ctypes for library call
     CChanParName = ctypes.c_char_p(bytes(ChanParName, 'utf8'))
     CChanParData = ctypes.c_double(ChanParData)
@@ -601,6 +605,10 @@ def ReadChanParam(ChanParName, module, channel):
 
     assert ChanParName in valid_channel_parameter_names, 'Not a valid channel parameter name'
 
+    bit_pattern = False
+    if ChanParName in ['CHANNEL_CSRA', 'CHANNEL_CSRB', 'MultiplicityMaskL', 'MultiplicityMaskH']:
+        bit_pattern = True
+
     # convert to ctypes for library call
     CChanParName = ctypes.c_char_p(bytes(ChanParName, 'utf8'))
     Cmodule = ctypes.c_ushort(module)
@@ -619,6 +627,12 @@ def ReadChanParam(ChanParName, module, channel):
         log.error("got an error in ReadChanParam, Correct channel")
     elif ret == -3:
         log.error("got an error in ReadChanParam, Correct ChanParName")
+
+    if bit_pattern:
+        value = np.ctypeslib.as_array(CChanParData)
+        value = bin(int(value))[2:]
+        value = [bool(int(x)) for x in value]
+        return value
 
     return np.ctypeslib.as_array(CChanParData)
 
@@ -1123,6 +1137,16 @@ def ReadFIFO(module, words):
 ##############################################
 # create an interface that feels pythonic    #
 ##############################################
+
+def set_traces(module, channel, status):
+    """Turn on/off taking traces for a certain channel in a specific module"""
+
+    channel_setting = ReadChanParam('CHANNEL_CSRA', module, channel)
+    # we need to set bit eight
+    # in python we can address the last element as -1, which is bit 0, so bit 8 is -9
+    channel_setting[-9] = status
+    WriteChanParam('CHANNEL_CSRA', channel_setting, module, channel)
+
 
 def run_list_mode(filename=None, runtime=5):
     """Run the pixie16 in list mode
