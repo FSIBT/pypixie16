@@ -443,6 +443,10 @@ def BootModule(DSPParFile,
         log.warning('boot already done')
         return 0
 
+    # allow pathlib.Path objects
+    if isinstance(DSPParFile, Path):
+        DSPParFile = str(DSPParFile)
+
     # convert to ctypes for library call
     CComFPGAConfigFile = ctypes.c_char_p(bytes(ComFPGAConfigFile, 'utf8'))
     CSPFPGAConfigFile = ctypes.c_char_p(bytes(SPFPGAConfigFile, 'utf8'))
