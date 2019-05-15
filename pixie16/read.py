@@ -28,7 +28,7 @@ def converter_IEEE754_to_ulong(x):
 def converter_ulong_to_IEEE754(x):
     a = (ctypes.c_ulong*1)(x)
     b = ctypes.cast(a, ctypes.POINTER(ctypes.c_float))
-    return b.contents
+    return b.contents.value
 
 
 
@@ -265,7 +265,7 @@ class XIASetting():
         return f'XIASetting: {self.filename}'
 
 
-def compare_module_setting(modA, modB, quiet=False):
+def compare_module_setting(modA, modB, quiet=False, writeable_only=True):
     """Compare the settings of two modules
 
     Print the difference.
@@ -293,12 +293,20 @@ def compare_module_setting(modA, modB, quiet=False):
         OrigB = modB
 
         # check if we have settings for all modules or for just one
-        if modA.writeable is not None:
-            modA = [modA.writeable, modA.readable]
-            modB = [modB.writeable, modB.readable]
+        if writeable_only:
+            if modA.writeable is not None:
+                modA = [modA.writeable]
+                modB = [modB.writeable]
+            else:
+                modA = [val for sublist in modA.writeable_list for val in sublist]
+                modB = [val for sublist in modB.writeable_list for val in sublist]
         else:
-            modA = [val for sublist in zip(modA.writeable_list, modA.readable_list) for val in sublist]
-            modB = [val for sublist in zip(modB.writeable_list, modB.readable_list) for val in sublist]
+            if modA.writeable is not None:
+                modA = [modA.writeable]
+                modB = [modB.writeable]
+            else:
+                modA = [val for sublist in modA.writeable_list for val in sublist]
+                modB = [val for sublist in modB.writeable_list for val in sublist]
 
     if not quiet:
         modulesA = OrigA.modulenr if OrigA.modulenr else 'all'
