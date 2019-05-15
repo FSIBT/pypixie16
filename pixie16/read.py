@@ -19,6 +19,18 @@ Event = namedtuple('Event', ['channel', 'crate', 'slot', 'timestamp', 'CFD_fract
                              'energy', 'trace', 'CFD_error', 'pileup', 'trace_flag',
                              'Esum_trailing', 'Esum_leading', 'Esum_gap', 'baseline'])
 
+def converter_IEEE754_to_ulong(x):
+    a = (ctypes.c_float*1)(x)
+    b = ctypes.cast(a, ctypes.POINTER(ctypes.c_ulong))
+    return b.contents
+
+
+def converter_ulong_to_IEEE754(x):
+    a = (ctypes.c_ulong*1)(x)
+    b = ctypes.cast(a, ctypes.POINTER(ctypes.c_float))
+    return b.contents
+
+
 
 def iterate_pairs(mylist):
     '''Go through an iterable and return the current item and the next'''
