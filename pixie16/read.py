@@ -156,12 +156,12 @@ def read_list_mode_data(filename, keep_trace=False, return_namedtuple=True):
                 trace = []
 
             CFD_error = False
-            TS = (eventtime_lo + (eventtime_hi << 32))*5
+            TS = (eventtime_lo + (eventtime_hi << 32))*10  # in ns
             if cfd_trigger_bits == 7:
                 CFD_error = True
                 CFD_fraction = 0
             else:
-                CFD_fraction = cfd_trigger_bits-1 + cfd_fractional/8192
+                CFD_fraction = (cfd_trigger_bits-1 + cfd_fractional/8192)*2  # in ns
 
             if return_namedtuple:
                 yield Event(channel_nr, crate_id, slot_id, TS, CFD_fraction, event_energy, trace, CFD_error, pileup, trace_flag,
