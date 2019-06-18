@@ -1189,6 +1189,7 @@ def ReadFIFO(module, words):
 ##############################################
 
 def list_firmware():
+    print(f'The config file used is: {inifile}')
     print('The following firmware definitions exists')
     names = []
     for section in config.sections():
