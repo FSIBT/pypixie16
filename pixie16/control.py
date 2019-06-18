@@ -49,6 +49,18 @@ def config_get_parameters(section, name):
         print(f"       [{section}]")
         print(f"       {name} = <setting for  {name}>")
         print()
+        print("The file should contain the following sections and keys:")
+        print("   [Libraries]")
+        print("   app = '<path do PixieAppDll.dll>")
+        print("   sys = '<path do Pixie16SysDll.dll>")
+        print("   [Data]")
+        print("   datair = '<path where the data files should live")
+        print("   [Firmware.default]")
+        print("   ComFPGAConfigFile = '<path do syspixie16 firmware>")
+        print("   SPFPGAConfigFile = '<path do fippixie16 firmware>")
+        print("   DSPCodeFile = '<path do Pixie16DSP*.ldr>")
+        print("   DSPVarFile = '<path do Pixie16DSP*.var>")
+        print()
         sys.exit()
     return path
 
@@ -57,6 +69,12 @@ lib_app = config_get_parameters('Libraries', 'app')
 lib_sys = config_get_parameters('Libraries', 'sys')
 
 data_dir = config_get_parameters('Data', 'datadir')
+
+firmware_com = config_get_parameters('Firmware.default', 'ComFPGAConfigFile')
+firmware_sp = config_get_parameters('Firmware.default', 'SPFPGAConfigFile')
+firmware_dsp_code = config_get_parameters('Firmware.default', 'DSPCodeFile')
+firmware_dsp_var = config_get_parameters('Firmware.default', 'DSPVarFile')
+
 
 # make sure the library directory in the path, so that we can find
 # dependencies, otherwise we get a "[WinError 126] The specified
@@ -414,13 +432,15 @@ Cboot_module = boot_module_prototype(("Pixie16BootModule", PixieAppDLL))
 
 
 def BootModule(DSPParFile,
-               ComFPGAConfigFile='C:\\Program Files (x86)\\XIA\Pixie16_VB 2.1.0\\Firmware\\syspixie16_revfgeneral_adc500mhz_r33341.bin',
-               SPFPGAConfigFile='C:\\Program Files (x86)\\XIA\Pixie16_VB 2.1.0\\Firmware\\fippixie16_revfgeneral_14b500m_r34687.bin',
+               ComFPGAConfigFile=firmware_com,
+               SPFPGAConfigFile=firmware_sp,
                TrigFPGAConfigFile=' ',
-               DSPCodeFile='C:\\Program Files (x86)\\XIA\Pixie16_VB 2.1.0\\DSP\\Pixie16DSP_revfgeneral_14b500m_r35207.ldr',
-               DSPVarFile='C:\\Program Files (x86)\\XIA\Pixie16_VB 2.1.0\\DSP\\Pixie16DSP_revfgeneral_14b500m_r35207.var',
+               DSPCodeFile=firmware_dsp_code,
+               DSPVarFile=firmware_dsp_var,
                ModNum=None,
-               BootPattern=0x7f):
+               BootPattern=0x7f,
+               section=None,
+               verbose=False):
     """Uses the XIA library to boot the module.
 
     ComFPGAConfigFile:   config file found under Firmware
@@ -433,6 +453,8 @@ def BootModule(DSPParFile,
                          (either 0,...,k-1 for individual modules or k for all modules)
                          if None, check global modules variable to boot all modules
     BootPattern:         boot pattern mask. 0x7F to boot all on-board chips.
+    section              use a different section from the config file to boot the firmware
+    verbose              print out what firmware we are using
 
     See page 13 of the programming manual.
     """
@@ -444,16 +466,44 @@ def BootModule(DSPParFile,
         return 0
 
     # allow pathlib.Path objects
-    if isinstance(DSPParFile, Path):
-        DSPParFile = str(DSPParFile)
+    if not isinstance(DSPParFile, Path):
+        DSPParFile = Path(DSPParFile)
+
+    for f in [ComFPGAConfigFile, SPFPGAConfigFile, DSPCodeFile, DSPVarFile]:
+        if (not f.exists()) and (not f.is_file()):
+            print(f'Error: cannot open firmware file {f}')
+            sys.exit(1)
+
+    if section is not None:
+        section = f'Firmware.{section}'
+        if not section in config.sections():
+            print('Error: cannot find section {section} in the config file {inifile}')
+            sys.exit(1)
+        # load new path to firmware
+        firmware_com = config_get_parameters(section, 'ComFPGAConfigFile')
+        firmware_sp = config_get_parameters(section, 'SPFPGAConfigFile')
+        firmware_dsp_code = config_get_parameters(section, 'DSPCodeFile')
+        firmware_dsp_var = config_get_parameters(section, 'DSPVarFile')
+        ComFPGAConfigFile=firmware_com
+        SPFPGAConfigFile=firmware_sp
+        DSPCodeFile=firmware_dsp_code
+        DSPVarFile=firmware_dsp_var
+
+    if verbose:
+        print('Booting Pixie using the following firmware:')
+        print(f'  Com      = {ComFPGAConfigFile}')
+        print(f'  SP       = {SPFPGAConfigFile}')
+        print(f'  DSP Code = {DSPCodeFile}')
+        print(f'  DSP Var  = {DSPVarFile}')
 
     # convert to ctypes for library call
-    CComFPGAConfigFile = ctypes.c_char_p(bytes(ComFPGAConfigFile, 'utf8'))
-    CSPFPGAConfigFile = ctypes.c_char_p(bytes(SPFPGAConfigFile, 'utf8'))
+    CComFPGAConfigFile = ctypes.c_char_p(bytes(ComFPGAConfigFile))
+    CSPFPGAConfigFile = ctypes.c_char_p(bytes(SPFPGAConfigFile))
+    # converting a string next, so we need to specify utf8
     CTrigFPGAConfigFile = ctypes.c_char_p(bytes(TrigFPGAConfigFile, 'utf8'))
-    CDSPCodeFile = ctypes.c_char_p(bytes(DSPCodeFile, 'utf8'))
-    CDSPParFile = ctypes.c_char_p(bytes(DSPParFile, 'utf8'))
-    CDSPVarFile = ctypes.c_char_p(bytes(DSPVarFile, 'utf8'))
+    CDSPCodeFile = ctypes.c_char_p(bytes(DSPCodeFile))
+    CDSPParFile = ctypes.c_char_p(bytes(DSPParFile))
+    CDSPVarFile = ctypes.c_char_p(bytes(DSPVarFile))
     if ModNum is None:
         if modules is None:
             log.error('You need to set ModNum or the global variable modules need to be set!')
@@ -1137,6 +1187,18 @@ def ReadFIFO(module, words):
 ##############################################
 # create an interface that feels pythonic    #
 ##############################################
+
+def list_firmware():
+    print('The following firmware definitions exists')
+    names = []
+    for section in config.sections():
+        if not section.startswith('Firmware.'):
+            continue
+        print(f'{section}')
+        names.append(section[9:])
+        for key in config[section].keys():
+            print(f'   {key} = {config[section][key]}')
+    print(f'Use only the name after the "." for the name of the firmware: {", ".join(names)}')
 
 def set_traces(module, channel, status):
     """Turn on/off taking traces for a certain channel in a specific module"""
