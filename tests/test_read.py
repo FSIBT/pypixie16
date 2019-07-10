@@ -23,3 +23,15 @@ class TestXIAread():
         assert event.slot == 2
         assert event.energy == 26517
         assert event.timestamp == 585288073600
+
+    def test_split(self):
+        filename = Path('.') / 'tests' / 'split-all.bin'
+        events1 = list(pixie16.read.read_list_mode_data(filename.absolute()))
+
+        events2 = []
+        for f in [Path('.') / 'tests' / 'split-01.bin', Path('.') / 'tests' / 'solit-02.bin']:
+            for e in pixie16.read.read_list_mode_data(filename.absolute()):
+                events2.append(e)
+
+        for e1, e2 in zip(events1, events2):
+            assert e1 == e2
