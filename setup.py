@@ -1,5 +1,7 @@
 from setuptools import setup
 from os import path
+import versioneer
+
 
 this_directory = path.abspath(path.dirname(__file__))
 with open(path.join(this_directory, 'README.md'), encoding='utf-8') as f:
@@ -7,7 +9,7 @@ with open(path.join(this_directory, 'README.md'), encoding='utf-8') as f:
 
 
 setup(name='pypixie16',
-      version='0.2',
+      version=versioneer.get_version(),
       description='Python library to control a pixie16 module from XIA',
       long_description=long_description,
       long_description_content_type='text/markdown',
