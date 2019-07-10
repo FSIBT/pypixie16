@@ -19,6 +19,7 @@ Event = namedtuple('Event', ['channel', 'crate', 'slot', 'timestamp', 'CFD_fract
                              'energy', 'trace', 'CFD_error', 'pileup', 'trace_flag',
                              'Esum_trailing', 'Esum_leading', 'Esum_gap', 'baseline'])
 
+
 def converter_IEEE754_to_ulong(x):
     a = (ctypes.c_float*1)(x)
     b = ctypes.cast(a, ctypes.POINTER(ctypes.c_ulong))
@@ -29,7 +30,6 @@ def converter_ulong_to_IEEE754(x):
     a = (ctypes.c_ulong*1)(x)
     b = ctypes.cast(a, ctypes.POINTER(ctypes.c_float))
     return b.contents.value
-
 
 
 def iterate_pairs(mylist):
@@ -83,7 +83,102 @@ class myIO():
         yield self
 
 
-def read_list_mode_data(filename, keep_trace=False, return_namedtuple=True):
+class Buffer():
+    """A class that can buffer leftover data from a previous file for cases where the FIFO buffer of the pixie only contains a partial event"""
+
+    def __init__(self):
+        self.clear()
+
+    def add_file(self, filename, f):
+        self.file = f
+        self.filename = filename
+        self.file_position = 0
+        if isinstance(filename, Path):
+            self.file_size = filename.stat().st_size
+        elif isinstance(filename, myIO):
+            self.file_size = len(f.data)
+        else:
+            raise NotImplementedError(
+                f'Buffer must be either a pathlb Path object or a in memory object(myIO): {f}')
+
+    def add_split_event(self):
+        """An incomplete event was found
+
+        his means we already parsed the first 16 bytes, so we need to
+        add those and the remainig data in the file to the buffer.
+
+        """
+        self.leftover = self.last_data + self.file.read(self.file_size-self.file_position)
+        self.leftover_size = len(self.leftover)
+        self.leftover_position = 0
+
+    def add_leftover(self):
+        """A small amount of data is left over
+
+        Not enought to even parse the first 16 bytes. This gets triggered before the first 16 bytes are read.
+
+        """
+        self.leftover = self.file.read(self.file_size-self.file_position)
+        self.leftover_size = len(self.leftover)
+        self.leftover_position = 0
+
+    def clear(self):
+        self.file = None
+        self.filename = None
+        self.file_size = 0
+        self.file_position = 0
+        self.leftover = None
+        self.leftover_size = 0
+        self.leftover_position = 0
+        self.last_data = None
+
+    def read(self, nr_bytes):
+        """Read nr_bytes from the file or if present the leftover data"""
+        if self.leftover_size == 0:
+            data = self.file.read(nr_bytes)
+            self.file_position += nr_bytes
+        elif nr_bytes <= self.leftover_size:
+            self.leftover_size -= nr_bytes
+            data = self.leftover[self.leftover_position:self.leftover_position+nr_bytes]
+            self.leftover_position += nr_bytes
+        elif nr_bytes > self.leftover_size:
+            diff = nr_bytes - self.leftover_size
+            data = self.leftover[self.leftover_position:] + self.file.read(diff)
+            self.leftover_size = 0
+            self.leftover_position += self.leftover_size
+            self.file_position += diff
+        self.last_data = data
+        return data
+
+    def read_trace(self, length):
+        data = self.read(length)  # this will take care of reading from the leftover data iff needed
+        trace = np.frombuffer(data, f'({length//4},2)<u2', count=1)[0, :, :]
+        return trace.flatten()
+
+    def skip_trace(self, length):
+        # here we need to take care of reading from the leftover data explicitly
+        if self.leftover_size == 0:
+            self.file.seek(length, 1)
+            self.file_position += length
+        elif length <= self.leftover_size:
+            self.leftover_size -= length
+            self.leftover_position += length
+        elif length > self.leftover_size:
+            diff = length - self.leftover_size
+            self.leftover_size = 0
+            self.leftover_position += self.leftover_size
+            self.file_position += diff
+            self.file.seek(diff, 1)
+
+    def __repr__(self):
+        return f'{self.filename} size: {self.file_size} position: {self.file_position} leftover in file: {self.file_size-self.file_position} leftover in buffer: {self.leftover_size}'
+
+
+# create a single buffer for reading list mode data that is persistent between opening different files
+buffer = Buffer()
+
+
+def read_list_mode_data(filename, keep_trace=False, return_namedtuple=True, clear_buffer=False):
     """Read list mode data from binary file
 
     See section 4.4.2 in Manual, page 70
@@ -103,12 +198,21 @@ def read_list_mode_data(filename, keep_trace=False, return_namedtuple=True):
     HEADER = struct.Struct('<2I4H')
     SUMS = struct.Struct('<3If')
 
+    if clear_buffer:
+        buffer.clear()
+
     with filename.open('rb') as f:
+        buffer.add_file(filename, f)
         while True:
             nr_event += 1
             try:
+                # check if we have enough data to read 16 bytes
+                if buffer.file_size - buffer.file_position < 16:
+                    buffer.add_leftover()
+                    break
+
                 [pileup_bits, eventtime_lo, eventtime_hi,
-                 cfd_bits, event_energy, trace_bits] = HEADER.unpack_from(f.read(4*4))
+                 cfd_bits, event_energy, trace_bits] = HEADER.unpack_from(buffer.read(4*4))
 
                 s = pileup_bits
                 pileup = s >> 31   # 1 if pile-up event
@@ -117,6 +221,12 @@ def read_list_mode_data(filename, keep_trace=False, return_namedtuple=True):
                 crate_id = (s >> 8) & 0b1111
                 slot_id = (s >> 4) & 0b1111
                 channel_nr = s & 0b1111
+
+                # current file position will be 16 ahead, since we already read those
+                # is there enough data in the file to read the rest of the event?
+                if 4*event_length + buffer.leftover_size + buffer.file_position - 16 > buffer.file_size:
+                    buffer.add_split_event()
+                    break
 
                 s = cfd_bits
                 cfd_trigger_bits = (s >> 13) & 0b111
@@ -131,26 +241,19 @@ def read_list_mode_data(filename, keep_trace=False, return_namedtuple=True):
                     Esum_trailing, Esum_leading, Esum_gap, baseline = 0, 0, 0, 0.0
                 elif header_length == 8:
                     # energy sums
-                    [Esum_trailing, Esum_leading, Esum_gap, baseline] = SUMS.unpack_from(f.read(4*4))
+                    [Esum_trailing, Esum_leading, Esum_gap, baseline] = SUMS.unpack_from(buffer.read(4*4))
                 else:
                     raise NotImplementedError(f'Do not know what to do with header_length {header_length}')
             except struct.error:
                 # no more data available
                 break
 
-            trace_data_length = event_length-header_length
+            trace_data_length = event_length - header_length
             if trace_data_length > 0:
                 if keep_trace:
-                    if in_memory:
-                        data = f.read(4*trace_data_length)
-                        trace = np.frombuffer(data, f'({trace_data_length},2)<u2', count=1)[0, :, :]
-                    else:
-                        # read the whole trace in one go to make reading faster than reading byte by byte
-                        # about 300x faster than multiple f.read(2)
-                        trace = np.fromfile(f, f'({trace_data_length},2)<u2', count=1)[0, :, :]
-                    trace = trace.flatten()
+                    trace = buffer.read_trace(4*trace_data_length)
                 else:
-                    f.seek(4*trace_data_length, 1)
+                    buffer.skip_trace(4*trace_data_length)  # advances the file position by the correct amount
                     trace = []
             else:
                 trace = []
