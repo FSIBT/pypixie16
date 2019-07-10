@@ -22,7 +22,7 @@ class TestXIAread():
         assert event.crate == 0
         assert event.slot == 2
         assert event.energy == 26517
-        assert event.timestamp == 585288073600
+        assert event.timestamp == 1170576147200
 
     def test_split(self):
         filename = Path('.') / 'tests' / 'split-all.bin'
