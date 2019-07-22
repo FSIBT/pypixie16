@@ -346,7 +346,7 @@ class XIASetting():
                     else:
                         outread[n] = value
             outread['LiveTime'] = [(outread['LiveTimeA'][i] * 2**32 + outread['LiveTimeB']
-                                    [i]) * 16 * 10e-9 for i in range(16)]
+                                    [i]) * 10e-9 for i in range(16)]
             outread['FastPeaks'] = [outread['FastPeaksA'][i] * 2
                                     ** 32 + outread['FastPeaksB'][i] for i in range(16)]
             outread['RealTime'] = (outread['RealTimeA'] * 2**32 + outread['RealTimeB']) * 10e-9
