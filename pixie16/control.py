@@ -1106,7 +1106,9 @@ def change_setting(name, value, channel=None, module=0):
     """Changes the value of a single setting
 
     First reads all values, changes one and then sends the new setting
-    back to the pixie
+    back to the pixie.
+    
+    Module parameter can be set by setting channel to None.
 
     """
     setting = read_raw_settings(0, N=832)
@@ -1114,9 +1116,17 @@ def change_setting(name, value, channel=None, module=0):
     if name in variables.settings:
         start, length = variables.settings[name]
         if channel is None:
-            for k in range(length):
+            try:
+                if len(value) != length:
+                    log.error(f'change_setting: wrong number of arguments for setting {name}.',
+                              f' Need {length}, got {len(value)}')
+                    return
+            except TypeError:
+                log.error(f'change_setting: wrong type of argument. Need a list of values')
+                return
+            for k, v in zip(range(length), value):
                 idx = start + k
-                setting[idx] = value
+                setting[idx] = v
         else:
             idx = start + channel
             setting[idx] = value
