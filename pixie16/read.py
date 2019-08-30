@@ -296,6 +296,7 @@ class XIASetting():
         self.modulenr = modulenr
         self.writeable = None
         self.readable = None
+        self.rawmodules = None
         self.read_setting(filename)
 
     def __repr__(self):
@@ -319,15 +320,15 @@ class XIASetting():
 
         names = settings
 
-        rawmodules = []
+        self.rawmodules = []
         with open(filename, 'rb') as f:
             for module in range(24):
                 rawsetting = []
                 for i in range(1280):
                     rawsetting.append(int.from_bytes(f.read(4), byteorder='little'))
-                rawmodules.append(rawsetting)
+                self.rawmodules.append(rawsetting)
 
-        for mod in rawmodules:
+        for mod in self.rawmodules:
             outsetting = {}
             outread = {}
             for n, [pos, length] in names.items():
