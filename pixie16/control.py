@@ -23,7 +23,18 @@ import os
 import sys
 import time
 
+# load information about where in the memory block for settings certain
+# variables are located
 from . import variables
+
+SETTINGS = variables.settings
+SETTINGS_NAME_CHANNEL = []
+SETTINGS_NAME_MODULE = []
+for name, (startpos, length) in SEETTINGS.items():
+    if length == 16:
+        SETTINGS_NAME_MODULE.append(name)
+    else:
+        SETTINGS_NAME_CHANNEL.append(name)
 
 if sys.maxsize > 2**32:
     print('WARNING: need to run 32bit python to use this library')
@@ -1101,17 +1112,8 @@ def write_raw_settings(module, setting, start=0x4a000):
 
     return False
 
-
-def change_setting(name, value, channel=None, module=0):
-    """Changes the value of a single setting
-
-    First reads all values, changes one and then sends the new setting
-    back to the pixie.
-    
-    Module parameter can be set by setting channel to None.
-
-    """
-    setting = read_raw_settings(0, N=832)
+def change_setting_in_memory(setting, name, value, channel=None, module=0):
+    """Changes a single setting inside a block of memory read by read_raw_settings"""
 
     if name in variables.settings:
         start, length = variables.settings[name]
@@ -1130,10 +1132,112 @@ def change_setting(name, value, channel=None, module=0):
         else:
             idx = start + channel
             setting[idx] = value
-        write_raw_settings(module, setting)
+        return setting
     else:
         log.error(f'change_setting: wrong channel name {name}')
+        return None
 
+
+def change_setting(name, value, channel=None, module=0):
+    """Changes the value of a single setting
+
+    First reads all values, changes one and then sends the new setting
+    back to the pixie.
+
+    Module parameter can be set by setting channel to None.
+
+    """
+    setting = read_raw_settings(0, N=832)
+
+    new = change_setting_in_memory(setting, name, value, channel, module)
+
+    if new:
+        write_raw_settings(module, setting)
+    else:
+        log.error(f'change_setting: Could not change settings')
+
+
+def change_setting_dict(settings):
+    """Takes a dictionary with setting names as keys and setting values
+
+    The dictionary must also contain an entry called 'channels' that list all
+    channels that should be set. Channels should be pairs in the form [module, channel].
+
+    This function will also set variabels that depend on other variables (e.g. PeakSample depends on SlowLength).
+    However, if PeakSample is given, those values will be used.
+
+    The values in the dictonary depends on the type of variable:
+        a) Channel parameter
+           The value needs to be either a list of the same name as the number of channels
+           or smaller lists are checked to see if they match the list of modules, in
+           which case each number will be used to set all channels in the module, or
+           a single number in which case this number will be used for all channels in
+           all modules
+        b) module parameter
+           The value needs to be either a single number in case a single module is used
+           or a list of numbers that has the same length as the number of modules used.
+           For some parameters, e.g. TrigConfig the value needs to be a list (number of
+           modules) of lists (4 entries for TrigConfig)
+
+    """
+    assert 'channels' in settings, "The settings dictionary needs an entry listing called 'channels' the channels"
+    channels = settings.pop('channels')
+
+    for c in channels:
+        assert isinstance(c, (list, tuple)), "Setting dictionary: each channel must be a list or tuple"
+        assert len(c) == 2, "Setting dictionary: each channel must have two entries (modules, channel)"
+
+    modules = set(x[0] for x in channels)
+
+    # get all the raw settings data from the pixie
+    current = {}
+    for mod in modules:
+        current[mod] = read_raw_settings(mod, N=832)
+
+    # update depend values
+    if not 'PeakSample' in settings:
+        pass # TODO
+    if not 'PeakSep' in settings:
+        pass # TODO
+    if not 'PAFlength' in settings:
+        pass # TODO
+    if not 'TriggerDelay' in settings:
+        pass # TODO
+
+
+    # update all settings
+    for name, values in settings.items():
+        if name in SETTINGS_NAME_CHANNEL:
+            if isinstance(settings[name], (list, tuple)):
+                if len(settings[name]) == len(channels):
+                    for value, channel in zip(settings[name], channels):
+                        mod, ch = channel
+                        change_setting_in_memory(current[mod], name, value, ch, mod)
+                elif len(settings[name]) == len(modules):
+                    for value, mod in zip(settings[name], modules):
+                        for ch in range(16):
+                            change_setting_in_memory(current[mod], name, value, ch, mod)
+                else:
+                     raise TypeError('Wrong type (or length) for channel parameter in change_settings_dict')
+            elif isinstance(settings[name], int):
+                    value = settings[name]
+                    for mod in modules:
+                        for ch in range(16):
+                            change_setting_in_memory(current[mod], name, value, ch, mod)
+            else:
+                raise TypeError('Wrong type (or length) for channel parameter in change_settings_dict')
+        elif name in SETTINGS_NAME_MODULE:
+            if isinstance(settings[name], int):
+                for mod in modules:
+                    change_setting_in_memory(current[mod], name, settings[name], None, mod)
+            elif isinstance(settings[name], (list, tuple)):
+                for mod, value in zip(modules, settings[name]):
+                    change_setting_in_memory(current[mod], name, value, None, mod)
+        else:
+            log.error(f'Change settings dict: unkown settings name {name}')
+
+    for mod in modules:
+        write_raw_settings(mod, current[mod])
 
 # read data directly for list mode
 Pixie_Read_ExtFIFOStatus_prototype = ctypes.CFUNCTYPE(ctypes.c_int,
