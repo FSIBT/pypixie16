@@ -251,15 +251,3 @@ def calculate_filter(traces, L=10, G=10):
 
     return result
 
-
-def shift_traces(traces, r):
-    '''Shift traces by r indices.
-    traces and r must be >1D numpy arrays
-    '''
-    if isinstance(traces,np.ndarray) and isinstance(r,np.ndarray):
-        rows, column_indices = np.ogrid[:traces.shape[0], :traces.shape[1]]    
-        r[r < 0] += traces.shape[1]
-        column_indices = column_indices - r[:,np.newaxis]
-    else:
-        raise Exception('wrong type. Need numpy arrays')
-    return traces[rows, column_indices]
