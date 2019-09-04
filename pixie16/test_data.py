@@ -69,22 +69,22 @@ def shift_traces(traces, r):
     return traces[rows, column_indices]
 
 def read_settings(file):
-    parameters = namedtuple('parameters', ['Gs', 'Ls', 'Lf', 'ADCth', 'FFth',
-                             'CFDth', 'Gf', 'liveTime'])
+    parameters = namedtuple('parameters', ['Gs', 'Ls', 'Lf', 'FFth',
+                             'CFDth', 'CFDdelay', 'Gf', 'liveTime'])
     setting = read.XIASetting(file, module)
     S = setting.writeable
     Sr = setting.readable
-    liveTime = round(Sr['LiveTime'][ch],2)
+    liveTime = round(Sr['LiveTime'][ch],2) # seconds
     l = S['TraceLength'][ch]
     assert l == len(trace[0]), f'{l} {len(trace[0])}'
-    Gs = S['SlowGap'][ch]*10
-    Ls = S['SlowLength'][ch]*10
-    Lf = S['FastLength'][ch]*5
-    ADCth = S['FastThresh'][ch]/Lf
-    FFth = S['FastThresh'][ch]
-    CFDth = S['CFDThresh'][ch] 
-    Gf =  S['FastGap'][ch]
-    return parameters(Gs, Ls, Lf, ADCth, FFth, CFDth, Gf, liveTime)
+    Gs = S['SlowGap'][ch]*2/100 # us
+    Ls = S['SlowLength'][ch]*2/100 # us
+    Lf = S['FastLength'][ch]/100 # us
+    Gf =  S['FastGap'][ch]/100
+    FFth = S['FastThresh'][ch]*2/100  # ADC units
+    CFDth = S['CFDThresh'][ch] # ADC units 
+    CFDdelay = S['CFDDelay'][ch] # us
+    return parameters(Gs, Ls, Lf, FFth, CFDth, CFDdelay, Gf, liveTime)
 
 def advindexing_roll(A, r):
         rows, column_indices = np.ogrid[:A.shape[0], :A.shape[1]]    
@@ -149,5 +149,38 @@ def persistence():
     plt.legend()
     plt.title(f'channel: {ch}; number of traces: {data_count[ch]}; live time: {setting.liveTime}s') 
 
+
+def own_CFD():
+    if plot_CFD:
+    # perform own CFD calculation
+    if trace.size == 0:
+        print('Data set with no traces enabled. Please enable traces before running CFD calculation')
+    w = [0.3125]
+    B = [5]
+    D = [5]
+    L = [1]
     
+
+
+    CFD, cfdtime, FF, IDXerr = calculate_CFD_using_FF(trace, t=t, CFD_threshold=CFDth, FF_threshold=FFth, Lf=Lf*100, Gf=Gf*100,
+                                                          w=w[0], B=B[0], D=D[0], L=L[0], Nbkgd=10, FF_delay=0, CFD_delay=20)
+   
+    
+    
+    
+ 
+    cfdtime = cfdtime[cfdtime != np.array(None)]
+    
+    tcfd = t[B[0]+D[0]:trace1.shape[1]-L[0]+1]
+    tff = t[0:FF.shape[1]]
+    
+    for i in range(2):
+        plt.figure()
+        plt.plot(t,trace1[i],'.',label='Trace')
+        plt.plot(tcfd,CFD[i], '.',label='CFD')
+        plt.plot(tff,FF[i],label='Fast Filter')
+        plt.plot([t[0],t[-1]],[CFDth,CFDth], label='CFD Threshold')
+        plt.plot([t[0],t[-1]],[FFth,FFth], label='FF Threshold')
+        plt.plot(cfdtime[i],0,'.', ms=10)
+        plt.legend()    
  
