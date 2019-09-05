@@ -1,5 +1,6 @@
 """
 Functions to help test PIXIE-16 data
+Need to have traces and raw energy sums enabled
 
 """
 
@@ -11,6 +12,7 @@ import datashader as ds
 import datashader.transfer_functions as tf
 from matplotlib.colors import LogNorm
 import matplotlib.pyplot as plt
+from pixie16.analyze import calculate_CFD_using_FF
 
 
 # test files
@@ -50,8 +52,9 @@ if binary_file:
     trace = np.array(trace)
     cfderror = np.array(cfderror)
     IDX = np.arange(0,trace.shape[0],1)  
-    IDXcfderror = IDX[cfderror]
-    IDXgood = IDX[~cfderror]
+    #IDXcfderror = IDX[cfderror]
+    #IDXgood = IDX[~cfderror]
+    IDXgood = IDX
     t = np.linspace(0, 2*(trace.shape[1]-1), trace.shape[1])  # in ns
     data_count = Counter(all_channels)
     print('Channels used and ocurrences: ', data_count)
@@ -120,11 +123,13 @@ def persistence():
        for too long'''
     setting = read_settings(setfile)
     sumIDX = []
+    Ls = int(setting.Ls*1000/2)
+    Gs = int(setting.Gs*1000/2)
     for j in range(len(trace)):
-        for i in range(len(trace[j])-2*setting.Ls-setting.Gs):
-            s1 = np.sum(trace[j][i:i+setting.Ls])
-            s2 = np.sum(trace[j][i+setting.Ls:i+setting.Ls+setting.Gs])
-            s3 = np.sum(trace[j][i+setting.Ls+setting.Gs:i+setting.Ls+setting.Gs+setting.Ls])
+        for i in range(len(trace[j])-2*Ls - Gs):
+            s1 = np.sum(trace[j][i:i+Ls])
+            s2 = np.sum(trace[j][i+Ls:i+Ls+Gs])
+            s3 = np.sum(trace[j][i+Ls+Gs:i+Ls+Gs+Ls])
             #print([s1, s2, s3], [Esum1, Esum2, Esum3])
             if [s1, s2, s3] == [trailsum[j],gapsum[j] , leadsum[j]]:
                 sumIDX.append(i)
@@ -135,26 +140,29 @@ def persistence():
             print('Try increasing trace length and/or trace delay and run again')
     
     sumIDX = np.array(sumIDX)        
-    gapIDX = sumIDX + setting.Ls
+    gapIDX = sumIDX + Ls
     minsumIDX = sumIDX.min()
     shiftIDX = sumIDX - minsumIDX
     traceshift = advindexing_roll(trace,-shiftIDX)
     
     create_plot(traceshift[IDXgood])
     plt.plot([t[minsumIDX],t[minsumIDX]],[trace.min(),trace.max()],'r--', label='raw energy sums')
-    plt.plot([t[minsumIDX+setting.Ls],t[minsumIDX+setting.Ls]],[trace.min(),trace.max()],'r--')
-    plt.plot([t[minsumIDX+setting.Ls + setting.Gs], t[minsumIDX+setting.Ls +setting.Gs]],[trace.min(),trace.max()],'r--')
-    plt.plot([t[minsumIDX+setting.Ls + setting.Gs+ setting.Ls],t[minsumIDX + setting.Ls + setting.Gs + setting.Ls]],[trace.min(),
+    plt.plot([t[minsumIDX+Ls],t[minsumIDX+Ls]],[trace.min(),trace.max()],'r--')
+    plt.plot([t[minsumIDX+Ls + Gs], t[minsumIDX+Ls + Gs]],[trace.min(),trace.max()],'r--')
+    plt.plot([t[minsumIDX+Ls + Gs+ Ls],t[minsumIDX + Ls + Gs + Ls]],[trace.min(),
              trace.max()],'r--')
     plt.legend()
     plt.title(f'channel: {ch}; number of traces: {data_count[ch]}; live time: {setting.liveTime}s') 
 
 
-def own_CFD():
-    if plot_CFD:
+def own_CFD(num_traces):
     # perform own CFD calculation
-    if trace.size == 0:
-        print('Data set with no traces enabled. Please enable traces before running CFD calculation')
+    setting = read_settings(setfile)
+    CFDth = setting.CFDth
+    Lf = int(setting.Lf*100)
+    Gf = int(setting.Gf*100)
+    FFth = setting.FFth 
+    
     w = [0.3125]
     B = [5]
     D = [5]
@@ -162,25 +170,25 @@ def own_CFD():
     
 
 
-    CFD, cfdtime, FF, IDXerr = calculate_CFD_using_FF(trace, t=t, CFD_threshold=CFDth, FF_threshold=FFth, Lf=Lf*100, Gf=Gf*100,
-                                                          w=w[0], B=B[0], D=D[0], L=L[0], Nbkgd=10, FF_delay=0, CFD_delay=20)
-   
-    
-    
-    
+    CFD, cfdtime, FF, IDXerr = calculate_CFD_using_FF(trace, t=t, CFD_threshold=CFDth, FF_threshold=FFth, Lf=Lf, Gf=Gf,
+                                                          w=w[0], B=B[0], D=D[0], L=L[0], Nbkgd=10, FF_delay=20, CFD_delay=0)
  
     cfdtime = cfdtime[cfdtime != np.array(None)]
     
-    tcfd = t[B[0]+D[0]:trace1.shape[1]-L[0]+1]
+    tcfd = t[B[0]+D[0]:trace.shape[1]-L[0]+1]
     tff = t[0:FF.shape[1]]
     
-    for i in range(2):
+    for i in range(num_traces):
         plt.figure()
-        plt.plot(t,trace1[i],'.',label='Trace')
-        plt.plot(tcfd,CFD[i], '.',label='CFD')
+        plt.plot(t,trace[i],label='Trace')
+        plt.plot(tcfd,CFD[i],label='CFD')
         plt.plot(tff,FF[i],label='Fast Filter')
         plt.plot([t[0],t[-1]],[CFDth,CFDth], label='CFD Threshold')
         plt.plot([t[0],t[-1]],[FFth,FFth], label='FF Threshold')
         plt.plot(cfdtime[i],0,'.', ms=10)
         plt.legend()    
  
+
+# do energy
+# time windows
+# time histogram
