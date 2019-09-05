@@ -123,8 +123,6 @@ def calculate_CFD_using_FF(traces, t=None, CFD_threshold=None, FF_threshold=None
     traces = traces.astype(np.int64)
     NR_traces, length = traces.shape
     
-    FF_threshold = FF_threshold/Lf # actually how it's done in the pixie
-
     # we are skipping the first B+D data points, so the CFD array will
     # be shorter, adjusting the time array accordingly
     if t is None:
@@ -191,7 +189,7 @@ def calculate_CFD_using_FF(traces, t=None, CFD_threshold=None, FF_threshold=None
         CFD = CFD[0]
     
     print('Calculated CFD errors = ', CFDerror)
-    print('Events triggered by noise = ', low)
+    print('Events with noise above fast filter threshold = ', low)
 
     return CFD, cfdtime, fast_filter, IDXerr
 
