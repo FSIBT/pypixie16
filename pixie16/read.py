@@ -357,6 +357,13 @@ class Settings():
             return self.writeable[key]
         raise KeyError
 
+    def __getattr__(self, attr):
+        if key in self.readable:
+            return self.readable[key]
+        if key in self.writeable:
+            return self.writeable[key]
+        raise AttributeError
+
     def __str__(self):
         out = f'Pixie16 settings for {self.filename}\n'
         keys = sorted(list(self.readable.keys())+list(self.writeable.keys()))
