@@ -4,6 +4,7 @@ import ctypes
 import struct
 import json
 import numpy as np
+import pandas as pd
 from contextlib import contextmanager
 from collections import namedtuple
 from pathlib import Path
@@ -290,17 +291,16 @@ def read_mca_mode_data(filename):
     return results
 
 
-class XIASetting():
-    def __init__(self, filename: str, modulenr=None):
+class Settings():
+    """Capture all the settings from a single module """
+
+    def __init__(self, filename: str, modulenr: int):
         self.filename = filename
         self.modulenr = modulenr
-        self.writeable = None
-        self.readable = None
-        self.rawmodules = None
+        self.writeable = {}
+        self.readable = {}
+        self.rawdata = None
         self.read_setting(filename)
-
-    def __repr__(self):
-        return self.writeable.__repr__() + self.readable.__repr__()
 
     def read_setting(self, filename: str):
         """Read setting data files: 24 x 1280 data points, each 32 bit
@@ -315,58 +315,105 @@ class XIASetting():
         # variables, where we need to convert
         FLOATS = ['PreampTau']
 
-        results_w = []
-        results_r = []
-
-        names = settings
-
-        self.rawmodules = []
         with open(filename, 'rb') as f:
             for module in range(24):
                 rawsetting = []
                 for i in range(1280):
                     rawsetting.append(int.from_bytes(f.read(4), byteorder='little'))
-                self.rawmodules.append(rawsetting)
+                if module == self.modulenr:
+                    self.rawdata = rawsetting
+                    break
 
-        for mod in self.rawmodules:
-            outsetting = {}
-            outread = {}
-            for n, [pos, length] in names.items():
-                if n in FLOATS:
-                    value = [converter_ulong_to_IEEE754(mod[pos+k]) for k in range(length)]
+        for n, [pos, length] in settings.items():
+            if n in FLOATS:
+                value = [converter_ulong_to_IEEE754(self.rawdata[pos+k]) for k in range(length)]
+            else:
+                value = [self.rawdata[pos+k] for k in range(length)]
+            if length == 1:
+                if pos < 832:
+                    self.writeable[n] = value[0]
                 else:
-                    value = [mod[pos+k] for k in range(length)]
-                if length == 1:
-                    if pos < 832:
-                        outsetting[n] = value[0]
-                    else:
-                        outread[n] = value[0]
+                    self.readable[n] = value[0]
+            else:
+                if pos < 832:
+                    self.writeable[n] = value
                 else:
-                    if pos < 832:
-                        outsetting[n] = value
-                    else:
-                        outread[n] = value
-            outread['LiveTime'] = [(outread['LiveTimeA'][i] * 2**32 + outread['LiveTimeB']
-                                    [i]) * 10e-9 for i in range(16)]
-            outread['FastPeaks'] = [outread['FastPeaksA'][i] * 2
-                                    ** 32 + outread['FastPeaksB'][i] for i in range(16)]
-            outread['RealTime'] = (outread['RealTimeA'] * 2**32 + outread['RealTimeB']) * 10e-9
-            outread['RunTime'] = (outread['RunTimeA'] * 2**32 + outread['RunTimeB']) * 10e-9
+                    self.readable[n] = value
 
-            outsetting['OffsetVoltage'] = [
-                1.5 * ((32768-outsetting['OffsetDAC'][i]) / 32768) for i in range(16)]
-            results_w.append(outsetting)
-            results_r.append(outread)
+        self.readable['LiveTime'] = [(self.readable['LiveTimeA'][i] * 2**32 +
+                                      self.readable['LiveTimeB'][i]) * 10e-9 for i in range(16)]
+        self.readable['FastPeaks'] = [self.readable['FastPeaksA'][i]
+                                      * 2**32 + self.readable['FastPeaksB'][i] for i in range(16)]
+        self.readable['RealTime'] = (self.readable['RealTimeA'] * 2**32 + self.readable['RealTimeB']) * 10e-9
+        self.readable['RunTime'] = (self.readable['RunTimeA'] * 2**32 + self.readable['RunTimeB']) * 10e-9
 
-        self.writeable_list = results_w
-        self.readable_list = results_r
+        self.writeable['OffsetVoltage'] = [
+            1.5 * ((32768-self.writeable['OffsetDAC'][i]) / 32768) for i in range(16)]
 
-        if self.modulenr is not None:
-            self.writeable = results_w[self.modulenr]
-            self.readable = results_r[self.modulenr]
+    def __getitem__(self, key):
+        if key in self.readable:
+            return self.readable[key]
+        if key in self.writeable:
+            return self.writeable[key]
+        raise KeyError
+
+    def __str__(self):
+        out = f'Pixie16 settings for {self.filename}\n'
+        keys = sorted(list(self.readable.keys())+list(self.writeable.keys()))
+        for k in keys:
+            ro = '(ro)' if k in self.readable else ''
+            out += f'  {k}: {self[k]}  {ro}\n'
+        return out
 
     def __repr__(self):
-        return f'XIASetting: {self.filename}'
+        return f'Pixie16 settings for {self.filename}'
+
+    def print(self, channels=None, keys=None):
+        """Pretty print the settings
+
+        Optional the number of channels and settings names can be limited.
+
+        This prints two groups: module parameters and channel parameters
+        """
+
+        if keys is None:
+            keys = sorted(list(self.readable.keys())+list(self.writeable.keys()))
+        else:
+            keys = sorted(keys)
+
+        channel_keys = []
+        for k in keys:
+            if isinstance(self[k], list) and len(self[k]) == 16:
+                channel_keys.append(k)
+
+        print('Settings:')
+        for k in keys:
+            if k in channel_keys:
+                continue
+            ro = '(ro)' if k in self.readable else ''
+            print(f'  {k}: {self[k]}  {ro}')
+        d = {}
+        for k in channel_keys:
+            ro = '(ro)' if k in self.readable else ''
+            d[f'{k}{ro}'] = self[k]
+
+        if d:
+            # using pandas dataframe for easy printing, probably
+            # should remove this, since this is the only place where
+            # pandas is used at the moment
+            d = pd.DataFrame(d).T
+            if channels is not None:
+                print(d[channels].to_string())
+            else:
+                print(d.to_string())
+
+
+class XIASetting(Settings):
+    """An alias for the settings class with a previous name"""
+
+    def __init__(self, *args, **kwargs):
+        print('Pypixie: please update your code to use "Settings" instead of "XIASetting". Trying to use new code (this might not work)')
+        super().__init__(*args, **kwargs)
 
 
 def compare_module_setting(modA, modB, quiet=False, writeable_only=True):
