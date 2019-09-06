@@ -20,7 +20,7 @@ fname0 = '2019-08-16-test-alpha-det0018_mod00.bin'
 setfile0 = fname0[0:-10]+'.set'
 fname = find_file(fname0)
 setfile = find_file(setfile0)
-ch = 4
+ch = 2
 module = 0
 
 if fname0[-3:] == 'bin':
