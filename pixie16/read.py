@@ -358,10 +358,10 @@ class Settings():
         raise KeyError
 
     def __getattr__(self, attr):
-        if key in self.readable:
-            return self.readable[key]
-        if key in self.writeable:
-            return self.writeable[key]
+        if attr in self.readable:
+            return self.readable[attr]
+        if attr in self.writeable:
+            return self.writeable[attr]
         raise AttributeError
 
     def __str__(self):
