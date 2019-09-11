@@ -183,7 +183,7 @@ def persistence(trace, plot=True):
         plt.title(f'channel: {ch}; number of traces: {data_count[ch]}; live time: {setting.liveTime}s') 
         plt.show()
         
-    return shiftIDX
+    return sumIDX
 
 
 def own_CFD(w,num_traces):
@@ -217,25 +217,10 @@ def own_CFD(w,num_traces):
         plt.legend() 
         plt.show()
     return CFD, CFDth
- 
 
-if commands['--persistence']:
-    persistence(trace)
-    
-if commands['--own_cfd']:
-    CFD, CFDth = own_CFD(1,2)
-    shiftIDX = persistence(trace, plot=False)
-    CFDshift = advindexing_roll(CFD,-shiftIDX)
-    setting = read_settings(setfile)
-    CFDth = setting.CFDth
-    create_plot(CFDshift)
-    plt.plot([0, 2*(CFD.shape[1]-1)],[CFDth, CFDth], 'r--', label=f'CFD Threshold = {CFDth}')
-    plt.title('CFD Trace')
-    plt.title(f'channel: {ch}; number of CFD traces: {CFD.shape[0]}') 
-    plt.legend()
-    plt.show()
-
-if commands['--energy']:
+def energy_filter(num_traces):
+    '''calculate energy filter and plot a certain number 
+    (num_traces). Also plots the trace, FF, and peak sample'''
     setting = read_settings(setfile)
     Ls1 = int(setting.Ls*1000/2)
     Gs1 = int(setting.Gs*1000/2)
@@ -251,16 +236,38 @@ if commands['--energy']:
     tff = np.arange(FFshift, trace.shape[1], 1)
     tsf = np.arange(SFshift, trace.shape[1], 1)
     
-    idxth = np.where(FF[0]>setting.FFth)[0][0]  # idx where FF threshold is crossed
-    Esample = PS + idxth + FFshift # sampling location
-    plt.figure()
-    plt.plot(trace[0], label='Trace')
-    plt.plot(tff,FF[0], label='Fast filter')
-    plt.plot(tsf,SF[0], label='Slow filter')
-    plt.plot([0,1000],[setting.FFth, setting.FFth], 'r--', label = 'FF threshold')
-    plt.plot([Esample, Esample],[FF[0].min(), FF[0].max()], 'k--', label='E sample')
+    for i in range(num_traces):
+        idxth = np.where(FF[i]>setting.FFth)[0][0]  # idx where FF threshold is crossed
+        Esample = PS + idxth + FFshift # sampling location
+        plt.figure()
+        plt.plot(trace[i], label='Trace')
+        plt.plot(tff,FF[i], label='Fast filter')
+        plt.plot(tsf,SF[i], label='Slow filter')
+        plt.plot([trace[i].min(),trace[i].max()],[setting.FFth, setting.FFth], 'r--', label = 'FF threshold')
+        plt.plot([Esample, Esample],[FF[i].min(), FF[i].max()], 'k--', label='E sample')
+        plt.legend()
+        plt.show()
+    
+
+if commands['--persistence']:
+    persistence(trace)
+    
+if commands['--own_cfd']:
+    CFD, CFDth = own_CFD(1,2)
+    sumIDX = persistence(trace, plot=False)
+    shiftIDX = sumIDX.min()
+    CFDshift = advindexing_roll(CFD,-shiftIDX)
+    setting = read_settings(setfile)
+    CFDth = setting.CFDth
+    create_plot(CFDshift)
+    plt.plot([0, 2*(CFD.shape[1]-1)],[CFDth, CFDth], 'r--', label=f'CFD Threshold = {CFDth}')
+    plt.title('CFD Trace')
+    plt.title(f'channel: {ch}; number of CFD traces: {CFD.shape[0]}') 
     plt.legend()
     plt.show()
+
+if commands['--energy']:
+    
     
 #    energy = np.array(energy)
 #    
