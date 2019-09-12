@@ -232,8 +232,8 @@ def energy_filter(num_traces, calc_own_energy=False):
         plt.plot(FF[i], label='Fast filter')
         plt.plot(SF[i], label='Slow filter')
         plt.plot([0,trace.shape[1]],[setting.FFth, setting.FFth], 'r--', label = 'FF threshold')
-        plt.plot([EsampleFF, EsampleFF],[FF[i].min(), FF[i].max()], 'k--', label='E sample based on FF')
-        plt.plot([Esample, Esample],[SF[i].min(), SF[i].max()], 'b--', label='E sample based raw energy sums')
+        plt.plot([EsampleFF, EsampleFF],[FF[i].min(), FF[i].max()], 'k--', label='E, FF')
+        plt.plot([Esample[i], Esample[i]],[SF[i].min(), SF[i].max()], 'b--', label='E sample, E sums')
         plt.legend()
         plt.title(f'Channel: {ch}; Trace No: {i}')
         plt.show()
@@ -255,6 +255,7 @@ def energy_filter(num_traces, calc_own_energy=False):
 def energy_hist_pixie(xbins):
     
     setting = read_settings(setfile)
+    plt.figure()
     plt.hist(energy,xbins, edgecolor='k', label='PIXIE-16');
     plt.xlabel('Energy [a.u]')
     plt.ylabel('cts')
