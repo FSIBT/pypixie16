@@ -124,7 +124,7 @@ def persistence(trace, plot=True):
     '''find the index where the raw energy sums are caluclated and plot all
        traces in persistence mode. This can take a long time, so don't run 
        for too long'''
-    print('''Creating persistence plot. If you are using too many traces, it might take
+    print('''Calculating sums. If you are using too many traces, it might take
           a long time...''')   
     setting = read_settings(setfile)
     sumIDX = []
@@ -216,43 +216,50 @@ def energy_filter(num_traces, calc_own_energy=False):
     SFshift = trace.shape[1]-SF.shape[1]
     zeroFF = np.zeros([FF.shape[0],FFshift])
     zeroSF = np.zeros([SF.shape[0],SFshift])
-    FF = np.concatenate((zeroFF,FF))
-    SF = np.concatenate((zeroSF,SF))
+    FF = np.concatenate((zeroFF,FF), axis=1)
+    SF = np.concatenate((zeroSF,SF), axis=1)
+    sumIDX = persistence(trace, plot=False)
+    Esample = sumIDX + PS
     
     #tff = np.arange(FFshift, trace.shape[1], 1)
     #tsf = np.arange(SFshift, trace.shape[1], 1)
     
     for i in range(num_traces):
         idxth = np.where(FF[i]>setting.FFth)[0][0]  # idx where FF threshold is crossed
-        Esample = PS + idxth + FFshift # sampling location
+        EsampleFF = PS + idxth# sampling location
         plt.figure()
         plt.plot(trace[i], label='Trace')
         plt.plot(FF[i], label='Fast filter')
         plt.plot(SF[i], label='Slow filter')
         plt.plot([0,trace.shape[1]],[setting.FFth, setting.FFth], 'r--', label = 'FF threshold')
-        plt.plot([Esample, Esample],[FF[i].min(), FF[i].max()], 'k--', label='E sample')
+        plt.plot([EsampleFF, EsampleFF],[FF[i].min(), FF[i].max()], 'k--', label='E sample based on FF')
+        plt.plot([Esample, Esample],[SF[i].min(), SF[i].max()], 'b--', label='E sample based raw energy sums')
         plt.legend()
         plt.title(f'Channel: {ch}; Trace No: {i}')
         plt.show()
 
     if calc_own_energy:
-        for j,tr in enumerate(trace):
-            sumIDX = persistence(trace, plot=False)
-            Esample = sumIDX + PS
-            sfIDX = SFshift + Esample
-            
-            
-        
-        
+        calc_E = []
+        for j, samp in enumerate(Esample):
+            calc_E.append(SF[j][samp])
+        calc_E = np.array(calc_E)
+        plt.figure()
+        plt.hist(calc_E,500, edgecolor='k', label='calculated')
+        plt.xlabel('Energy [a.u]')
+        plt.ylabel('cts')
+        plt.title(f'Channel: {ch}; no. of events: {len(energy)}; live time: {setting.liveTime}s')
+        plt.legend()
+        plt.show()
         
         
 def energy_hist_pixie(xbins):
     
     setting = read_settings(setfile)
-    plt.hist(energy,xbins, edgecolor='k');
+    plt.hist(energy,xbins, edgecolor='k', label='PIXIE-16');
     plt.xlabel('Energy [a.u]')
     plt.ylabel('cts')
     plt.title(f'Channel: {ch}; no. of events: {len(energy)}; live time: {setting.liveTime}s')
+    plt.legend()
     plt.show()
 
 
