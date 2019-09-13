@@ -53,7 +53,11 @@ print('pileup events = ', pileup.count(1))
 print('clipped events = ', clipped.count(1))
 trace = np.array(trace)
 energy = np.array(energy)
+baseline = np.array(baseline)
 cfderror = np.array(cfderror)
+trailsum = np.array(trailsum)
+gapsum = np.array(gapsum)
+leadsum = np.array(leadsum)
 IDX = np.arange(0,trace.shape[0],1)  
 #IDXcfderror = IDX[cfderror]
 #IDXgood = IDX[~cfderror]
@@ -76,20 +80,21 @@ def shift_traces(traces, r):
 
 def read_settings(file):
     parameters = namedtuple('parameters', ['Gs', 'Ls', 'Lf', 'FFth',
-                             'CFDth', 'CFDdelay', 'Gf', 'liveTime', 'PeakSample'])
+                             'CFDth', 'CFDdelay', 'Gf', 'liveTime', 'PeakSample', 'tau'])
     S = read.Settings(file, module)
     liveTime = round(S['LiveTime'][ch],2) # seconds
     l = S['TraceLength'][ch]
     assert l == len(trace[0]), f'{l} {len(trace[0])}'
-    Gs = S['SlowGap'][ch]*2/100 # us
-    Ls = S['SlowLength'][ch]*2/100 # us
-    Lf = S['FastLength'][ch]/100 # us
-    Gf =  S['FastGap'][ch]/100
+    Gs = S['SlowGap'][ch]*5*2**S['SlowFilterRange']                        # *2/100 # us
+    Ls = S['SlowLength'][ch]*5*2**S['SlowFilterRange']                      # *2/100 # us
+    Lf = S['FastLength'][ch]*5*2**S['FastFilterRange']                     #/100 # us
+    Gf =  S['FastGap'][ch]*5*2**S['FastFilterRange']                        #/100
     FFth = S['FastThresh'][ch]*2/100  # ADC units
     CFDth = S['CFDThresh'][ch] # ADC units 
     CFDdelay = S['CFDDelay'][ch] # us
     PeakSample = S['PeakSample'][ch]
-    return parameters(Gs, Ls, Lf, FFth, CFDth, CFDdelay, Gf, liveTime, PeakSample)
+    tau = tau = S['PreampTau'][ch]
+    return parameters(Gs, Ls, Lf, FFth, CFDth, CFDdelay, Gf, liveTime, PeakSample, tau)
 
 
 def advindexing_roll(A, r):
@@ -120,7 +125,7 @@ def create_plot(traces, x_range=None):
     
     plt.show()
     
-def persistence(trace, plot=True):
+def persistence(trace, plot=True, keep_sums=False):
     '''find the index where the raw energy sums are caluclated and plot all
        traces in persistence mode. This can take a long time, so don't run 
        for too long'''
@@ -128,8 +133,9 @@ def persistence(trace, plot=True):
           a long time...''')   
     setting = read_settings(setfile)
     sumIDX = []
-    Ls = int(setting.Ls*1000/2)
-    Gs = int(setting.Gs*1000/2)
+    Esums = []
+    Ls = setting.Ls
+    Gs = setting.Gs
     for j in range(len(trace)):
         for i in range(len(trace[j])-2*Ls - Gs):
             s1 = np.sum(trace[j][i:i+Ls])
@@ -138,6 +144,8 @@ def persistence(trace, plot=True):
             #print([s1, s2, s3], [Esum1, Esum2, Esum3])
             if [s1, s2, s3] == [trailsum[j],gapsum[j] , leadsum[j]]:
                 sumIDX.append(i)
+                if keep_sums == True:
+                    Esums.append([s1,s2,s3])
                 #print(f'found it at {sumIDX}')
                 break
         else:
@@ -145,7 +153,8 @@ def persistence(trace, plot=True):
             print('Error: Try increasing trace length and/or trace delay and run again')
             sys.exit()
     
-    sumIDX = np.array(sumIDX)        
+    sumIDX = np.array(sumIDX)  
+    Esums = np.array(Esums)      
     #gapIDX = sumIDX + Ls
     minsumIDX = sumIDX.min()
     shiftIDX = sumIDX - minsumIDX
@@ -161,16 +170,19 @@ def persistence(trace, plot=True):
         plt.legend()
         plt.title(f'channel: {ch}; number of traces: {data_count[ch]}; live time: {setting.liveTime}s') 
         plt.show()
-        
-    return sumIDX
+    
+    if keep_sums == True:    
+        return sumIDX, Esums
+    else:
+        return sumIDX
 
 
 def own_CFD(w,num_traces):
     # perform own CFD calculation
     setting = read_settings(setfile)
     CFDth = setting.CFDth
-    Lf = int(setting.Lf*100)
-    Gf = int(setting.Gf*100)
+    Lf = int(setting.Lf)
+    Gf = int(setting.Gf)
     FFth = setting.FFth 
     
     w = [w]
@@ -203,11 +215,12 @@ def energy_filter(num_traces, calc_own_energy=False):
     '''calculate energy filter and plot a certain number 
     (num_traces). Also plots the trace, FF, and peak sample'''
     setting = read_settings(setfile)
-    Ls1 = int(setting.Ls*1000/2)
-    Gs1 = int(setting.Gs*1000/2)
-    Lf1 = int(setting.Lf*1000/2)
-    Gf1 = int(setting.Gf*1000/2)
+    Ls1 = int(setting.Ls)
+    Gs1 = int(setting.Gs)
+    Lf1 = int(setting.Lf)
+    Gf1 = int(setting.Gf)
     PS = setting.PeakSample*10 # in FPGA cycles (pp. 85)
+    tau = setting.tau
     
     SF = calculate_filter(trace, L=Ls1, G=Gs1)
     FF = calculate_filter(trace, L=Lf1, G=Gf1)
@@ -218,15 +231,32 @@ def energy_filter(num_traces, calc_own_energy=False):
     zeroSF = np.zeros([SF.shape[0],SFshift])
     FF = np.concatenate((zeroFF,FF), axis=1)
     SF = np.concatenate((zeroSF,SF), axis=1)
-    sumIDX = persistence(trace, plot=False)
+    sumIDX, Esums = persistence(trace, plot=False, keep_sums=True)
     Esample = sumIDX + PS
     
+    # doing it as described by Wolfgang for the pixie4
+    q = np.exp(-0.002/tau)
+    Cg = 1-q
+    C1 = (1-q)/(1-q**Ls1)
+    C0 = -C1*q**Ls1
+    # energies are shifted from 14 bits to 16 bits at one point, this is equal to multiplying by 4
+    # the baseline sum seems to be given in units of shifted energy
+    E_trace = []
+    for m,tr in enumerate(trace[0:1]):
+        for i in range(0, len(trace)-2*Ls1-Gs1, 10):
+            s1 = tr[i:i+Ls1].sum()
+            s2 = tr[i+Ls1:i+Ls1+Gs1].sum()
+            s3 = tr[i+Ls1+Gs1:i+Ls1+Gs1+Ls1].sum()
+            for j in range(10):
+                E_trace.append((C0*s1 +  Cg*s2 + C1*s3)*4 - baseline[m])
+        
+    E_trace = np.array(E_trace)
     #tff = np.arange(FFshift, trace.shape[1], 1)
     #tsf = np.arange(SFshift, trace.shape[1], 1)
     
     for i in range(num_traces):
         idxth = np.where(FF[i]>setting.FFth)[0][0]  # idx where FF threshold is crossed
-        EsampleFF = PS + idxth# sampling location
+        EsampleFF = PS + idxth # sampling location
         plt.figure()
         plt.plot(trace[i], label='Trace')
         plt.plot(FF[i], label='Fast filter')
