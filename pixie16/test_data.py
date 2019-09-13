@@ -80,9 +80,9 @@ def shift_traces(traces, r):
 
 def read_settings(file):
     parameters = namedtuple('parameters', ['Gs', 'Ls', 'Lf', 'FFth',
-                             'CFDth', 'CFDdelay', 'Gf', 'liveTime', 'PeakSample', 'tau'])
+                             'CFDth', 'CFDdelay', 'Gf', 'LiveTime', 'PeakSample', 'tau'])
     S = read.Settings(file, module)
-    liveTime = round(S['LiveTime'][ch],2) # seconds
+    LiveTime = round(S['LiveTimeB'][ch]*1e-8,2) # seconds
     l = S['TraceLength'][ch]
     assert l == len(trace[0]), f'{l} {len(trace[0])}'
     Gs = S['SlowGap'][ch]*5*2**S['SlowFilterRange']                        # *2/100 # us
@@ -94,7 +94,7 @@ def read_settings(file):
     CFDdelay = S['CFDDelay'][ch] # us
     PeakSample = S['PeakSample'][ch]
     tau = tau = S['PreampTau'][ch]
-    return parameters(Gs, Ls, Lf, FFth, CFDth, CFDdelay, Gf, liveTime, PeakSample, tau)
+    return parameters(Gs, Ls, Lf, FFth, CFDth, CFDdelay, Gf, LiveTime, PeakSample, tau)
 
 
 def advindexing_roll(A, r):
@@ -129,8 +129,8 @@ def persistence(trace, plot=True, keep_sums=False):
     '''find the index where the raw energy sums are caluclated and plot all
        traces in persistence mode. This can take a long time, so don't run 
        for too long'''
-    print('''Calculating sums. If you are using too many traces, it might take
-          a long time...''')   
+    print('Calculating sums. If you are using too many traces, it might take' +
+          ' a long time...')   
     setting = read_settings(setfile)
     sumIDX = []
     Esums = []
@@ -241,18 +241,21 @@ def energy_filter(num_traces, calc_own_energy=False):
     C0 = -C1*q**Ls1
     # energies are shifted from 14 bits to 16 bits at one point, this is equal to multiplying by 4
     # the baseline sum seems to be given in units of shifted energy
-    E_trace = []
-    for m,tr in enumerate(trace[0:1]):
-        for i in range(0, len(trace)-2*Ls1-Gs1, 10):
+    Eshift = trace.shape[1]-2*Ls1-Gs1
+    E_trace = np.zeros([trace.shape[0], Eshift])
+    print('Calculating energy filter...')
+    for k,tr in enumerate(trace):
+        n = 0
+        for i in range(0, Eshift, 10):
             s1 = tr[i:i+Ls1].sum()
             s2 = tr[i+Ls1:i+Ls1+Gs1].sum()
             s3 = tr[i+Ls1+Gs1:i+Ls1+Gs1+Ls1].sum()
             for j in range(10):
-                E_trace.append((C0*s1 +  Cg*s2 + C1*s3)*4 - baseline[m])
-        
-    E_trace = np.array(E_trace)
-    #tff = np.arange(FFshift, trace.shape[1], 1)
-    #tsf = np.arange(SFshift, trace.shape[1], 1)
+                #E_trace.append((C0*s1 + Cg*s2 + C1*s3)*4 - baseline[0])
+                E_trace[k,n] = (C0*s1 + Cg*s2 + C1*s3)*4 - baseline[k]
+                n += 1
+    zeroEF = np.zeros([E_trace.shape[0], trace.shape[1]-Eshift])
+    EF = np.concatenate((zeroEF,E_trace), axis=1)
     
     for i in range(num_traces):
         idxth = np.where(FF[i]>setting.FFth)[0][0]  # idx where FF threshold is crossed
@@ -277,7 +280,7 @@ def energy_filter(num_traces, calc_own_energy=False):
         plt.hist(calc_E,500, edgecolor='k', label='calculated')
         plt.xlabel('Energy [a.u]')
         plt.ylabel('cts')
-        plt.title(f'Channel: {ch}; no. of events: {len(energy)}; live time: {setting.liveTime}s')
+        plt.title(f'Channel: {ch}; no. of events: {len(energy)}; live time: {setting.LiveTime}s')
         plt.legend()
         plt.show()
         
@@ -289,7 +292,7 @@ def energy_hist_pixie(xbins):
     plt.hist(energy,xbins, edgecolor='k', label='PIXIE-16');
     plt.xlabel('Energy [a.u]')
     plt.ylabel('cts')
-    plt.title(f'Channel: {ch}; no. of events: {len(energy)}; live time: {setting.liveTime}s')
+    plt.title(f'Channel: {ch}; no. of events: {len(energy)}; live time: {setting.LiveTime}s')
     plt.legend()
     plt.show()
 
