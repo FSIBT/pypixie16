@@ -30,7 +30,7 @@ from . import variables
 SETTINGS = variables.settings
 SETTINGS_NAME_CHANNEL = []
 SETTINGS_NAME_MODULE = []
-for name, (startpos, length) in SEETTINGS.items():
+for name, (startpos, length) in SETTINGS.items():
     if length == 16:
         SETTINGS_NAME_MODULE.append(name)
     else:

@@ -290,9 +290,96 @@ def read_mca_mode_data(filename):
             results[channel] = spectrum
     return results
 
+class Units():
+    """"Convert settings to units (seconds) for the appropiate values"""
+
+    # list of settings that save binary data, list the start points of each group of bits
+    hex = {'ChanCSRa': [21, 20, 19, 18, 17, 16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0],
+           'MultiplicityMaskH': [31, 30, 27, 24, 21, 16, 15],
+           'MultiplicityMaskL': [31, 15],
+           'TrigConfig': [[31, 27, 25, 23, 19, 15, 14, 11, 7, 3],
+                          [31, 27, 23, 19, 15, 11, 7, 3],
+                          [31, 27, 26, 25, 24, 23, 21, 19, 17, 15, 11, 7, 3],
+                          []]}
+
+
+    def __init__(self, parent):
+        self.parent = parent
+
+    def convert_to_units(self, name):
+        if name not in self.parent.derived_keys:
+            value = self.parent[name]
+
+        FPGA_cycle = 10e-9
+        DATAPOINTS_PER_CYCLE = 5
+        if name == 'FastLength':
+            return [v*FPGA_cycle for v in value]
+        elif name == 'FastGap':
+            return [v*FPGA_cycle for v in value]
+        elif name == 'PeakSample':
+            return [v for v in value]
+        elif name == 'PeakSep':
+            return [v for v in value]
+        elif name == 'SlowLength':
+            filter_range = self.parent.SlowFilterRange
+            return [v*FPGA_cycle*2**filter_range for v in value]
+        elif name == 'SlowGap':
+            filter_range = self.parent.SlowFilterRange
+            return [v*FPGA_cycle*2**filter_range for v in value]
+        elif name == 'FastThresh':
+            L = self.parent['FastLength']
+            return [v/l/DATAPOINTS_PER_CYCLE for v, l in zip(value, L)]
+        elif name == 'CDFTresh':
+            return [v for v in value]
+        elif name == 'TraceLength':
+            return [v*FPGA_cycle/DATAPOINTS_PER_CYCLE for v in value]
+        elif name == 'OffsetDAC':
+            return [v for v in value]
+        elif name == 'GainDAC':
+            return [v for v in value]
+        elif name == 'ChanCSRb':
+            return [v for v in value]
+        elif name == 'ExtTrigStretch':
+            return [v*FPGA_cycle for v in value]
+        elif name == 'VetoStretch':
+            return [v*FPGA_cycle for v in value]
+        elif name == 'FastTrigBackLen':
+            return [v*FPGA_cycle for v in value]
+        elif name == 'ExtDelayLen':
+            return [v*FPGA_cycle for v in value]
+        elif name in Units.hex.keys():
+                pass
+        # derived values
+        elif name == 'LiveTime':
+            return [(self.parent['LiveTimeA'][i] * 2**32 +
+                     self.parent['LiveTimeB'][i]) * FPGA_cycle for i in range(16)]
+        elif name == 'FastPeaks':
+            return [self.parent['FastPeaksA'][i]* 2**32 + self.readable['FastPeaksB'][i] for i in range(16)]
+        elif name == 'RealTime':
+            return (self.parent['RealTimeA'] * 2**32 + self.parent['RealTimeB']) * FPGA_cycle
+        elif name == 'RunTime':
+            return (self.parent['RunTimeA'] * 2**32 + self.parent['RunTimeB']) * FPGA_cycle
+        elif name == 'TraceDelay':
+            return [(p - t)*FPGA_cycle for p, t in zip(self.parent['PAFlength'], self.parent['TriggerDelay'])]
+        elif name == 'OffsetVoltage':
+            return [1.5 * ((32768-self.parent['OffsetDAC'][i]) / 32768) for i in range(16)]
+    
+        return value
+
+    def print(self, *args, **kwargs):
+        kwargs.pop('units', None)
+        self.parent.print(*args, **kwargs, units=True)
+
+    def __getitem__(self, key):
+        return self.convert_to_units(key)
+
+    def __getattr__(self, attr):
+        return self.convert_to_units(attr)
 
 class Settings():
     """Capture all the settings from a single module """
+
+    derived_keys = ['LiveTime', 'FastPeaks', 'RealTime', 'RunTime', 'TraceDelay', 'OffsetVoltage']
 
     def __init__(self, filename: str, modulenr: int):
         self.filename = filename
@@ -301,6 +388,7 @@ class Settings():
         self.readable = {}
         self.rawdata = None
         self.read_setting(filename)
+        self.units = Units(self)
 
     def read_setting(self, filename: str):
         """Read setting data files: 24 x 1280 data points, each 32 bit
@@ -339,23 +427,16 @@ class Settings():
                     self.writeable[n] = value
                 else:
                     self.readable[n] = value
-
-        self.readable['LiveTime'] = [(self.readable['LiveTimeA'][i] * 2**32 +
-                                      self.readable['LiveTimeB'][i]) * 10e-9 for i in range(16)]
-        self.readable['FastPeaks'] = [self.readable['FastPeaksA'][i]
-                                      * 2**32 + self.readable['FastPeaksB'][i] for i in range(16)]
-        self.readable['RealTime'] = (self.readable['RealTimeA'] * 2**32 + self.readable['RealTimeB']) * 10e-9
-        self.readable['RunTime'] = (self.readable['RunTimeA'] * 2**32 + self.readable['RunTimeB']) * 10e-9
-
-        self.writeable['OffsetVoltage'] = [
-            1.5 * ((32768-self.writeable['OffsetDAC'][i]) / 32768) for i in range(16)]
-
+        
+        # some derived values
+        self.readable['TriggerDelay'] = [(p-1) *  2**self['SlowFilterRange'] for p in self['PeakSep']]
+        
     def __getitem__(self, key):
         if key in self.readable:
             return self.readable[key]
         if key in self.writeable:
             return self.writeable[key]
-        raise KeyError
+        raise KeyError(f'Key {key} not in Settings')
 
     def __getattr__(self, attr):
         if attr in self.readable:
@@ -375,22 +456,25 @@ class Settings():
     def __repr__(self):
         return f'Pixie16 settings for {self.filename}'
 
-    def print(self, channels=None, keys=None):
+    def print(self, channels=None, keys=None, units=False):
         """Pretty print the settings
 
         Optional the number of channels and settings names can be limited.
 
         This prints two groups: module parameters and channel parameters
         """
-
         if keys is None:
             keys = sorted(list(self.readable.keys())+list(self.writeable.keys()))
+            if units:
+                keys = keys + Settings.derived_keys
         else:
             keys = sorted(keys)
 
         channel_keys = []
         for k in keys:
-            if isinstance(self[k], list) and len(self[k]) == 16:
+            if k in Settings.derived_keys:
+                channel_keys.append(k)
+            elif isinstance(self[k], list) and len(self[k]) == 16:
                 channel_keys.append(k)
 
         print('Settings:')
@@ -398,11 +482,18 @@ class Settings():
             if k in channel_keys:
                 continue
             ro = '(ro)' if k in self.readable else ''
-            print(f'  {k}: {self[k]}  {ro}')
+            if units:
+                value = self[k]
+            else:
+                value = self.units.convert_to_units(k)
+            print(f'  {k}: {value}  {ro}')
         d = {}
         for k in channel_keys:
             ro = '(ro)' if k in self.readable else ''
-            d[f'{k}{ro}'] = self[k]
+            if units:
+                d[f'{k}{ro}'] = self.units.convert_to_units(k)
+            else:
+                d[f'{k}{ro}'] = self[k]
 
         if d:
             # using pandas dataframe for easy printing, probably
