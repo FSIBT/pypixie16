@@ -3,15 +3,18 @@ Usage:
   ROOTS-test-data.py <binFile> <channel> [options]
   
 options:
-  --persistence   persistence plot of traces
-  --own_cfd       perform own CFD calculation and plot traces amd thresholds
-  --energy        plot energy histogram, filter, and peakSample
+  --persistence          persistence plot of traces
+  --own_cfd              perform own CFD calculation and plot traces amd thresholds
+  --energy_traces        plot calculated energy histogram, filters, and peakSample
+  --energy_pixie         plot pixie energy histogram
       
 Functions to help test PIXIE-16 data
 Need to have traces and raw energy sums enabled      
 """
 
-# test file alpha det: 2019-08-16-test-alpha-det0018_mod00.bin
+# tested files:
+# alpha det: 2019-08-16-test-alpha-det0018_mod00.bin
+# API: 
 
 import docopt
 commands = docopt.docopt(__doc__)
@@ -89,36 +92,33 @@ def shift_traces(traces, r):
         r[r < 0] += traces.shape[1]
         column_indices = column_indices - r[:,np.newaxis]
     else:
-        raise Exception('wrong type. Need numpy arrays')
+        raise Exception('Wrong type. Need numpy arrays')
     return traces[rows, column_indices]
 
 def read_settings(file):
     parameters = namedtuple('parameters', ['Gs', 'Ls', 'Lf', 'FFth',
-                             'CFDth', 'CFDdelay', 'Gf', 'liveTime', 'PeakSample'])
+                             'CFDth', 'CFDdelay', 'Gf', 'LiveTime', 'PeakSample', 'tau'])
     S = read.Settings(file, module)
-    liveTime = round(S['LiveTime'][ch],2) # seconds
+    LiveTime = round(S['LiveTimeB'][ch]*1e-8,2) # seconds
     l = S['TraceLength'][ch]
     assert l == len(trace[0]), f'{l} {len(trace[0])}'
-    Gs = S['SlowGap'][ch]*2/100 # us
-    Ls = S['SlowLength'][ch]*2/100 # us
-    Lf = S['FastLength'][ch]/100 # us
-    Gf =  S['FastGap'][ch]/100
+    Gs = S['SlowGap'][ch]*5*2**S['SlowFilterRange']                        # *2/100 # us
+    Ls = S['SlowLength'][ch]*5*2**S['SlowFilterRange']                      # *2/100 # us
+    Lf = S['FastLength'][ch]*5*2**S['FastFilterRange']                     #/100 # us
+    Gf =  S['FastGap'][ch]*5*2**S['FastFilterRange']                        #/100
     FFth = S['FastThresh'][ch]*2/100  # ADC units
     CFDth = S['CFDThresh'][ch] # ADC units 
     CFDdelay = S['CFDDelay'][ch] # us
     PeakSample = S['PeakSample'][ch]
-    return parameters(Gs, Ls, Lf, FFth, CFDth, CFDdelay, Gf, liveTime, PeakSample)
+    tau = tau = S['PreampTau'][ch]
+    return parameters(Gs, Ls, Lf, FFth, CFDth, CFDdelay, Gf, LiveTime, PeakSample, tau)
+
 
 def advindexing_roll(A, r):
-    ''' Roll rows of a 2D matrix independently
-    A must be a 2D numpy array and r a 1D numpy array'''
-    if len(A.shape) != 2:
-        print('Error: The trace input must be a 2D numpy array')
-        sys.exit()
-    rows, column_indices = np.ogrid[:A.shape[0], :A.shape[1]]    
-    r[r < 0] += A.shape[1]
-    column_indices = column_indices - r[:,np.newaxis]
-    return A[rows, column_indices]
+        rows, column_indices = np.ogrid[:A.shape[0], :A.shape[1]]    
+        r[r < 0] += A.shape[1]
+        column_indices = column_indices - r[:,np.newaxis]
+        return A[rows, column_indices]
     
 # persistent plot
 def create_plot(traces, x_range=None):
@@ -140,17 +140,19 @@ def create_plot(traces, x_range=None):
     ax.set_xlabel('Time [ns]')
     ax.set_ylabel('ADC units [a.u]')
     
-    #plt.show()
+    plt.show()
     
-def persistence(trace, plot=True):
+def persistence(trace, plot=True, keep_sums=False):
     '''find the index where the raw energy sums are caluclated and plot all
        traces in persistence mode. This can take a long time, so don't run 
        for too long'''
-    print('Creating persistence plot...')   
+    print('Calculating sums. If you are using too many traces, it might take' +
+          ' a long time...')   
     setting = read_settings(setfile)
     sumIDX = []
-    Ls = int(setting.Ls*1000/2)
-    Gs = int(setting.Gs*1000/2)
+    Esums = []
+    Ls = setting.Ls
+    Gs = setting.Gs
     for j in range(len(trace)):
         for i in range(len(trace[j])-2*Ls - Gs):
             s1 = np.sum(trace[j][i:i+Ls])
@@ -159,14 +161,19 @@ def persistence(trace, plot=True):
             #print([s1, s2, s3], [Esum1, Esum2, Esum3])
             if [s1, s2, s3] == [trailsum[j],gapsum[j] , leadsum[j]]:
                 sumIDX.append(i)
+                if keep_sums == True:
+                    Esums.append([s1,s2,s3])
                 #print(f'found it at {sumIDX}')
                 break
         else:
             print('Error: Could not find sums!')
             print('Error: Try increasing trace length and/or trace delay and run again')
+            print('Ideal settings for offline computation: trace length > 2*Ls+Gs'+
+                  ' pretrigger length > 3*Ls+Gs (p.69, rev. 01/2019)')
             sys.exit()
     
-    sumIDX = np.array(sumIDX)        
+    sumIDX = np.array(sumIDX)  
+    Esums = np.array(Esums)      
     #gapIDX = sumIDX + Ls
     minsumIDX = sumIDX.min()
     shiftIDX = sumIDX - minsumIDX
@@ -180,18 +187,21 @@ def persistence(trace, plot=True):
         plt.plot([t[minsumIDX+Ls + Gs+ Ls],t[minsumIDX + Ls + Gs + Ls]],[trace.min(),
                  trace.max()],'r--')
         plt.legend()
-        plt.title(f'channel: {ch}; number of traces: {data_count[ch]}; live time: {setting.liveTime}s') 
+        plt.title(f'channel: {ch}; number of traces: {data_count[ch]}; live time: {setting.LiveTime}s') 
         plt.show()
-        
-    return sumIDX
+    
+    if keep_sums == True:    
+        return sumIDX, Esums
+    else:
+        return sumIDX
 
 
-def own_CFD(w,num_traces):
+def own_CFD(w,num_traces, persist=False):
     # perform own CFD calculation
     setting = read_settings(setfile)
     CFDth = setting.CFDth
-    Lf = int(setting.Lf*100)
-    Gf = int(setting.Gf*100)
+    Lf = int(setting.Lf)
+    Gf = int(setting.Gf)
     FFth = setting.FFth 
     
     w = [w]
@@ -199,10 +209,13 @@ def own_CFD(w,num_traces):
     D = [5]
     L = [1]
     
+
+
     CFD, cfdtime, FF, IDXerr = calculate_CFD_using_FF(trace, t=t, CFD_threshold=CFDth, FF_threshold=FFth, Lf=Lf, Gf=Gf,
                                                           w=w[0], B=B[0], D=D[0], L=L[0], Nbkgd=10, FF_delay=20, CFD_delay=0)
  
-    cfdtime = cfdtime[cfdtime != np.array(None)] # throw away CFD errors    
+    cfdtime = cfdtime[cfdtime != np.array(None)]
+    
     tcfd = t[B[0]+D[0]:trace.shape[1]-L[0]+1]
     tff = t[0:FF.shape[1]]
     
@@ -216,57 +229,129 @@ def own_CFD(w,num_traces):
         plt.plot(cfdtime[i],0,'.', ms=10)
         plt.legend() 
         plt.show()
-    return CFD, CFDth
-
-def energy_filter(num_traces):
+    
+    if persist:    
+        sumIDX = persistence(trace, plot=False)
+        minsumIDX = sumIDX.min()
+        shiftIDX = sumIDX - minsumIDX
+        CFDshift = advindexing_roll(CFD,-shiftIDX)
+        create_plot(CFDshift)
+        plt.plot([0, 2*(CFD.shape[1]-1)],[CFDth, CFDth], 'r--', label=f'CFD Threshold = {CFDth}')
+        plt.title('CFD Trace')
+        plt.title(f'channel: {ch}; number of CFD traces: {CFD.shape[0]}') 
+        plt.legend()
+        plt.show()
+        
+ 
+def energy_filter(num_traces, calc_own_energy=False):
     '''calculate energy filter and plot a certain number 
     (num_traces). Also plots the trace, FF, and peak sample'''
     setting = read_settings(setfile)
-    Ls1 = int(setting.Ls*1000/2)
-    Gs1 = int(setting.Gs*1000/2)
-    Lf1 = int(setting.Lf*1000/2)
-    Gf1 = int(setting.Gf*1000/2)
+    Ls1 = int(setting.Ls)
+    Gs1 = int(setting.Gs)
+    Lf1 = int(setting.Lf)
+    Gf1 = int(setting.Gf)
     PS = setting.PeakSample*10 # in FPGA cycles (pp. 85)
+    tau = setting.tau
     
     SF = calculate_filter(trace, L=Ls1, G=Gs1)
     FF = calculate_filter(trace, L=Lf1, G=Gf1)
     
     FFshift = trace.shape[1]-FF.shape[1]
     SFshift = trace.shape[1]-SF.shape[1]
-    tff = np.arange(FFshift, trace.shape[1], 1)
-    tsf = np.arange(SFshift, trace.shape[1], 1)
+    zeroFF = np.zeros([FF.shape[0],FFshift])
+    zeroSF = np.zeros([SF.shape[0],SFshift])
+    FF = np.concatenate((zeroFF,FF), axis=1)
+    SF = np.concatenate((zeroSF,SF), axis=1)
+    sumIDX, Esums = persistence(trace, plot=False, keep_sums=True)
+    Esample = sumIDX + PS
+    
+    # doing it as described by Wolfgang for the pixie4
+    q = np.exp(-0.002/tau)
+    Cg = 1-q
+    C1 = (1-q)/(1-q**Ls1)
+    C0 = -C1*q**Ls1
+    # energies are shifted from 14 bits to 16 bits at one point, this is equal to multiplying by 4
+    # the baseline sum seems to be given in units of shifted energy
+    Eshift = trace.shape[1]-2*Ls1-Gs1
+    E_trace = np.zeros([trace.shape[0], Eshift])
+    print('Calculating energy filter...')
+    for k,tr in enumerate(trace):
+        n = 0
+        for i in range(0, Eshift, 10):
+            s1 = tr[i:i+Ls1].sum()
+            s2 = tr[i+Ls1:i+Ls1+Gs1].sum()
+            s3 = tr[i+Ls1+Gs1:i+Ls1+Gs1+Ls1].sum()
+            for j in range(10):
+                #E_trace.append((C0*s1 + Cg*s2 + C1*s3)*4 - baseline[0])
+                E_trace[k,n] = (C0*s1 + Cg*s2 + C1*s3)*4 - baseline[k]
+                n += 1
+    zeroEF = np.zeros([E_trace.shape[0], trace.shape[1]-Eshift])
+    EF = np.concatenate((zeroEF,E_trace), axis=1)
     
     for i in range(num_traces):
         idxth = np.where(FF[i]>setting.FFth)[0][0]  # idx where FF threshold is crossed
-        Esample = PS + idxth + FFshift # sampling location
+        EsampleFF = PS + idxth # sampling location
         plt.figure()
         plt.plot(trace[i], label='Trace')
-        plt.plot(tff,FF[i], label='Fast filter')
-        plt.plot(tsf,SF[i], label='Slow filter')
-        plt.plot([trace[i].min(),trace[i].max()],[setting.FFth, setting.FFth], 'r--', label = 'FF threshold')
-        plt.plot([Esample, Esample],[FF[i].min(), FF[i].max()], 'k--', label='E sample')
+        plt.plot(FF[i], label='Fast filter')
+        plt.plot(SF[i], label='Slow filter')
+        plt.plot(EF[i], label='Energy filter')
+        plt.plot([0,trace.shape[1]],[setting.FFth, setting.FFth], 'r--', label = 'FF threshold')
+        plt.plot([sumIDX[0], sumIDX[0]], [0,EF[i].max()], 'k--', label='Energy sums')
+        plt.plot([sumIDX[0]+Ls1, sumIDX[0]+Ls1], [0,EF[i].max()], 'k--')
+        plt.plot([sumIDX[0]+Ls1+Gs1, sumIDX[0]+Ls1+Gs1], [0,EF[i].max()], 'k--')
+        plt.plot([sumIDX[0]+Ls1+Gs1+Ls1, sumIDX[0]+Ls1+Gs1+Ls1], [0,EF[i].max()], 'k--')
+        
+        plt.plot([EsampleFF, EsampleFF],[0, EF[i].max()], 'b--', label='E samp, FF')
+        plt.plot([Esample[i], Esample[i]],[0, EF[i].max()], 'g--', label='E samp, E sums')
+        plt.legend()
+        plt.title(f'Channel: {ch}; Trace No: {i}')
+        plt.show()
+
+    if calc_own_energy:
+        calc_E = []
+        for j, samp in enumerate(Esample):
+            calc_E.append(EF[j][samp])
+        calc_E = np.array(calc_E)
+        plt.figure()
+        plt.hist(calc_E,500, edgecolor='k', label='Calculated')
+        plt.xlabel('Energy [a.u]')
+        plt.ylabel('cts')
+        plt.title(f'Channel: {ch}; no. of events: {len(energy)}; live time: {setting.LiveTime}s')
         plt.legend()
         plt.show()
+        
+        
+def energy_hist_pixie(xbins):
+    
+    setting = read_settings(setfile)
+    plt.figure()
+    plt.hist(energy,xbins, edgecolor='k', label='PIXIE-16');
+    plt.xlabel('Energy [a.u]')
+    plt.ylabel('cts')
+    plt.title(f'Channel: {ch}; no. of events: {len(energy)}; live time: {setting.LiveTime}s')
+    plt.legend()
+    plt.show()
     
 
 if commands['--persistence']:
     persistence(trace)
     
 if commands['--own_cfd']:
-    CFD, CFDth = own_CFD(1,2)
-    sumIDX = persistence(trace, plot=False)
-    shiftIDX = sumIDX.min()
-    CFDshift = advindexing_roll(CFD,-shiftIDX)
-    setting = read_settings(setfile)
-    CFDth = setting.CFDth
-    create_plot(CFDshift)
-    plt.plot([0, 2*(CFD.shape[1]-1)],[CFDth, CFDth], 'r--', label=f'CFD Threshold = {CFDth}')
-    plt.title('CFD Trace')
-    plt.title(f'channel: {ch}; number of CFD traces: {CFD.shape[0]}') 
-    plt.legend()
-    plt.show()
+    own_CFD(0.3125,10, persist=True)
 
-if commands['--energy']:
+if commands['--energy_traces']:
+    energy_filter(10, calc_own_energy=True)
+    
+if commands['--energy_pixie']:
+    energy_hist_pixie(500)
+    
+if save_pdf():
+    persistence(trace)
+    own_CFD(0.3215,20, persist=True)
+    energy_hist_pixie(500)
+    
     
     
 #    energy = np.array(energy)
