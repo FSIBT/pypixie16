@@ -32,9 +32,9 @@ SETTINGS_NAME_CHANNEL = []
 SETTINGS_NAME_MODULE = []
 for name, (startpos, length) in SETTINGS.items():
     if length == 16:
-        SETTINGS_NAME_MODULE.append(name)
-    else:
         SETTINGS_NAME_CHANNEL.append(name)
+    else:
+        SETTINGS_NAME_MODULE.append(name)
 
 if sys.maxsize > 2**32:
     print('WARNING: need to run 32bit python to use this library')
@@ -45,7 +45,6 @@ inifile = Path(dirs.user_config_dir) / "config.ini"
 
 config = configparser.ConfigParser()
 config.read(inifile)
-
 
 def config_get_parameters(section, name):
     try:
@@ -1151,11 +1150,69 @@ def change_setting(name, value, channel=None, module=0):
 
     new = change_setting_in_memory(setting, name, value, channel, module)
 
-    if new:
+    if new is not None:
         write_raw_settings(module, setting)
     else:
         log.error(f'change_setting: Could not change settings')
 
+
+def change_CSRA_bit(setting, value:bool, channel:int, bit:int):
+    """Update a bit in register A
+
+    setting: from read_raw_setting (a block of memory)
+    value: True or False
+    """
+    start, length = variables.settings['ChanCSRa']
+    current = setting[start+channel]
+    new = value<<bit
+    if value:
+        # set the bit
+        new = current | new
+    else:
+        # unset the bit
+        new = current & ~new
+    setting[start+channel] = new
+    print(f'DEBUG setting bits: {current:b} {new:b} {bit} {start}')
+
+    return setting
+
+def change_CSRA(setting, name, value:float, channel:int):
+    """Updated bit 14 (gain) to the new value
+
+    setting: from read_raw_setting (a block of memory)
+    """
+    if name == 'Gain':
+        # value: 0.625 or 2.5
+        print('DEBUG setting gain', channel, value, value==2.5)
+        return change_CSRA_bit(setting, value==2.5, channel, 14)
+    elif name == 'FastTrigSelect':
+        # value: 'external' or 'group'
+        return change_CSRA_bit(setting, value=='external', channel, 0)
+    elif name == 'RejectIfFull':
+        # value: True = reject data if buffer is full
+        return change_CSRA_bit(setting, value, channel, 4)
+    elif name == 'Polarity':
+        # value: True=positive slope, False=negative slope
+        print('DEBUG setting polarity', channel, value, value=='positive')
+        return change_CSRA_bit(setting, value=='positive', channel, 5)
+    elif name == 'CaptureEnergy':
+        # value: True = enable capture
+        return change_CSRA_bit(setting, value, channel, 7)
+    elif name == 'CaptureTrace':
+        # value: True = enable capture trace
+        return change_CSRA_bit(setting, value, channel, 8)
+    elif name == 'EnableCFD':
+        # value: True = enable CFD
+        return change_CSRA_bit(setting, value, channel, 10)
+    elif name == 'CaptureSums':
+        # value: True = enable capture energy susms
+        return change_CSRA_bit(setting, value, channel, 12)
+    elif name == 'RequireExtTrigger':
+        # value: True = enable external trigger
+        return change_CSRA_bit(setting, value, channel, 13)
+    elif name == 'RejectPileup':
+        # value: True = enable pileup rejection
+        return change_CSRA_bit(setting, value, channel, 15)
 
 def change_setting_dict(settings):
     """Takes a dictionary with setting names as keys and setting values
@@ -1204,10 +1261,30 @@ def change_setting_dict(settings):
     if not 'TriggerDelay' in settings:
         pass # TODO
 
+    if 'PreampTau' in settings:
+        name = 'PreampTau'
+        if isinstance(settings[name], int):
+            settings[name] = converter_IEEE754_to_ulong(settings[name]).value
+        else:
+            settings[name] = [converter_IEEE754_to_ulong(x).value for x in settings[name]]
+
 
     # update all settings
     for name, values in settings.items():
-        if name in SETTINGS_NAME_CHANNEL:
+        # single bit settings
+        if name in ['Gain', 'Polarity', 'CaptureEnergy','CaptureTrace', 'CaptureSums', 'EnableCFD',
+                    'RequireExtTrigger', 'RejectPileup', 'FastTrigSelect', 'RejectIfFull' ]:
+            print('DEBUG', name, values)
+            if isinstance(values, (list, tuple)):
+                if len(values) == len(channels):
+                    for value, channel in zip(values, channels):
+                        mod, ch = channel
+                        current[mod] = change_CSRA(current[mod], name, value, ch)
+            else:
+                for channel in channels:
+                    mod, ch = channel
+                    current[mod] = change_CSRA(current[mod], name, values, ch)
+        elif name in SETTINGS_NAME_CHANNEL:
             if isinstance(settings[name], (list, tuple)):
                 if len(settings[name]) == len(channels):
                     for value, channel in zip(settings[name], channels):
@@ -1218,7 +1295,7 @@ def change_setting_dict(settings):
                         for ch in range(16):
                             change_setting_in_memory(current[mod], name, value, ch, mod)
                 else:
-                     raise TypeError('Wrong type (or length) for channel parameter in change_settings_dict')
+                     raise TypeError(f'Wrong type (or length) for channel parameter {name} in change_settings_dict, values: {settings[name]}')
             elif isinstance(settings[name], int):
                     value = settings[name]
                     for mod in modules:

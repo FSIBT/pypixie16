@@ -363,7 +363,6 @@ class Units():
             return [(p - t)*FPGA_cycle for p, t in zip(self.parent['PAFlength'], self.parent['TriggerDelay'])]
         elif name == 'OffsetVoltage':
             return [1.5 * ((32768-self.parent['OffsetDAC'][i]) / 32768) for i in range(16)]
-    
         return value
 
     def print(self, *args, **kwargs):
