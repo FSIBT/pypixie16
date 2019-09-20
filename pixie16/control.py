@@ -124,6 +124,7 @@ valid_module_parameter_names = ['MODULE_NUMBER',
                                 'CrateID',
                                 'SlotID',
                                 'ModID',
+                                'TrigConfig',
                                 'HOST_RT_PRESET']
 
 valid_channel_parameter_names = ['TRIGGER_RISETIME',
@@ -1093,6 +1094,9 @@ def write_raw_settings(module, setting, start=0x4a000):
         return
 
     N = len(setting)
+    if N > 832:
+        setting = setting[:832]
+        N = 832
     Cwords = ctypes.c_uint(N)
     Caddress = ctypes.c_uint(start)
     Cdata = setting.ctypes.data_as(ctypes.POINTER(ctypes.c_uint))
@@ -1114,16 +1118,34 @@ def write_raw_settings(module, setting, start=0x4a000):
 def change_setting_in_memory(setting, name, value, channel=None, module=0):
     """Changes a single setting inside a block of memory read by read_raw_settings"""
 
+    # ensure correct sign for
+    if name in ['Log2Ebin', 'Log2Bweight']:
+        value = -abs(value)
+
+    # error checking
+    if name in ['Log2Bweight', 'Log2Ebin']:
+        if abs(value) > 16:
+            raise ValueError(f'Error: {name} cannot be larger than 16! value {value} channel {channel} module {module}')
+        if value == 0 and name == 'Log2Ebin':
+            raise ValueError(f'Error: {name} cannot be 0! value {value} channel {channel} module {module}')
+    elif name == 'FastThresh':
+        if value > 65534:
+            raise ValueError(f'Error: {name} must be smaller than 65535! value {value} channel {channel} module {module}')
+
+
     if name in variables.settings:
         start, length = variables.settings[name]
         if channel is None:
+            if length == 1 and isinstance(value, int):
+                setting[start] = value
+                return setting
             try:
                 if len(value) != length:
                     log.error(f'change_setting: wrong number of arguments for setting {name}.',
                               f' Need {length}, got {len(value)}')
                     return
             except TypeError:
-                log.error(f'change_setting: wrong type of argument. Need a list of values')
+                log.error(f'change_setting: wrong type of argument. Need a list of values for {name}, got {value}.')
                 return
             for k, v in zip(range(length), value):
                 idx = start + k
@@ -1172,7 +1194,6 @@ def change_CSRA_bit(setting, value:bool, channel:int, bit:int):
         # unset the bit
         new = current & ~new
     setting[start+channel] = new
-    print(f'DEBUG setting bits: {current:b} {new:b} {bit} {start}')
 
     return setting
 
@@ -1183,7 +1204,6 @@ def change_CSRA(setting, name, value:float, channel:int):
     """
     if name == 'Gain':
         # value: 0.625 or 2.5
-        print('DEBUG setting gain', channel, value, value==2.5)
         return change_CSRA_bit(setting, value==2.5, channel, 14)
     elif name == 'FastTrigSelect':
         # value: 'external' or 'group'
@@ -1193,7 +1213,6 @@ def change_CSRA(setting, name, value:float, channel:int):
         return change_CSRA_bit(setting, value, channel, 4)
     elif name == 'Polarity':
         # value: True=positive slope, False=negative slope
-        print('DEBUG setting polarity', channel, value, value=='positive')
         return change_CSRA_bit(setting, value=='positive', channel, 5)
     elif name == 'CaptureEnergy':
         # value: True = enable capture
@@ -1214,7 +1233,17 @@ def change_CSRA(setting, name, value:float, channel:int):
         # value: True = enable pileup rejection
         return change_CSRA_bit(setting, value, channel, 15)
 
-def change_setting_dict(settings):
+def get_setting_value(name, settings, channels, current_settings):
+    '''Returns name from setting dictionary or from memory'''
+    if name in settings:
+        temp = settings[name]
+        if isinstance(temp, int):
+            temp = [temp]*len(channels)
+    else:
+        temp = [current_settings[mod][SETTINGS[name][0]+c] for mod, c in channels]
+    return temp
+
+def change_setting_dict(settings, auto_update=True):
     """Takes a dictionary with setting names as keys and setting values
 
     The dictionary must also contain an entry called 'channels' that list all
@@ -1249,17 +1278,83 @@ def change_setting_dict(settings):
     # get all the raw settings data from the pixie
     current = {}
     for mod in modules:
-        current[mod] = read_raw_settings(mod, N=832)
+        current[mod] = read_raw_settings(mod, N=1280)
 
     # update depend values
-    if not 'PeakSample' in settings:
-        pass # TODO
-    if not 'PeakSep' in settings:
-        pass # TODO
-    if not 'PAFlength' in settings:
-        pass # TODO
-    if not 'TriggerDelay' in settings:
-        pass # TODO
+    if 'SlowLength' in settings or 'SlowGap' in settings:
+        SL = get_setting_value('SlowLength', settings, channels, current)
+        SG = get_setting_value('SlowGap', settings, channels, current)
+        for i, (sl, sg) in enumerate(zip(SL, SG)):
+            if sl + sg > 127:
+                print(f'Warning: SlowLength + SlowGap > 127. SL {SL} SG {SG}')
+                sl = 127 - sg
+            if sl < 2:
+                print(f'Warning: SlowLength < 2. SL {SL}.')
+                sl = 2
+                if sl + sg > 127:
+                    sg = 127 - sl
+            if sg < 3:
+                print(f'Warning: SlowGap < 3. SG {SG}.')
+                sg = 3
+                if sl + sg > 127:
+                    sl = 127-sg
+            SL[i] = sl
+            SG[i] = sg
+        settings['SlowLength'] = SL
+        settings['SlowGap'] = SG
+
+    if auto_update and (not 'PeakSample' in settings):
+        filter_range = get_setting_value('SlowFilterRange', settings, channels, current)
+        SL = get_setting_value('SlowLength', settings, channels, current)
+        SG = get_setting_value('SlowGap', settings, channels, current)
+        PeakSample = []
+        for sl, sg, f in zip(SL, SG, filter_range):
+            if f > 6:
+                PeakSample.append(sl + sg - 2)
+            elif f > 2:
+                PeakSample.append(sl + sg - 5 + f)
+            else:
+                PeakSample.append(sl + sg - 4 + f)
+        settings['PeakSample'] = PeakSample
+
+    if auto_update and (not 'PeakSep' in settings):
+        SL = get_setting_value('SlowLength', settings, channels, current)
+        SG = get_setting_value('SlowGap', settings, channels, current)
+        PeakSep = [sl + sg for sl, sg in zip(SL, SG)]
+        settings['PeakSep'] = PeakSep
+
+    if auto_update and (not 'TriggerDelay' in settings):
+        filter_range = get_setting_value('SlowFilterRange', settings, channels, current)
+        PeakSep = get_setting_value('PeakSep', settings, channels, current)
+        settings['TriggerDelay'] = [(p-1) * 2**f for f, p in zip(filter_range, PeakSep)]
+    if auto_update and ('PAFlength' in settings) and ('TraceDelay' in settings):
+        print('Warning: PAFlength and TraceDelay set. TraceDelay will be ignored.')
+        settings.pop('TraceDelay')
+    if auto_update and  (not 'PAFlength' in settings) and ('TraceDelay' in settings):
+        TriggerDelay = get_setting_value('TriggerDelay', settings, channels, current)
+        FastFilterRange = get_setting_value('FastFilterRange', settings, channels, current)
+        TraceDelay = get_setting_value('TraceDelay', settings, channels, current)
+        FIFOLength = get_setting_value('FIFOLength', settings, channels, current)
+        settings.pop('TraceDelay')
+
+        PAFlength = [t/(2**f) + d/5 for t, f, d in zip(TriggerDelay, FastFilterRange, TraceDelay)]
+
+        settings['PAFlength'] = PAFlength
+    if auto_update and ('PAFlength' in settings):
+        PAFlength = get_setting_value('PAFlength', settings, channels, current)
+        FastFilterRange = get_setting_value('FastFilterRange', settings, channels, current)
+        if 'TraceDelay' in settings:
+            TraceDelay = get_setting_value('TraceDelay', settings, channels, current)
+            TraceDelay = [x/5 for x in TraceDelay]  # convert from data points to FPGA cycles
+        else:
+            TriggerDelay = get_setting_value('TriggerDelay', settings, channels, current)
+            TraceDelay = [pl-td/(2**f) for pl, td, f in zip(PAFlength, TriggerDelay, FastFilterRange)]
+
+        PAFlength = [min(pl, fl - 1) for pl, fl in zip(PAFlength, FIFOLength)]
+        TriggerDelay = [(pf-td)*2**f for pf, td, f in zip(PAFlength, TraceDelay, FastFilterRange)]
+
+        settings['PAFlength'] = PAFlength
+        settings['TriggerDelay'] = TriggerDelay
 
     if 'PreampTau' in settings:
         name = 'PreampTau'
@@ -1274,12 +1369,13 @@ def change_setting_dict(settings):
         # single bit settings
         if name in ['Gain', 'Polarity', 'CaptureEnergy','CaptureTrace', 'CaptureSums', 'EnableCFD',
                     'RequireExtTrigger', 'RejectPileup', 'FastTrigSelect', 'RejectIfFull' ]:
-            print('DEBUG', name, values)
             if isinstance(values, (list, tuple)):
                 if len(values) == len(channels):
                     for value, channel in zip(values, channels):
                         mod, ch = channel
                         current[mod] = change_CSRA(current[mod], name, value, ch)
+                else:
+                    raise TypeError(f'Wrong type (or length) for channel parameter {name} in change_settings_dict, values: {settings[name]}')
             else:
                 for channel in channels:
                     mod, ch = channel
@@ -1308,7 +1404,7 @@ def change_setting_dict(settings):
                 for mod in modules:
                     change_setting_in_memory(current[mod], name, settings[name], None, mod)
             elif isinstance(settings[name], (list, tuple)):
-                for mod, value in zip(modules, settings[name]):
+                 for mod, value in zip(modules, settings[name]):
                     change_setting_in_memory(current[mod], name, value, None, mod)
         else:
             log.error(f'Change settings dict: unkown settings name {name}')
