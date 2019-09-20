@@ -7,6 +7,7 @@ options:
   --own_cfd              perform own CFD calculation and plot traces amd thresholds
   --energy_traces        plot calculated energy histogram, filters, and peakSample
   --energy_pixie         plot pixie energy histogram
+  --save_pdf             Do all plots above and save them as pdf
       
 Functions to help test PIXIE-16 data
 Need to have traces and raw energy sums enabled      
@@ -32,6 +33,13 @@ from matplotlib.colors import LogNorm
 import matplotlib.pyplot as plt
 from pixie16.analyze import calculate_CFD_using_FF, calculate_filter
 import sys
+from matplotlib.backends.backend_pdf import PdfPages
+from matplotlib.font_manager import FontProperties
+import random
+import datetime
+
+fontP = FontProperties()
+fontP.set_size('small')
 
 
 # test files
@@ -140,7 +148,7 @@ def create_plot(traces, x_range=None):
     ax.set_xlabel('Time [ns]')
     ax.set_ylabel('ADC units [a.u]')
     
-    plt.show()
+    #plt.show()
     
 def persistence(trace, plot=True, keep_sums=False):
     '''find the index where the raw energy sums are caluclated and plot all
@@ -188,7 +196,7 @@ def persistence(trace, plot=True, keep_sums=False):
                  trace.max()],'r--')
         plt.legend()
         plt.title(f'channel: {ch}; number of traces: {data_count[ch]}; live time: {setting.LiveTime}s') 
-        plt.show()
+        #plt.show()
     
     if keep_sums == True:    
         return sumIDX, Esums
@@ -196,7 +204,7 @@ def persistence(trace, plot=True, keep_sums=False):
         return sumIDX
 
 
-def own_CFD(w,num_traces, persist=False):
+def own_CFD(w,num_traces, pdf=False, persist=False):
     # perform own CFD calculation
     setting = read_settings(setfile)
     CFDth = setting.CFDth
@@ -219,31 +227,48 @@ def own_CFD(w,num_traces, persist=False):
     tcfd = t[B[0]+D[0]:trace.shape[1]-L[0]+1]
     tff = t[0:FF.shape[1]]
     
-    for i in range(num_traces):
-        plt.figure()
-        plt.plot(t,trace[i],label='Trace')
-        plt.plot(tcfd,CFD[i],label='CFD')
-        plt.plot(tff,FF[i],label='Fast Filter')
-        plt.plot([t[0],t[-1]],[CFDth,CFDth], label='CFD Threshold')
-        plt.plot([t[0],t[-1]],[FFth,FFth], label='FF Threshold')
-        plt.plot(cfdtime[i],0,'.', ms=10)
-        plt.legend() 
-        plt.show()
-    
-    if persist:    
-        sumIDX = persistence(trace, plot=False)
-        minsumIDX = sumIDX.min()
-        shiftIDX = sumIDX - minsumIDX
-        CFDshift = advindexing_roll(CFD,-shiftIDX)
-        create_plot(CFDshift)
-        plt.plot([0, 2*(CFD.shape[1]-1)],[CFDth, CFDth], 'r--', label=f'CFD Threshold = {CFDth}')
-        plt.title('CFD Trace')
-        plt.title(f'channel: {ch}; number of CFD traces: {CFD.shape[0]}') 
-        plt.legend()
-        plt.show()
+    if pdf:
+        fig = plt.figure(figsize=(18,10))
+        fig.subplots_adjust(hspace=0.3, wspace=0.3)
+        rows = 4
+        columns = 5 
+        for i in range(1, num_traces+1):
+            rand = random.randint(0,trace.shape[0])
+            ax = fig.add_subplot(rows, columns, i)
+            ax.plot(t,trace[rand],label='Trace', lw=0.2)
+            ax.plot(tcfd,CFD[rand],label='CFD', lw=0.2)
+            ax.plot(tff,FF[rand],label='Fast Filter', lw=0.2)
+            ax.plot([t[0],t[-1]],[CFDth,CFDth], label='CFD Threshold', lw=0.2)
+            ax.plot([t[0],t[-1]],[FFth,FFth], label='FF Threshold', lw=0.2)
+            ax.plot(cfdtime[rand],0,'.', ms=1, color='k')
+            ax.legend(loc='upper right',fancybox=True, shadow=True, prop={'size': 4}) 
+    else:
+        for i in range(num_traces):
+            rand = random.randint(0,trace.shape[0])
+            plt.figure()
+            plt.plot(t,trace[rand],label='Trace')
+            plt.plot(tcfd,CFD[rand],label='CFD')
+            plt.plot(tff,FF[rand],label='Fast Filter')
+            plt.plot([t[0],t[-1]],[CFDth,CFDth], label='CFD Threshold')
+            plt.plot([t[0],t[-1]],[FFth,FFth], label='FF Threshold')
+            plt.plot(cfdtime[rand],0,'.', ms=10)
+            plt.legend() 
+            #plt.show()
+        
+        if persist:    
+            sumIDX = persistence(trace, plot=False)
+            minsumIDX = sumIDX.min()
+            shiftIDX = sumIDX - minsumIDX
+            CFDshift = advindexing_roll(CFD,-shiftIDX)
+            create_plot(CFDshift)
+            plt.plot([0, 2*(CFD.shape[1]-1)],[CFDth, CFDth], 'r--', label=f'CFD Threshold = {CFDth}')
+            plt.title('CFD Trace')
+            plt.title(f'channel: {ch}; number of CFD traces: {CFD.shape[0]}') 
+            plt.legend()
+            #plt.show()
         
  
-def energy_filter(num_traces, calc_own_energy=False):
+def energy_filter(num_traces, pdf=False, calc_own_energy=False):
     '''calculate energy filter and plot a certain number 
     (num_traces). Also plots the trace, FF, and peak sample'''
     setting = read_settings(setfile)
@@ -289,25 +314,49 @@ def energy_filter(num_traces, calc_own_energy=False):
     zeroEF = np.zeros([E_trace.shape[0], trace.shape[1]-Eshift])
     EF = np.concatenate((zeroEF,E_trace), axis=1)
     
-    for i in range(num_traces):
-        idxth = np.where(FF[i]>setting.FFth)[0][0]  # idx where FF threshold is crossed
-        EsampleFF = PS + idxth # sampling location
-        plt.figure()
-        plt.plot(trace[i], label='Trace')
-        plt.plot(FF[i], label='Fast filter')
-        plt.plot(SF[i], label='Slow filter')
-        plt.plot(EF[i], label='Energy filter')
-        plt.plot([0,trace.shape[1]],[setting.FFth, setting.FFth], 'r--', label = 'FF threshold')
-        plt.plot([sumIDX[0], sumIDX[0]], [0,EF[i].max()], 'k--', label='Energy sums')
-        plt.plot([sumIDX[0]+Ls1, sumIDX[0]+Ls1], [0,EF[i].max()], 'k--')
-        plt.plot([sumIDX[0]+Ls1+Gs1, sumIDX[0]+Ls1+Gs1], [0,EF[i].max()], 'k--')
-        plt.plot([sumIDX[0]+Ls1+Gs1+Ls1, sumIDX[0]+Ls1+Gs1+Ls1], [0,EF[i].max()], 'k--')
-        
-        plt.plot([EsampleFF, EsampleFF],[0, EF[i].max()], 'b--', label='E samp, FF')
-        plt.plot([Esample[i], Esample[i]],[0, EF[i].max()], 'g--', label='E samp, E sums')
-        plt.legend()
-        plt.title(f'Channel: {ch}; Trace No: {i}')
-        plt.show()
+    if pdf:
+        fig = plt.figure(figsize=(18,10))
+        fig.subplots_adjust(hspace=0.3, wspace=0.3)
+        rows = 4
+        columns = 5 
+        for i in range(1, num_traces+1):
+            rand = random.randint(0,trace.shape[0])
+            idxth = np.where(FF[rand]>setting.FFth)[0][0]  # idx where FF threshold is crossed
+            EsampleFF = PS + idxth # sampling location
+            ax = fig.add_subplot(rows, columns, i)
+            ax.plot(trace[rand], label='Trace', color='b', lw=0.2)
+            ax.plot(FF[rand], label='Fast filter', color='orange', lw=0.2)
+            ax.plot(SF[rand], label='Slow filter', color='green', lw=0.2)
+            ax.plot(EF[rand], label='Energy filter', color='red', lw=0.2)
+            ax.plot([0,trace.shape[1]],[setting.FFth, setting.FFth], 'r--', label = 'FF threshold', color='orange', lw=0.2)
+            ax.plot([sumIDX[0], sumIDX[0]], [0,EF[rand].max()], 'k--', label='Energy sums', lw=0.2)
+            ax.plot([sumIDX[0]+Ls1, sumIDX[0]+Ls1], [0,EF[rand].max()], 'k--', lw=0.2)
+            ax.plot([sumIDX[0]+Ls1+Gs1, sumIDX[0]+Ls1+Gs1], [0,EF[rand].max()], 'k--', lw=0.2)
+            ax.plot([sumIDX[0]+Ls1+Gs1+Ls1, sumIDX[0]+Ls1+Gs1+Ls1], [0,EF[rand].max()], 'k--', lw=0.2)
+            ax.plot([EsampleFF, EsampleFF],[0, EF[rand].max()], 'm--', label='E samp, FF', lw=0.2)
+            ax.plot([Esample[rand], Esample[rand]],[0, EF[i].max()], 'g--', label='E samp, E sums', lw=0.2)
+            ax.legend(loc='upper right',fancybox=True, shadow=True, prop={'size': 3}) 
+    else:
+    
+        for i in range(num_traces):
+            idxth = np.where(FF[i]>setting.FFth)[0][0]  # idx where FF threshold is crossed
+            EsampleFF = PS + idxth # sampling location
+            plt.figure()
+            plt.plot(trace[i], label='Trace', color='b')
+            plt.plot(FF[i], label='Fast filter', color='orange')
+            plt.plot(SF[i], label='Slow filter', color='green')
+            plt.plot(EF[i], label='Energy filter', color='red')
+            plt.plot([0,trace.shape[1]],[setting.FFth, setting.FFth], 'r--', label = 'FF threshold', color='orange')
+            plt.plot([sumIDX[0], sumIDX[0]], [0,EF[i].max()], 'k--', label='Energy sums')
+            plt.plot([sumIDX[0]+Ls1, sumIDX[0]+Ls1], [0,EF[i].max()], 'k--')
+            plt.plot([sumIDX[0]+Ls1+Gs1, sumIDX[0]+Ls1+Gs1], [0,EF[i].max()], 'k--')
+            plt.plot([sumIDX[0]+Ls1+Gs1+Ls1, sumIDX[0]+Ls1+Gs1+Ls1], [0,EF[i].max()], 'k--')
+            
+            plt.plot([EsampleFF, EsampleFF],[0, EF[i].max()], 'm--', label='E samp, FF')
+            plt.plot([Esample[i], Esample[i]],[0, EF[i].max()], 'g--', label='E samp, E sums')
+            plt.legend()
+            plt.title(f'Channel: {ch}; Trace No: {i}')
+            #plt.show()
 
     if calc_own_energy:
         calc_E = []
@@ -320,7 +369,7 @@ def energy_filter(num_traces, calc_own_energy=False):
         plt.ylabel('cts')
         plt.title(f'Channel: {ch}; no. of events: {len(energy)}; live time: {setting.LiveTime}s')
         plt.legend()
-        plt.show()
+        #plt.show()
         
         
 def energy_hist_pixie(xbins):
@@ -332,7 +381,7 @@ def energy_hist_pixie(xbins):
     plt.ylabel('cts')
     plt.title(f'Channel: {ch}; no. of events: {len(energy)}; live time: {setting.LiveTime}s')
     plt.legend()
-    plt.show()
+    #plt.show()
     
 
 if commands['--persistence']:
@@ -347,10 +396,27 @@ if commands['--energy_traces']:
 if commands['--energy_pixie']:
     energy_hist_pixie(500)
     
-if save_pdf():
-    persistence(trace)
-    own_CFD(0.3215,20, persist=True)
-    energy_hist_pixie(500)
+if commands['--save_pdf']:
+    now = datetime.datetime.now()
+    tstring = now.strftime("%Y-%m-%d-%H.%M.%S")
+    saveFile = tstring + '-PIXIE-test' + '.pdf'
+    with PdfPages(saveFile) as pdf:
+        persistence(trace)
+        pdf.savefig()  
+        plt.close()
+        
+        own_CFD(0.3215,20, pdf=True, persist=False)
+        pdf.savefig()  
+        plt.close()
+        
+        energy_filter(20, pdf=True, calc_own_energy=False)
+        pdf.savefig()  
+        plt.close()
+        
+        energy_hist_pixie(500)
+        pdf.savefig()  
+        #plt.close()
+
     
     
     
