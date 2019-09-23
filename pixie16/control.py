@@ -999,6 +999,36 @@ def EndRun(ModNum):
     return ret
 
 
+# ProgramFippi
+program_fippi_prototype = ctypes.WINFUNCTYPE(ctypes.c_int,
+                                             ctypes.c_uint)
+
+Cprogram_fippi = program_fippi_prototype(("Pixie16ProgramFippi", PixieAppDLL))
+
+
+def ProgramFippi(modnum):
+    """Uses the XIA library to update settings
+
+    modnum    the module that will be updated. The new setting already
+              needs to be set. This just activates it.
+
+    """
+    Cmod = ctypes.c_uint(modnum)
+
+    ret = Cprogram_fippi(Cmod)
+
+    if ret == 0:
+        log.debug(f'Programmed Fippi for module {modnum}!')
+    else:
+        log.error(f'Could not program Fippi for module {modnum}')
+        errors = {-1: ['Could not program the fippi', '?'],
+                  -2: ['Programming fippi timed out', '?']}
+        message, solution = errors[ret]
+        log.error(message, 'Try:', solution)
+
+    return ret
+
+
 # Pixie16SaveDSPParametersToFile
 save_dsp_param_prototype = ctypes.WINFUNCTYPE(ctypes.c_int,
                                               ctypes.c_char_p)
@@ -1105,6 +1135,10 @@ def write_raw_settings(module, setting, start=0x4a000):
 
     if ret == 0:
         log.debug('Read mod settings success!')
+        fip_ret = ProgramFippi(module)
+        if fip_ret != 0:
+            log.debug('Could not program fippi')
+            return False
         return True
     elif ret == -1:
         log.error(f'Reading DSP memory blocks failed. mod={module}')
