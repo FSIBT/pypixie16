@@ -46,6 +46,7 @@ inifile = Path(dirs.user_config_dir) / "config.ini"
 config = configparser.ConfigParser()
 config.read(inifile)
 
+
 def config_get_parameters(section, name):
     try:
         path = config.get(section, name).replace('"', '')
@@ -495,10 +496,10 @@ def BootModule(DSPParFile,
         firmware_sp = config_get_parameters(section, 'SPFPGAConfigFile')
         firmware_dsp_code = config_get_parameters(section, 'DSPCodeFile')
         firmware_dsp_var = config_get_parameters(section, 'DSPVarFile')
-        ComFPGAConfigFile=firmware_com
-        SPFPGAConfigFile=firmware_sp
-        DSPCodeFile=firmware_dsp_code
-        DSPVarFile=firmware_dsp_var
+        ComFPGAConfigFile = firmware_com
+        SPFPGAConfigFile = firmware_sp
+        DSPCodeFile = firmware_dsp_code
+        DSPVarFile = firmware_dsp_var
 
     if verbose:
         print('Booting Pixie using the following firmware:')
@@ -1149,6 +1150,7 @@ def write_raw_settings(module, setting, start=0x4a000):
 
     return False
 
+
 def change_setting_in_memory(setting, name, value, channel=None, module=0):
     """Changes a single setting inside a block of memory read by read_raw_settings"""
 
@@ -1159,13 +1161,14 @@ def change_setting_in_memory(setting, name, value, channel=None, module=0):
     # error checking
     if name in ['Log2Bweight', 'Log2Ebin']:
         if abs(value) > 16:
-            raise ValueError(f'Error: {name} cannot be larger than 16! value {value} channel {channel} module {module}')
+            raise ValueError(
+                f'Error: {name} cannot be larger than 16! value {value} channel {channel} module {module}')
         if value == 0 and name == 'Log2Ebin':
             raise ValueError(f'Error: {name} cannot be 0! value {value} channel {channel} module {module}')
     elif name == 'FastThresh':
         if value > 65534:
-            raise ValueError(f'Error: {name} must be smaller than 65535! value {value} channel {channel} module {module}')
-
+            raise ValueError(
+                f'Error: {name} must be smaller than 65535! value {value} channel {channel} module {module}')
 
     if name in variables.settings:
         start, length = variables.settings[name]
@@ -1179,7 +1182,8 @@ def change_setting_in_memory(setting, name, value, channel=None, module=0):
                               f' Need {length}, got {len(value)}')
                     return
             except TypeError:
-                log.error(f'change_setting: wrong type of argument. Need a list of values for {name}, got {value}.')
+                log.error(
+                    f'change_setting: wrong type of argument. Need a list of values for {name}, got {value}.')
                 return
             for k, v in zip(range(length), value):
                 idx = start + k
@@ -1212,7 +1216,7 @@ def change_setting(name, value, channel=None, module=0):
         log.error(f'change_setting: Could not change settings')
 
 
-def change_CSRA_bit(setting, value:bool, channel:int, bit:int):
+def change_CSRA_bit(setting, value: bool, channel: int, bit: int):
     """Update a bit in register A
 
     setting: from read_raw_setting (a block of memory)
@@ -1220,7 +1224,7 @@ def change_CSRA_bit(setting, value:bool, channel:int, bit:int):
     """
     start, length = variables.settings['ChanCSRa']
     current = setting[start+channel]
-    new = value<<bit
+    new = value << bit
     if value:
         # set the bit
         new = current | new
@@ -1231,23 +1235,24 @@ def change_CSRA_bit(setting, value:bool, channel:int, bit:int):
 
     return setting
 
-def change_CSRA(setting, name, value:float, channel:int):
+
+def change_CSRA(setting, name, value: float, channel: int):
     """Updated bit 14 (gain) to the new value
 
     setting: from read_raw_setting (a block of memory)
     """
     if name == 'Gain':
         # value: 0.625 or 2.5
-        return change_CSRA_bit(setting, value==2.5, channel, 14)
+        return change_CSRA_bit(setting, value == 2.5, channel, 14)
     elif name == 'FastTrigSelect':
         # value: 'external' or 'group'
-        return change_CSRA_bit(setting, value=='external', channel, 0)
+        return change_CSRA_bit(setting, value == 'external', channel, 0)
     elif name == 'RejectIfFull':
         # value: True = reject data if buffer is full
         return change_CSRA_bit(setting, value, channel, 4)
     elif name == 'Polarity':
         # value: True=positive slope, False=negative slope
-        return change_CSRA_bit(setting, value=='positive', channel, 5)
+        return change_CSRA_bit(setting, value == 'positive', channel, 5)
     elif name == 'CaptureEnergy':
         # value: True = enable capture
         return change_CSRA_bit(setting, value, channel, 7)
@@ -1267,6 +1272,7 @@ def change_CSRA(setting, name, value:float, channel:int):
         # value: True = enable pileup rejection
         return change_CSRA_bit(setting, value, channel, 15)
 
+
 def get_setting_value(name, settings, channels, current_settings):
     '''Returns name from setting dictionary or from memory'''
     if name in settings:
@@ -1276,6 +1282,7 @@ def get_setting_value(name, settings, channels, current_settings):
     else:
         temp = [current_settings[mod][SETTINGS[name][0]+c] for mod, c in channels]
     return temp
+
 
 def change_setting_dict(settings, auto_update=True):
     """Takes a dictionary with setting names as keys and setting values
@@ -1364,7 +1371,7 @@ def change_setting_dict(settings, auto_update=True):
     if auto_update and ('PAFlength' in settings) and ('TraceDelay' in settings):
         print('Warning: PAFlength and TraceDelay set. TraceDelay will be ignored.')
         settings.pop('TraceDelay')
-    if auto_update and  (not 'PAFlength' in settings) and ('TraceDelay' in settings):
+    if auto_update and (not 'PAFlength' in settings) and ('TraceDelay' in settings):
         TriggerDelay = get_setting_value('TriggerDelay', settings, channels, current)
         FastFilterRange = get_setting_value('FastFilterRange', settings, channels, current)
         TraceDelay = get_setting_value('TraceDelay', settings, channels, current)
@@ -1397,19 +1404,19 @@ def change_setting_dict(settings, auto_update=True):
         else:
             settings[name] = [converter_IEEE754_to_ulong(x).value for x in settings[name]]
 
-
     # update all settings
     for name, values in settings.items():
         # single bit settings
-        if name in ['Gain', 'Polarity', 'CaptureEnergy','CaptureTrace', 'CaptureSums', 'EnableCFD',
-                    'RequireExtTrigger', 'RejectPileup', 'FastTrigSelect', 'RejectIfFull' ]:
+        if name in ['Gain', 'Polarity', 'CaptureEnergy', 'CaptureTrace', 'CaptureSums', 'EnableCFD',
+                    'RequireExtTrigger', 'RejectPileup', 'FastTrigSelect', 'RejectIfFull']:
             if isinstance(values, (list, tuple)):
                 if len(values) == len(channels):
                     for value, channel in zip(values, channels):
                         mod, ch = channel
                         current[mod] = change_CSRA(current[mod], name, value, ch)
                 else:
-                    raise TypeError(f'Wrong type (or length) for channel parameter {name} in change_settings_dict, values: {settings[name]}')
+                    raise TypeError(
+                        f'Wrong type (or length) for channel parameter {name} in change_settings_dict, values: {settings[name]}')
             else:
                 for channel in channels:
                     mod, ch = channel
@@ -1425,12 +1432,13 @@ def change_setting_dict(settings, auto_update=True):
                         for ch in range(16):
                             change_setting_in_memory(current[mod], name, value, ch, mod)
                 else:
-                     raise TypeError(f'Wrong type (or length) for channel parameter {name} in change_settings_dict, values: {settings[name]}')
+                    raise TypeError(
+                        f'Wrong type (or length) for channel parameter {name} in change_settings_dict, values: {settings[name]}')
             elif isinstance(settings[name], int):
-                    value = settings[name]
-                    for mod in modules:
-                        for ch in range(16):
-                            change_setting_in_memory(current[mod], name, value, ch, mod)
+                value = settings[name]
+                for mod in modules:
+                    for ch in range(16):
+                        change_setting_in_memory(current[mod], name, value, ch, mod)
             else:
                 raise TypeError('Wrong type (or length) for channel parameter in change_settings_dict')
         elif name in SETTINGS_NAME_MODULE:
@@ -1438,13 +1446,14 @@ def change_setting_dict(settings, auto_update=True):
                 for mod in modules:
                     change_setting_in_memory(current[mod], name, settings[name], None, mod)
             elif isinstance(settings[name], (list, tuple)):
-                 for mod, value in zip(modules, settings[name]):
+                for mod, value in zip(modules, settings[name]):
                     change_setting_in_memory(current[mod], name, value, None, mod)
         else:
             log.error(f'Change settings dict: unkown settings name {name}')
 
     for mod in modules:
         write_raw_settings(mod, current[mod])
+
 
 # read data directly for list mode
 Pixie_Read_ExtFIFOStatus_prototype = ctypes.CFUNCTYPE(ctypes.c_int,
@@ -1521,6 +1530,7 @@ def list_firmware():
         for key in config[section].keys():
             print(f'   {key} = {config[section][key]}')
     print(f'Use only the name after the "." for the name of the firmware: {", ".join(names)}')
+
 
 def set_traces(module, channel, status):
     """Turn on/off taking traces for a certain channel in a specific module"""
