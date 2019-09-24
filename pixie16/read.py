@@ -296,11 +296,11 @@ class Units():
 
     # list of settings that save binary data, list the start points of each group of bits
     hex = {'ChanCSRa': [21, 20, 19, 18, 17, 16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0],
-           'MultiplicityMaskH': [31, 30, 27, 24, 21, 16, 15],
-           'MultiplicityMaskL': [31, 15],
-           'TrigConfig': [[31, 27, 25, 23, 19, 15, 14, 11, 7, 3],
-                          [31, 27, 23, 19, 15, 11, 7, 3],
-                          [31, 27, 26, 25, 24, 23, 21, 19, 17, 15, 11, 7, 3],
+           'MultiplicityMaskH': [31, 30, 27, 24, 21, 16, 15, 0],
+           'MultiplicityMaskL': [31, 15, 0],
+           'TrigConfig': [[31, 27, 25, 23, 19, 15, 14, 11, 7, 3, 0],
+                          [31, 27, 23, 19, 15, 11, 7, 3, 0],
+                          [31, 27, 26, 25, 24, 23, 21, 19, 17, 15, 11, 7, 3, 0],
                           []]}
 
     def __init__(self, parent):
@@ -310,60 +310,85 @@ class Units():
         if name not in self.parent.derived_keys:
             value = self.parent[name]
 
-        FPGA_cycle = 10e-9
+        FPGA_CYCLE = 10
         DATAPOINTS_PER_CYCLE = 5
-        if name == 'FastLength':
-            return [v*FPGA_cycle for v in value]
-        elif name == 'FastGap':
-            return [v*FPGA_cycle for v in value]
+
+        if name in ['FastLength', 'FastGap', 'ExtTrigStretch', 'VetoStretch', 'FastTrigBackLen', 'ExtDelayLen']:
+            return [self.to_sec(v*FPGA_CYCLE) for v in value]
         elif name == 'PeakSample':
             return [v for v in value]
         elif name == 'PeakSep':
             return [v for v in value]
-        elif name == 'SlowLength':
+        elif name in ['SlowLength', 'SlowGap']:
             filter_range = self.parent.SlowFilterRange
-            return [v*FPGA_cycle*2**filter_range for v in value]
-        elif name == 'SlowGap':
-            filter_range = self.parent.SlowFilterRange
-            return [v*FPGA_cycle*2**filter_range for v in value]
+            return [self.to_sec(v*FPGA_CYCLE*2**filter_range) for v in value]
         elif name == 'FastThresh':
             L = self.parent['FastLength']
             return [v/l/DATAPOINTS_PER_CYCLE for v, l in zip(value, L)]
         elif name == 'CDFTresh':
             return [v for v in value]
         elif name == 'TraceLength':
-            return [v*FPGA_cycle/DATAPOINTS_PER_CYCLE for v in value]
+            return [v*FPGA_CYCLE/DATAPOINTS_PER_CYCLE for v in value]
         elif name == 'OffsetDAC':
             return [v for v in value]
         elif name == 'GainDAC':
             return [v for v in value]
         elif name == 'ChanCSRb':
             return [v for v in value]
-        elif name == 'ExtTrigStretch':
-            return [v*FPGA_cycle for v in value]
-        elif name == 'VetoStretch':
-            return [v*FPGA_cycle for v in value]
-        elif name == 'FastTrigBackLen':
-            return [v*FPGA_cycle for v in value]
-        elif name == 'ExtDelayLen':
-            return [v*FPGA_cycle for v in value]
+        elif name == 'TrigConfig':
+            out = []
+            for k, pos in zip(value, Units.hex[name]):
+                bin_value = f'{k:032b}'
+                tmp = '-'.join([f'{a}:{bin_value[32-a:32-b]}' for a, b in iterate_pairs(pos)])
+                out.append(tmp)
+            return out
         elif name in Units.hex.keys():
-            pass
+            out = []
+            for k in value:
+                bin_value = f'{k:032b}'
+                tmp = '-'.join([f'{a}:{bin_value[32-a:32-b]}' for a, b in iterate_pairs(Units.hex[name])])
+                out.append(tmp)
+            return out
         # derived values
         elif name == 'LiveTime':
-            return [(self.parent['LiveTimeA'][i] * 2**32
-                     + self.parent['LiveTimeB'][i]) * FPGA_cycle for i in range(16)]
+            return [self.to_sec((self.parent['LiveTimeA'][i] * 2**32 +
+                                 self.parent['LiveTimeB'][i]) * FPGA_CYCLE) for i in range(16)]
         elif name == 'FastPeaks':
-            return [self.parent['FastPeaksA'][i] * 2**32 + self.readable['FastPeaksB'][i] for i in range(16)]
+            return [self.parent['FastPeaksA'][i] * 2**32 + self.parent['FastPeaksB'][i] for i in range(16)]
         elif name == 'RealTime':
-            return (self.parent['RealTimeA'] * 2**32 + self.parent['RealTimeB']) * FPGA_cycle
+            return self.to_sec((self.parent['RealTimeA'] * 2**32 + self.parent['RealTimeB']) * FPGA_CYCLE)
         elif name == 'RunTime':
-            return (self.parent['RunTimeA'] * 2**32 + self.parent['RunTimeB']) * FPGA_cycle
+            return self.to_sec((self.parent['RunTimeA'] * 2**32 + self.parent['RunTimeB']) * FPGA_CYCLE)
         elif name == 'TraceDelay':
-            return [(p - t)*FPGA_cycle for p, t in zip(self.parent['PAFlength'], self.parent['TriggerDelay'])]
+            return [self.to_sec((p - t)*FPGA_CYCLE) for p, t in zip(self.parent['PAFlength'], self.parent['TriggerDelay'])]
         elif name == 'OffsetVoltage':
             return [1.5 * ((32768-self.parent['OffsetDAC'][i]) / 32768) for i in range(16)]
         return value
+
+    @staticmethod
+    def to_sec(ns):
+        """Convert na readable format"""
+
+        USEC = 1000
+        MSEC = 1000 * USEC
+        SECONDS = 1000 * MSEC
+        MINUTES = 60 * SECONDS
+        HOURS = 60 * MINUTES
+        DAY = 24 * HOURS
+
+        out = []
+        for t in [DAY, HOURS, MINUTES, SECONDS, MSEC, USEC]:
+            tmp = 0
+            while ns > t:
+                ns -= t
+                tmp += 1
+            out.append(tmp)
+        out.append(ns)
+
+        t = ' '.join([f'{value}{label}' for value, label in zip(
+            out, ['d', 'h', 'm', 's', 'ms', 'us', 'ns']) if value > 0])
+
+        return t
 
     def print(self, *args, **kwargs):
         kwargs.pop('units', None)
@@ -436,7 +461,7 @@ class Settings():
             return self.readable[key]
         if key in self.writeable:
             return self.writeable[key]
-        raise KeyError(f'Key {key} not in Settings')
+        raise KeyError(f'Key "{key}" not in Settings')
 
     def __getattr__(self, attr):
         if attr in self.readable:
