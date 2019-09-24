@@ -290,6 +290,7 @@ def read_mca_mode_data(filename):
             results[channel] = spectrum
     return results
 
+
 class Units():
     """"Convert settings to units (seconds) for the appropiate values"""
 
@@ -301,7 +302,6 @@ class Units():
                           [31, 27, 23, 19, 15, 11, 7, 3],
                           [31, 27, 26, 25, 24, 23, 21, 19, 17, 15, 11, 7, 3],
                           []]}
-
 
     def __init__(self, parent):
         self.parent = parent
@@ -348,13 +348,13 @@ class Units():
         elif name == 'ExtDelayLen':
             return [v*FPGA_cycle for v in value]
         elif name in Units.hex.keys():
-                pass
+            pass
         # derived values
         elif name == 'LiveTime':
-            return [(self.parent['LiveTimeA'][i] * 2**32 +
-                     self.parent['LiveTimeB'][i]) * FPGA_cycle for i in range(16)]
+            return [(self.parent['LiveTimeA'][i] * 2**32
+                     + self.parent['LiveTimeB'][i]) * FPGA_cycle for i in range(16)]
         elif name == 'FastPeaks':
-            return [self.parent['FastPeaksA'][i]* 2**32 + self.readable['FastPeaksB'][i] for i in range(16)]
+            return [self.parent['FastPeaksA'][i] * 2**32 + self.readable['FastPeaksB'][i] for i in range(16)]
         elif name == 'RealTime':
             return (self.parent['RealTimeA'] * 2**32 + self.parent['RealTimeB']) * FPGA_cycle
         elif name == 'RunTime':
@@ -374,6 +374,7 @@ class Units():
 
     def __getattr__(self, attr):
         return self.convert_to_units(attr)
+
 
 class Settings():
     """Capture all the settings from a single module """
@@ -426,10 +427,10 @@ class Settings():
                     self.writeable[n] = value
                 else:
                     self.readable[n] = value
-        
+
         # some derived values
-        self.readable['TriggerDelay'] = [(p-1) *  2**self['SlowFilterRange'] for p in self['PeakSep']]
-        
+        self.readable['TriggerDelay'] = [(p-1) * 2**self['SlowFilterRange'] for p in self['PeakSep']]
+
     def __getitem__(self, key):
         if key in self.readable:
             return self.readable[key]
