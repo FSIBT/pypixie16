@@ -1246,7 +1246,10 @@ def change_CSRA(setting, name, value: float, channel: int):
         return change_CSRA_bit(setting, value == 2.5, channel, 14)
     elif name == 'FastTrigSelect':
         # value: 'external' or 'group'
-        return change_CSRA_bit(setting, value == 'external', channel, 0)
+        return change_CSRA_bit(setting, value=='external', channel, 0)
+    elif name == 'GoodChannel':
+        # value: True = enable channel
+        return change_CSRA_bit(setting, value, channel, 2)
     elif name == 'RejectIfFull':
         # value: True = reject data if buffer is full
         return change_CSRA_bit(setting, value, channel, 4)
@@ -1262,6 +1265,9 @@ def change_CSRA(setting, name, value: float, channel: int):
     elif name == 'EnableCFD':
         # value: True = enable CFD
         return change_CSRA_bit(setting, value, channel, 10)
+    elif name == 'RequireGlobalExtTrigger':
+        # value: True = require global external trigger for validation
+        return change_CSRA_bit(setting, value, channel, 11)
     elif name == 'CaptureSums':
         # value: True = enable capture energy susms
         return change_CSRA_bit(setting, value, channel, 12)
@@ -1317,6 +1323,7 @@ def change_setting_dict(settings, auto_update=True):
     modules = set(x[0] for x in channels)
 
     # get all the raw settings data from the pixie
+    print('enabling all channels')
     current = {}
     for mod in modules:
         current[mod] = read_raw_settings(mod, N=1280)
@@ -1450,6 +1457,11 @@ def change_setting_dict(settings, auto_update=True):
                     change_setting_in_memory(current[mod], name, value, None, mod)
         else:
             log.error(f'Change settings dict: unkown settings name {name}')
+
+    # always enable all channels
+    for m in modules:
+        for c in range(16):
+            current[m] = change_CSRA_bit(current[m], True, c, 2)
 
     for mod in modules:
         write_raw_settings(mod, current[mod])
