@@ -428,6 +428,12 @@ class Settings():
         # variables, where we need to convert
         FLOATS = ['PreampTau']
 
+        filename = Path(filename)
+        size = filename.stat().st_size
+        if size != 24*4*1280:
+            raise TypeError(
+                f'Error: {filename.name} does not seem to be a setting file (wrong size {size})...aborting')
+
         with open(filename, 'rb') as f:
             for module in range(24):
                 rawsetting = []
