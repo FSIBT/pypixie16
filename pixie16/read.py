@@ -296,6 +296,7 @@ class Units():
 
     # list of settings that save binary data, list the start points of each group of bits
     hex = {'ChanCSRa': [21, 20, 19, 18, 17, 16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0],
+           'ChanCSRb': [14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 1, 0],
            'MultiplicityMaskH': [31, 30, 27, 24, 21, 16, 15, 0],
            'MultiplicityMaskL': [31, 15, 0],
            'TrigConfig': [[31, 27, 25, 23, 19, 15, 14, 11, 7, 3, 0],
@@ -339,14 +340,14 @@ class Units():
             out = []
             for k, pos in zip(value, Units.hex[name]):
                 bin_value = f'{k:032b}'
-                tmp = '-'.join([f'{a}:{bin_value[32-a:32-b]}' for a, b in iterate_pairs(pos)])
+                tmp = '-'.join([f'{a-1}:{bin_value[32-a:32-b]}' for a, b in iterate_pairs(pos)])
                 out.append(tmp)
             return out
         elif name in Units.hex.keys():
             out = []
             for k in value:
                 bin_value = f'{k:032b}'
-                tmp = '-'.join([f'{a}:{bin_value[32-a:32-b]}' for a, b in iterate_pairs(Units.hex[name])])
+                tmp = '-'.join([f'{a-1}:{bin_value[32-a:32-b]}' for a, b in iterate_pairs(Units.hex[name])])
                 out.append(tmp)
             return out
         # derived values
@@ -400,6 +401,12 @@ class Units():
     def __getattr__(self, attr):
         return self.convert_to_units(attr)
 
+    def __dir__(self):
+        keys = list(self.parent.readable.keys()) + list(self.parent.writeable.keys())
+        keys = keys + Settings.derived_keys
+        keys = [k for k in keys if k not in Settings.derived_from_keys]
+        return keys
+
 
 class Settings():
     """Capture all the settings from a single module """
@@ -413,7 +420,7 @@ class Settings():
                          'OffsetDAC']
 
     def __init__(self, filename: str, modulenr: int):
-        self.filename = filename
+        self.filename = Path(filename)
         self.modulenr = modulenr
         self.writeable = {}
         self.readable = {}
@@ -482,6 +489,9 @@ class Settings():
             return self.writeable[attr]
         raise AttributeError
 
+    def __dir__(self):
+        return list(self.readable.keys()) + list(self.writeable.keys())
+
     def __str__(self):
         out = f'Pixie16 settings for {self.filename}\n'
         keys = sorted(list(self.readable.keys())+list(self.writeable.keys()))
@@ -523,7 +533,13 @@ class Settings():
             if units:
                 value = self.units.convert_to_units(k)
             else:
-                value = self[k]
+                if k in Units.hex:
+                    if isinstance(self[k], (list, tuple)):
+                        value = [f'0x{v:09_x}' for v in self[k]]
+                    else:
+                        value = f'{self[k]:09_x}'
+                else:
+                    value = self[k]
             print(f'  {k}: {value}  {ro}')
         d = {}
         for k in channel_keys:
@@ -531,7 +547,13 @@ class Settings():
             if units:
                 d[f'{k}{ro}'] = self.units.convert_to_units(k)
             else:
-                d[f'{k}{ro}'] = self[k]
+                if k in Units.hex:
+                    if isinstance(self[k], (list, tuple)):
+                        d[f'{k}{ro}'] = [f'0x{v:09_x}' for v in self[k]]
+                    else:
+                        d[f'{k}{ro}'] = f'{self[k]:09_x}'
+                else:
+                    d[f'{k}{ro}'] = self[k]
 
         if d:
             # using pandas dataframe for easy printing, probably
@@ -594,7 +616,7 @@ def compare_module_setting(A, B, quiet=False, writeable_only=True, units=True, c
                 valueB = B[k]
             if isinstance(valueA, (int, str)):
                 if valueA != valueB:
-                    print(f'{k} differs:\n     a:{valueA}\n     b:{valueB}')
+                    print(f'{k} differs:\n     a: {valueA}\n     b: {valueB}')
             elif isinstance(valueA, (list, tuple)):
                 first = True
                 for i, (a, b) in enumerate(zip(valueA, valueB)):
@@ -605,7 +627,15 @@ def compare_module_setting(A, B, quiet=False, writeable_only=True, units=True, c
                         if first:
                             print(f'{k} differs:')
                             first = False
-                        print(f'  ch:{i}\n     a:{a}\n     b:{b}')
+                        # if these are bit values, only show bits that are different
+                        if isinstance(a, str) and '-' in a:
+                            aa = a.split('-')
+                            bb = b.split('-')
+                            for x, y in zip(aa, bb):
+                                if x != y:
+                                    print(f'  ch:{i}\n     a: {x}\n     b: {y}')
+                        else:
+                            print(f'  ch:{i}\n     a: {a}\n     b: {b}')
 
     # convert to a sorted json string to make deep comparison possible
     if writeable_only:
