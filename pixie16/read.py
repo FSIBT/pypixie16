@@ -405,6 +405,12 @@ class Settings():
     """Capture all the settings from a single module """
 
     derived_keys = ['LiveTime', 'FastPeaks', 'RealTime', 'RunTime', 'TraceDelay', 'OffsetVoltage']
+    derived_from_keys = ['LiveTimeA', 'LiveTimeB',
+                         'FastPeaksA', 'FastPeaksB',
+                         'RealTimeA', 'RealTimeB',
+                         'RunTimeA', 'RunTimeB',
+                         'PAFlength', 'TriggerDelay',
+                         'OffsetDAC']
 
     def __init__(self, filename: str, modulenr: int):
         self.filename = filename
@@ -498,6 +504,7 @@ class Settings():
             keys = sorted(list(self.readable.keys())+list(self.writeable.keys()))
             if units:
                 keys = keys + Settings.derived_keys
+                keys = [k for k in keys if k not in Settings.derived_from_keys]
         else:
             keys = sorted(keys)
 
