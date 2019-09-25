@@ -521,9 +521,9 @@ class Settings():
                 continue
             ro = '(ro)' if k in self.readable else ''
             if units:
-                value = self[k]
-            else:
                 value = self.units.convert_to_units(k)
+            else:
+                value = self[k]
             print(f'  {k}: {value}  {ro}')
         d = {}
         for k in channel_keys:
