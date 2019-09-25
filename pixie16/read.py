@@ -552,7 +552,7 @@ class XIASetting(Settings):
         super().__init__(*args, **kwargs)
 
 
-def compare_module_setting(modA, modB, quiet=False, writeable_only=True):
+def compare_module_setting(A, B, quiet=False, writeable_only=True, units=True, channels=None):
     """Compare the settings of two modules
 
     Print the difference.
@@ -562,96 +562,53 @@ def compare_module_setting(modA, modB, quiet=False, writeable_only=True):
     The functions assumes that both settings have the same structure.
     """
 
-    # list of settings that save binary data, list the start points of each group of bits
-    hex = {'ChanCSRa': [21, 20, 19, 18, 17, 16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0],
-           'MultiplicityMaskH': [31, 30, 27, 24, 21, 16, 15],
-           'MultiplicityMaskL': [31, 15],
-           'TrigConfig': [[31, 27, 25, 23, 19, 15, 14, 11, 7, 3],
-                          [31, 27, 23, 19, 15, 11, 7, 3],
-                          [31, 27, 26, 25, 24, 23, 21, 19, 17, 15, 11, 7, 3],
-                          []]}
-
-    if type(modA) != type(modB):
+    if type(A) != type(B):
         print(f'compare_module_setting: both items need to have the same type')
         return None
 
-    if type(modA) == XIASetting:
-        OrigA = modA
-        OrigB = modB
-
-        # check if we have settings for all modules or for just one
-        if writeable_only:
-            if modA.writeable is not None:
-                modA = [modA.writeable]
-                modB = [modB.writeable]
-            else:
-                modA = [val for sublist in modA.writeable_list for val in sublist]
-                modB = [val for sublist in modB.writeable_list for val in sublist]
-        else:
-            if modA.writeable is not None:
-                modA = [modA.writeable]
-                modB = [modB.writeable]
-            else:
-                modA = [val for sublist in modA.writeable_list for val in sublist]
-                modB = [val for sublist in modB.writeable_list for val in sublist]
+    if type(A) != Settings:
+        print(f'compare_module_setting: both items need to be Setting classes')
+        return None
 
     if not quiet:
-        modulesA = OrigA.modulenr if OrigA.modulenr else 'all'
-        modulesB = OrigB.modulenr if OrigB.modulenr else 'all'
         print('Comparing settings:')
-        print(f'  a: {OrigA.filename.name} {modulesA}')
-        print(f'  b: {OrigB.filename.name} {modulesB}')
+        print(f'  a: {A.filename.name}')
+        print(f'  b: {B.filename.name}')
         print('')
-        for nr, [A, B] in enumerate(zip(modA, modB)):
-            print(f'Module {nr//2} ---------------- ')
-            for k in A.keys():
-                if type(A[k]) == list:
-                    if len(A[k]) == 16:
-                        prefix = 'CH'
-                    else:
-                        prefix = '#'
-                    if not all([x == y for x, y in zip(A[k], B[k])]):
-                        print('{} differs:'.format(k))
-                        for i, (x, y) in enumerate(zip(A[k], B[k])):
-                            if x != y:
-                                if k in hex:
-                                    if k == 'TrigConfig':
-                                        print(f'  {prefix}{i:02d}:    a:{x:#011_x} <-> b:{y:#011_x}')
-                                        print('            ', end='')
-                                        bin_string = '10987654321098765432109876543210'
-                                        for pos, next_pos in iterate_pairs(hex[k][i]):
-                                            print(bin_string[31-pos:31-next_pos]+' ', end='')
-                                        print(bin_string[31-next_pos:])
-                                        for v, name in zip([x, y], ['a', 'b']):
-                                            bin_string = bin(v)[2:]
-                                            l = len(bin_string)
-                                            if l < 32:
-                                                bin_string = '0'*(32-l)+bin_string
-                                            print(f'          {name}:', end='')
-                                            for pos, next_pos in iterate_pairs(hex[k][i]):
-                                                print(bin_string[31-pos:31-next_pos]+' ', end='')
-                                            print(bin_string[31-next_pos:])
-                                    else:
-                                        print(f'  {prefix}{i:02d}:   a:{x:#011_x} <-> b:{y:#011_x}')
-                                        print('            ', end='')
-                                        bin_string = '10987654321098765432109876543210'
-                                        for pos, next_pos in iterate_pairs(hex[k]):
-                                            print(bin_string[31-pos:31-next_pos]+' ', end='')
-                                        print(bin_string[31-next_pos:])
-                                        for v, name in zip([x, y], ['a', 'b']):
-                                            bin_string = bin(v)[2:]
-                                            l = len(bin_string)
-                                            if l < 32:
-                                                bin_string = '0'*(32-l)+bin_string
-                                            print(f'          {name}:', end='')
-                                            for pos, next_pos in iterate_pairs(hex[k]):
-                                                print(bin_string[31-pos:31-next_pos]+' ', end='')
-                                            print(bin_string[31-next_pos:])
-                                else:
-                                    print(f'{prefix}{i:02d}:   a:{x} <-> b:{y}')
-                else:
-                    if A[k] != B[k]:
-                        print('{} differs: a:{} != b:{}'.format(k, A[k], B[k]))
+
+        if writeable_only:
+            keys = [k for k in settings.keys() if settings[k][0] < 832]
+        else:
+            keys = setting.keys()
+
+        if units:
+            keys = keys + Settings.derived_keys
+            keys = [k for k in keys if k not in Settings.derived_from_keys]
+
+        for k in keys:
+            if units:
+                valueA = A.units[k]
+                valueB = B.units[k]
+            else:
+                valueA = A[k]
+                valueB = B[k]
+            if isinstance(valueA, (int, str)):
+                if valueA != valueB:
+                    print(f'{k} differs:\n     a:{valueA}\n     b:{valueB}')
+            elif isinstance(valueA, (list, tuple)):
+                first = True
+                for i, (a, b) in enumerate(zip(valueA, valueB)):
+                    if channels:
+                        if i not in channels:
+                            continue
+                    if a != b:
+                        if first:
+                            print(f'{k} differs:')
+                            first = False
+                        print(f'  ch:{i}\n     a:{a}\n     b:{b}')
 
     # convert to a sorted json string to make deep comparison possible
-    return [json.dumps(A, sort_keys=True) == json.dumps(B, sort_keys=True) for A, B in zip(modA, modB)]
+    if writeable_only:
+        return json.dumps(A.rawdata[:832], sort_keys=True) == json.dumps(B.rawdata[:832], sort_keys=True)
+    else:
+        return json.dumps(A.rawdata, sort_keys=True) == json.dumps(B.rawdata, sort_keys=True)
