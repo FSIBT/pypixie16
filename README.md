@@ -47,6 +47,14 @@ Use 'python -m pytest' to run tests.
 
 Pull requests are welcome.
 
+We use black to format the code. Once you cloned the repo, please run
+
+pip install pre-commit
+
+and
+
+pre-commit install
+
 # Other libraries to control the pixie16 (non-python)
 
 ## Experimental Low Energy Nuclear Science Group at University of Tennessee

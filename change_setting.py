@@ -8,13 +8,14 @@ Usage:
 """
 
 import docopt
-commands = docopt.docopt(__doc__)
-#print(commands)
 
-name = commands['<name>']
-value = commands['<value>']
-module = commands['<module>']
-channel = commands['<channel>']
+commands = docopt.docopt(__doc__)
+# print(commands)
+
+name = commands["<name>"]
+value = commands["<value>"]
+module = commands["<module>"]
+channel = commands["<channel>"]
 
 # slots in the crate that have pixie16 cards
 SLOTS = [2]
@@ -25,19 +26,19 @@ import sys
 import time
 from pathlib import Path
 
-settingfile = commands['<file>']
-#r'E:\ROOTS\XIA-pulse-shape\2019-04-08-API-Cblock0013.set'
-outfile = commands['<outfile>']
+settingfile = commands["<file>"]
+# r'E:\ROOTS\XIA-pulse-shape\2019-04-08-API-Cblock0013.set'
+outfile = commands["<outfile>"]
 
-if commands['set']:
+if commands["set"]:
     if not name in pixie16.variables.settings:
-        print(f'name {name} not a valid settings name')
+        print(f"name {name} not a valid settings name")
         sys.exit(1)
 
     value = int(value)
-    if '-' in channel:
-        start, stop = channel.split('-')
-        channel = list(range(int(start), int(stop)+1))
+    if "-" in channel:
+        start, stop = channel.split("-")
+        channel = list(range(int(start), int(stop) + 1))
     else:
         channel = [int(channel)]
     module = int(module)
@@ -45,7 +46,7 @@ if commands['set']:
     if outfile:
         out = Path(outfile)
         if out.exists():
-            print('Error: outfile exists already')
+            print("Error: outfile exists already")
             sys.exit(2)
 
     pixie16.control.InitSys(PXISlotMap=SLOTS)
@@ -56,9 +57,9 @@ if commands['set']:
         pixie16.control.SaveParam(outfile)
     pixie16.control.ExitSys(0)
 
-elif commands['read']:
+elif commands["read"]:
     if not name in pixie16.variables.settings:
-        print(f'name {name} not a valid settings name')
+        print(f"name {name} not a valid settings name")
         sys.exit(1)
 
     module = int(module)
@@ -67,25 +68,23 @@ elif commands['read']:
     pixie16.control.BootModule(settingfile)
     A = pixie16.control.read_raw_settings(module)
     offset, nr = pixie16.variables.settings[name]
-    print(f'Name: {name}')
+    print(f"Name: {name}")
     if nr > 1:
-        print(f'Channel, value')
+        print(f"Channel, value")
         for i in range(nr):
-            print(f'    {i}  {A[offset+i]}')
+            print(f"    {i}  {A[offset+i]}")
     else:
-        print(f'Module setting')
-        print(f'      {A[offset]}')
+        print(f"Module setting")
+        print(f"      {A[offset]}")
 
     pixie16.control.ExitSys(0)
 
-elif commands['load']:
-    print(f'Loading settingfile {settingfile}')
+elif commands["load"]:
+    print(f"Loading settingfile {settingfile}")
     pixie16.control.InitSys(PXISlotMap=SLOTS)
     pixie16.control.BootModule(settingfile)
     pixie16.control.ExitSys(0)
 
-elif commands['list']:
+elif commands["list"]:
     for n in sorted(pixie16.variables.settings):
         print(n)
-
-

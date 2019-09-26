@@ -6,13 +6,12 @@ import pixie16
 
 @pytest.fixture(scope="module")
 def data():
-    filename = Path('.') / 'tests' / 'pixie16-data-01.bin'
+    filename = Path(".") / "tests" / "pixie16-data-01.bin"
     data = list(pixie16.read.read_list_mode_data(filename.absolute()))
     return data
 
 
-class TestXIAread():
-
+class TestXIAread:
     def test_read(self, data):
         assert len(data) == 24598
 
@@ -25,11 +24,14 @@ class TestXIAread():
         assert event.timestamp == 1170576147200
 
     def test_split(self):
-        filename = Path('.') / 'tests' / 'split-all.bin'
+        filename = Path(".") / "tests" / "split-all.bin"
         events1 = list(pixie16.read.read_list_mode_data(filename.absolute()))
 
         events2 = []
-        for f in [Path('.') / 'tests' / 'split-01.bin', Path('.') / 'tests' / 'solit-02.bin']:
+        for f in [
+            Path(".") / "tests" / "split-01.bin",
+            Path(".") / "tests" / "solit-02.bin",
+        ]:
             for e in pixie16.read.read_list_mode_data(filename.absolute()):
                 events2.append(e)
 
