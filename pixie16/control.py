@@ -1289,13 +1289,15 @@ def change_setting(name, value, channel=None, module=0):
         log.error(f"change_setting: Could not change settings")
 
 
-def change_CSRA_bit(setting, value: bool, channel: int, bit: int):
-    """Update a bit in register A
+def change_register_bit(setting, name, value: bool, bit: int, channel: int = 0):
+    """Update a bit in register
 
     setting: from read_raw_setting (a block of memory)
-    value: True or False
+    name:    name of the register
+    value:   True or False
     """
-    start, length = variables.settings["ChanCSRa"]
+
+    start, length = variables.settings[name]
     current = setting[start + channel]
     new = value << bit
     if value:
@@ -1309,47 +1311,132 @@ def change_CSRA_bit(setting, value: bool, channel: int, bit: int):
     return setting
 
 
+def change_CSRA_bit(setting, name, value: bool, channel: int, bit: int):
+    return change_register_bit(setting, "ChanCSRa", value, bit, channel)
+
+
+def change_CSRB_bit(setting, name, value: bool, bit: int):
+    return change_register_bit(setting, "ModCSRB", value, bit)
+
+
 def change_CSRA(setting, name, value: float, channel: int):
-    """Updated bit 14 (gain) to the new value
+    """Update bits by name for CSRa
 
     setting: from read_raw_setting (a block of memory)
+    name:    name of the setting (defined here)
+    value:   either True/False or custom strings (see below)
+    channel: channel number to update
     """
-    if name == "Gain":
-        # value: 0.625 or 2.5
-        return change_CSRA_bit(setting, value == 2.5, channel, 14)
-    elif name == "FastTrigSelect":
+    if name == "FastTrigSelect":
         # value: 'external' or 'group'
         return change_CSRA_bit(setting, value == "external", channel, 0)
+    elif name == "ModValSignal":
+        # value: 'modgate' or 'global'
+        return change_CSRA_bit(setting, value == "modgate", channel, 1)
     elif name == "GoodChannel":
         # value: True = enable channel
         return change_CSRA_bit(setting, value, channel, 2)
+    elif name == "ChanValSignal":
+        # value: 'channelgate' or 'channelvalidation'
+        return change_CSRA_bit(setting, value == "channelgate", channel, 3)
     elif name == "RejectIfFull":
         # value: True = reject data if buffer is full
         return change_CSRA_bit(setting, value, channel, 4)
     elif name == "Polarity":
         # value: True=positive slope, False=negative slope
         return change_CSRA_bit(setting, value == "positive", channel, 5)
-    elif name == "CaptureEnergy":
-        # value: True = enable capture
+    elif name == "EnableVeto":
+        # value: True = enable veto
+        return change_CSRA_bit(setting, value, channel, 6)
+    elif name == "CaptureHistogram":
+        # value: True = enable capture of MCA histograms
         return change_CSRA_bit(setting, value, channel, 7)
     elif name == "CaptureTrace":
         # value: True = enable capture trace
         return change_CSRA_bit(setting, value, channel, 8)
+    elif name == "EnableQDC":
+        # value: True = enable capture QDC sums
+        return change_CSRA_bit(setting, value, channel, 9)
     elif name == "EnableCFD":
         # value: True = enable CFD
         return change_CSRA_bit(setting, value, channel, 10)
-    elif name == "RequireGlobalExtTrigger":
-        # value: True = require global external trigger for validation
+    elif name == "EnableModVal":
+        # value: True = enable module validation
         return change_CSRA_bit(setting, value, channel, 11)
     elif name == "CaptureSums":
-        # value: True = enable capture energy susms
+        # value: True = enable capture raw energy susms
         return change_CSRA_bit(setting, value, channel, 12)
-    elif name == "RequireExtTrigger":
-        # value: True = enable external trigger
+    elif name == "EnableChannelVal":
+        # value: True = enable channel validation
         return change_CSRA_bit(setting, value, channel, 13)
+    elif name == "Gain":
+        # value: 0.625 or 2.5
+        return change_CSRA_bit(setting, value == 2.5, channel, 14)
     elif name == "RejectPileup":
-        # value: True = enable pileup rejection
-        return change_CSRA_bit(setting, value, channel, 15)
+        # value: 'all' (no energies for pileup events),
+        #        'single' (reject pileup),
+        #        'pileup' (trace, timestamp for pileup, no trace for single)
+        #        'pileup-only' (only record trace, timestamp, etc for pileup events, no single events)
+        bit0 = (value == "single") or (value == "pileup-only")
+        bit1 = (value == "pileup") or (value == "pileup-only")
+        setting = change_CSRA_bit(setting, value, channel, 15)
+        setting = change_CSRA_bit(setting, value, channel, 16)
+        return setting
+    elif name == "SkipLargePulses":
+        # value: True = don't record traces for large pulses
+        return change_CSRA_bit(setting, value, channel, 17)
+    elif name == "GroupTrigSignal":
+        # value: 'external' or 'local'
+        return change_CSRA_bit(setting, value == "external", channel, 18)
+    elif name == "ChannelVetoSignal":
+        # value: 'channel' or 'front'
+        return change_CSRA_bit(setting, value == "channel", channel, 19)
+    elif name == "ModVetoSignal":
+        # value: 'module' or 'front'
+        return change_CSRA_bit(setting, value == "module", channel, 20)
+    elif name == "ExtTimestamps":
+        # value: True = include external timestamps in header
+        return change_CSRA_bit(setting, value, channel, 21)
+    else:
+        raise KeyError(f"Error: unknown key for ChannelCSRa {name}")
+
+
+def change_CSRB(setting, name, value: float):
+    """Update bits by name for CSRb
+
+    setting: from read_raw_setting (a block of memory)
+    name:    name of the setting (defined here)
+    value:   either True/False or custom strings (see below)
+    """
+    if name == "BackplanePullup":
+        # value: True = connect backplane to pullup resistor
+        return change_CSRB_bit(setting, value, 0)
+    elif name == "Director":
+        # value: True = set to director
+        return change_CSRB_bit(setting, value, 4)
+    elif name == "ChassisMaster":
+        # value: True = set to chassis master
+        return change_CSRB_bit(setting, value, 6)
+    elif name == "GlobalFastTrigger":
+        # value: True = select global fast trigger source
+        return change_CSRB_bit(setting, value, 7)
+    elif name == "ExternalTrigger":
+        # value: True = select external trigger source
+        return change_CSRB_bit(setting, value, 8)
+    elif name == "ExternalInhibit":
+        # value: True = use inhibit
+        return change_CSRB_bit(setting, value, 10)
+    elif name == "DistributeClocks":
+        # value: True = multiple crates
+        return change_CSRB_bit(setting, value, 11)
+    elif name == "SortEvents":
+        # value: True = sort events based on timestamp
+        return change_CSRB_bit(setting, value, 12)
+    elif name == "ConnectFastTriggerBP":
+        # value: True = Connect the fast trigger to the backplane
+        return change_CSRB_bit(setting, value, 13)
+    else:
+        raise KeyError(f"Error: unknown key for ModuleCSRb {name}")
 
 
 def get_setting_value(name, settings, channels, current_settings):
