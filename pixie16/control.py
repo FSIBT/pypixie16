@@ -406,6 +406,8 @@ def InitSys(PXISlotMap=None, OfflineMode=False):
     if PXISlotMap is not None:
         modules = PXISlotMap
 
+    print(f"[INFO] Using modules in slot(s) {' '.join(modules)}.")
+
     NumModules = len(modules)
     CNumModules = ctypes.c_ushort(NumModules)
 
