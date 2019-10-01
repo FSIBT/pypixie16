@@ -1619,7 +1619,7 @@ def change_setting_dict(settings, auto_update=True):
             else:
                 raise NotImplementedError("Need to add CSRB for non-int values")
         # single bit settings CSRA
-        if name in [
+        elif name in [
             "FastTrigSelect",
             "ModValSignal",
             "GoodChannel",
