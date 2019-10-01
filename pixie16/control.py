@@ -1381,8 +1381,8 @@ def change_CSRA(setting, name, value: float, channel: int):
         #        'pileup-only' (only record trace, timestamp, etc for pileup events, no single events)
         bit0 = (value == "single") or (value == "pileup-only")
         bit1 = (value == "pileup") or (value == "pileup-only")
-        setting = change_CSRA_bit(setting, value, channel, 15)
-        setting = change_CSRA_bit(setting, value, channel, 16)
+        setting = change_CSRA_bit(setting, bit0, channel, 15)
+        setting = change_CSRA_bit(setting, bit1, channel, 16)
         return setting
     elif name == "SkipLargePulses":
         # value: True = don't record traces for large pulses
