@@ -1491,7 +1491,6 @@ def change_setting_dict(settings, auto_update=True):
     modules = set(x[0] for x in channels)
 
     # get all the raw settings data from the pixie
-    print("enabling all channels")
     current = {}
     for mod in modules:
         current[mod] = read_raw_settings(mod, N=1280)
@@ -1663,6 +1662,7 @@ def change_setting_dict(settings, auto_update=True):
             log.error(f"Change settings dict: unkown settings name {name}")
 
     # always enable all channels
+    print("[INFO] enabling all channels")
     for m in modules:
         for c in range(16):
             current[m] = change_CSRA_bit(current[m], True, c, 2)
