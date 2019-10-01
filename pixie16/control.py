@@ -1601,11 +1601,17 @@ def change_setting_dict(settings, auto_update=True):
 
     # update all settings
     for name, values in settings.items():
-        # single bit settings
+        # single bit settings CSRB
+        if name in ["BackplanePullup", "ChassisMaster"]:
+            if isinstance(values, int):
+                for mod in modules:
+                    current[mod] = change_CSRB(current[mod], name, values)
+            else:
+                raise NotImplementedError("Need to add CSRB for non-int values")
+        # single bit settings CSRA
         if name in [
             "Gain",
             "Polarity",
-            "CaptureEnergy",
             "CaptureTrace",
             "CaptureSums",
             "EnableCFD",
