@@ -406,7 +406,7 @@ def InitSys(PXISlotMap=None, OfflineMode=False):
     if PXISlotMap is not None:
         modules = PXISlotMap
 
-    print(f"[INFO] Using modules in slot(s) {' '.join(modules)}.")
+    print(f"[INFO] Using modules in slot(s) {' '.join([str(x) for x in modules)]}.")
 
     NumModules = len(modules)
     CNumModules = ctypes.c_ushort(NumModules)
@@ -1610,7 +1610,6 @@ def change_setting_dict(settings, auto_update=True):
             "CaptureTrace",
             "CaptureSums",
             "EnableCFD",
-            "RequireExtTrigger",
             "RejectPileup",
             "FastTrigSelect",
             "RejectIfFull",
