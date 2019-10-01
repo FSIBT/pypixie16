@@ -203,7 +203,7 @@ buffer = Buffer()
 
 
 def read_list_mode_data(
-    filename, keep_trace=False, return_namedtuple=True, clear_buffer=False
+    filename, keep_trace=False, return_namedtuple=True, clear_buffer=True
 ):
     """Read list mode data from binary file
 
