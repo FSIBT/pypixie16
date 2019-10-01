@@ -1313,11 +1313,11 @@ def change_register_bit(setting, name, value: bool, bit: int, channel: int = 0):
     return setting
 
 
-def change_CSRA_bit(setting, name, value: bool, channel: int, bit: int):
+def change_CSRA_bit(setting, value: bool, channel: int, bit: int):
     return change_register_bit(setting, "ChanCSRa", value, bit, channel)
 
 
-def change_CSRB_bit(setting, name, value: bool, bit: int):
+def change_CSRB_bit(setting, value: bool, bit: int):
     return change_register_bit(setting, "ModCSRB", value, bit)
 
 
