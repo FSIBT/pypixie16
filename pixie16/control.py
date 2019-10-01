@@ -1602,7 +1602,17 @@ def change_setting_dict(settings, auto_update=True):
     # update all settings
     for name, values in settings.items():
         # single bit settings CSRB
-        if name in ["BackplanePullup", "ChassisMaster"]:
+        if name in [
+            "BackplanePullup",
+            "Director",
+            "ChassisMaster",
+            "GlobalFastTrigger",
+            "ExternalTrigger",
+            "ExternalInhibit",
+            "DistributeClocks",
+            "SortEvents",
+            "ConnectFastTriggerBP",
+        ]:
             if isinstance(values, int):
                 for mod in modules:
                     current[mod] = change_CSRB(current[mod], name, values)
@@ -1610,14 +1620,21 @@ def change_setting_dict(settings, auto_update=True):
                 raise NotImplementedError("Need to add CSRB for non-int values")
         # single bit settings CSRA
         if name in [
-            "Gain",
-            "Polarity",
-            "CaptureTrace",
-            "CaptureSums",
-            "EnableCFD",
-            "RejectPileup",
             "FastTrigSelect",
+            "ModValSignal",
+            "GoodChannel",
             "RejectIfFull",
+            "Polarity",
+            "EnableVeto",
+            "CaptureHistogram",
+            "CaptureTrace",
+            "EnableQDC",
+            "EnableCFD",
+            "EnableModVal",
+            "CaptureSums",
+            "EnableChannelVal",
+            "Gain",
+            "RejectPileup",
         ]:
             if isinstance(values, (list, tuple)):
                 if len(values) == len(channels):
