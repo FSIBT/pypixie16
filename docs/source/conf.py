@@ -27,7 +27,7 @@ class Mock(MagicMock):
         return MagicMock()
 
 
-MOCK_MODULES = ["ctypes", "numpy", "pandas", "appdirs"]
+MOCK_MODULES = ["ctypes", "numpy", "pandas"]
 sys.modules.update((mod_name, Mock()) for mod_name in MOCK_MODULES)
 
 
