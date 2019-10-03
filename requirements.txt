@@ -1,0 +1,6 @@
+docopt
+numpy
+appdirs
+pandas
+matplotlib
+datashader

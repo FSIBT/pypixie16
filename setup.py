@@ -7,6 +7,8 @@ this_directory = path.abspath(path.dirname(__file__))
 with open(path.join(this_directory, "README.md"), encoding="utf-8") as f:
     long_description = f.read()
 
+with open("requirements.txt") as f:
+    required = f.read().splitlines()
 
 setup(
     name="pypixie16",
@@ -19,15 +21,8 @@ setup(
     author_email="apersaud@lbl.gov",
     license="modified BSD",
     packages=["pixie16"],
-    install_requires=[
-        "docopt",
-        "numpy",
-        "appdirs",
-        "pandas",
-        "matplotlib",
-        "datashader",
-    ],
-    setup_requires=["pytest-runner", "sphinx", "napoleon"],
+    install_requires=required,
+    setup_requires=["pytest-runner", "sphinx", "sphinxcontrib-napoleon"],
     tests_require=["pytest"],
     python_requires=">=3.6",
     classifiers=[
