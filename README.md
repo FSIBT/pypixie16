@@ -1,6 +1,6 @@
 # PyPixie16
 
-[https://readthedocs.org/projects/pypixie16/badge/?version=latest&style=plastic]
+[![Docs](https://readthedocs.org/projects/pypixie16/badge/?version=latest&style=plastic)](https://readthedocs.org/projects/pypixie16)
 
 This module can be used to control, read, and analyze data from
 Pixie16 modules from XIA [https://www.xia.com/DGF_Pixie-16.html] using python. To achieve this we provide
