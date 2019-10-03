@@ -22,7 +22,7 @@ setup(
     license="modified BSD",
     packages=["pixie16"],
     install_requires=required,
-    setup_requires=["pytest-runner", "sphinx", "sphinxcontrib-napoleon"],
+    setup_requires=["pytest-runner"],
     tests_require=["pytest"],
     python_requires=">=3.6",
     classifiers=[

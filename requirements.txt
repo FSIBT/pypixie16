@@ -4,3 +4,5 @@ appdirs
 pandas
 matplotlib
 datashader
+sphinxcontrib-napoleon
+sphinx
