@@ -1090,7 +1090,7 @@ def ProgramFippi(modnum):
 # SetDACS (voltage offsets)
 program_SetDACs_prototype = ctypes.WINFUNCTYPE(ctypes.c_int, ctypes.c_uint)
 
-Cprogram_SetDACs = program_setDACs_prototype(("Pixie16SetDACs", PixieAppDLL))
+Cprogram_SetDACs = program_SetDACs_prototype(("Pixie16SetDACs", PixieAppDLL))
 
 
 def ProgramSetDACs(modnum):
