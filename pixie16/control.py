@@ -476,20 +476,40 @@ def BootModule(
 ):
     """Uses the XIA library to boot the module.
 
-    ComFPGAConfigFile:   config file found under Firmware
-    SPFPGAConfigFile:    config file found under Firmware
-    TrigFPGAConfigFile:  No longer in use. Kept for legacy reasons. Enter " " here
-    DSPCodeFile:         config file found under DSP
-    DSPParFile:          config file found under Configuration
-    DSPVarFile:          config file found under DSP
-    ModNum:              location of module you want to boot
-                         (either 0,...,k-1 for individual modules or k for all modules)
-                         if None, check global modules variable to boot all modules
-    BootPattern:         boot pattern mask. 0x7F to boot all on-board chips.
-    section              use a different section from the config file to boot the firmware
-    verbose              print out what firmware we are using
-
     See page 13 of the programming manual.
+
+
+    Parameters
+    ----------
+
+    ComFPGAConfigFile :
+         config file found under Firmware
+    SPFPGAConfigFile :
+         config file found under Firmware
+    TrigFPGAConfigFile :
+         No longer in use. Kept for legacy reasons. Enter " " here
+    DSPCodeFile :
+         config file found under DSP
+    DSPParFile :
+         config file found under Configuration
+    DSPVarFile :
+         config file found under DSP
+    ModNum : int
+         location of module you want to boot
+         (either 0,...,k-1 for individual modules or k for all modules)
+         if None, check global modules variable to boot all modules
+    BootPattern : int
+        boot pattern mask. 0x7F to boot all on-board chips.
+    section :
+        use a different section from the config file to boot the firmware
+    verbose : bool
+        print out what firmware we are using
+
+    Returns
+    -------
+
+    Returns 0 on success, otherwise it returns the error message from the library call.
+
     """
 
     global boot_done
@@ -897,10 +917,17 @@ CStartHistRun = start_hist_run_prototype(("Pixie16StartHistogramRun", PixieAppDL
 def start_histogram_run(module=None, resume=False):
     """Uses the XIA library to start an MCA run in one channel in a module.
 
-    module:         module number
-                    0,..., k-1 to start individual modules, k to start all modules
-                    None to use module wide definition of modules
-    channel:        channel number
+    Parameters
+    ----------
+
+    module :
+         module number
+         0,..., k-1 to start individual modules, k to start all modules
+         None to use module wide definition of modules
+
+    resume : bool
+         Resume the run?
+
     """
 
     if module is None:
@@ -937,10 +964,17 @@ CStartListModeRun = start_listmode_run_prototype(
 def start_listmode_run(module=None, runtype=0x100, resume=False):
     """Uses the XIA library to start a list mode run in one channel in a module.
 
-    module:         module number
-                    0,..., k-1 to start individual modules, k to start all modules
-                    None to use module wide definition of modules
-    channel:        channel number
+    Parameters
+    ----------
+
+    module :
+         module number
+         0,..., k-1 to start individual modules, k to start all modules
+         None to use module wide definition of modules
+    runtype :
+         taks number
+    resume :
+         resume run?
     """
 
     if module is None:
@@ -1837,10 +1871,13 @@ def run_list_mode(filename=None, runtime=5):
     doesn't exist.
 
 
-    Inputs
-    ------
-       filename:   the filename
-       runtime:    The time to take data for in seconds
+    Parameters
+    ----------
+
+    filename :
+       the filename
+    runtime:
+       The time to take data for in seconds
 
     """
 

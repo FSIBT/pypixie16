@@ -19,8 +19,15 @@ setup(
     author_email="apersaud@lbl.gov",
     license="modified BSD",
     packages=["pixie16"],
-    install_requires=["docopt", "numpy", "appdirs"],
-    setup_requires=["pytest-runner"],
+    install_requires=[
+        "docopt",
+        "numpy",
+        "appdirs",
+        "pandas",
+        "matplotlib",
+        "datashader",
+    ],
+    setup_requires=["pytest-runner", "sphinx", "napoleon"],
     tests_require=["pytest"],
     python_requires=">=3.6",
     classifiers=[
