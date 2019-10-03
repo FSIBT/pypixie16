@@ -38,7 +38,7 @@ for name, (startpos, length) in SETTINGS.items():
 
 if sys.maxsize > 2 ** 32:
     print("WARNING: need to run 32bit python to use this library")
-    sys.exit()
+#    sys.exit()
 
 dirs = appdirs.AppDirs("PIXIE16")
 inifile = Path(dirs.user_config_dir) / "config.ini"
@@ -72,7 +72,7 @@ def config_get_parameters(section, name):
         print("   DSPCodeFile = '<path do Pixie16DSP*.ldr>")
         print("   DSPVarFile = '<path do Pixie16DSP*.var>")
         print()
-        sys.exit()
+        # sys.exit()
     return path
 
 
@@ -90,10 +90,13 @@ firmware_dsp_var = config_get_parameters("Firmware.default", "DSPVarFile")
 # make sure the library directory in the path, so that we can find
 # dependencies, otherwise we get a "[WinError 126] The specified
 # module could not be found" error
-os.environ["PATH"] = str(lib_app.parent) + ";" + os.environ["PATH"]
-
-PixieAppDLL = ctypes.cdll.LoadLibrary(str(lib_app))
-PixieSysDLL = ctypes.cdll.LoadLibrary(str(lib_sys))
+if lib_app:
+    os.environ["PATH"] = str(lib_app.parent) + ";" + os.environ["PATH"]
+PixieAppDLL = None
+PixieSysDLL = None
+if lib_app:
+    PixieAppDLL = ctypes.cdll.LoadLibrary(str(lib_app))
+    PixieSysDLL = ctypes.cdll.LoadLibrary(str(lib_sys))
 
 # set up logging
 log = logging.getLogger(__name__)
