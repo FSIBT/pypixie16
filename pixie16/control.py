@@ -1087,6 +1087,37 @@ def ProgramFippi(modnum):
     return ret
 
 
+# SetDACS (voltage offsets)
+program_SetDACs_prototype = ctypes.WINFUNCTYPE(ctypes.c_int, ctypes.c_uint)
+
+Cprogram_SetDACs = program_setDACs_prototype(("Pixie16SetDACs", PixieAppDLL))
+
+
+def ProgramSetDACs(modnum):
+    """Uses the XIA library to update voltage offsets from the current setting
+
+    modnum    the module that will be updated. The new setting already
+              needs to be set. This just activates it.
+
+    """
+    Cmod = ctypes.c_uint(modnum)
+
+    ret = Cprogram_SetDACs(Cmod)
+
+    if ret == 0:
+        log.debug(f"Programmed DACs for module {modnum}!")
+    else:
+        log.error(f"Could not program DACs for module {modnum}")
+        errors = {
+            -1: ["Failed to start SET_DACs run", "?"],
+            -2: ["SET_DACs run timed out", "?"],
+        }
+        message, solution = errors[ret]
+        log.error(message, "Try:", solution)
+
+    return ret
+
+
 # Pixie16SaveDSPParametersToFile
 save_dsp_param_prototype = ctypes.WINFUNCTYPE(ctypes.c_int, ctypes.c_char_p)
 
@@ -1207,6 +1238,10 @@ def write_raw_settings(module, setting, start=0x4A000):
         fip_ret = ProgramFippi(module)
         if fip_ret != 0:
             log.debug("Could not program fippi")
+            return False
+        dac_ret = ProgramSetDACs(module)
+        if dac_ret != 0:
+            log.debug("Could not set DACs")
             return False
         return True
     elif ret == -1:
