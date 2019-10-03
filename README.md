@@ -1,5 +1,7 @@
 # PyPixie16
 
+[https://readthedocs.org/projects/pypixie16/badge/?version=latest&style=plastic]
+
 This module can be used to control, read, and analyze data from
 Pixie16 modules from XIA [https://www.xia.com/DGF_Pixie-16.html] using python. To achieve this we provide
 cytpes interface to the C-libraries provided by XIA. These libraries
@@ -27,6 +29,10 @@ control.py: control the pixie using python. This needs to be imported
 
 variables.py: list of the variables in a settings file, including file position and number of values
               This can be recreated if needed from the included script create_variable_list.py.
+
+# Documentation
+
+Documentation is hosted on Read The Docs: https://readthedocs.org/projects/pypixie16/
 
 # Known issues
 
