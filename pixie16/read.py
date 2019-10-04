@@ -594,7 +594,7 @@ class Settings:
         # all numbers are stored as ulong (32bit unsigned integer) but
         # some should be read back as IEEE754 floats. Keep a list of
         # variables, where we need to convert
-        FLOATS = ["PreampTau"]
+        FLOATS = ["PreampTau", "HostRunTimePreset"]
 
         filename = Path(filename)
         size = filename.stat().st_size
@@ -779,7 +779,7 @@ def compare_module_setting(
             else:
                 valueA = A[k]
                 valueB = B[k]
-            if isinstance(valueA, (int, str)):
+            if isinstance(valueA, (int, str, float)):
                 if valueA != valueB:
                     print(f"{k} differs:\n     a: {valueA}\n     b: {valueB}")
             elif isinstance(valueA, (list, tuple)):
