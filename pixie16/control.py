@@ -1520,7 +1520,13 @@ def get_setting_value(name, settings, channels, current_settings):
         if isinstance(temp, int):
             temp = [temp] * len(channels)
     else:
-        temp = [current_settings[mod][SETTINGS[name][0] + c] for mod, c in channels]
+        if SETTINGS[name][1] == 16:
+            temp = [current_settings[mod][SETTINGS[name][0] + c] for mod, c in channels]
+        elif SETTINGS[name][1] == 1:
+            temp = [current_settings[mod][SETTINGS[name][0]] for mod, c in channels]
+        else:
+            print(f"[ERROR] get_setting_value cannot get value for {name}")
+
     return temp
 
 
@@ -1636,6 +1642,7 @@ def change_setting_dict(settings, auto_update=True):
         settings["PAFlength"] = PAFlength
     if auto_update and ("PAFlength" in settings):
         PAFlength = get_setting_value("PAFlength", settings, channels, current)
+        FIFOLength = get_setting_value("FIFOLength", settings, channels, current)
         FastFilterRange = get_setting_value(
             "FastFilterRange", settings, channels, current
         )
@@ -1652,7 +1659,6 @@ def change_setting_dict(settings, auto_update=True):
                 pl - td / (2 ** f)
                 for pl, td, f in zip(PAFlength, TriggerDelay, FastFilterRange)
             ]
-
         PAFlength = [min(pl, fl - 1) for pl, fl in zip(PAFlength, FIFOLength)]
         TriggerDelay = [
             (pf - td) * 2 ** f
@@ -1661,7 +1667,6 @@ def change_setting_dict(settings, auto_update=True):
 
         settings["PAFlength"] = PAFlength
         settings["TriggerDelay"] = TriggerDelay
-
     if "PreampTau" in settings:
         name = "PreampTau"
         if isinstance(settings[name], int):

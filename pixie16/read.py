@@ -759,14 +759,14 @@ def compare_module_setting(
 
     if not quiet:
         print("Comparing settings:")
-        print(f"  a: {A.filename.name}")
-        print(f"  b: {B.filename.name}")
+        print(f"  a: {A.filename}")
+        print(f"  b: {B.filename}")
         print("")
 
         if writeable_only:
             keys = [k for k in settings.keys() if settings[k][0] < 832]
         else:
-            keys = setting.keys()
+            keys = list(settings.keys())
 
         if units:
             keys = keys + Settings.derived_keys
@@ -801,6 +801,8 @@ def compare_module_setting(
                                     print(f"  ch:{i}\n     a: {x}\n     b: {y}")
                         else:
                             print(f"  ch:{i}\n     a: {a}\n     b: {b}")
+            else:
+                print("This shouldn't happen. type value A", type(valueA))
 
     # convert to a sorted json string to make deep comparison possible
     if writeable_only:
