@@ -117,8 +117,6 @@ def energy_sums(events, setting, N=None, randomize=False, persistent=True, ax=No
     # filter events
     events = filter_events(events, N, randomize)
 
-    print(f"Debug plotting got {len(events)} events")
-
     # create axis if it doesn't exist yet
     orig_ax = ax
     if ax is None:
