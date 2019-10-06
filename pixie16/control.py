@@ -1032,8 +1032,8 @@ def CheckRunStatus(module):
 # Pixie16ReadHistogramFromModule
 read_hist_mod_prototype = ctypes.WINFUNCTYPE(
     ctypes.c_int,
-    ctypes.POINTER(ctypes.c_ulong),
-    ctypes.c_ulong,
+    ctypes.POINTER(ctypes.c_uint),
+    ctypes.c_uint,
     ctypes.c_ushort,
     ctypes.c_ushort,
 )
@@ -1056,9 +1056,9 @@ def ReadHistogramFromModule(module, channel, N=32768):
     # convert to ctypes for library call
     Cmodule = ctypes.c_ushort(module)
     Cchannel = ctypes.c_ushort(channel)
-    result = (ctypes.c_ulong * N)()
+    result = (ctypes.c_uint * N)()
 
-    ret = CReadHistogramMod(result, ctypes.c_ulong(N), Cmodule, Cchannel)
+    ret = CReadHistogramMod(result, ctypes.c_uint(N), Cmodule, Cchannel)
     if ret == 0:
         log.debug("Read Hist from Mod Success!")
 
@@ -1373,7 +1373,7 @@ def change_register_bit(setting, name, value: bool, bit: int, channel: int = 0):
 
     start, length = variables.settings[name]
     current = setting[start + channel]
-    new = value << bit
+    new = 1 << bit
     if value:
         # set the bit
         new = current | new
@@ -1393,7 +1393,7 @@ def change_CSRB_bit(setting, value: bool, bit: int):
     return change_register_bit(setting, "ModCSRB", value, bit)
 
 
-def change_CSRA(setting, name, value: float, channel: int):
+def change_CSRA(setting, name, value, channel: int):
     """Update bits by name for CSRa
 
     setting: from read_raw_setting (a block of memory)
