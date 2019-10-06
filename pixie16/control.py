@@ -1761,8 +1761,7 @@ def change_setting_dict(settings, auto_update=True):
         else:
             log.error(f"Change settings dict: unkown settings name {name}")
 
-    # always enable all channels
-    print("[INFO] enabling all channels")
+    # always enable all channels, we don't get any data otherwise... bug in pixie16?
     for m in modules:
         for c in range(16):
             current[m] = change_CSRA_bit(current[m], True, c, 2)
