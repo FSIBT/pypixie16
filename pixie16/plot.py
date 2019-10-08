@@ -4,7 +4,13 @@ from .read import Event
 from functools import wraps
 import random
 import numpy as np
-
+import sys
+from collections import Counter, namedtuple
+import datashader as ds
+import datashader.transfer_functions as tf
+from matplotlib.colors import LogNorm
+import matplotlib.pyplot as plt
+from pixie16.analyze import calculate_CFD_using_FF, calculate_filter
 
 def ensure_namedtuple(f):
     @wraps(f)
@@ -35,6 +41,49 @@ def filter_events(events, N=None, randomize=False):
             )
     return events
 
+
+def advindexing_roll(A, r):
+    """Shift trace matrix A by r indices.
+       traces and r must be >1D numpy arrays"""
+       
+    if isinstance(A, np.ndarray) and isinstance(r, np.ndarray):
+        rows, column_indices = np.ogrid[: A.shape[0], : A.shape[1]]
+        r[r < 0] += A.shape[1]
+        column_indices = column_indices - r[:, np.newaxis]
+    else:
+        raise Exception("Wrong type. Need numpy arrays")
+    return A[rows, column_indices]
+
+def read_settings(file, ch):
+    parameters = namedtuple(
+        "parameters",
+        [
+            "Gs",
+            "Ls",
+            "Lf",
+            "FFth",
+            "CFDth",
+            "CFDdelay",
+            "Gf",
+            "LiveTime",
+            "PeakSample",
+            "tau",
+        ],
+    )
+    S = read.Settings(file, module)
+    LiveTime = round(S["LiveTimeB"][ch] * 1e-8, 2)  # seconds
+    l = S["TraceLength"][ch]
+    assert l == len(trace[0]), f"{l} {len(trace[0])}"
+    Gs = S["SlowGap"][ch] * 5 * 2 ** S["SlowFilterRange"]  # *2/100 # us
+    Ls = S["SlowLength"][ch] * 5 * 2 ** S["SlowFilterRange"]  # *2/100 # us
+    Lf = S["FastLength"][ch] * 5 * 2 ** S["FastFilterRange"]  # /100 # us
+    Gf = S["FastGap"][ch] * 5 * 2 ** S["FastFilterRange"]  # /100
+    FFth = S["FastThresh"][ch] * 2 / 100  # ADC units
+    CFDth = S["CFDThresh"][ch]  # ADC units
+    CFDdelay = S["CFDDelay"][ch]  # us
+    PeakSample = S["PeakSample"][ch]
+    tau = tau = S["PreampTau"][ch]
+    return parameters(Gs, Ls, Lf, FFth, CFDth, CFDdelay, Gf, LiveTime, PeakSample, tau)
 
 def print_timing():
     pass
@@ -72,8 +121,86 @@ def FF():
     pass
 
 
-def CFD():
-    pass
+def CFD(w, num_traces, pdf=False, persistence=False):
+    # perform own CFD calculation
+    setting = read_settings(setfile)
+    CFDth = setting.CFDth
+    Lf = int(setting.Lf)
+    Gf = int(setting.Gf)
+    FFth = setting.FFth
+
+    w = [w]
+    B = [5]
+    D = [5]
+    L = [1]
+
+    CFD, cfdtime, FF, IDXerr = calculate_CFD_using_FF(
+        trace,
+        t=t,
+        CFD_threshold=CFDth,
+        FF_threshold=FFth,
+        Lf=Lf,
+        Gf=Gf,
+        w=w[0],
+        B=B[0],
+        D=D[0],
+        L=L[0],
+        Nbkgd=10,
+        FF_delay=20,
+        CFD_delay=0,
+    )
+
+    cfdtime = cfdtime[cfdtime != np.array(None)]
+
+    tcfd = t[B[0] + D[0] : trace.shape[1] - L[0] + 1]
+    tff = t[0 : FF.shape[1]]
+
+    if pdf:
+        fig = plt.figure(figsize=(18, 10))
+        fig.subplots_adjust(hspace=0.3, wspace=0.3)
+        rows = 4
+        columns = 5
+        for i in range(1, num_traces + 1):
+            rand = random.randint(0, trace.shape[0])
+            ax = fig.add_subplot(rows, columns, i)
+            ax.plot(t, trace[rand], label="Trace", lw=0.2)
+            ax.plot(tcfd, CFD[rand], label="CFD", lw=0.2)
+            ax.plot(tff, FF[rand], label="Fast Filter", lw=0.2)
+            ax.plot([t[0], t[-1]], [CFDth, CFDth], label="CFD Threshold", lw=0.2)
+            ax.plot([t[0], t[-1]], [FFth, FFth], label="FF Threshold", lw=0.2)
+            ax.plot(cfdtime[rand], 0, ".", ms=1, color="k")
+            ax.legend(loc="upper right", fancybox=True, shadow=True, prop={"size": 4})
+    else:
+        for i in range(num_traces):
+            rand = random.randint(0, trace.shape[0])
+            plt.figure()
+            plt.plot(t, trace[rand], label="Trace")
+            plt.plot(tcfd, CFD[rand], label="CFD")
+            plt.plot(tff, FF[rand], label="Fast Filter")
+            plt.plot([t[0], t[-1]], [CFDth, CFDth], label="CFD Threshold")
+            plt.plot([t[0], t[-1]], [FFth, FFth], label="FF Threshold")
+            plt.plot(cfdtime[rand], 0, ".", ms=10)
+            plt.legend()
+            # plt.show()
+
+        if persist:
+            sumIDX = persistence(trace, plot=False)
+            minsumIDX = sumIDX.min()
+            shiftIDX = sumIDX - minsumIDX
+            CFDshift = advindexing_roll(CFD, -shiftIDX)
+            create_plot(CFDshift)
+            plt.plot(
+                [0, 2 * (CFD.shape[1] - 1)],
+                [CFDth, CFDth],
+                "r--",
+                label=f"CFD Threshold = {CFDth}",
+            )
+            plt.title("CFD Trace")
+            plt.title(f"channel: {ch}; number of CFD traces: {CFD.shape[0]}")
+            plt.legend()
+            # plt.show()
+
+
 
 
 def energy_sums(events, setting, N=None, randomize=False, persistent=True, ax=None):
