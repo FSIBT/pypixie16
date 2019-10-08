@@ -62,3 +62,9 @@ t = np.linspace(0, 2 * (trace.shape[1] - 1), trace.shape[1])  # in ns
 if len(trailsum) == 0:
     print("Error: Raw energy sums must be anabled in the PIXIE-16")
     sys.exit()
+    
+
+plot.CFD(trace, setfile, ch, module)
+
+    
+
