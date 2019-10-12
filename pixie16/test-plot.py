@@ -64,7 +64,8 @@ if len(trailsum) == 0:
     sys.exit()
     
 
-plot.CFD(trace, setfile, ch, module)
+#plot.CFD(trace, setfile, ch, module)
+plot.persistence(data, setfile)
 
     
 
