@@ -60,8 +60,8 @@ def read_settings(setfile, channel, module):
     )
     ch = channel
     S = read.Settings(setfile, module)
-    Gs = S.SlowGap[ch] # *10
-    Ls = S.SlowLength[ch]  # *10
+    Gs = S.SlowGap[ch]  *10
+    Ls = S.SlowLength[ch]   *10
     Gf = S.FastGap[ch] # *5
     Lf = S.FastLength[ch]  # *5
     FFth = S.units.FastThresh[ch]
@@ -74,7 +74,7 @@ def read_settings(setfile, channel, module):
 
 def advindexing_roll(A, r):
     """Shift trace matrix A by r indices.
-       traces and r must be >1D numpy arrays"""
+       traces and r must be > 1D numpy arrays"""
        
     if isinstance(A, np.ndarray) and isinstance(r, np.ndarray):
         rows, column_indices = np.ogrid[: A.shape[0], : A.shape[1]]
@@ -83,6 +83,128 @@ def advindexing_roll(A, r):
     else:
         raise Exception("Wrong type. Need numpy arrays")
     return A[rows, column_indices]
+
+# persistent plot
+def create_plot(traces, x_range=None):
+    x_range = None
+    data = traces
+    mytime = np.linspace(0, 2 * (traces.shape[1] - 1), traces.shape[1])  # in us
+
+    if x_range is None:
+        x_range = [mytime[0], mytime[-1]]
+    y_range = [data.min(), data.max()]
+    cvs = ds.Canvas(plot_height=400, plot_width=1000, x_range=x_range, y_range=y_range)
+    df = ds.utils.dataframe_from_multiple_sequences(mytime, data)
+    agg = cvs.line(df, "x", "y", agg=ds.count())
+    img = tf.shade(agg, how="eq_hist")
+    fig, ax = plt.subplots(figsize=(12, 6))
+    ax.imshow(
+        img,
+        extent=[x * 1 for x in x_range] + [y * 1 for y in y_range],
+        aspect="auto",
+        origin="lower",
+        norm=LogNorm(),
+    )
+    ax.set_xlabel("Time [ns]")
+    ax.set_ylabel("ADC units [a.u]")
+    
+def find_sums(traces, setting, trailsum, gapsum, leadsum):
+    sumIDX = []
+    Esums = []
+    Ls = setting.Ls
+    Gs = setting.Gs
+    for j in range(len(traces)):
+        for i in range(len(traces[j]) - 2 * Ls - Gs):
+            s1 = np.sum(traces[j][i : i + Ls])
+            s2 = np.sum(traces[j][i + Ls : i + Ls + Gs])
+            s3 = np.sum(traces[j][i + Ls + Gs : i + Ls + Gs + Ls])
+            # print([s1, s2, s3], [Esum1, Esum2, Esum3])
+            if [s1, s2, s3] == [trailsum[j], gapsum[j], leadsum[j]]:
+                sumIDX.append(i)
+                Esums.append([s1, s2, s3])
+                # print(f'found it at {sumIDX}')
+                break
+        else:
+            print("Error: Could not find sums!")
+            print("Error: Try increasing trace length and/or trace delay and run again")
+            print(
+                "Ideal settings for offline computation: trace length > 2*Ls+Gs"
+                + " pretrigger length > 3*Ls+Gs (p.69, rev. 01/2019)"
+            )
+            sys.exit()
+
+    sumIDX = np.array(sumIDX)
+    Esums = np.array(Esums)
+    return sumIDX, Esums
+
+@ensure_namedtuple    
+def persistence(events, setfile, plot=True, keep_sums=False):
+    """find the index where the raw energy sums are caluclated and plot all
+       traces in persistence mode. This can take a long time, so don't run 
+       for too long"""
+       
+    print("Calculating sums. Do not use many traces...")
+    print("Total number of events: ", len(events))
+    
+    # figure out all channels form events
+    all_channels = [e.channel for e in events]
+    count_ch = Counter(all_channels)
+    print('Channels used and occurences: ', count_ch)
+    channels = list(count_ch.keys()) # unique set of channels used
+    
+    setting = read_settings(setfile, channels[0], 0)
+    Ls = int(setting.Ls)
+    Gs = int(setting.Gs)
+    
+    ch, trace, trailsum, gapsum, leadsum = [], [], [], [], []
+    for e in events:
+        if e.channel == channels[0] and e.CFD_error == 0:
+            ch.append(ch)
+            trace.append(e.trace)
+            trailsum.append(e.Esum_trailing)
+            gapsum.append(e.Esum_gap)
+            leadsum.append(e.Esum_leading)
+            
+    trace = np.array(trace)
+    t = np.linspace(0, 2 * (trace.shape[1] - 1), trace.shape[1])  # in ns
+    IDX = np.arange(0, trace.shape[0], 1)
+    if len(trailsum) == 0:
+        print("Error: Raw energy sums must be anabled in the PIXIE-16")
+        sys.exit()
+    
+    sumIDX, Esum = find_sums(trace, setting, trailsum, gapsum, leadsum)
+    
+    # gapIDX = sumIDX + Ls
+    minsumIDX = sumIDX.min()
+    shiftIDX = sumIDX - minsumIDX
+    traceshift = advindexing_roll(trace, -shiftIDX)
+
+    if plot:
+        create_plot(traceshift[IDX])
+        plt.plot(
+            [t[minsumIDX], t[minsumIDX]],
+            [trace.min(), trace.max()],
+            "r--",
+            label="raw energy sums",
+        )
+        plt.plot(
+            [t[minsumIDX + Ls], t[minsumIDX + Ls]], [trace.min(), trace.max()], "r--"
+        )
+        plt.plot(
+            [t[minsumIDX + Ls + Gs], t[minsumIDX + Ls + Gs]],
+            [trace.min(), trace.max()],
+            "r--",
+        )
+        plt.plot(
+            [t[minsumIDX + Ls + Gs + Ls], t[minsumIDX + Ls + Gs + Ls]],
+            [trace.min(), trace.max()],
+            "r--",
+        )
+        plt.legend()
+        plt.title(
+            f"channel: {channels[0]}; number of traces: {count_ch[channels[0]]}; live time: {setting.LiveTime}"
+        )
+        # plt.show()
 
 
 def print_timing():
