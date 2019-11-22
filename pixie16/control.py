@@ -1711,6 +1711,7 @@ def change_setting_dict(settings, auto_update=True):
             "CaptureSums",
             "EnableChannelVal",
             "Gain",
+            "GroupTrigSignal",
             "RejectPileup",
         ]:
             if isinstance(values, (list, tuple)):
