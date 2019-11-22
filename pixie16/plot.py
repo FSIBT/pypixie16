@@ -13,10 +13,15 @@ from matplotlib.colors import LogNorm
 import matplotlib.pyplot as plt
 from pixie16.analyze import calculate_CFD_using_FF, calculate_filter
 
+
 def ensure_namedtuple(f):
     @wraps(f)
     def wrap(*args, **kwargs):
-        event = args[0][0]
+        try:
+            event = args[0][0]
+        except IndexError:
+            print(f"[WARNING] {f.__name__}: no events")
+            return
         if not isinstance(event, Event):
             events = [Event(e) for e in args[0]]
             args[0] = events
@@ -42,6 +47,7 @@ def filter_events(events, N=None, randomize=False):
             )
     return events
 
+
 def read_settings(setfile, channel, module):
     parameters = namedtuple(
         "parameters",
@@ -60,9 +66,9 @@ def read_settings(setfile, channel, module):
     )
     ch = channel
     S = read.Settings(setfile, module)
-    Gs = S.SlowGap[ch]  *10
-    Ls = S.SlowLength[ch]   *10
-    Gf = S.FastGap[ch] # *5
+    Gs = S.SlowGap[ch] * 10
+    Ls = S.SlowLength[ch] * 10
+    Gf = S.FastGap[ch]  # *5
     Lf = S.FastLength[ch]  # *5
     FFth = S.units.FastThresh[ch]
     CFDth = S.units.CFDThresh[ch]
@@ -72,10 +78,11 @@ def read_settings(setfile, channel, module):
     tau = S.PreampTau[ch]
     return parameters(Gs, Ls, Lf, FFth, CFDth, CFDdelay, Gf, LiveTime, PeakSample, tau)
 
+
 def advindexing_roll(A, r):
     """Shift trace matrix A by r indices.
        traces and r must be > 1D numpy arrays"""
-       
+
     if isinstance(A, np.ndarray) and isinstance(r, np.ndarray):
         rows, column_indices = np.ogrid[: A.shape[0], : A.shape[1]]
         r[r < 0] += A.shape[1]
@@ -84,30 +91,46 @@ def advindexing_roll(A, r):
         raise Exception("Wrong type. Need numpy arrays")
     return A[rows, column_indices]
 
-# persistent plot
-def create_plot(traces, x_range=None):
-    x_range = None
+
+def create_persistent_plot(traces, x_range=None, ax=None):
+    """ Create persistence plot
+
+    Parameters
+    ----------
+
+    traces :
+        2D numpy array (N,M) where N is the number of traces and M the lenght of traces
+
+    x_range :
+        desired range of time axis. If None, it goes from 0 to 2*M in ns
+
+    ax :
+        a matplotlib axes to plot on. If None, we create a new figure
+        and show it at the end. Otherwise this needs to be an array of
+        matplotlib axis objects: one axis for each channel present in
+        events.
+
+    """
     data = traces
-    mytime = np.linspace(0, 2 * (traces.shape[1] - 1), traces.shape[1])  # in us
+    mytime = np.linspace(0, 2 * (traces.shape[1] - 1), traces.shape[1])  # in ns
 
     if x_range is None:
         x_range = [mytime[0], mytime[-1]]
     y_range = [data.min(), data.max()]
+    # using datashader to create persistent plot
     cvs = ds.Canvas(plot_height=400, plot_width=1000, x_range=x_range, y_range=y_range)
     df = ds.utils.dataframe_from_multiple_sequences(mytime, data)
     agg = cvs.line(df, "x", "y", agg=ds.count())
     img = tf.shade(agg, how="eq_hist")
-    fig, ax = plt.subplots(figsize=(12, 6))
+    if ax is None:
+        fig, ax = plt.subplots(figsize=(12, 6))
     ax.imshow(
-        img,
-        extent=[x * 1 for x in x_range] + [y * 1 for y in y_range],
-        aspect="auto",
-        origin="lower",
-        norm=LogNorm(),
+        img, extent=x_range + y_range, aspect="auto", origin="lower", norm=LogNorm()
     )
     ax.set_xlabel("Time [ns]")
     ax.set_ylabel("ADC units [a.u]")
-    
+
+
 def find_sums(traces, setting, trailsum, gapsum, leadsum):
     sumIDX = []
     Esums = []
@@ -137,74 +160,81 @@ def find_sums(traces, setting, trailsum, gapsum, leadsum):
     Esums = np.array(Esums)
     return sumIDX, Esums
 
-@ensure_namedtuple    
-def persistence(events, setfile, plot=True, keep_sums=False):
+
+@ensure_namedtuple
+def persistence(events, setfile, N=None, plot=True, ax=None, keep_sums=False):
     """find the index where the raw energy sums are caluclated and plot all
-       traces in persistence mode. This can take a long time, so don't run 
+       traces in persistence mode. This can take a long time, so don't run
        for too long"""
-       
-    print("Calculating sums. Do not use many traces...")
-    print("Total number of events: ", len(events))
-    
-    # figure out all channels form events
-    all_channels = [e.channel for e in events]
-    count_ch = Counter(all_channels)
-    print('Channels used and occurences: ', count_ch)
-    channels = list(count_ch.keys()) # unique set of channels used
-    
-    setting = read_settings(setfile, channels[0], 0)
+
+    if len(events) == 0:
+        return
+    channel = events[0].channel
+
+    for e in events:
+        if e.channel != channel:
+            print("[ERROR] All events for persistence plot must be from 1 channel")
+            return
+    setting = read_settings(setfile, channel, 0)
     Ls = int(setting.Ls)
     Gs = int(setting.Gs)
-    
+
     ch, trace, trailsum, gapsum, leadsum = [], [], [], [], []
+    if N and len(events) > N:
+        events = events[0:N]
     for e in events:
-        if e.channel == channels[0] and e.CFD_error == 0:
+        if e.CFD_error == 0:
             ch.append(ch)
             trace.append(e.trace)
             trailsum.append(e.Esum_trailing)
             gapsum.append(e.Esum_gap)
             leadsum.append(e.Esum_leading)
-            
+
     trace = np.array(trace)
-    t = np.linspace(0, 2 * (trace.shape[1] - 1), trace.shape[1])  # in ns
+    try:
+        t = np.linspace(0, 2 * (trace.shape[1] - 1), trace.shape[1])  # in ns
+    except IndexError:
+        return
     IDX = np.arange(0, trace.shape[0], 1)
     if len(trailsum) == 0:
-        print("Error: Raw energy sums must be anabled in the PIXIE-16")
-        sys.exit()
-    
+        print("[ERROR] Raw energy sums must be anabled in the PIXIE-16")
+        return
+
     sumIDX, Esum = find_sums(trace, setting, trailsum, gapsum, leadsum)
-    
+
     # gapIDX = sumIDX + Ls
     minsumIDX = sumIDX.min()
     shiftIDX = sumIDX - minsumIDX
     traceshift = advindexing_roll(trace, -shiftIDX)
 
     if plot:
-        create_plot(traceshift[IDX])
-        plt.plot(
+        if ax is None:
+            fig, ax = plt.subplots()
+        create_persistent_plot(traceshift[IDX], ax=ax)
+        ax.plot(
             [t[minsumIDX], t[minsumIDX]],
             [trace.min(), trace.max()],
             "r--",
             label="raw energy sums",
         )
-        plt.plot(
+        ax.plot(
             [t[minsumIDX + Ls], t[minsumIDX + Ls]], [trace.min(), trace.max()], "r--"
         )
-        plt.plot(
+        ax.plot(
             [t[minsumIDX + Ls + Gs], t[minsumIDX + Ls + Gs]],
             [trace.min(), trace.max()],
             "r--",
         )
-        plt.plot(
+        ax.plot(
             [t[minsumIDX + Ls + Gs + Ls], t[minsumIDX + Ls + Gs + Ls]],
             [trace.min(), trace.max()],
             "r--",
         )
-        plt.legend()
-        plt.title(
-            f"channel: {channels[0]}; number of traces: {count_ch[channels[0]]}; live time: {setting.LiveTime}"
+        ax.legend()
+        ax.set_title(
+            f"channel: {channel}; number of traces: {len(trace)}; live time: {setting.LiveTime}"
         )
-        # plt.show()
+        ax.set_ylim(bottom=0)
 
 
 def print_timing():
@@ -255,7 +285,7 @@ def CFD(traces, setfile, channel, module, w=0.3125, num_traces=20):
     B = [5]
     D = [5]
     L = [1]
-    
+
     t = np.linspace(0, 2 * (traces.shape[1] - 1), traces.shape[1])  # in ns
 
     CFD, cfdtime, FF, IDXerr = calculate_CFD_using_FF(
@@ -279,7 +309,6 @@ def CFD(traces, setfile, channel, module, w=0.3125, num_traces=20):
     tcfd = t[B[0] + D[0] : traces.shape[1] - L[0] + 1]
     tff = t[0 : FF.shape[1]]
 
-
     fig = plt.figure(figsize=(18, 10))
     fig.subplots_adjust(hspace=0.3, wspace=0.3)
     rows = 4
@@ -294,8 +323,6 @@ def CFD(traces, setfile, channel, module, w=0.3125, num_traces=20):
         ax.plot([t[0], t[-1]], [FFth, FFth], label="FF Threshold", lw=0.2)
         ax.plot(cfdtime[rand], 0, ".", ms=1, color="k")
         ax.legend(loc="upper right", fancybox=True, shadow=True, prop={"size": 4})
-
-
 
 
 def energy_sums(events, setting, N=None, randomize=False, persistent=True, ax=None):
