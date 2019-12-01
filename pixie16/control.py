@@ -1810,11 +1810,21 @@ CReadFIFO = Pixie_ExtFIFO_Read_prototype(("Pixie_ExtFIFO_Read", PixieSysDLL))
 
 
 def ReadFIFO(module, words):
-    """Uses the XIA library to read how many 32bit words are available on module N
+    """Uses the XIA library to read data in 32bit words from module N
 
-    module:   module number
+    Parameters
+    ----------
 
-    return number of 32 bit words available
+    module : int
+        module number
+    words : int
+        number of words to read (from ReadFIFOStats)
+
+    Returns
+    -------
+
+    data : np.array
+         numpy array of 32 bit words (unsigned integers)
     """
 
     # convert to ctypes for library call
@@ -1881,7 +1891,7 @@ def run_list_mode(filename=None, runtime=5):
 
     filename :
        the filename
-    runtime:
+    runtime :
        The time to take data for in seconds
 
     """

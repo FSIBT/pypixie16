@@ -15,6 +15,13 @@ from pixie16.analyze import calculate_CFD_using_FF, calculate_filter
 
 
 def ensure_namedtuple(f):
+    """This decorator makes sure that the first argument is an instant of Events.
+
+    This way, we can guarantee that we can use things like e.channel inside the function
+
+    We also print a warning if there are no events given
+    """
+
     @wraps(f)
     def wrap(*args, **kwargs):
         try:
@@ -31,7 +38,7 @@ def ensure_namedtuple(f):
 
 
 def filter_events(events, N=None, randomize=False):
-    """Pick N (random) events from list"""
+    """Pick N (random) events from list of events"""
 
     Nevents = len(events)
 
@@ -99,7 +106,7 @@ def create_persistent_plot(traces, x_range=None, ax=None):
     ----------
 
     traces :
-        2D numpy array (N,M) where N is the number of traces and M the lenght of traces
+        2D numpy array (N, M) where N is the number of traces and M the length of the traces
 
     x_range :
         desired range of time axis. If None, it goes from 0 to 2*M in ns
@@ -342,7 +349,6 @@ def energy_sums(events, setting, N=None, randomize=False, persistent=True, ax=No
         if True and N is smaller than the total amount of traces, randomly pick traces
     persistent : bool
         use datashader to plot traces
-
     ax :
         a matplotlib axes to plot on. If None, we create a new figure
         and show it at the end. Otherwise this needs to be an array of

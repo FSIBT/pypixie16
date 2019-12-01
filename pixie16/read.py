@@ -504,7 +504,7 @@ class Units:
 
     @staticmethod
     def to_sec(ns):
-        """Convert na readable format"""
+        """Convert ns readable format"""
 
         USEC = 1000
         MSEC = 1000 * USEC
