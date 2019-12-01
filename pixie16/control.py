@@ -1872,6 +1872,46 @@ def set_traces(module, channel, status):
     WriteChanParam("CHANNEL_CSRA", channel_setting, module, channel)
 
 
+def read_list_mode_fifo(check=True):
+    """Reads data from pixies FIFO across all modules defined in pixie16.control.modules
+
+    Parameters
+    ----------
+
+    check : bool
+        If True, check first if there is enough data (<1kb) that should be read.
+        Otherwise always read all data.
+
+    Returns
+    -------
+
+    output : list
+        List with data as a numpy array of 32 bit unsigned integers for each module.
+    """
+
+    if check:
+        do_read = False
+        for i, slot in enumerate(modules):
+            number_of_words = ReadFIFOStatus(i)
+            if number_of_words > 1024:
+                do_read = True
+                break
+    else:
+        do_read = True
+
+    output = []
+    if do_read:
+        for i, slot in enumerate(modules):
+            number_of_words = ReadFIFOStatus(i)
+            if number_of_words > 0:
+                data = ReadFIFO(i, number_of_words)
+            else:
+                data = None
+            output.append(data)
+
+    return output
+
+
 def run_list_mode(filename=None, runtime=5):
     """Run the pixie16 in list mode
 
@@ -1933,13 +1973,9 @@ def run_list_mode(filename=None, runtime=5):
 
         while time.time() < stop:
             tic = time.time()
-            for i, slot in enumerate(modules):
-                number_of_words = ReadFIFOStatus(i)
-                if number_of_words > 1024:
-                    print(f"got {number_of_words} words")
-                    data = ReadFIFO(i, number_of_words)
-                    print(f"got data {data}")
-                    data.newbyteorder("S").tofile(outfile)
+            data = read_list_mode_fifo()
+            for d in data:
+                d.newbyteorder("S").tofile(outfile)
             toc = time.time()
             print(f" elapsed time  {toc-tic:.6f}")
 
@@ -1948,10 +1984,6 @@ def run_list_mode(filename=None, runtime=5):
         time.sleep(0.4)
 
         # read final data
-        for i, slot in enumerate(modules):
-            number_of_words = ReadFIFOStatus(i)
-            if number_of_words > 0:
-                print(f"got remaining {number_of_words} words")
-                data = ReadFIFO(i, number_of_words)
-                print(f"got data {data}")
-                data.newbyteorder("S").tofile(outfile)
+        data = read_list_mode_fifo(check=False)
+        for d in data:
+            d.newbyteorder("S").tofile(outfile)
