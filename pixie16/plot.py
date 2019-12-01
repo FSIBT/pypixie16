@@ -14,6 +14,9 @@ import matplotlib.pyplot as plt
 from pixie16.analyze import calculate_CFD_using_FF, calculate_filter
 
 
+DATA_POINTS_PER_FPGA_CYCLE = 5
+
+
 def ensure_namedtuple(f):
     """This decorator makes sure that the first argument is an instant of Events.
 
@@ -55,35 +58,28 @@ def filter_events(events, N=None, randomize=False):
     return events
 
 
-def read_settings(setfile, channel, module):
-    parameters = namedtuple(
-        "parameters",
-        [
-            "Gs",
-            "Ls",
-            "Lf",
-            "FFth",
-            "CFDth",
-            "CFDdelay",
-            "Gf",
-            "LiveTime",
-            "PeakSample",
-            "tau",
-        ],
-    )
-    ch = channel
-    S = read.Settings(setfile, module)
-    Gs = S.SlowGap[ch] * 10
-    Ls = S.SlowLength[ch] * 10
-    Gf = S.FastGap[ch]  # *5
-    Lf = S.FastLength[ch]  # *5
-    FFth = S.units.FastThresh[ch]
-    CFDth = S.units.CFDThresh[ch]
-    CFDdelay = S.CFDDelay[ch]
-    LiveTime = S.units.LiveTime[ch]
-    PeakSample = S.PeakSample[ch]
-    tau = S.PreampTau[ch]
-    return parameters(Gs, Ls, Lf, FFth, CFDth, CFDdelay, Gf, LiveTime, PeakSample, tau)
+def create_title_page(title, pdf=None):
+    """Helper function to create a title page
+
+    The function will create a title centered in a plot.
+    If pdf is given, it will save the figure inside the pdf (to be used with PdfPages)
+    for multi page pdfs.
+
+    Parameters
+    ----------
+
+    title :  str
+       The title
+    pdf : matplotlib.backends.backend_pdf.PdfPages
+       The pdf where the title page should be added to.
+
+    """
+    fig = plt.figure()
+    plt.axis("off")
+    plt.text(0.5, 0.5, title, ha="center", va="center")
+    if pdf:
+        pdf.savefig()
+    plt.close(fig)
 
 
 def advindexing_roll(A, r):
@@ -95,7 +91,7 @@ def advindexing_roll(A, r):
         r[r < 0] += A.shape[1]
         column_indices = column_indices - r[:, np.newaxis]
     else:
-        raise Exception("Wrong type. Need numpy arrays")
+        raise TypeError("Wrong type. Need numpy arrays")
     return A[rows, column_indices]
 
 
@@ -118,17 +114,19 @@ def create_persistent_plot(traces, x_range=None, ax=None):
         events.
 
     """
-    data = traces
     mytime = np.linspace(0, 2 * (traces.shape[1] - 1), traces.shape[1])  # in ns
 
     if x_range is None:
         x_range = [mytime[0], mytime[-1]]
-    y_range = [data.min(), data.max()]
+    y_range = [traces.min(), traces.max()]
+
     # using datashader to create persistent plot
     cvs = ds.Canvas(plot_height=400, plot_width=1000, x_range=x_range, y_range=y_range)
-    df = ds.utils.dataframe_from_multiple_sequences(mytime, data)
+    df = ds.utils.dataframe_from_multiple_sequences(mytime, traces)
     agg = cvs.line(df, "x", "y", agg=ds.count())
     img = tf.shade(agg, how="eq_hist")
+
+    ax_orig = ax
     if ax is None:
         fig, ax = plt.subplots(figsize=(12, 6))
     ax.imshow(
@@ -138,18 +136,48 @@ def create_persistent_plot(traces, x_range=None, ax=None):
     ax.set_ylabel("ADC units [a.u]")
 
 
-def find_sums(traces, setting, trailsum, gapsum, leadsum):
+def find_sums(traces, SlowLength, SlowGap, trailsum, gapsum, leadsum):
+    """Find the location of the 3 reported sums in a trace that are used to calculate the energy.
+
+    For this to work, bit 12 of register A (CaptureSums) needs to be set for the channel.
+
+    Parameters
+    ----------
+
+    traces :
+        2D numpy array (N, M) where N is the number of traces and M the length of the traces.
+    SlowLength : list
+        List of the length of the Ls for each trace in traces.
+    SlowGap : list
+        List of the length of the Gs for each trace in traces.
+    trailsum :
+        Array/List of N values that contains the values of the first reported sum, which contains L values.
+    gapsum :
+        Array/List of N values that contains the values of the second reported sum, which contains G values.
+    leadsum :
+        Array/List of N values that contains the values of the third reported sum, which contains L values.
+
+
+    Returns
+    -------
+
+    sumIDX :
+        numpy array of position of the start of the first sumIDX
+    Esums :
+        numpy array of the three sums
+
+    """
     sumIDX = []
     Esums = []
-    Ls = setting.Ls
-    Gs = setting.Gs
-    for j in range(len(traces)):
-        for i in range(len(traces[j]) - 2 * Ls - Gs):
-            s1 = np.sum(traces[j][i : i + Ls])
-            s2 = np.sum(traces[j][i + Ls : i + Ls + Gs])
-            s3 = np.sum(traces[j][i + Ls + Gs : i + Ls + Gs + Ls])
+    for t, Ls, Gs, Tsum, Gsum, Lsum in zip(
+        traces, SlowLength, SlowGap, trailsum, gapsum, leadsum
+    ):
+        for i in range(len(t) - 2 * Ls - Gs):
+            s1 = np.sum(t[i : i + Ls])
+            s2 = np.sum(t[i + Ls : i + Ls + Gs])
+            s3 = np.sum(t[i + Ls + Gs : i + Ls + Gs + Ls])
             # print([s1, s2, s3], [Esum1, Esum2, Esum3])
-            if [s1, s2, s3] == [trailsum[j], gapsum[j], leadsum[j]]:
+            if [s1, s2, s3] == [Tsum, Gsum, Lsum]:
                 sumIDX.append(i)
                 Esums.append([s1, s2, s3])
                 # print(f'found it at {sumIDX}')
@@ -161,87 +189,44 @@ def find_sums(traces, setting, trailsum, gapsum, leadsum):
                 "Ideal settings for offline computation: trace length > 2*Ls+Gs"
                 + " pretrigger length > 3*Ls+Gs (p.69, rev. 01/2019)"
             )
-            sys.exit()
+            raise IndexError
 
     sumIDX = np.array(sumIDX)
     Esums = np.array(Esums)
     return sumIDX, Esums
 
 
-@ensure_namedtuple
-def persistence(events, setfile, N=None, plot=True, ax=None, keep_sums=False):
-    """find the index where the raw energy sums are caluclated and plot all
-       traces in persistence mode. This can take a long time, so don't run
-       for too long"""
+def MCA(data, ax=None, title=None, pdf=None):
+    """Plot MCA spectra
 
-    if len(events) == 0:
-        return
-    channel = events[0].channel
+    If pdf is given, it will save the figure inside the pdf (to be used with PdfPages)
+    for multi page pdfs.
 
-    for e in events:
-        if e.channel != channel:
-            print("[ERROR] All events for persistence plot must be from 1 channel")
-            return
-    setting = read_settings(setfile, channel, 0)
-    Ls = int(setting.Ls)
-    Gs = int(setting.Gs)
+    Parameters
+    ----------
 
-    ch, trace, trailsum, gapsum, leadsum = [], [], [], [], []
-    if N and len(events) > N:
-        events = events[0:N]
-    for e in events:
-        if e.CFD_error == 0:
-            ch.append(ch)
-            trace.append(e.trace)
-            trailsum.append(e.Esum_trailing)
-            gapsum.append(e.Esum_gap)
-            leadsum.append(e.Esum_leading)
+    data :
+       Data from ReadHistogramFromModule
+    ax :
+       The axis to plot on, if None, we create a new figure and axis
+    title : str
+       Add this title to the plot
+    pdf : matplotlib.backends.backend_pdf.PdfPages
+       if present, we save the plot in the pdf
 
-    trace = np.array(trace)
-    try:
-        t = np.linspace(0, 2 * (trace.shape[1] - 1), trace.shape[1])  # in ns
-    except IndexError:
-        return
-    IDX = np.arange(0, trace.shape[0], 1)
-    if len(trailsum) == 0:
-        print("[ERROR] Raw energy sums must be anabled in the PIXIE-16")
-        return
-
-    sumIDX, Esum = find_sums(trace, setting, trailsum, gapsum, leadsum)
-
-    # gapIDX = sumIDX + Ls
-    minsumIDX = sumIDX.min()
-    shiftIDX = sumIDX - minsumIDX
-    traceshift = advindexing_roll(trace, -shiftIDX)
-
-    if plot:
-        if ax is None:
-            fig, ax = plt.subplots()
-        create_persistent_plot(traceshift[IDX], ax=ax)
-        ax.plot(
-            [t[minsumIDX], t[minsumIDX]],
-            [trace.min(), trace.max()],
-            "r--",
-            label="raw energy sums",
-        )
-        ax.plot(
-            [t[minsumIDX + Ls], t[minsumIDX + Ls]], [trace.min(), trace.max()], "r--"
-        )
-        ax.plot(
-            [t[minsumIDX + Ls + Gs], t[minsumIDX + Ls + Gs]],
-            [trace.min(), trace.max()],
-            "r--",
-        )
-        ax.plot(
-            [t[minsumIDX + Ls + Gs + Ls], t[minsumIDX + Ls + Gs + Ls]],
-            [trace.min(), trace.max()],
-            "r--",
-        )
-        ax.legend()
-        ax.set_title(
-            f"channel: {channel}; number of traces: {len(trace)}; live time: {setting.LiveTime}"
-        )
-        ax.set_ylim(bottom=0)
+    """
+    ax_orig = ax
+    if ax is None:
+        fig, ax = plt.subplots()
+    ax.plot(d)
+    ax.set_xlabel("Channel")
+    ax.set_ylabel("Counts")
+    if title:
+        ax.set_title(title)
+    if pdf:
+        pdf.savefig()
+    if ax_orig is None:
+        plt.close(fig)
 
 
 def print_timing():
@@ -332,68 +317,128 @@ def CFD(traces, setfile, channel, module, w=0.3125, num_traces=20):
         ax.legend(loc="upper right", fancybox=True, shadow=True, prop={"size": 4})
 
 
-def energy_sums(events, setting, N=None, randomize=False, persistent=True, ax=None):
-    """Plots traces
+def energy_sums(
+    events,
+    setting,
+    N=None,
+    randomize=False,
+    persistent=True,
+    title=None,
+    ax=None,
+    pdf=None,
+):
+    """Plots traces aligned to position of the energy sums.
 
+    Plots vertical lines at the position of the energy sums only if all events
+    are from a single channel.
 
     Parameters
     ----------
 
     events :
         List of events (perhaps already filtered) from read.read_list_mode_data()
-    setting :
+    setting : read.Settings
         A read.Settings object
     N : int
         Number of traces to plot, if `None` all traces will be plotted.
     randomize : bool
         if True and N is smaller than the total amount of traces, randomly pick traces
     persistent : bool
-        use datashader to plot traces
-    ax :
+        Use datashader to plot traces
+    title : str
+        Title to add to plot
+    ax : matplotlib.axes.Axes
         a matplotlib axes to plot on. If None, we create a new figure
-        and show it at the end. Otherwise this needs to be an array of
-        matplotlib axis objects: one axis for each channel present in
-        events.
-
-    Example
-    -------
-
-    with multipagePDF(file) as f:
-        fig, ax = plot.subplots()
-        pixie16.plot.energy_sums(...,ax=ax)
-        f.savefig()
-        fig.close()
+        and show it at the end.
+    pdf : matplotlib.backends.backend_pdf.PdfPages
+       if present, we save the plot in the pdf
 
     """
-
-    # figure out all channels form events
-    channels = set([e.channel for e in events])
 
     # filter events
     events = filter_events(events, N, randomize)
 
+    channels = set([e.channel for e in events])
+
     # create axis if it doesn't exist yet
-    orig_ax = ax
+    ax_orig = ax
     if ax is None:
-        fig, ax = plt.subplots(1, len(channels))
-    # do datashader
+        fig, ax = plt.subplots()
 
-    # make sure we can iterate of ax
+    # align data
+    Ls, Gs, ch, trace, trailsum, gapsum, leadsum = [], [], [], [], [], [], []
+
+    slow_filter_range = setting.SlowFilterRange
+    for e in events:
+        if e.CFD_error == 0:
+            # convert Ls and Gs into number of data points
+            Ls.append(
+                setting.SlowLength[e.channel]
+                * (2 ** slow_filter_range)
+                / DATA_POINTS_PER_FPGA_CYCLE
+            )
+            Gs.append(
+                setting.SlowGap[e.channel]
+                * (2 ** slow_filter_range)
+                / DATA_POINTS_PER_FPGA_CYCLE
+            )
+            ch.append(e.channel)
+            trace.append(e.trace)
+            trailsum.append(e.Esum_trailing)
+            gapsum.append(e.Esum_gap)
+            leadsum.append(e.Esum_leading)
+
+    trace = np.array(trace)
     try:
-        iter(ax)
-    except TypeError:
-        ax = [ax]
+        t = np.linspace(0, 2 * (trace.shape[1] - 1), trace.shape[1])  # in ns
+    except IndexError:
+        return
+    IDX = np.arange(0, trace.shape[0], 1)
+    if len(trailsum) == 0:
+        print("[ERROR] Raw energy sums must be anabled in the PIXIE-16")
+        return
 
-    for i, (c, a) in enumerate(zip(channels, ax)):
-        if persistent:
-            pass
-        else:
-            for e in events:
-                # need to align traces
-                # TODO: convert e.trace to V
-                a.plot(e.trace)
-        a.set_xlabel("Time in datapoints every 2 ns")
-        a.set_ylabel("Voltage [V]")
-        a.set_title(f"Aligned energy sums for channel {c}")
-    if orig_ax is None:
-        plt.show()
+    sumIDX, Esum = find_sums(trace, Ls, Gs, trailsum, gapsum, leadsum)
+
+    minsumIDX = sumIDX.min()
+    shiftIDX = sumIDX - minsumIDX
+    traceshift = advindexing_roll(trace, -shiftIDX)
+
+    if persistent:
+        create_persistent_plot(traceshift[IDX], ax=ax)
+    else:
+        for t in traceshift:
+            ax.plot(t)
+
+    # draw lines
+    if len(channels) == 1:
+        positions = [
+            t[minsumIDX],
+            t[minsumIDX + Ls],
+            t[minsumIDX + Ls + Gs],
+            t[minsumIDX + Ls + Gs + LS],
+        ]
+        ax.vlines(
+            positions,
+            ymin=trace.min(),
+            ymax=trace.max(),
+            color="r",
+            linestyle="--",
+            label="Raw energy sums",
+        )
+        ch = channels[0]
+        ax.set_title(
+            f"channel: {ch}; number of traces: {len(trace)}; live time: {setting.units.LiveTime[ch]}"
+        )
+    else:
+        print(
+            "[Warning] plot.energy_sums: more than one channel given, not drawing positions of sums"
+        )
+    ax.legend()
+    ax.set_ylim(bottom=0)
+    ax.legend()
+
+    if title:
+        ax.set_title(title)
+    if pdf:
+        pdf.savefig()
