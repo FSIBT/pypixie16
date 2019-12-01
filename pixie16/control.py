@@ -1046,11 +1046,20 @@ CReadHistogramMod = read_hist_mod_prototype(
 def ReadHistogramFromModule(module, channel, N=32768):
     """Uses the XIA library to read a single channel histogram from the module.
 
-    module:   module number
-    channel:  channel in module
-    N:        number of bins in the histogram, by default 32768
+    Parameters
+    ----------
+    module : int
+        module number
+    channel : int
+        channel in module
+    N : int
+        number of bins in the histogram, by default 32768
 
-    return a 1D-numpy array with the histogram data
+    Returns:
+    --------
+
+    result : np.array
+         1D-numpy array with the histogram data
     """
 
     # convert to ctypes for library call
