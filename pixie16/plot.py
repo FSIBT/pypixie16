@@ -218,7 +218,7 @@ def MCA(data, ax=None, title=None, pdf=None):
     ax_orig = ax
     if ax is None:
         fig, ax = plt.subplots()
-    ax.plot(d)
+    ax.plot(data)
     ax.set_xlabel("Channel")
     ax.set_ylabel("Counts")
     if title:
