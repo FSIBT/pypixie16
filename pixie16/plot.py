@@ -375,12 +375,12 @@ def energy_sums(
             Ls.append(
                 setting.SlowLength[e.channel]
                 * (2 ** slow_filter_range)
-                / DATA_POINTS_PER_FPGA_CYCLE
+                * DATA_POINTS_PER_FPGA_CYCLE
             )
             Gs.append(
                 setting.SlowGap[e.channel]
                 * (2 ** slow_filter_range)
-                / DATA_POINTS_PER_FPGA_CYCLE
+                * DATA_POINTS_PER_FPGA_CYCLE
             )
             ch.append(e.channel)
             trace.append(e.trace)
@@ -416,7 +416,7 @@ def energy_sums(
             t[minsumIDX],
             t[minsumIDX + Ls],
             t[minsumIDX + Ls + Gs],
-            t[minsumIDX + Ls + Gs + LS],
+            t[minsumIDX + Ls + Gs + Ls],
         ]
         ax.vlines(
             positions,
