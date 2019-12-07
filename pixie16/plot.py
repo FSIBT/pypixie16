@@ -265,24 +265,78 @@ def FF():
     pass
 
 
-def CFD(traces, setfile, channel, module, w=0.3125, num_traces=20):
-    # perform own CFD calculation
-    setting = read_settings(setfile, channel, module)
-    CFDth = setting.CFDth
-    Lf = int(setting.Lf)
-    Gf = int(setting.Gf)
-    FFth = setting.FFth
+def CFD(
+    events,
+    setting,
+    w=0.3125,
+    N=None,
+    randomize=False,
+    persistent=False,
+    title=None,
+    ax=None,
+    pdf=None,
+):
+    """Plot CFD and FastFilter several traces
 
+    Parameters
+    ----------
+
+    events :
+        List of events (perhaps already filtered) from read.read_list_mode_data()
+        Need to be from a single channel.
+    setting : read.Settings
+        A read.Settings object
+    w : float
+        The `w` used for the CFD calculation
+    N : int
+        Number of traces to plot, if `None` all traces will be plotted.
+    randomize : bool
+        if True and N is smaller than the total amount of traces, randomly pick traces
+    persistent : bool
+        Use datashader to plot traces
+    title : str
+        Title to add to plot
+    ax : matplotlib.axes.Axes
+        a matplotlib axes to plot on. If None, we create a new figure
+        and show it at the end.
+    pdf : matplotlib.backends.backend_pdf.PdfPages
+       if present, we save the plot in the pdf
+
+    """
+
+    events = filter_events(events, N, randomize)
+
+    channels = {e.channel for e in events}
+    if len(channels) != 1:
+        print(
+            "[Error] Can only plot CFD for events from a single channel at the moment"
+        )
+        return
+    channel = list(channels)[0]
+
+    CFDth = setting.units.CFDThresh[channel]
+    Lf = int(setting.FastLength[channel])
+    Gf = int(setting.FastGap[channel])
+    FFth = setting.units.FastThresh[channel]
+
+    # parameters needed for CFD calculation
     w = [w]
     B = [5]
     D = [5]
     L = [1]
 
-    t = np.linspace(0, 2 * (traces.shape[1] - 1), traces.shape[1])  # in ns
+    traces = [e.trace for e in events]
+    for t in traces:
+        if t is None:
+            print("[Error] Missing trace...skip plotting")
+            return
+    traces = np.asarray(traces)
+
+    T = np.linspace(0, 2 * (traces.shape[1] - 1), traces.shape[1])  # in ns
 
     CFD, cfdtime, FF, IDXerr = calculate_CFD_using_FF(
         traces,
-        t=t,
+        t=T,
         CFD_threshold=CFDth,
         FF_threshold=FFth,
         Lf=Lf,
@@ -298,23 +352,25 @@ def CFD(traces, setfile, channel, module, w=0.3125, num_traces=20):
 
     cfdtime = cfdtime[cfdtime != np.array(None)]
 
-    tcfd = t[B[0] + D[0] : traces.shape[1] - L[0] + 1]
-    tff = t[0 : FF.shape[1]]
+    Tcfd = T[B[0] + D[0] : traces.shape[1] - L[0] + 1]
+    Tff = T[0 : FF.shape[1]]
 
-    fig = plt.figure(figsize=(18, 10))
-    fig.subplots_adjust(hspace=0.3, wspace=0.3)
-    rows = 4
-    columns = 5
-    for i in range(1, num_traces + 1):
-        rand = random.randint(0, traces.shape[0])
-        ax = fig.add_subplot(rows, columns, i)
-        ax.plot(t, traces[rand], label="Trace", lw=0.2)
-        ax.plot(tcfd, CFD[rand], label="CFD", lw=0.2)
-        ax.plot(tff, FF[rand], label="Fast Filter", lw=0.2)
-        ax.plot([t[0], t[-1]], [CFDth, CFDth], label="CFD Threshold", lw=0.2)
-        ax.plot([t[0], t[-1]], [FFth, FFth], label="FF Threshold", lw=0.2)
-        ax.plot(cfdtime[rand], 0, ".", ms=1, color="k")
-        ax.legend(loc="upper right", fancybox=True, shadow=True, prop={"size": 4})
+    ax_orig = ax
+    if ax_orig is None:
+        fig, ax = plt.subplots()
+    for t, c, ct, f in zip(traces, CFD, cfdtime, FF):
+        ax.plot(T, t, label="Trace", lw=0.2)
+        ax.plot(Tcfd, c, label="CFD", lw=0.2)
+        ax.plot(Tff, f, label="Fast Filter", lw=0.2)
+        ax.plot([T[0], T[-1]], [CFDth, CFDth], label="CFD Threshold", lw=0.2)
+        ax.plot([T[0], T[-1]], [FFth, FFth], label="FF Threshold", lw=0.2)
+        ax.plot(ct, 0, ".", ms=1, color="k")
+    ax.legend(loc="upper right", fancybox=True, shadow=True, prop={"size": 4})
+
+    if title:
+        ax.set_title(title)
+    if pdf:
+        pdf.savefig()
 
 
 def energy_sums(
