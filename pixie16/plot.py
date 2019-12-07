@@ -1,17 +1,13 @@
 # -*- coding: utf-8 -*-
-from matplotlib import pyplot as plt
-from pixie16 import read
-from .read import Event
 from functools import wraps
 import random
 import numpy as np
-import sys
-from collections import Counter, namedtuple
+from matplotlib import pyplot as plt
+from matplotlib.colors import LogNorm
 import datashader as ds
 import datashader.transfer_functions as tf
-from matplotlib.colors import LogNorm
-import matplotlib.pyplot as plt
-from pixie16.analyze import calculate_CFD_using_FF, calculate_filter
+from .analyze import calculate_CFD_using_FF
+from .read import Event
 
 
 DATA_POINTS_PER_FPGA_CYCLE = 5
@@ -127,7 +123,7 @@ def create_persistent_plot(traces, x_range=None, ax=None):
     img = tf.shade(agg, how="eq_hist")
 
     ax_orig = ax
-    if ax is None:
+    if ax_orig is None:
         fig, ax = plt.subplots(figsize=(12, 6))
     ax.imshow(
         img, extent=x_range + y_range, aspect="auto", origin="lower", norm=LogNorm()
@@ -411,14 +407,13 @@ def energy_sums(
 
     """
 
-    # filter events
     events = filter_events(events, N, randomize)
 
-    channels = set([e.channel for e in events])
+    channels = {e.channel for e in events}
 
     # create axis if it doesn't exist yet
     ax_orig = ax
-    if ax is None:
+    if ax_orig is None:
         fig, ax = plt.subplots()
 
     # align data
