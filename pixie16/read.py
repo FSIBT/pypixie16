@@ -8,12 +8,8 @@ import pandas as pd
 from contextlib import contextmanager
 from collections import namedtuple
 from pathlib import Path
-import sys
-import logging
 
 from .variables import settings
-
-# logger = logging.logger(__name__)
 
 
 Event = namedtuple(
@@ -216,9 +212,6 @@ def read_list_mode_data(
         print(f"Error: filename {filename} needs to be a pathlib.Path or myIO object")
         return
 
-    in_memory = isinstance(filename, myIO)
-
-    all_event = []
     nr_event = 0
 
     HEADER = struct.Struct("<2I4H")

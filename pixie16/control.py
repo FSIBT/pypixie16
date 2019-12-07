@@ -529,7 +529,7 @@ def BootModule(
 
     if section is not None:
         section = f"Firmware.{section}"
-        if not section in config.sections():
+        if section not in config.sections():
             print("Error: cannot find section {section} in the config file {inifile}")
             sys.exit(1)
         # load new path to firmware
@@ -1575,7 +1575,7 @@ def change_setting_dict(settings, auto_update=True):
             len(c) == 2
         ), "Setting dictionary: each channel must have two entries (modules, channel)"
 
-    modules = set(x[0] for x in channels)
+    modules = {x[0] for x in channels}
 
     # get all the raw settings data from the pixie
     current = {}
@@ -1605,7 +1605,7 @@ def change_setting_dict(settings, auto_update=True):
         settings["SlowLength"] = SL
         settings["SlowGap"] = SG
 
-    if auto_update and (not "PeakSample" in settings):
+    if auto_update and ("PeakSample" not in settings):
         filter_range = get_setting_value("SlowFilterRange", settings, channels, current)
         SL = get_setting_value("SlowLength", settings, channels, current)
         SG = get_setting_value("SlowGap", settings, channels, current)
@@ -1619,13 +1619,13 @@ def change_setting_dict(settings, auto_update=True):
                 PeakSample.append(sl + sg - 4 + f)
         settings["PeakSample"] = PeakSample
 
-    if auto_update and (not "PeakSep" in settings):
+    if auto_update and ("PeakSep" not in settings):
         SL = get_setting_value("SlowLength", settings, channels, current)
         SG = get_setting_value("SlowGap", settings, channels, current)
         PeakSep = [sl + sg for sl, sg in zip(SL, SG)]
         settings["PeakSep"] = PeakSep
 
-    if auto_update and (not "TriggerDelay" in settings):
+    if auto_update and ("TriggerDelay" not in settings):
         filter_range = get_setting_value("SlowFilterRange", settings, channels, current)
         PeakSep = get_setting_value("PeakSep", settings, channels, current)
         settings["TriggerDelay"] = [
@@ -1634,7 +1634,7 @@ def change_setting_dict(settings, auto_update=True):
     if auto_update and ("PAFlength" in settings) and ("TraceDelay" in settings):
         print("Warning: PAFlength and TraceDelay set. TraceDelay will be ignored.")
         settings.pop("TraceDelay")
-    if auto_update and (not "PAFlength" in settings) and ("TraceDelay" in settings):
+    if auto_update and ("PAFlength" not in settings) and ("TraceDelay" in settings):
         TriggerDelay = get_setting_value("TriggerDelay", settings, channels, current)
         FastFilterRange = get_setting_value(
             "FastFilterRange", settings, channels, current
