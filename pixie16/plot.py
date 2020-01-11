@@ -424,14 +424,10 @@ def energy_sums(
         if e.CFD_error == 0:
             # convert Ls and Gs into number of data points
             Ls.append(
-                setting.SlowLength[e.channel]
-                * (2 ** slow_filter_range)
-                * DATA_POINTS_PER_FPGA_CYCLE
+                int(setting.SlowLength[e.channel] * (2 ** slow_filter_range) * 10 / 2)
             )
             Gs.append(
-                setting.SlowGap[e.channel]
-                * (2 ** slow_filter_range)
-                * DATA_POINTS_PER_FPGA_CYCLE
+                int(setting.SlowGap[e.channel] * (2 ** slow_filter_range) * 10 / 2)
             )
             ch.append(e.channel)
             trace.append(e.trace)
@@ -458,16 +454,16 @@ def energy_sums(
     if persistent:
         create_persistent_plot(traceshift[IDX], ax=ax)
     else:
-        for t in traceshift:
-            ax.plot(t)
+        for Y in traceshift:
+            ax.plot(t, Y)
 
     # draw lines
     if len(channels) == 1:
         positions = [
             t[minsumIDX],
-            t[minsumIDX + Ls],
-            t[minsumIDX + Ls + Gs],
-            t[minsumIDX + Ls + Gs + Ls],
+            t[minsumIDX + Ls[0]],
+            t[minsumIDX + Ls[0] + Gs[0]],
+            t[minsumIDX + Ls[0] + Gs[0] + Ls[0]],
         ]
         ax.vlines(
             positions,
@@ -477,7 +473,7 @@ def energy_sums(
             linestyle="--",
             label="Raw energy sums",
         )
-        ch = channels[0]
+        ch = list(channels)[0]
         ax.set_title(
             f"channel: {ch}; number of traces: {len(trace)}; live time: {setting.units.LiveTime[ch]}"
         )
