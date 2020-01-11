@@ -192,7 +192,7 @@ def find_sums(traces, SlowLength, SlowGap, trailsum, gapsum, leadsum):
     return sumIDX, Esums
 
 
-def MCA(data, ax=None, title=None, pdf=None):
+def MCA(data, ax=None, rebin=1, title=None, pdf=None):
     """Plot MCA spectra
 
     If pdf is given, it will save the figure inside the pdf (to be used with PdfPages)
@@ -205,6 +205,8 @@ def MCA(data, ax=None, title=None, pdf=None):
        Data from ReadHistogramFromModule
     ax :
        The axis to plot on, if None, we create a new figure and axis
+    rebin : int
+       Rebin the data by summing over this amount of bins
     title : str
        Add this title to the plot
     pdf : matplotlib.backends.backend_pdf.PdfPages
@@ -214,6 +216,7 @@ def MCA(data, ax=None, title=None, pdf=None):
     ax_orig = ax
     if ax is None:
         fig, ax = plt.subplots()
+    data = data.reshape(-1, rebin).sum(axis=1)
     ax.plot(data)
     ax.set_xlabel("Channel")
     ax.set_ylabel("Counts")
