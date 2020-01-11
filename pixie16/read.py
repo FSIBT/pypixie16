@@ -209,8 +209,15 @@ def read_list_mode_data(
     """
 
     if not (isinstance(filename, Path) or isinstance(filename, myIO)):
-        print(f"Error: filename {filename} needs to be a pathlib.Path or myIO object")
-        return
+        try:
+            filename_new = Path(filename)
+        except TypeError:
+            print(f"Error: cannot convert {filename} to Path object")
+            print(
+                f"Error: filename {filename} needs to be a pathlib.Path, str, or myIO object"
+            )
+            return
+        filename = filename_new
 
     nr_event = 0
 
