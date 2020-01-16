@@ -492,3 +492,6 @@ def energy_sums(
         ax.set_title(title)
     if pdf:
         pdf.savefig()
+
+    if ax_orig is None:
+        plt.close(fig)
