@@ -1881,7 +1881,7 @@ def set_traces(module, channel, status):
     WriteChanParam("CHANNEL_CSRA", channel_setting, module, channel)
 
 
-def read_list_mode_fifo(check=True):
+def read_list_mode_fifo(check=True, threshold=1024):
     """Reads data from pixies FIFO across all modules defined in pixie16.control.modules
 
     Parameters
@@ -1902,7 +1902,7 @@ def read_list_mode_fifo(check=True):
         do_read = False
         for i, slot in enumerate(modules):
             number_of_words = ReadFIFOStatus(i)
-            if number_of_words > 1024:
+            if number_of_words > threshold:
                 do_read = True
                 break
     else:
