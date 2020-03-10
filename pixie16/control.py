@@ -1709,6 +1709,7 @@ def change_setting_dict(settings, auto_update=True):
             "FastTrigSelect",
             "ModValSignal",
             "GoodChannel",
+            "ChanValSignal",
             "RejectIfFull",
             "Polarity",
             "EnableVeto",
@@ -1720,8 +1721,12 @@ def change_setting_dict(settings, auto_update=True):
             "CaptureSums",
             "EnableChannelVal",
             "Gain",
-            "GroupTrigSignal",
             "RejectPileup",
+            "SkipLargePulses",
+            "GroupTrigSignal",
+            "ChannelVetoSignal",
+            "ModVetoSignal",
+            "ExtTimestamps",
         ]:
             if isinstance(values, (list, tuple)):
                 if len(values) == len(channels):
