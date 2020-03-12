@@ -131,6 +131,9 @@ def create_persistent_plot(traces, x_range=None, ax=None):
     ax.set_xlabel("Time [ns]")
     ax.set_ylabel("ADC units [a.u]")
 
+    if ax_orig is None:
+        plt.close(fig)
+
 
 def find_sums(traces, SlowLength, SlowGap, trailsum, gapsum, leadsum):
     """Find the location of the 3 reported sums in a trace that are used to calculate the energy.
@@ -370,6 +373,8 @@ def CFD(
         ax.set_title(title)
     if pdf:
         pdf.savefig()
+    if ax_orig is None:
+        plt.close(fig)
 
 
 def energy_sums(
