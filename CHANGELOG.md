@@ -1,0 +1,22 @@
+# Changelog
+All notable changes to this project will be documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
+and this project tries to adhere to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [Unreleased]
+
+## [0.5] - 2020-04-06
+### Added
+- added this CHANGELOG.md
+- when plotting MCA spectra add option to rebin
+- add python 3.8 to setup.py
+### Changed
+- fixed missing parameters in control.py
+- fixed up more doc-strings
+- fixed calculations of L for internal filters
+- code cleanup (flake8)
+- fixed plotting of energy sums
+- add missing close statements to matplotib figures
+- read_list_mode_data: allow strings for file name instead of only Path objects
+
