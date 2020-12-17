@@ -195,7 +195,7 @@ def find_sums(traces, SlowLength, SlowGap, trailsum, gapsum, leadsum):
     return sumIDX, Esums
 
 
-def MCA(data, ax=None, rebin=1, title=None, pdf=None):
+def MCA(data, ax=None, rebin=1, title=None, pdf=None, log=False):
     """Plot MCA spectra
 
     If pdf is given, it will save the figure inside the pdf (to be used with PdfPages)
@@ -221,6 +221,8 @@ def MCA(data, ax=None, rebin=1, title=None, pdf=None):
         fig, ax = plt.subplots()
     data = data.reshape(-1, rebin).sum(axis=1)
     ax.plot(data)
+    if log:
+        ax.set_yscale("log")
     ax.set_xlabel("Channel")
     ax.set_ylabel("Counts")
     if title:
