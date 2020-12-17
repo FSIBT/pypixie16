@@ -455,7 +455,19 @@ def energy_sums(
         print("[ERROR] Raw energy sums must be anabled in the PIXIE-16")
         return
 
-    sumIDX, Esum = find_sums(trace, Ls, Gs, trailsum, gapsum, leadsum)
+    try:
+        sumIDX, Esum = find_sums(trace, Ls, Gs, trailsum, gapsum, leadsum)
+    except IndexError:
+        for Y in trace:
+            ax.plot(t, Y)
+        if title:
+            ax.set_title(title + " Error in find sums")
+        if pdf:
+            pdf.savefig()
+
+        if ax_orig is None:
+            plt.close(fig)
+        return
 
     minsumIDX = sumIDX.min()
     shiftIDX = sumIDX - minsumIDX
