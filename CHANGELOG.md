@@ -5,6 +5,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project tries to adhere to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Added
+- added 1d and 2d parameter scan functionality
+- added a Qt-based browser for binary files
+- add python 3.9 to setup.py
+### Changed
+- dropped python 3.6 (since we are using dataclasses, a 3.7 feature)
 
 ## [0.5] - 2020-04-06
 ### Added
