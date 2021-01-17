@@ -1,0 +1,350 @@
+#!/usr/bin/env python3
+"""pixie16-binary-browser for *.bin files.
+
+Usage:
+  pixie16-binary-browser [<filename>]
+
+"""
+
+from docopt import docopt
+
+commands = docopt(__doc__)
+
+import sys
+from pathlib import Path
+from collections import Counter
+
+
+from PyQt5.QtCore import QAbstractTableModel, Qt
+from PyQt5.QtGui import QIcon
+from PyQt5.QtWidgets import (
+    QApplication,
+    QMainWindow,
+    QMessageBox,
+    QFileDialog,
+    QHBoxLayout,
+    QTableView,
+    QSizePolicy,
+    QVBoxLayout,
+    QLabel,
+    QWidget,
+    QPushButton,
+    QTabWidget,
+    QAction,
+    QStyle,
+    QCommonStyle,
+)
+
+import matplotlib.pyplot as plt
+from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
+from matplotlib.backends.backend_qt5agg import NavigationToolbar2QT as NavigationToolbar
+import numpy as np
+
+import pixie16
+
+
+class TableModel(QAbstractTableModel):
+    def __init__(self, data):
+        super().__init__()
+        self._data = data
+        self.header = pixie16.read.Event._fields
+        self.icon_true = QCommonStyle().standardIcon(QStyle.SP_DialogApplyButton)
+        self.icon_false = QCommonStyle().standardIcon(QStyle.SP_DialogCancelButton)
+
+    def icon_return(self, value):
+        if value:
+            return self.icon_true
+        return self.icon_false
+
+    def data(self, index, role):
+        if role == Qt.DisplayRole:
+            if self.header[index.column()] in [
+                "trace",
+                "CFD_error",
+                "pileup",
+                "trace_flag",
+            ]:
+                return None
+            return str(self._data[index.row()][index.column()])
+        if role == Qt.DecorationRole:
+            if self.header[index.column()] == "trace":
+                return self.icon_return(len(self._data[index.row()][index.column()]))
+            if self.header[index.column()] in ["CFD_error", "pileup", "trace_flag"]:
+                return self.icon_return(not self._data[index.row()][index.column()])
+
+    def rowCount(self, index):
+        return len(self._data)
+
+    def columnCount(self, index):
+        return len(self.header)
+
+    def headerData(self, section, orientation, role):
+        if role == Qt.DisplayRole:
+            if orientation == Qt.Horizontal:
+                return self.header[section].title()
+
+
+class ChannelSelect(QHBoxLayout):
+    def __init__(self, main):
+        super().__init__()
+        self.channels = []
+        self.main = main
+
+    def clear_channels(self):
+        while self.count():
+            item = self.takeAt(0)
+            widget = item.widget()
+            if widget is not None:
+                widget.deleteLater()
+
+    def add_channels(self):
+        for channel in self.main.channels:
+            tmp = QPushButton(f"Ch {channel}")
+            tmp.setCheckable(True)
+            tmp.toggle()
+            tmp.clicked.connect(
+                lambda state, channel=channel, widget=tmp: self.main.click_channel(
+                    channel, widget
+                )
+            )
+
+            self.channels.append(tmp)
+            self.addWidget(tmp)
+            # by default show all channels
+            if channel not in self.main.selected_channels:
+                self.main.selected_channels.append(channel)
+
+        tmp = QPushButton(f"All")
+        tmp.setCheckable(True)
+        tmp.toggle()
+        tmp.clicked.connect(
+            lambda state, channel=channel, widget=tmp: self.main.click_channel(
+                "all", widget
+            )
+        )
+
+        self.channels.append(tmp)
+        self.addWidget(tmp)
+
+    def update_button_status(self):
+        for w, channel in zip(self.channels, self.main.channels):
+            if not w.isChecked() and channel in self.main.selected_channels:
+                w.toggle()
+            if w.isChecked() and channel not in self.main.selected_channels:
+                w.toggle()
+
+
+class MyNavigationToolbar(NavigationToolbar):
+    # only display the buttons we need
+    toolitems = [
+        t
+        for t in NavigationToolbar.toolitems
+        if t[0] in ("Home", "Back", "Forward", "Pan", "Zoom", "Save")
+    ]
+
+
+class Plot(QWidget):
+    def __init__(self, main):
+        super().__init__()
+        self.main = main
+
+        self.fig = plt.figure()
+        self.axes = self.fig.subplots()
+        self.plot = FigureCanvas(self.fig)
+        self.plot.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.nav = MyNavigationToolbar(self.plot, self, coordinates=False)
+        self.nav.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+
+        self.vbox = QVBoxLayout()
+        self.vbox.addWidget(self.nav)
+        self.vbox.addWidget(self.plot)
+
+        self.setLayout(self.vbox)
+
+
+class App(QMainWindow):
+    """The main window"""
+
+    def __init__(self, app=None):
+        super().__init__()
+        self.app = app
+        self.filename = None
+        self.channels = []
+        self.selected_channels = []
+
+        # set up the window
+        self.setWindowTitle("Pixie16 Binary File Browser")
+
+        # file menu
+        self.menu = self.menuBar()
+        self.file_menu = self.menu.addMenu("File")
+        self.tab_menu = self.menu.addMenu("Tabs")
+        self.help_menu = self.menu.addMenu("Help")
+
+        if sys.platform == "win32":
+            QIcon.setThemeSearchPaths([r"c:\Program Files\Git\usr\share\icons"])
+        QIcon.setThemeName("Adwaita")
+
+        FileButton = QAction(QIcon.fromTheme("document-open"), "Open", self)
+        FileButton.setShortcut("Ctrl+O")
+        FileButton.setStatusTip("About")
+        FileButton.triggered.connect(self.open_file)
+        self.file_menu.addAction(FileButton)
+
+        quitButton = QAction(QIcon.fromTheme("application-exit"), "Exit", self)
+        quitButton.setShortcut("Ctrl+Q")
+        quitButton.setStatusTip("Quit")
+        quitButton.triggered.connect(self.close)
+        self.file_menu.addAction(quitButton)
+
+        aboutButton = QAction(QIcon.fromTheme("help-about"), "About", self)
+        aboutButton.setStatusTip("About")
+        aboutButton.triggered.connect(self.about)
+        self.help_menu.addAction(aboutButton)
+
+        self.main_widget = QWidget(self)
+        self.main_window = QVBoxLayout()
+
+        self.channel_select = ChannelSelect(main=self)
+
+        self.info_bar = QLabel()
+        self.info_bar.setTextInteractionFlags(Qt.TextSelectableByMouse)
+
+        self.tabs = QTabWidget()
+
+        self.main_window.addLayout(self.channel_select)
+        self.main_window.addWidget(self.tabs)
+        self.main_window.addWidget(self.info_bar)
+
+        self.main_widget.setLayout(self.main_window)
+        self.main_widget.setFocus()
+        self.setCentralWidget(self.main_widget)
+
+        self.dataview = QTableView()
+        self.dataview.setSortingEnabled(True)
+        self.dataview.setSelectionBehavior(QTableView.SelectRows)
+
+        self.traces = Plot(main=self)
+        self.mca = Plot(main=self)
+        self.thresholds = Plot(main=self)
+
+        self.tabs.addTab(self.dataview, "Binary data")
+        self.tabs.addTab(self.traces, "Traces")
+        self.tabs.addTab(self.mca, "MCA")
+        self.tabs.addTab(self.thresholds, "Thresholds")
+
+        self.tabs.currentChanged.connect(self.tab_change)
+
+        self.show()
+
+    def open_file(self, filename=None):
+        if filename is None or not isinstance(filename, str):
+            self.filename, _ = QFileDialog.getOpenFileName(
+                self, "Open file", "e:\\ROOTS", "Binary files (*.bin)"
+            )
+        else:
+            self.filename = filename
+        self.filename = Path(self.filename)
+        self.data = list(
+            pixie16.read.read_list_mode_data(self.filename, keep_trace=True)
+        )
+        self.channels = sorted(set(x.channel for x in self.data))
+
+        # if len(self.data) > 50:
+        #    self.data = self.data[:50]
+        self.data = sorted(self.data, key=lambda x: x.timestamp)
+        self.model = TableModel(self.data)
+        self.dataview.setModel(self.model)
+
+        # count events per channel
+        tmp = Counter([x.channel for x in self.data])
+        summary = "  ".join(f"{k}:{v}" for k, v in sorted(tmp.items()))
+        gamma_sum = 0
+        for ch, cnt in sorted(tmp.items()):
+            if ch < 9:
+                gamma_sum += cnt
+        gamma_sum_str = "".join(f"Gamma events: {gamma_sum}")
+        self.info_bar.setText(f"{self.filename.name}    {summary}    {gamma_sum_str}")
+
+        self.channel_select.clear_channels()
+        self.channel_select.add_channels()
+
+    def tab_change(self, i):
+        indexes = self.dataview.selectionModel().selectedRows()
+        if i == 1:
+            self.traces.fig.clear()
+            self.traces.plot.draw()
+            # get list of channels in selections
+            selected_channels = [
+                self.data[index.row()].channel
+                for index in sorted(indexes)
+                if not self.dataview.isRowHidden(index.row())
+            ]
+            # make unique
+            selected_channels = list(set(selected_channels))
+
+            if not selected_channels:
+                return
+
+            self.traces.fig.clear()
+            self.traces.axes = self.traces.fig.subplots(
+                nrows=len(selected_channels), sharex=True
+            )
+            if not isinstance(self.traces.axes, np.ndarray):
+                self.traces.axes = np.array([self.traces.axes])
+            for index in sorted(indexes):
+                row = index.row()
+                if self.dataview.isRowHidden(row):
+                    continue
+                channel = self.data[row].channel
+                pos = selected_channels.index(channel)
+                self.traces.axes[pos].plot(self.data[row].trace)
+            for i, channel in enumerate(selected_channels):
+                self.traces.axes[i].set_title(f"channel {channel}")
+            self.traces.fig.tight_layout()
+            self.traces.plot.draw()
+
+    def click_channel(self, channel, button):
+        if channel == "all" and button.isChecked():
+            self.selected_channels = self.channels
+        elif channel == "all" and not button.isChecked():
+            self.selected_channels = []
+        else:
+            if button.isChecked() and channel not in self.selected_channels:
+                self.selected_channels.append(channel)
+            elif not button.isChecked() and channel in self.selected_channels:
+                self.selected_channels.remove(channel)
+
+        self.channel_select.update_button_status()
+        self.update_channel_selection()
+
+    def update_channel_selection(self):
+        for i, d in enumerate(self.data):
+            if d.channel in self.selected_channels:
+                self.dataview.showRow(i)
+            else:
+                self.dataview.hideRow(i)
+
+    def about(self):
+        """Print some help that is useful for debugging"""
+        pyversion = ".".join([str(i) for i in sys.version_info])
+        QMessageBox.about(
+            self,
+            "About",
+            "Pixie16 binary Browser\n\n"
+            + f"python-version: {pyversion}\n"
+            + f"pixie16-version: {pixie16.__version__}",
+        )
+
+
+if __name__ == "__main__":
+    app = QApplication([])
+    ex = App(app)
+    if commands["<filename>"] is not None:
+        ex.open_file(commands["<filename>"])
+    sys.exit(app.exec_())
+
+# Local Variables:
+# mode: python
+# coding: utf-8
+# End:
