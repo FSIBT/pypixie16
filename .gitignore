@@ -13,5 +13,8 @@
 /*.egg-info
 .eggs/
 
+# setuptools_scm generated files
+pixie16/_version.py
+
 # editor backups
 *~

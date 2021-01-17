@@ -9,8 +9,10 @@ and this project tries to adhere to [Semantic Versioning](https://semver.org/spe
 - added 1d and 2d parameter scan functionality
 - added a Qt-based browser for binary files
 - add python 3.9 to setup.py
+- pyproject.toml for black, pylint, and setuptools_scm config
 ### Changed
 - dropped python 3.6 (since we are using dataclasses, a 3.7 feature)
+- switched to setuptools_scm
 
 ## [0.5] - 2020-04-06
 ### Added
