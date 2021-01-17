@@ -20,6 +20,7 @@ setup(
         "appdirs",
         "datashader",
         "docopt",
+        "fast-histogram",
         "matplotlib",
         "numpy",
         "pandas",
