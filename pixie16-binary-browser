@@ -16,9 +16,12 @@ from collections import Counter, defaultdict
 
 
 from PyQt5.QtCore import QAbstractTableModel, Qt
-from PyQt5.QtGui import QIcon
+from PyQt5.QtGui import QIcon, QIntValidator
 from PyQt5.QtWidgets import (
     QApplication,
+    QGridLayout,
+    QComboBox,
+    QLineEdit,
     QMainWindow,
     QMessageBox,
     QFileDialog,
@@ -37,6 +40,7 @@ from PyQt5.QtWidgets import (
 
 from fast_histogram import histogram1d
 import matplotlib.pyplot as plt
+from matplotlib import cm
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.backends.backend_qt5agg import NavigationToolbar2QT as NavigationToolbar
 import numpy as np
@@ -164,6 +168,160 @@ class Plot(QWidget):
         self.setLayout(self.vbox)
 
 
+class LabelAndNumber(QWidget):
+    def __init__(self, label: str, value: int = 1):
+        super().__init__()
+        self.box = QHBoxLayout()
+
+        self.label = QLabel(label)
+        self.number = QLineEdit()
+        self.validator = QIntValidator(1, 500_000)
+        self.number.setValidator(self.validator)
+        self.number.setText(str(value))
+
+        self.box.addWidget(self.label)
+        self.box.addWidget(self.number)
+
+        self.setLayout(self.box)
+
+    def get_value(self):
+        return int(self.number.text())
+
+
+class FastTrigger(QWidget):
+    def __init__(self, main):
+        super().__init__()
+        self.main = main
+
+        self.grid = QGridLayout()
+
+        self.trace_plot = Plot(main=main)
+        self.fast_plot = Plot(main=main)
+        self.cfd_plot = Plot(main=main)
+        self.energy_plot = Plot(main=main)
+
+        self.data = []
+        self.N = 10
+        n = np.linspace(0, 1, self.N)
+        cmap = cm.get_cmap("jet")
+        self.colors = [cmap(i) for i in n]
+
+        self.channel_label = QLabel("Channel")
+        self.channels = QComboBox()
+        self.channels.currentIndexChanged.connect(self.pick_channel)
+
+        self.ft = QWidget()
+        self.ft_vbox = QVBoxLayout()
+        self.ft_G = LabelAndNumber("G")
+        self.ft_L = LabelAndNumber("L")
+        self.ft_threshold = LabelAndNumber("Threshold", value=100)
+        self.ft_vbox.addWidget(self.ft_G)
+        self.ft_vbox.addWidget(self.ft_L)
+        self.ft_vbox.addWidget(self.ft_threshold)
+        self.ft.setLayout(self.ft_vbox)
+        self.ft_G.number.editingFinished.connect(self.update_fasttrigger)
+        self.ft_L.number.editingFinished.connect(self.update_fasttrigger)
+        self.ft_threshold.number.editingFinished.connect(self.update_fasttrigger)
+
+        self.cfd = QWidget()
+        self.cfd_vbox = QVBoxLayout()
+        self.cfd_threshold = LabelAndNumber("Threshold", value=100)
+        self.cfd_vbox.addWidget(self.cfd_threshold)
+        self.cfd.setLayout(self.cfd_vbox)
+
+        self.energy = QWidget()
+        self.energy_vbox = QVBoxLayout()
+        self.energy_G = LabelAndNumber("G")
+        self.energy_L = LabelAndNumber("L")
+        self.energy_peaksample = LabelAndNumber("Peaksample", value=10)
+        self.energy_vbox.addWidget(self.energy_G)
+        self.energy_vbox.addWidget(self.energy_L)
+        self.energy_vbox.addWidget(self.energy_peaksample)
+        self.energy.setLayout(self.energy_vbox)
+
+        self.grid.addWidget(self.trace_plot, 0, 0)
+        self.grid.addWidget(self.fast_plot, 1, 0)
+        self.grid.addWidget(self.cfd_plot, 2, 0)
+        self.grid.addWidget(self.energy_plot, 3, 0)
+
+        self.grid.addWidget(self.channels, 0, 1)
+        self.grid.addWidget(self.ft, 1, 1)
+        self.grid.addWidget(self.cfd, 2, 1)
+        self.grid.addWidget(self.energy, 3, 1)
+
+        # todo: add channel select and index select at bottom
+        # add L, G, threshold  for CFD and FAST trigger and energy
+
+        # add other tab to show histogram across all events of peaks or CFD
+
+        self.setLayout(self.grid)
+
+    def add_channels(self):
+        for c in self.main.channels:
+            self.channels.addItem(str(c))
+
+    def update_traces(self, channel):
+        events = [
+            d for d in self.main.data if d.channel == channel and len(d.trace) > 0
+        ]
+        events.sort(key=lambda x: x.energy)
+        if not len(events):
+            print(f"[Info]: no events for channel {channel} that have traces")
+            return
+        N = np.linspace(0, 1, self.N) * (len(events) - 1)
+        N = sorted({int(n) for n in N})
+        self.trace_plot.axes.clear()
+        self.data = []
+        for i, n in enumerate(N):
+            trace = events[n].trace
+            L = trace.shape[0]
+            trace = trace.reshape(L // 5, 5)
+            trace = trace.sum(axis=1)
+            self.data.append(trace)
+            self.trace_plot.axes.plot(
+                trace, color=self.colors[i], drawstyle="steps-mid"
+            )
+        self.trace_plot.axes.set_title("traces")
+        self.trace_plot.axes.set_xlabel("FPGA cycles")
+        self.trace_plot.plot.draw()
+
+    def update_fasttrigger(self):
+        L = self.ft_L.get_value()
+        G = self.ft_G.get_value()
+        T = self.ft_threshold.get_value()
+
+        self.fast_plot.axes.clear()
+        length = len(self.data[0])
+        result = np.zeros(length - 2 * L - G + 1)
+
+        for i, trace in enumerate(self.data):
+            trace = trace.astype(np.int64)
+
+            for k in range(2 * L + G - 1, length):
+                result[k - 2 * L - G + 1] = (
+                    trace[k - L + 1 : k + 1].sum()
+                    - trace[k - 2 * L - G + 1 : k - L - G + 1].sum()
+                )
+
+            result = result / L
+            self.fast_plot.axes.plot(
+                result, color=self.colors[i], drawstyle="steps-mid"
+            )
+            for pos, (left, right) in enumerate(zip(result[:-1], result[1:])):
+                if left < T and right >= T:
+                    self.fast_plot.axes.axvline(pos, color=self.colors[i])
+        self.fast_plot.axes.axhline(T, color="black")
+        self.fast_plot.axes.set_title("fast trigger")
+        self.fast_plot.axes.set_xlabel("FPGA cycles")
+        self.fast_plot.plot.draw()
+
+    def pick_channel(self, i):
+        channel = self.main.channels[i]
+
+        self.update_traces(channel)
+        self.update_fasttrigger()
+
+
 class App(QMainWindow):
     """The main window"""
 
@@ -173,6 +331,7 @@ class App(QMainWindow):
         self.filename = None
         self.channels = []
         self.selected_channels = []
+        self.data = []
 
         # set up the window
         self.setWindowTitle("Pixie16 Binary File Browser")
@@ -228,12 +387,12 @@ class App(QMainWindow):
 
         self.traces = Plot(main=self)
         self.mca = Plot(main=self)
-        self.thresholds = Plot(main=self)
+        self.fasttrigger = FastTrigger(main=self)
 
         self.tabs.addTab(self.dataview, "Binary data")
         self.tabs.addTab(self.traces, "Traces")
         self.tabs.addTab(self.mca, "MCA")
-        self.tabs.addTab(self.thresholds, "Thresholds")
+        self.tabs.addTab(self.fasttrigger, "Fast Trigger/CFD")
 
         self.tabs.currentChanged.connect(self.tab_change)
 
@@ -257,6 +416,8 @@ class App(QMainWindow):
         self.data = sorted(self.data, key=lambda x: x.timestamp)
         self.model = TableModel(self.data)
         self.dataview.setModel(self.model)
+
+        self.fasttrigger.add_channels()
 
         # count events per channel
         tmp = Counter([x.channel for x in self.data])
