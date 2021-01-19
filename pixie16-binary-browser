@@ -119,7 +119,7 @@ class ChannelSelect(QHBoxLayout):
             if channel not in self.main.selected_channels:
                 self.main.selected_channels.append(channel)
 
-        tmp = QPushButton(f"All")
+        tmp = QPushButton("All")
         tmp.setCheckable(True)
         tmp.toggle()
         tmp.clicked.connect(
@@ -140,7 +140,8 @@ class ChannelSelect(QHBoxLayout):
 
 
 class MyNavigationToolbar(NavigationToolbar):
-    # only display the buttons we need
+    """only display the buttons we need"""
+
     toolitems = [
         t
         for t in NavigationToolbar.toolitems
@@ -168,7 +169,7 @@ class Plot(QWidget):
         self.setLayout(self.vbox)
 
 
-class LabelAndNumber(QWidget):
+class LabelAndIntNumber(QWidget):
     def __init__(self, label: str, value: int = 1):
         super().__init__()
         self.box = QHBoxLayout()
@@ -189,6 +190,8 @@ class LabelAndNumber(QWidget):
 
 
 class FastTrigger(QWidget):
+    """Create all kind of traces that are calculated on the FPGA."""
+
     def __init__(self, main):
         super().__init__()
         self.main = main
@@ -205,6 +208,8 @@ class FastTrigger(QWidget):
         n = np.linspace(0, 1, self.N)
         cmap = cm.get_cmap("jet")
         self.colors = [cmap(i) for i in n]
+        self.triggers = np.zeros(self.N)
+        self.baseline_index = 1
 
         self.channel_label = QLabel("Channel")
         self.channels = QComboBox()
@@ -212,9 +217,9 @@ class FastTrigger(QWidget):
 
         self.ft = QWidget()
         self.ft_vbox = QVBoxLayout()
-        self.ft_G = LabelAndNumber("G")
-        self.ft_L = LabelAndNumber("L")
-        self.ft_threshold = LabelAndNumber("Threshold", value=100)
+        self.ft_G = LabelAndIntNumber("G")
+        self.ft_L = LabelAndIntNumber("L")
+        self.ft_threshold = LabelAndIntNumber("Threshold", value=100)
         self.ft_vbox.addWidget(self.ft_G)
         self.ft_vbox.addWidget(self.ft_L)
         self.ft_vbox.addWidget(self.ft_threshold)
@@ -225,19 +230,25 @@ class FastTrigger(QWidget):
 
         self.cfd = QWidget()
         self.cfd_vbox = QVBoxLayout()
-        self.cfd_threshold = LabelAndNumber("Threshold", value=100)
+        self.cfd_threshold = LabelAndIntNumber("Threshold", value=100)
         self.cfd_vbox.addWidget(self.cfd_threshold)
         self.cfd.setLayout(self.cfd_vbox)
 
         self.energy = QWidget()
         self.energy_vbox = QVBoxLayout()
-        self.energy_G = LabelAndNumber("G")
-        self.energy_L = LabelAndNumber("L")
-        self.energy_peaksample = LabelAndNumber("Peaksample", value=10)
+        self.energy_G = LabelAndIntNumber("G (20 ns steps)")
+        self.energy_L = LabelAndIntNumber("L (20 ns steps)")
+        self.energy_peaksample = LabelAndIntNumber("Peaksample (10 ns steps)", value=10)
+        self.energy_decay = LabelAndIntNumber("decay (ns)", value=28)
         self.energy_vbox.addWidget(self.energy_G)
         self.energy_vbox.addWidget(self.energy_L)
         self.energy_vbox.addWidget(self.energy_peaksample)
+        self.energy_vbox.addWidget(self.energy_decay)
         self.energy.setLayout(self.energy_vbox)
+        self.energy_G.number.editingFinished.connect(self.update_energies)
+        self.energy_L.number.editingFinished.connect(self.update_energies)
+        self.energy_peaksample.number.editingFinished.connect(self.update_energies)
+        self.energy_decay.number.editingFinished.connect(self.update_energies)
 
         self.grid.addWidget(self.trace_plot, 0, 0)
         self.grid.addWidget(self.fast_plot, 1, 0)
@@ -261,6 +272,14 @@ class FastTrigger(QWidget):
             self.channels.addItem(str(c))
 
     def update_traces(self, channel):
+        """Show the traces in FPGA cycles.
+
+        We pick 10 traces for 10 different energies in the channels,
+        plot them and store them, so they can be used for the other
+        plots.
+
+        """
+
         events = [
             d for d in self.main.data if d.channel == channel and len(d.trace) > 0
         ]
@@ -286,13 +305,29 @@ class FastTrigger(QWidget):
         self.trace_plot.plot.draw()
 
     def update_fasttrigger(self):
+        """Calculate and show the Fast Trigger signal and the threshold.
+
+        We also try to give a good estimmate for the trigger
+        threshold, but this is only based on the 10 traces.  For this
+        we calcualte the standard derivation and maximum value from
+        all traces up to 20 ns before the first calculated trigger.
+
+        Those values will also be used to estimate the baseline for the energy calculation.
+        The triggers are also stored, so that they can be re-used for CFD and energy calculation.
+
+        """
+
         L = self.ft_L.get_value()
         G = self.ft_G.get_value()
         T = self.ft_threshold.get_value()
 
+        self.triggers *= 0
+
         self.fast_plot.axes.clear()
         length = len(self.data[0])
         result = np.zeros(length - 2 * L - G + 1)
+
+        fast_triggers = []
 
         for i, trace in enumerate(self.data):
             trace = trace.astype(np.int64)
@@ -303,23 +338,96 @@ class FastTrigger(QWidget):
                     - trace[k - 2 * L - G + 1 : k - L - G + 1].sum()
                 )
 
-            result = result / L
+            fast_triggers.append(result.copy())
             self.fast_plot.axes.plot(
                 result, color=self.colors[i], drawstyle="steps-mid"
             )
             for pos, (left, right) in enumerate(zip(result[:-1], result[1:])):
                 if left < T and right >= T:
                     self.fast_plot.axes.axvline(pos, color=self.colors[i])
+                    if self.triggers[i] == 0:
+                        self.triggers[i] = pos
         self.fast_plot.axes.axhline(T, color="black")
-        self.fast_plot.axes.set_title("fast trigger")
+
+        # calc noise level
+        first_trigger_offset = int(self.triggers[self.triggers > 0].min() - 10)
+        self.baseline_index = first_trigger_offset
+
+        if first_trigger_offset > 0:
+            average_noise = [r[:first_trigger_offset].std() for r in fast_triggers]
+            average_noise = np.asarray(average_noise).mean()
+
+            max_noise = [r[:first_trigger_offset].max() for r in fast_triggers]
+            max_noise = np.asarray(max_noise).max()
+
+            self.fast_plot.axes.set_title(
+                f"Fast Trigger: noise level $\\sigma$={average_noise:.1f} "
+                f"max={max_noise:.1f} before x={first_trigger_offset}"
+            )
+        else:
+            self.fast_plot.axes.set_title("Fast Trigger: cannot calculate noise level")
+            self.baseline_index = 1
+
         self.fast_plot.axes.set_xlabel("FPGA cycles")
         self.fast_plot.plot.draw()
+
+        self.update_energies()
+
+    def update_energies(self):
+        """Calcuate energy distribution as described in Mauricio's thesis.
+
+        The energy calculation here is based on 20 ns time steps so
+        currently only SlowFilterRange=1 works.
+
+        """
+        L = self.energy_L.get_value()
+        G = self.energy_G.get_value()
+        P = self.energy_peaksample.get_value()
+        q = self.energy_decay.get_value()
+        q = np.exp(-2 / q)
+
+        self.energy_plot.axes.clear()
+
+        length = len(self.data[0]) // 2
+        result = np.zeros(length - 2 * L - G + 1)
+
+        c2 = 1 - q
+        c3 = (1 - q) / (1 - q ** (10 * L))
+        c1 = c3 * q ** (10 * L)
+
+        baseline = [t[: self.baseline_index].mean() for t in self.data]
+        baseline = np.asarray(baseline).mean()
+
+        for i, trace in enumerate(self.data):
+            trace = trace.astype(np.int64)
+
+            # for the energy calculation groups of 20 ns (or larger are used)
+            trace = trace.reshape(trace.shape[0] // 2, 2)
+            trace = trace.sum(axis=1)
+            for k in range(2 * L + G - 1, length):
+                result[k - 2 * L - G + 1] = (
+                    -c1 * trace[k - L + 1 : k + 1].sum()
+                    + c2 * trace[k - L - G + 1 : k - G + 1].sum()
+                    + c3 * trace[k - 2 * L - G + 1 : k - L - G + 1].sum()
+                ) - c2 * baseline * 2 * (L + G)
+            self.energy_plot.axes.plot(
+                result, color=self.colors[i], drawstyle="steps-mid"
+            )
+            if self.triggers[i]:
+                pos = int(self.triggers[i] + P) // 2
+                self.energy_plot.axes.plot(
+                    pos, result[pos], "o", color=self.colors[i],
+                )
+            self.energy_plot.axes.set_xlabel("20 ns cycles")
+            self.energy_plot.axes.set_ylabel("Energy")
+            self.energy_plot.axes.set_title(f"Energy baseline {baseline:.1f}")
+        self.energy_plot.plot.draw()
 
     def pick_channel(self, i):
         channel = self.main.channels[i]
 
         self.update_traces(channel)
-        self.update_fasttrigger()
+        self.update_fasttrigger()  # also updated energies
 
 
 class App(QMainWindow):
@@ -411,8 +519,6 @@ class App(QMainWindow):
         )
         self.channels = sorted(set(x.channel for x in self.data))
 
-        # if len(self.data) > 50:
-        #    self.data = self.data[:50]
         self.data = sorted(self.data, key=lambda x: x.timestamp)
         self.model = TableModel(self.data)
         self.dataview.setModel(self.model)
