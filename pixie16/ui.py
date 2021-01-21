@@ -162,9 +162,7 @@ class ChannelSelect(QHBoxLayout):
         tmp.setCheckable(True)
         tmp.toggle()
         tmp.clicked.connect(
-            lambda state, channel=channel, widget=tmp: self.main.click_channel(
-                "all", widget
-            )
+            lambda state, channel, widget=tmp: self.main.click_channel("all", widget)
         )
 
         self.channels.append(tmp)
@@ -362,6 +360,9 @@ class FastTrigger(QWidget):
         self.triggers *= 0
 
         self.fast_plot.axes.clear()
+        if not self.data:
+            return
+
         length = len(self.data[0])
         result = np.zeros(length - 2 * L - G + 1)
 
@@ -485,7 +486,6 @@ class App(QMainWindow):
         # file menu
         self.menu = self.menuBar()
         self.file_menu = self.menu.addMenu("File")
-        self.tab_menu = self.menu.addMenu("Tabs")
         self.help_menu = self.menu.addMenu("Help")
 
         if sys.platform == "win32":
@@ -494,8 +494,8 @@ class App(QMainWindow):
 
         FileButton = QAction(QIcon.fromTheme("document-open"), "Open", self)
         FileButton.setShortcut("Ctrl+O")
-        FileButton.setStatusTip("About")
-        FileButton.triggered.connect(self.open_file)
+        FileButton.setStatusTip("Open binary file")
+        FileButton.triggered.connect(lambda x: self.open_file())
         self.file_menu.addAction(FileButton)
 
         quitButton = QAction(QIcon.fromTheme("application-exit"), "Exit", self)
@@ -544,24 +544,24 @@ class App(QMainWindow):
 
         self.show()
 
-    def open_file(self, filename=None):
+    def open_file(self, filename=None) -> None:
         if filename is None or not isinstance(filename, (str, Path)):
             self.filename, _ = QFileDialog.getOpenFileName(
                 self, "Open file", "e:\\ROOTS", "Binary files (*.bin)"
             )
         else:
             self.filename = filename
+
+        # check if cancel was hit in QFileDialog
+        if self.filename == "":
+            self.filename = None
+            return
+
         self.filename = Path(self.filename)
         self.data = list(
             pixie16.read.read_list_mode_data(self.filename, keep_trace=True)
         )
-        self.channels = sorted(set(x.channel for x in self.data))
-
-        self.data = sorted(self.data, key=lambda x: x.timestamp)
-        self.model = BinaryDataModel(self.data)
-        self.dataview.setModel(self.model)
-
-        self.fasttrigger.add_channels()
+        self.parse_data()
 
         # count events per channel
         tmp = Counter([x.channel for x in self.data])
@@ -571,12 +571,28 @@ class App(QMainWindow):
             if ch < 9:
                 gamma_sum += cnt
         gamma_sum_str = "".join(f"Gamma events: {gamma_sum}")
-        self.info_bar.setText(f"{self.filename.name}    {summary}    {gamma_sum_str}")
+
+        if self.filename:
+            self.info_bar.setText(
+                f"{self.filename.name}    {summary}    {gamma_sum_str}"
+            )
+
+    def parse_data(self):
+        self.channels = sorted(set(x.channel for x in self.data))
+
+        self.data = sorted(self.data, key=lambda x: x.timestamp)
+        self.model = BinaryDataModel(self.data)
+        self.dataview.setModel(self.model)
+
+        self.fasttrigger.add_channels()
 
         self.channel_select.clear_channels()
         self.channel_select.add_channels()
 
     def tab_change(self, i):
+        if not self.data:
+            return
+
         indexes = self.dataview.selectionModel().selectedRows()
         if i == 1:  # plot traces
             self.traces.fig.clear()
