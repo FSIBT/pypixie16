@@ -129,6 +129,8 @@ class BinaryDataModel(QAbstractTableModel):
 
 
 class ChannelSelect(QHBoxLayout):
+    """Horizontal list of buttons that can be changed during runtime."""
+
     def __init__(self, main):
         super().__init__()
         self.channels = []
@@ -142,6 +144,7 @@ class ChannelSelect(QHBoxLayout):
                 widget.deleteLater()
 
     def add_channels(self):
+        self.addWidget(QLabel("Show/Hide:"))
         for channel in self.main.channels:
             tmp = QPushButton(f"Ch {channel}")
             tmp.setCheckable(True)
@@ -244,6 +247,20 @@ class FastTrigger(QWidget):
         super().__init__()
         self.main = main
 
+        self.buttons = QHBoxLayout()
+        self.buttons_widgets = []
+        self.plot_names = ["traces", "fast trigger", "CFD", "energy"]
+        self.buttons.addWidget(QLabel("Show/Hide:"))
+        for i in self.plot_names:
+            tmp = QPushButton(i)
+            tmp.setCheckable(True)
+            tmp.toggle()
+            tmp.clicked.connect(
+                lambda state, name=i, widget=tmp: self.show_hide(name, widget)
+            )
+            self.buttons_widgets.append(tmp)
+            self.buttons.addWidget(tmp)
+
         self.grid = QGridLayout()
 
         self.trace_plot = Plot(main=main)
@@ -286,15 +303,17 @@ class FastTrigger(QWidget):
             callback=self.update_energies,
         )
 
-        self.grid.addWidget(self.trace_plot, 0, 0)
-        self.grid.addWidget(self.fast_plot, 1, 0)
-        self.grid.addWidget(self.cfd_plot, 2, 0)
-        self.grid.addWidget(self.energy_plot, 3, 0)
+        self.grid.addLayout(self.buttons, 0, 0, 1, 2)
 
-        self.grid.addWidget(self.channels, 0, 1)
-        self.grid.addWidget(self.ft, 1, 1)
-        self.grid.addWidget(self.cfd, 2, 1)
-        self.grid.addWidget(self.energy, 3, 1)
+        self.grid.addWidget(self.trace_plot, 1, 0)
+        self.grid.addWidget(self.fast_plot, 2, 0)
+        self.grid.addWidget(self.cfd_plot, 3, 0)
+        self.grid.addWidget(self.energy_plot, 4, 0)
+
+        self.grid.addWidget(self.channels, 1, 1)
+        self.grid.addWidget(self.ft, 2, 1)
+        self.grid.addWidget(self.cfd, 3, 1)
+        self.grid.addWidget(self.energy, 4, 1)
 
         # todo: add channel select and index select at bottom
         # add L, G, threshold  for CFD and FAST trigger and energy
@@ -302,6 +321,13 @@ class FastTrigger(QWidget):
         # add other tab to show histogram across all events of peaks or CFD
 
         self.setLayout(self.grid)
+
+    def show_hide(self, name, widget):
+        for i, plot_name in enumerate(self.plot_names):
+            if name == plot_name:
+                for c in [0, 1]:
+                    tmp = self.grid.itemAtPosition(1 + i, c).widget()
+                    tmp.setHidden(not tmp.isHidden())
 
     def add_channels(self):
         for c in self.main.channels:
@@ -512,14 +538,11 @@ class App(QMainWindow):
         self.main_widget = QWidget(self)
         self.main_window = QVBoxLayout()
 
-        self.channel_select = ChannelSelect(main=self)
-
         self.info_bar = QLabel()
         self.info_bar.setTextInteractionFlags(Qt.TextSelectableByMouse)
 
         self.tabs = QTabWidget()
 
-        self.main_window.addLayout(self.channel_select)
         self.main_window.addWidget(self.tabs)
         self.main_window.addWidget(self.info_bar)
 
@@ -527,15 +550,24 @@ class App(QMainWindow):
         self.main_widget.setFocus()
         self.setCentralWidget(self.main_widget)
 
+        self.datatab = QWidget()
+        self.datatab_layout = QVBoxLayout()
+
+        self.channel_select = ChannelSelect(main=self)
+
         self.dataview = QTableView()
         self.dataview.setSortingEnabled(True)
         self.dataview.setSelectionBehavior(QTableView.SelectRows)
+
+        self.datatab_layout.addLayout(self.channel_select)
+        self.datatab_layout.addWidget(self.dataview)
+        self.datatab.setLayout(self.datatab_layout)
 
         self.traces = Plot(main=self)
         self.mca = Plot(main=self)
         self.fasttrigger = FastTrigger(main=self)
 
-        self.tabs.addTab(self.dataview, "Binary data")
+        self.tabs.addTab(self.datatab, "Binary data")
         self.tabs.addTab(self.traces, "Traces")
         self.tabs.addTab(self.mca, "MCA")
         self.tabs.addTab(self.fasttrigger, "Fast Trigger/CFD")
