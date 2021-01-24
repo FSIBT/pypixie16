@@ -165,7 +165,9 @@ class ChannelSelect(QHBoxLayout):
         tmp.setCheckable(True)
         tmp.toggle()
         tmp.clicked.connect(
-            lambda state, channel, widget=tmp: self.main.click_channel("all", widget)
+            lambda state, channel="all", widget=tmp: self.main.click_channel(
+                "all", widget
+            )
         )
 
         self.channels.append(tmp)
@@ -293,8 +295,9 @@ class FastTrigger(QWidget):
 
         self.energy = VStack(
             [
-                LabelAndIntNumber("G (20 ns steps)", name="G"),
-                LabelAndIntNumber("L (20 ns steps)", name="L"),
+                LabelAndIntNumber("Range", name="R"),
+                LabelAndIntNumber("G (energy steps)", name="G"),
+                LabelAndIntNumber("L (energy steps)", name="L"),
                 LabelAndIntNumber(
                     "Peaksample (10 ns steps)", value=10, name="peaksample"
                 ),
@@ -445,6 +448,7 @@ class FastTrigger(QWidget):
         currently only SlowFilterRange=1 works.
 
         """
+        R = self.energy.value["R"]
         L = self.energy.value["L"]
         G = self.energy.value["G"]
         P = self.energy.value["peaksample"]
@@ -453,7 +457,27 @@ class FastTrigger(QWidget):
 
         self.energy_plot.axes.clear()
 
-        length = len(self.data[0]) // 2
+        self.slow_filter_range = 2 ** R
+        length = len(self.data[0]) // self.slow_filter_range
+        pad_data = False
+
+        if length - 2 * L - G + 1 <= 0:
+            print(
+                "[Warning]: L, G for energy filter are too large for the supplied trace length and slowfilter range. Padding data",
+                flush=True,
+            )
+            pad_data = True
+            pad_length = 2 * (L + G)
+            length += 2 * pad_length
+        elif length - 2 * L - G + 1 <= 20:
+            print(
+                "[Warning]: L, G for energy filter are large for the supplied trace length and slowfilter range. Padding data",
+                flush=True,
+            )
+            pad_data = True
+            pad_length = L + G
+            length += 2 * pad_length
+
         result = np.zeros(length - 2 * L - G + 1)
 
         c2 = 1 - q
@@ -461,29 +485,38 @@ class FastTrigger(QWidget):
         c1 = c3 * q ** (10 * L)
 
         baseline = [t[: self.baseline_index].mean() for t in self.data]
-        baseline = np.asarray(baseline).mean()
+        baseline = np.asarray(baseline).mean() * self.slow_filter_range
 
         for i, trace in enumerate(self.data):
             trace = trace.astype(np.int64)
 
             # for the energy calculation groups of 20 ns (or larger are used)
-            trace = trace.reshape(trace.shape[0] // 2, 2)
+            N = (trace.shape[0] // self.slow_filter_range) * self.slow_filter_range
+            trace = trace[:N].reshape(
+                trace.shape[0] // self.slow_filter_range, self.slow_filter_range
+            )
             trace = trace.sum(axis=1)
+            if pad_data:
+                pad = np.ones(pad_length) * baseline
+                trace = np.concatenate([pad, trace, pad])
             for k in range(2 * L + G - 1, length):
                 result[k - 2 * L - G + 1] = (
                     -c1 * trace[k - L + 1 : k + 1].sum()
                     + c2 * trace[k - L - G + 1 : k - G + 1].sum()
                     + c3 * trace[k - 2 * L - G + 1 : k - L - G + 1].sum()
-                ) - c2 * baseline * 2 * (L + G)
+                ) - c2 * baseline * (L + G)
             self.energy_plot.axes.plot(
                 result, color=self.colors[i], drawstyle="steps-mid"
             )
             if self.triggers[i]:
-                pos = int(self.triggers[i] + P) // 2
-                self.energy_plot.axes.plot(
-                    pos, result[pos], "o", color=self.colors[i],
-                )
-            self.energy_plot.axes.set_xlabel("20 ns cycles")
+                pos = int(self.triggers[i]) // self.slow_filter_range + P
+                if pad_data:
+                    pos = pos + L + G
+                if pos < len(result):
+                    self.energy_plot.axes.plot(
+                        pos, result[pos], "o", color=self.colors[i],
+                    )
+            self.energy_plot.axes.set_xlabel(f"{self.slow_filter_range*10} ns cycles")
             self.energy_plot.axes.set_ylabel("Energy")
             self.energy_plot.axes.set_title(f"Energy baseline {baseline:.1f}")
         self.energy_plot.plot.draw()
