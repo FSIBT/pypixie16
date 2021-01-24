@@ -299,7 +299,7 @@ class FastTrigger(QWidget):
                 LabelAndIntNumber("G (energy steps)", name="G"),
                 LabelAndIntNumber("L (energy steps)", name="L"),
                 LabelAndIntNumber(
-                    "Peaksample (10 ns steps)", value=10, name="peaksample"
+                    "Peaksample (energy steps)", value=10, name="peaksample"
                 ),
                 LabelAndIntNumber("decay (ns)", value=28, name="decay"),
             ],
@@ -410,15 +410,22 @@ class FastTrigger(QWidget):
             self.fast_plot.axes.plot(
                 result, color=self.colors[i], drawstyle="steps-mid"
             )
-            for pos, (left, right) in enumerate(zip(result[:-1], result[1:])):
+            for trigger_pos, (left, right) in enumerate(zip(result[:-1], result[1:])):
                 if left < T and right >= T:
-                    self.fast_plot.axes.axvline(pos, color=self.colors[i])
+                    self.fast_plot.axes.axvline(trigger_pos, color=self.colors[i])
                     if self.triggers[i] == 0:
-                        self.triggers[i] = pos
+                        self.triggers[i] = trigger_pos
         self.fast_plot.axes.axhline(T, color="black")
 
         # calc noise level
-        first_trigger_offset = int(self.triggers[self.triggers > 0].min() - 10)
+        try:
+            first_trigger_offset = int(self.triggers[self.triggers > 0].min() - 10)
+        except ValueError:
+            print(
+                "[Warning]: No trigger found, using the first 20% of the trace to estimate baseline",
+                flush=True,
+            )
+            first_trigger_offset = int(length * 0.2)
         self.baseline_index = first_trigger_offset
 
         if first_trigger_offset > 0:
@@ -447,6 +454,8 @@ class FastTrigger(QWidget):
         The energy calculation here is based on 20 ns time steps so
         currently only SlowFilterRange=1 works.
 
+        See page 33 of Mauricio's thesis for details.
+
         """
         R = self.energy.value["R"]
         L = self.energy.value["L"]
@@ -458,6 +467,9 @@ class FastTrigger(QWidget):
         self.energy_plot.axes.clear()
 
         self.slow_filter_range = 2 ** R
+        # check how long the trace is, if it is too short, we try to
+        # fix it by adding data points at `baseline` value to the
+        # trace on the left and right
         length = len(self.data[0]) // self.slow_filter_range
         pad_data = False
 
@@ -480,41 +492,62 @@ class FastTrigger(QWidget):
 
         result = np.zeros(length - 2 * L - G + 1)
 
+        qL = q ** (5 * L * self.slow_filter_range)
         c2 = 1 - q
-        c3 = (1 - q) / (1 - q ** (10 * L))
-        c1 = c3 * q ** (10 * L)
+        c3 = (1 - q) / (1 - qL)
+        c1 = c3 * qL
 
+        # self.data is already in FPGA cycles
         baseline = [t[: self.baseline_index].mean() for t in self.data]
-        baseline = np.asarray(baseline).mean() * self.slow_filter_range
+        # convert to energy cycles
+        baseline_pad = np.asarray(baseline).mean() * self.slow_filter_range
+        baseline = baseline_pad * (L + G) * 4 * c2
 
         for i, trace in enumerate(self.data):
+            # need to convert to avoid overflows in the sums
             trace = trace.astype(np.int64)
 
-            # for the energy calculation groups of 20 ns (or larger are used)
+            # for the energy calculation groups of 10 ns * 2**slowfilterrange
+            # the traces are already in 10ns groups, so we now handle the slowfilterrange
             N = (trace.shape[0] // self.slow_filter_range) * self.slow_filter_range
             trace = trace[:N].reshape(
                 trace.shape[0] // self.slow_filter_range, self.slow_filter_range
             )
             trace = trace.sum(axis=1)
+
             if pad_data:
-                pad = np.ones(pad_length) * baseline
+                pad = np.ones(pad_length) * int(baseline_pad)
                 trace = np.concatenate([pad, trace, pad])
+
+            if self.triggers[i]:
+                # calculate trigger position in new time units
+                trigger_pos = (
+                    int(self.triggers[i]) // self.slow_filter_range - 2 * L - G + P
+                )
+                if pad_data:
+                    trigger_pos += pad_length
+
             for k in range(2 * L + G - 1, length):
+                S1 = trace[k - 2 * L - G + 1 : k - L - G + 1].sum()
+                S2 = trace[k - L - G + 1 : k - L + 1].sum()
+                S3 = trace[k - L + 1 : k + 1].sum()
+
+                if self.triggers[i]:
+                    if k - 2 * L - G + 1 == trigger_pos:
+                        print(
+                            "[INFO] found peaksample position: ", S1, S2, S3, baseline,
+                        )
+
                 result[k - 2 * L - G + 1] = (
-                    -c1 * trace[k - L + 1 : k + 1].sum()
-                    + c2 * trace[k - L - G + 1 : k - G + 1].sum()
-                    + c3 * trace[k - 2 * L - G + 1 : k - L - G + 1].sum()
-                ) - c2 * baseline * (L + G)
+                    4 * (-c1 * S1 + c2 * S2 + c3 * S3) - baseline
+                )
             self.energy_plot.axes.plot(
                 result, color=self.colors[i], drawstyle="steps-mid"
             )
             if self.triggers[i]:
-                pos = int(self.triggers[i]) // self.slow_filter_range + P
-                if pad_data:
-                    pos = pos + L + G
-                if pos < len(result):
+                if 0 < trigger_pos < len(result):
                     self.energy_plot.axes.plot(
-                        pos, result[pos], "o", color=self.colors[i],
+                        trigger_pos, result[trigger_pos], "o", color=self.colors[i],
                     )
             self.energy_plot.axes.set_xlabel(f"{self.slow_filter_range*10} ns cycles")
             self.energy_plot.axes.set_ylabel("Energy")
@@ -685,8 +718,8 @@ class App(QMainWindow):
                 if self.dataview.isRowHidden(row):
                     continue
                 channel = self.data[row].channel
-                pos = selected_channels.index(channel)
-                self.traces.axes[pos].plot(self.data[row].trace)
+                trigger_pos = selected_channels.index(channel)
+                self.traces.axes[trigger_pos].plot(self.data[row].trace)
             for i, channel in enumerate(selected_channels):
                 self.traces.axes[i].set_title(f"channel {channel}")
             self.traces.fig.tight_layout()
