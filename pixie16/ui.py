@@ -251,7 +251,13 @@ class FastTrigger(QWidget):
 
         self.buttons = QHBoxLayout()
         self.buttons_widgets = []
-        self.plot_names = ["traces", "fast trigger", "CFD", "energy"]
+        self.plot_names = [
+            "traces",
+            "fast trigger",
+            "CFD",
+            "energy",
+            "energy linearity",
+        ]
         self.buttons.addWidget(QLabel("Show/Hide:"))
         for i in self.plot_names:
             tmp = QPushButton(i)
@@ -269,6 +275,7 @@ class FastTrigger(QWidget):
         self.fast_plot = Plot(main=main)
         self.cfd_plot = Plot(main=main)
         self.energy_plot = Plot(main=main)
+        self.energy_linearity_plot = Plot(main=main)
 
         self.data = []
         self.N = 10
@@ -277,6 +284,7 @@ class FastTrigger(QWidget):
         self.colors = [cmap(i) for i in n]
         self.triggers = np.zeros(self.N)
         self.baseline_index = 1
+        self.energy_values = np.zeros(self.N)
 
         self.channel_label = QLabel("Channel")
         self.channels = QComboBox()
@@ -306,17 +314,24 @@ class FastTrigger(QWidget):
             callback=self.update_energies,
         )
 
+        self.energy_linearity = VStack(
+            [LabelAndIntNumber("Integration Length", name="L"),],
+            callback=self.update_energy_linearity,
+        )
+
         self.grid.addLayout(self.buttons, 0, 0, 1, 2)
 
         self.grid.addWidget(self.trace_plot, 1, 0)
         self.grid.addWidget(self.fast_plot, 2, 0)
         self.grid.addWidget(self.cfd_plot, 3, 0)
         self.grid.addWidget(self.energy_plot, 4, 0)
+        self.grid.addWidget(self.energy_linearity_plot, 5, 0)
 
         self.grid.addWidget(self.channels, 1, 1)
         self.grid.addWidget(self.ft, 2, 1)
         self.grid.addWidget(self.cfd, 3, 1)
         self.grid.addWidget(self.energy, 4, 1)
+        self.grid.addWidget(self.energy_linearity, 5, 1)
 
         # todo: add channel select and index select at bottom
         # add L, G, threshold  for CFD and FAST trigger and energy
@@ -456,6 +471,8 @@ class FastTrigger(QWidget):
 
         See page 33 of Mauricio's thesis for details.
 
+        Note: the pixie16 multiplies all energies by a factor of 4
+
         """
         R = self.energy.value["R"]
         L = self.energy.value["L"]
@@ -463,6 +480,8 @@ class FastTrigger(QWidget):
         P = self.energy.value["peaksample"]
         q = self.energy.value["decay"]
         q = np.exp(-2 / q)
+
+        self.energy_values *= 0
 
         self.energy_plot.axes.clear()
 
@@ -532,15 +551,20 @@ class FastTrigger(QWidget):
                 S2 = trace[k - L - G + 1 : k - L + 1].sum()
                 S3 = trace[k - L + 1 : k + 1].sum()
 
-                if self.triggers[i]:
-                    if k - 2 * L - G + 1 == trigger_pos:
-                        print(
-                            "[INFO] found peaksample position: ", S1, S2, S3, baseline,
-                        )
-
                 result[k - 2 * L - G + 1] = (
                     4 * (-c1 * S1 + c2 * S2 + c3 * S3) - baseline
                 )
+                if self.triggers[i]:
+                    if k - 2 * L - G + 1 == trigger_pos:
+                        print(
+                            f"[INFO] found peaksample position {i}: ",
+                            S1,
+                            S2,
+                            S3,
+                            baseline,
+                        )
+                        self.energy_values[i] = result[k - 2 * L - G + 1]
+
             self.energy_plot.axes.plot(
                 result, color=self.colors[i], drawstyle="steps-mid"
             )
@@ -553,6 +577,50 @@ class FastTrigger(QWidget):
             self.energy_plot.axes.set_ylabel("Energy")
             self.energy_plot.axes.set_title(f"Energy baseline {baseline:.1f}")
         self.energy_plot.plot.draw()
+
+        self.update_energy_linearity()
+
+    def update_energy_linearity(self):
+        L = self.energy_linearity.value["L"]
+
+        baseline = [t[: self.baseline_index].mean() for t in self.data]
+        baseline = np.asarray(baseline).mean()
+
+        energy = np.zeros(self.N)
+        for i, trace in enumerate(self.data):
+            trigger_pos = int(self.triggers[i])
+            if trigger_pos:
+                if trigger_pos + L < len(trace):
+                    energy[i] = (
+                        trace[trigger_pos : trigger_pos + L].sum() - baseline * L
+                    )
+        self.energy_linearity_plot.axes.clear()
+        X = energy
+        Y = self.energy_values
+        fit = np.poly1d(np.polyfit(X, Y, 1))
+        F = fit(X)
+        mask = X > 0
+        if mask.sum() == 0:
+            self.energy_linearity_plot.plot.draw()
+            return
+        X = X[mask]
+        Y = Y[mask]
+        F = F[mask]
+        C = np.array(self.colors)[mask]
+        r2 = ((F - Y.mean()) ** 2).sum() / ((Y - Y.mean()) ** 2).sum()
+        if r2 < 0.96:
+            self.energy_linearity_plot.axes.plot(X, F, color="black")
+            self.energy_linearity_plot.axes.scatter(X, Y, c=C)
+            self.energy_linearity_plot.axes.set_xlabel("Integrated trace")
+            self.energy_linearity_plot.axes.set_ylabel("Calculated energy")
+            self.energy_linearity_plot.axes.set_title(f"Fit r2={r2:.6f}")
+        else:
+            self.energy_linearity_plot.axes.scatter(X, (Y - F) / F, c=C)
+            self.energy_linearity_plot.axes.set_xlabel("Integrated energy")
+            self.energy_linearity_plot.axes.set_ylabel("Error to linear fit [%]")
+            self.energy_linearity_plot.axes.set_title(f"Fit Error  r2={r2:.6f}")
+
+        self.energy_linearity_plot.plot.draw()
 
     def pick_channel(self, i):
         channel = self.main.channels[i]
