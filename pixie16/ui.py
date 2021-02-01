@@ -881,6 +881,8 @@ class CoincidencePlot(QHBoxLayout):
         self.maximum = 200
         self.X = np.arange(0, self.maximum, 1)
 
+        self.cursor_select = False
+
         self.N = 3
 
         self.position = [0] * self.N
@@ -904,6 +906,7 @@ class CoincidencePlot(QHBoxLayout):
         self.plot_area = PlotOnly(main=self.main)
 
         self.plot_area.fig.canvas.mpl_connect("button_press_event", self.onclick)
+        self.plot_area.fig.canvas.mpl_connect("motion_notify_event", self.onmove)
 
         self.channels = []
         for i in range(self.N):
@@ -933,6 +936,9 @@ class CoincidencePlot(QHBoxLayout):
 
     def onclick(self, event):
         y = event.ydata
+        if y is None:
+            return
+
         x = int(event.xdata)
 
         for i, [down, up] in enumerate(self.FT_yrange):
@@ -940,6 +946,33 @@ class CoincidencePlot(QHBoxLayout):
                 self.position[i] = x
 
         self.draw()
+
+    def onmove(self, event):
+        y = event.ydata
+        if y is None:
+            if self.cursor_select:
+                QApplication.restoreOverrideCursor()
+                self.cursor_select = False
+            return
+
+        x = int(event.xdata)
+
+        in_y_area = False
+        for i, [down, up] in enumerate(self.FT_yrange):
+            if down < y < up:
+                in_y_area = True
+        in_x_area = False
+        if 0 < x < self.maximum:
+            in_x_area = True
+
+        if in_y_area and in_x_area:
+            if not self.cursor_select:
+                QApplication.setOverrideCursor(Qt.CrossCursor)
+                self.cursor_select = True
+        else:
+            if self.cursor_select:
+                QApplication.restoreOverrideCursor()
+                self.cursor_select = False
 
     def update(self):
         for i, box in enumerate(self.channels):
