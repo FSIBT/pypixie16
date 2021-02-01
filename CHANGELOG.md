@@ -7,7 +7,8 @@ and this project tries to adhere to [Semantic Versioning](https://semver.org/spe
 ## [Unreleased]
 ### Added
 - added 1d and 2d parameter scan functionality
-- added a Qt-based browser for binary files
+- added a Qt-based browser for binary files: pixie16-binary-browser
+- added a Qt-based program to test/plot coincidence conditions: pixie16-coincidence
 - add python 3.9 to setup.py
 - pyproject.toml for black, pylint, and setuptools_scm config
 ### Changed
