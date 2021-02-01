@@ -10,6 +10,7 @@ from PyQt5.QtGui import QIcon, QIntValidator
 from PyQt5.QtWidgets import (
     QApplication,
     QGridLayout,
+    QGroupBox,
     QComboBox,
     QLineEdit,
     QMainWindow,
@@ -18,6 +19,7 @@ from PyQt5.QtWidgets import (
     QHBoxLayout,
     QTableView,
     QSizePolicy,
+    QSlider,
     QVBoxLayout,
     QLabel,
     QWidget,
@@ -192,27 +194,30 @@ class MyNavigationToolbar(NavigationToolbar):
 
 
 class Plot(QWidget):
-    """A Widget with a matplotlib figure and the navigation toolbar already included.
+    """A Widget with a matplotlib figure and and (optional) navigation toolbar.
 
     We already create a figure and single axis to plot on.
 
     """
 
-    def __init__(self, main) -> None:
+    def __init__(self, main: QMainWindow, with_navbar: bool = True) -> None:
         super().__init__()
         self.main = main
         self.update = True  # do we need to update when switching tabs?
 
         self.fig = plt.figure()
         self.axes = self.fig.subplots()
-        self.plot = FigureCanvas(self.fig)
-        self.plot.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        self.nav = MyNavigationToolbar(self.plot, self, coordinates=False)
-        self.nav.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+        self.canvas = FigureCanvas(self.fig)
+        self.canvas.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
 
         self.vbox = QVBoxLayout()
-        self.vbox.addWidget(self.nav)
-        self.vbox.addWidget(self.plot)
+
+        if with_navbar:
+            self.nav = MyNavigationToolbar(self.canvas, self, coordinates=False)
+            self.nav.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+            self.vbox.addWidget(self.nav)
+
+        self.vbox.addWidget(self.canvas)
 
         self.setLayout(self.vbox)
 
@@ -382,7 +387,7 @@ class FastTrigger(QWidget):
             )
         self.trace_plot.axes.set_title("traces")
         self.trace_plot.axes.set_xlabel("FPGA cycles")
-        self.trace_plot.plot.draw()
+        self.trace_plot.canvas.draw()
 
     def update_fasttrigger(self):
         """Calculate and show the Fast Trigger signal and the threshold.
@@ -459,7 +464,7 @@ class FastTrigger(QWidget):
             self.baseline_index = 1
 
         self.fast_plot.axes.set_xlabel("FPGA cycles")
-        self.fast_plot.plot.draw()
+        self.fast_plot.canvas.draw()
 
         self.update_energies()
 
@@ -576,7 +581,7 @@ class FastTrigger(QWidget):
             self.energy_plot.axes.set_xlabel(f"{self.slow_filter_range*10} ns cycles")
             self.energy_plot.axes.set_ylabel("Energy")
             self.energy_plot.axes.set_title(f"Energy baseline {baseline:.1f}")
-        self.energy_plot.plot.draw()
+        self.energy_plot.canvas.draw()
 
         self.update_energy_linearity()
 
@@ -601,7 +606,7 @@ class FastTrigger(QWidget):
         F = fit(X)
         mask = X > 0
         if mask.sum() == 0:
-            self.energy_linearity_plot.plot.draw()
+            self.energy_linearity_plot.canvas.draw()
             return
         X = X[mask]
         Y = Y[mask]
@@ -620,7 +625,7 @@ class FastTrigger(QWidget):
             self.energy_linearity_plot.axes.set_ylabel("Error to linear fit [%]")
             self.energy_linearity_plot.axes.set_title(f"Fit Error  r2={r2:.6f}")
 
-        self.energy_linearity_plot.plot.draw()
+        self.energy_linearity_plot.canvas.draw()
 
     def pick_channel(self, i):
         channel = self.main.channels[i]
@@ -629,7 +634,7 @@ class FastTrigger(QWidget):
         self.update_fasttrigger()  # also updated energies
 
 
-class App(QMainWindow):
+class BinaryApp(QMainWindow):
     """The main window"""
 
     def __init__(self, app=None):
@@ -762,7 +767,7 @@ class App(QMainWindow):
         indexes = self.dataview.selectionModel().selectedRows()
         if i == 1:  # plot traces
             self.traces.fig.clear()
-            self.traces.plot.draw()
+            self.traces.canvas.draw()
             # get list of channels in selections
             selected_channels = [
                 self.data[index.row()].channel
@@ -791,7 +796,7 @@ class App(QMainWindow):
             for i, channel in enumerate(selected_channels):
                 self.traces.axes[i].set_title(f"channel {channel}")
             self.traces.fig.tight_layout()
-            self.traces.plot.draw()
+            self.traces.canvas.draw()
         if i == 2:  # MCA spectra
             if self.mca.update:
                 self.mca.fig.clear()
@@ -812,7 +817,7 @@ class App(QMainWindow):
                     ax.set_title(f"Channel {c}")
                 ax.set_xlabel("Energy [a.u.]")
                 self.mca.fig.tight_layout()
-                self.mca.plot.draw()
+                self.mca.canvas.draw()
                 self.mca.update = False
 
     def click_channel(self, channel, button):
@@ -846,3 +851,220 @@ class App(QMainWindow):
             + f"python-version: {pyversion}\n"
             + f"pixie16-version: {pixie16.__version__}",
         )
+
+
+class PlotOnly(Plot):
+    def __init__(self, main: QMainWindow):
+        super().__init__(main, with_navbar=False)
+
+        self.axes.axis("off")
+
+    def clear(self):
+        self.axes.clear()
+        self.axes.axis("off")
+
+    def plot(self, x, y, **kwargs):
+        kwargs["drawstyle"] = "steps-mid"
+        self.axes.plot(x, y, **kwargs)
+
+    def text(self, x, y, text, **kwargs):
+        self.axes.text(x, y, text, **kwargs)
+
+
+class CoincidencePlot(QHBoxLayout):
+    def __init__(self, main: QMainWindow):
+        super().__init__()
+
+        self.main = main
+
+        # units in FPGA cycles
+        self.maximum = 200
+        self.X = np.arange(0, self.maximum, 1)
+
+        self.N = 3
+
+        self.position = [0] * self.N
+        self.FT_yrange = [[0, 1]] * self.N
+
+        self.trigger_delay = [10] * self.N
+        self.trigger_stretch = [10] * self.N
+
+        self.coincidence_position = [0] * self.N
+
+        self.internal_delay = 10
+        self.validation_delay = [10] * self.N
+        self.validation_stretch = [10] * self.N
+
+        self.FT = np.zeros((self.N, self.maximum))
+        self.window = np.zeros((self.N, self.maximum))
+        self.coincidence = np.ones((self.N, self.maximum))
+        self.validation = np.zeros((self.N, self.maximum))
+        self.delayed_FT = np.zeros((self.N, self.maximum))
+
+        self.plot_area = PlotOnly(main=self.main)
+
+        self.plot_area.fig.canvas.mpl_connect("button_press_event", self.onclick)
+
+        self.channels = []
+        for i in range(self.N):
+
+            inputs = []
+            inputs.append(LabelAndIntNumber(f"Trigger Delay"))
+            inputs.append(LabelAndIntNumber(f"Trigger Stretch"))
+            inputs.append(LabelAndIntNumber(f"Validation Delay"))
+            inputs.append(LabelAndIntNumber(f"Validation Stretch"))
+
+            tmp = VStack(inputs, callback=self.update,)
+
+            groupbox = QGroupBox(f"Channel {i}")
+            groupbox.vstack = tmp
+            groupbox.setLayout(tmp.box)
+
+            self.channels.append(groupbox)
+
+        self.vbox = QVBoxLayout()
+        for i in self.channels:
+            self.vbox.addWidget(i)
+
+        self.addWidget(self.plot_area)
+        self.addLayout(self.vbox)
+
+        self.draw()
+
+    def onclick(self, event):
+        y = event.ydata
+        x = int(event.xdata)
+
+        for i, [down, up] in enumerate(self.FT_yrange):
+            if down < y < up:
+                self.position[i] = x
+
+        self.draw()
+
+    def update(self):
+        for i, box in enumerate(self.channels):
+            values = box.vstack.value
+            self.trigger_delay[i] = values[f"Trigger Delay"]
+            self.trigger_stretch[i] = values[f"Trigger Stretch"]
+            self.validation_delay[i] = values[f"Validation Delay"]
+            self.validation_stretch[i] = values[f"Validation Stretch"]
+
+        self.draw()
+
+    def draw(self):
+        self.plot_area.clear()
+
+        self.FT *= 0
+        self.window *= 0
+        self.coincidence = np.ones((self.N, self.maximum))
+        self.delayed_FT *= 0
+        self.validation *= 0
+
+        for i in range(self.N):
+            self.FT[i, self.position[i]] = 1
+            left = min(self.position[i] + self.trigger_delay[i], self.maximum)
+            right = min(
+                self.position[i] + self.trigger_delay[i] + self.trigger_stretch[i],
+                self.maximum,
+            )
+            self.window[i, left:right] = 1
+            # todo use mask
+        for i in range(self.N):
+            for w in self.window:
+                self.coincidence[i] *= w
+        self.coincidence_position = [self.coincidence.argmax() for i in range(self.N)]
+        for i in range(self.N):
+            if self.coincidence_position[i] == 0:
+                self.validation[i] *= 0
+            else:
+                left = min(
+                    self.coincidence_position[i] + self.internal_delay, self.maximum
+                )
+                right = min(
+                    self.coincidence_position[i]
+                    + self.internal_delay
+                    + self.validation_stretch[i],
+                    self.maximum,
+                )
+
+                self.validation[i, left:right] = 1
+            self.delayed_FT[i, self.position[i] + self.validation_delay[i]] = 1
+
+        gap = 0.2
+        large_gap = 1.6
+        position = 6 * self.N + (4 * self.N - 1) * gap + (2 * self.N + 1) * large_gap
+
+        # print the fast trigger and the delayed and stretch version
+        self.plot_area.text(-40, position + 1.2, f"Fast Triggers and Delays")
+        for i in range(self.N):
+            self.FT_yrange[i] = [position, position + 1]
+            self.plot_area.plot(self.X, self.FT[i] + position, color="black")
+            self.plot_area.text(-30, position, f"Ch {i}")
+            position -= gap + 1
+            self.plot_area.plot(self.X, self.window[i] + position, color="orange")
+            position -= large_gap + 1
+
+            # print the coincidence trigger
+        self.plot_area.text(-40, position + 1.2, f"Coincidence Trigger")
+        for i in range(self.N):
+            self.plot_area.plot(
+                self.X, self.coincidence[i] + position, color="blue",
+            )
+            self.plot_area.text(-30, position, f"Ch {i}")
+            position -= gap + 1
+        position += gap - large_gap
+
+        # print the validation signals
+        self.plot_area.text(-40, position + 1.2, f"Validation")
+        for i in range(self.N):
+            self.plot_area.plot(
+                self.X, self.coincidence[i] + position, color="blue",
+            )
+            position -= gap + 1
+            self.plot_area.plot(
+                self.X, self.validation[i] + position, color="green",
+            )
+            validated = np.sum(self.delayed_FT[i] * self.validation[i])
+            if validated:
+                color = "green"
+            else:
+                color = "red"
+            self.plot_area.text(-30, position, f"Ch {i}", backgroundcolor=color)
+            position -= gap + 1
+            self.plot_area.plot(
+                self.X, self.FT[i] + position, color="black",
+            )
+            self.plot_area.plot(
+                self.X, self.delayed_FT[i] + position, color="red",
+            )
+            position -= large_gap + 1
+
+        self.plot_area.canvas.draw()
+
+
+class CoincidenceApp(QMainWindow):
+    """The main window"""
+
+    def __init__(self, app=None):
+        super().__init__()
+
+        self.app = app
+        self.settingsfilename = None
+
+        # set up the window
+        self.setWindowTitle("Pixie16 Coincidence Visualizer")
+
+        if sys.platform == "win32":
+            QIcon.setThemeSearchPaths([r"c:\Program Files\Git\usr\share\icons"])
+        QIcon.setThemeName("Adwaita")
+
+        self.main_widget = QWidget(self)
+
+        self.vbox = CoincidencePlot(main=self)
+
+        self.main_widget.setLayout(self.vbox)
+        self.main_widget.setFocus()
+
+        self.setCentralWidget(self.main_widget)
+
+        self.show()

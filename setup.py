@@ -28,7 +28,7 @@ setup(
         "sphinx",
         "sphinxcontrib-napoleon",
     ],
-    scripts=["pixie16-parameter-scan", "pixie16-binary-browser"],
+    scripts=["pixie16-parameter-scan", "pixie16-binary-browser", "pixie16-coincedence"],
     setup_requires=["pytest-runner"],
     tests_require=["pytest"],
     python_requires=">=3.7",
