@@ -24,7 +24,7 @@ if filename and not filename.exists():
 app = QApplication([])
 ex = CoincidenceApp(app)
 if filename:
-    ex.settingsfilename = filename
+    ex.open_file(filename)
 sys.exit(app.exec_())
 
 # Local Variables:

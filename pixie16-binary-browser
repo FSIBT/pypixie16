@@ -13,7 +13,7 @@ commands = docopt(__doc__)
 from pathlib import Path
 import sys
 
-from pixie16.ui import App, QApplication
+from pixie16.ui import BinaryApp, QApplication
 
 filename = commands["<filename>"]
 filename = Path(filename) if filename else None
@@ -22,7 +22,7 @@ if filename and not filename.exists():
     sys.exit(1)
 
 app = QApplication([])
-ex = App(app)
+ex = BinaryApp(app)
 if filename:
     ex.open_file(filename)
 sys.exit(app.exec_())
