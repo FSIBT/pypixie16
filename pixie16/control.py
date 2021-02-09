@@ -1860,6 +1860,13 @@ def ReadFIFO(module, words):
 ##############################################
 
 
+def set_sync_mode(modules):
+    """Turn on sync mode for every module."""
+    for mod in modules:
+        WriteModParam("SYNCH_WAIT", 1, mod)
+        WriteModParam("IN_SYNCH", 0, mod)
+
+
 def list_firmware():
     print(f"The config file used is: {inifile}")
     print("The following firmware definitions exists")
