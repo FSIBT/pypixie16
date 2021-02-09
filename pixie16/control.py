@@ -13,7 +13,7 @@ Currently only support Rev-B-D
 
 import appdirs
 import configparser
-from collections import namedtuple
+from collections import namedtuple, OrderedDict
 import datetime
 import ctypes
 import logging
@@ -22,6 +22,8 @@ from pathlib import Path
 import os
 import sys
 import time
+
+import tqdm
 
 # load information about where in the memory block for settings certain
 # variables are located
@@ -2008,3 +2010,79 @@ def run_list_mode(filename=None, runtime=5):
         data = read_list_mode_fifo(check=False)
         for d in data:
             d.newbyteorder("S").tofile(outfile)
+
+
+def reset_coincidence_setting(channels):
+    """Reset all setting in regards to coincedence mode.
+
+    Also, unsets capturing traces, etc.
+
+    This is usefule before an MCA run for example to just get raw channel spectra.
+    """
+
+    settings = OrderedDict(
+        {
+            "channels": channels,
+            "MultiplicityMaskL": 0,
+            "MultiplicityMaskH": 0,
+            "TrigConfig": [[0, 0, 0, 0]],
+            "CaptureTrace": False,
+            "CaptureHistogram": True,
+            "CaptureSums": False,
+            "FastTrigSelect": "group",
+            "GroupTrigSignal": "local",
+            "EnableModVal": False,
+            "EnableChannelVal": False,
+            "GroupTrigSignal": "local",
+            "RejectPileup": False,
+            "RejectIfFull": False,
+        }
+    )
+    change_setting_dict(settings, auto_update=False)
+
+
+def take_MCA_spectra(channels, modules, duration):
+    """Takes MCA spectra for a certain time on the specified channels.
+
+    This just does the data acquisition and does not return the data.
+
+    Parameters
+    ----------
+    channels : List(int, int)
+         list of (modules, channel number) tuples
+    duration  : float
+         MCA time in seconds
+    """
+
+    settings = OrderedDict(
+        {
+            "channels": channels,
+            "HostRunTimePreset": converter_IEEE754_to_ulong(duration).value,
+        }
+    )
+    change_setting_dict(settings, auto_update=False)
+
+    # take MCA spectra
+    print("[INFO] Taking MCA spectrum", end="", flush=True)
+
+    out = start_histogram_run()
+    sys.stdout.flush()
+    time.sleep(0.5)
+
+    start = time.time()
+    keep_running = True
+    with tqdm.tqdm(total=duration, desc="MCA", unit="s", unit_scale=True) as pbar_mca:
+        while keep_running and (time.time() - start < duration):
+            keep_running = False
+            for m in modules:
+                r = CheckRunStatus(m)
+                sys.stdout.flush()
+                if r == 1:
+                    keep_running = True
+            time.sleep(1)
+            dt = round(time.time() - start, 2)
+            pbar_mca.update(dt - pbar_mca.n)
+        pbar_mca.update(duration - pbar_mca.n)
+    print()
+    for m in modules:
+        EndRun(m)
