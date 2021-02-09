@@ -13,6 +13,7 @@ Currently only support Rev-B-D
 
 import appdirs
 import configparser
+from contextlib import contextmanager
 from collections import namedtuple, OrderedDict
 import datetime
 import ctypes
@@ -2086,3 +2087,24 @@ def take_MCA_spectra(channels, modules, duration):
     print()
     for m in modules:
         EndRun(m)
+
+
+@contextmanager
+def temporary_settings(modules):
+    """Making it easy to temporary change settings in the pixie16.
+
+    A context manager that will remember the current setting, execute
+    some code that can change those settings, and then reset the
+    setting back to the original
+
+    """
+
+    # get the current settings
+    current_settings = [read_raw_settings(m, N=1280) for m in modules]
+
+    try:
+        yield None  # this is were the code gets executed
+    finally:
+        # write the old settings back
+        for m in modules:
+            write_raw_settings(m, current_settings[m])
