@@ -2013,7 +2013,7 @@ def run_list_mode(filename=None, runtime=5):
             d.newbyteorder("S").tofile(outfile)
 
 
-def reset_coincidence_setting(channels):
+def reset_coincidence_setting(channels) -> None:
     """Reset all setting in regards to coincedence mode.
 
     Also, unsets capturing traces, etc.
@@ -2040,6 +2040,29 @@ def reset_coincidence_setting(channels):
         }
     )
     change_setting_dict(settings, auto_update=False)
+
+
+def enable_trace_settings(channels, disable_CFD: bool = True) -> None:
+    """Enable traces, historgramns, and sums.
+
+    Also turn CFD settings off (or optionally leave unchanged).
+
+    """
+
+    settings = OrderedDict(
+        {
+            "channels": channels,
+            "CaptureTrace": True,
+            "CaptureHistogram": True,
+            "CaptureSums": True,
+        }
+    )
+    change_setting_dict(settings, auto_update=False)
+
+    if disable_CFD:
+        print("[INFO] traces: turned CFD off")
+        settings = OrderedDict({"channels": channels, "EnableCFD": False})
+        change_setting_dict(settings, auto_update=False)
 
 
 def take_MCA_spectra(channels, modules, duration):
@@ -2087,6 +2110,63 @@ def take_MCA_spectra(channels, modules, duration):
     print()
     for m in modules:
         EndRun(m)
+
+
+def take_list_mode_data(modules, duration):
+    """Take list mode data for a certain time.
+
+    It also stops at 1 Gb of raw data to avoid too much memory use.
+    If you want to take mor data, you need to use another mechanism
+    and write the data to disk more often.
+
+    Parameters
+    ----------
+    modules: list(int)
+    duration: float
+
+    Returns
+    -------
+    dictionary with the raw binary data in it. Each module gets is a key
+    in the dictionary and the values are the bytestring.
+
+    """
+
+    start_listmode_run()
+
+    # initialize output module
+    raw_data = {i: b"" for i, _ in enumerate(modules)}
+
+    start = time.time()
+    raw_data_length = 0
+
+    with tqdm.tqdm(
+        total=duration, desc="Traces", unit="s", unit_scale=True
+    ) as pbar_traces:
+        while (time.time() - start < duration) and (raw_data_length < 1e9):
+            data = read_list_mode_fifo(threshold=32 * 1024)
+            for i, d in enumerate(data):
+                if d is not None:
+                    raw_data[i] += d.tobytes()
+                    raw_data_length += len(d)
+            dt = round(time.time() - start, 2)
+            pbar_traces.update(dt - pbar_traces.n)
+        pbar_traces.update(duration - pbar_traces.n)
+    print()
+
+    # stop run
+    for i, _ in enumerate(modules):
+        EndRun(i)
+
+    time.sleep(0.5)
+
+    # read remainig data in queue
+    tmp = read_list_mode_fifo(check=False)
+    if tmp:
+        for i, _ in enumerate(modules):
+            if tmp[i] is not None:
+                raw_data[i] += tmp[i].tobytes()
+
+    return raw_data
 
 
 @contextmanager
