@@ -11,9 +11,12 @@ and this project tries to adhere to [Semantic Versioning](https://semver.org/spe
 - added a Qt-based program to test/plot coincidence conditions: pixie16-coincidence
 - add python 3.9 to setup.py
 - pyproject.toml for black, pylint, and setuptools_scm config
+- config.py: path to firmware, etc
+- control.py: more high level functions to run data acquisition
 ### Changed
 - dropped python 3.6 (since we are using dataclasses, a 3.7 feature)
 - switched to setuptools_scm
+- moved C-library interface to their own files
 
 ## [0.5] - 2020-04-06
 ### Added
