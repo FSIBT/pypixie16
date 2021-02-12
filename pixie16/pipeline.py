@@ -34,7 +34,9 @@ status bar. An example use of 3 different tasks is:
 
 import multiprocessing
 import queue
+import sys
 import time
+import traceback
 
 import tqdm
 
@@ -108,6 +110,14 @@ class Task(multiprocessing.Process):
                     self.output_queue.put(out)
         except KeyboardInterrupt:
             pass
+        except Exception as e:
+            print(f"[DEBUG] ----- exception in {self.name} ----")
+            print(e)
+            print(sys.exc_info())
+            traceback.print_exc()
+            sys.stdout.flush()
+            sys.stderr.flush()
+            self.stop_event.set()
         finally:
             self.cleanup()
 
