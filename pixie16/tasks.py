@@ -1,3 +1,4 @@
+from collections import defaultdict
 from datetime import datetime
 from pathlibe import Path
 import sys
@@ -29,28 +30,34 @@ class GatherData(Task):
     """Task to create larger data buckets out of the data directly from the FPGA."""
 
     def custom_init(self):
-        self.data = []
+        self.data = defaultdict(list)
         self.maxsize = 10e6  # in bytes
         self.save_binary = False
 
+    def save_data(self, out):
+        timestamp = datetime.today().strftime("%Y-%m-%d-%H-%M-%S")
+        for k, v in out.items():
+            i = 0
+            file = Path(f"data-mod{k}-{timestamp}-{i:03d}.bin")
+            while file.exists():
+                i += 1
+                file = Path(f"data-mod{k}-{timestamp}-{i:03d}.bin")
+                if i > 999:
+                    print("[ERROR] GatherData Task: too many binary files")
+                    break
+            v.tofile(str(file))
+
     def do_work(self, value):
-        self.data.extend(value)
-        if sys.getsizeof(self.data) > self.maxsize:
+        for i, data in enumerate(value):
+            self.data[i].extend(data)
+        data_size = sum(sys.getsizeof(d) for d in self.data.values())
+        if data_size > self.maxsize:
             # TODO: check if this is the correct way to flatten or if
             # we need to transpose
-            out = np.array(self.data).flatten()
+            out = {k: np.array(v).flatten() for k, v in self.data.items()}
             if self.save_binary:
-                timestamp = datetime.today().strftime("%Y-%m-%d-%H-%M-%S")
-                i = 0
-                file = Path(f"data-{timestamp}-{i:03d}.bin")
-                while file.exists():
-                    i += 1
-                    file = Path(f"data-{timestamp}-{i:03d}.bin")
-                    if i > 999:
-                        print("[ERROR] GatherData Task: too many binary files")
-                        break
-                out.tofile(str(file))
-            self.data = []
+                self.save_data(out)
+            self.data = defaultdict(list)
             return out
 
     def cleanup(self):
@@ -63,11 +70,18 @@ class ConvertToEvents(Task):
     def custom_init(self):
         read.buffer.clear()
 
-    def do_work(self, value):
-        data = read.myIO(value.tobytes())
-        out = list(
-            read.read_list_mode_data(data, return_namedtuple=True, clear_buffer=False)
-        )
+    def do_work(self, value_dict):
+        out = []
+        for v in value_dict.values():
+            data = read.myIO(v.tobytes())
+            # this is currenlty only workiong for a single
+            # module... for multiple modules, we would need to have a
+            # buffer for each module
+            out += list(
+                read.read_list_mode_data(
+                    data, return_namedtuple=True, clear_buffer=False
+                )
+            )
         return out
 
 
