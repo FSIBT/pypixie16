@@ -11,6 +11,7 @@ from contextlib import contextmanager
 from collections import OrderedDict
 import datetime
 import logging
+from pathlib import Path
 import sys
 import time
 
@@ -20,8 +21,7 @@ from .config import config, inifile, data_dir
 from .C_library_app import *
 from .C_library_sys import *
 
-
-if sys.maxsize > 2 ** 32:
+if sys.maxsize > 2 ** 31 - 1:
     print("WARNING: need to run 32bit python to use this library")
 #    sys.exit()
 
@@ -64,7 +64,7 @@ def set_traces(module, channel, status):
     WriteChanParam("CHANNEL_CSRA", channel_setting, module, channel)
 
 
-def read_list_mode_fifo(check=True, threshold=1024):
+def read_list_mode_fifo(check=True, threshold=1024, modules=None):
     """Reads data from pixies FIFO across all modules defined in pixie16.control.modules
 
     Parameters
@@ -80,6 +80,9 @@ def read_list_mode_fifo(check=True, threshold=1024):
     output : list
         List with data as a numpy array of 32 bit unsigned integers for each module.
     """
+
+    if modules is None:
+        modules = [2]
 
     if check:
         do_read = False

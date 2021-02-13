@@ -9,6 +9,11 @@ import datashader.transfer_functions as tf
 from .analyze import calculate_CFD_using_FF
 from .read import Event
 
+# suppress some datashader warnings, remove again in the future?
+import warnings
+
+warnings.simplefilter(action="ignore", category=FutureWarning)
+
 
 DATA_POINTS_PER_FPGA_CYCLE = 5
 

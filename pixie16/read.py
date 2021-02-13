@@ -350,6 +350,17 @@ def read_list_mode_data(
     return
 
 
+def read_list_mode_data_batch(files_list, keep_trace):
+    buffer.clear()
+    data = []
+    for file in files_list:
+        chunk = list(
+            read_list_mode_data(file, keep_trace=keep_trace, clear_buffer=False)
+        )
+        data += chunk
+    return data
+
+
 def read_mca_mode_data(filename):
     """Read MCA data files: 32k 32bit words for 16 channels"""
 

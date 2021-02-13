@@ -198,6 +198,7 @@ class Pipeline:
                         pbar.n = self.run_time
                     else:
                         pbar.n = total
+                    pbar.update(0)
         except KeyboardInterrupt:
             print("[INFO] got keyboard interrupt... closing")
             self.stop()

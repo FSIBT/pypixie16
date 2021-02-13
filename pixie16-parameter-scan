@@ -42,11 +42,8 @@ today = f"{datetime.datetime.now():%Y-%m-%d}"
 datadir = Path(".")
 
 
-# list of modules used and their slot numbers, needs to be set correctly
-pxcontrol.modules = [2]
-
 # Initialize System, load config file
-pxcontrol.InitSys()
+pxcontrol.InitSys(modules=[2])
 pxcontrol.BootModule(commands["<settingfile>"])
 
 
@@ -104,9 +101,7 @@ elif N == 2:
 
     title = f'2d-Scan using {commands["<settingfile>"]}'
 
-    pxscan.parameter_scan_2d(
-        parameterA, parameterB, title=title, savefile=plot_data,
-    )
+    pxscan.parameter_scan_2d(parameterA, parameterB, title=title, savefile=plot_data)
 else:
     print("Only 1d and 2d scans are implemented")
 

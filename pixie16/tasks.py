@@ -1,6 +1,6 @@
 from collections import defaultdict
 from datetime import datetime
-from pathlibe import Path
+from pathlib import Path
 import sys
 import time
 
@@ -17,6 +17,8 @@ class TakeData(Task):
     def custom_init(self):
         print("save settings")
         self.start_time = time.time()
+        self.name = "Take Data"
+
         control.start_listmode_run()
 
     def do_work(self, value):
@@ -33,6 +35,7 @@ class GatherData(Task):
         self.data = defaultdict(list)
         self.maxsize = 10e6  # in bytes
         self.save_binary = False
+        self.name = "Gather Data"
 
     def save_data(self, out):
         timestamp = datetime.today().strftime("%Y-%m-%d-%H-%M-%S")
@@ -61,7 +64,8 @@ class GatherData(Task):
             return out
 
     def cleanup(self):
-        self.output_queue.put(self.data)
+        if self.output_queue:
+            self.output_queue.put(self.data)
 
 
 class ConvertToEvents(Task):
@@ -69,6 +73,7 @@ class ConvertToEvents(Task):
 
     def custom_init(self):
         read.buffer.clear()
+        self.name = "Convert to events"
 
     def do_work(self, value_dict):
         out = []
@@ -92,6 +97,7 @@ class SortEvents(Task):
         self.data = []
         self.maxsize = 10_000
         self.N_to_sort = 8_000
+        self.name = "Sort events"
 
     def do_work(self, value):
         self.data.extend(value)

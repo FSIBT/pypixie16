@@ -19,6 +19,7 @@ channel = commands["<channel>"]
 
 # slots in the crate that have pixie16 cards
 SLOTS = [2]
+modules = [0]
 
 import pixie16
 import pixie16.control
@@ -49,7 +50,7 @@ if commands["set"]:
             print("Error: outfile exists already")
             sys.exit(2)
 
-    pixie16.control.InitSys(PXISlotMap=SLOTS)
+    pixie16.control.InitSys(PXISlotMap=SLOTS, modules=modules)
     pixie16.control.BootModule(settingfile)
     for c in channel:
         pixie16.control.change_setting(name, value, c, module)
@@ -64,7 +65,7 @@ elif commands["read"]:
 
     module = int(module)
 
-    pixie16.control.InitSys(PXISlotMap=SLOTS)
+    pixie16.control.InitSys(PXISlotMap=SLOTS, modules=modules)
     pixie16.control.BootModule(settingfile)
     A = pixie16.control.read_raw_settings(module)
     offset, nr = pixie16.variables.settings[name]
@@ -81,7 +82,7 @@ elif commands["read"]:
 
 elif commands["load"]:
     print(f"Loading settingfile {settingfile}")
-    pixie16.control.InitSys(PXISlotMap=SLOTS)
+    pixie16.control.InitSys(PXISlotMap=SLOTS, modules=modules)
     pixie16.control.BootModule(settingfile)
     pixie16.control.ExitSys(0)
 

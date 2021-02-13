@@ -11,6 +11,10 @@ inifile = Path(dirs.user_config_dir) / "config.ini"
 config = configparser.ConfigParser()
 config.read(inifile)
 
+# set path so that we have pxisys.ini in the directory
+current_dir = Path(__file__).parent.parent
+os.chdir(current_dir)
+
 
 def config_get_parameters(section, name):
     """Get the setting out of the config dir.

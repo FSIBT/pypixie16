@@ -86,18 +86,28 @@ if sys.maxsize > 2 ** 32:
     print("[Warning] need to run 32bit python to use this library")
 #    sys.exit()
 
-if lib_app:
+if not lib_app:
     print("[ERROR] no path for lib_app set.")
     sys.exit()
 
 # set up logging
 log = logging.getLogger(__name__)
 
+current_dir = Path(".")
+# make sure pxisys.ini is available
+initfile = current_dir / "pxisys.ini"
+if not initfile.exists():
+    log.error(
+        f"Error: please copy the pxisys.ini file into the directory: {current_dir}"
+    )
+
+
+# set up logging
+log = logging.getLogger(__name__)
+
 PixieAppDLL = ctypes.cdll.LoadLibrary(str(lib_app))
 
-# module global that keeps track of some information for us, so that
-# we don't have to pass it to every function
-modules = []  # list of PCI slot numbers, should start with 2, e.g. [2, 3]
+# some globals
 init_done = False
 boot_done = False
 
@@ -375,7 +385,7 @@ init_sys_prototype = ctypes.WINFUNCTYPE(
 Cinit_sys = init_sys_prototype(("Pixie16InitSystem", PixieAppDLL))
 
 
-def InitSys(PXISlotMap=None, OfflineMode=False):
+def InitSys(PXISlotMap=None, OfflineMode=False, modules=None):
     """Uses the XIA library to initialize the system.
 
     PXISlotMap:   array containing the slot numbers of each module
@@ -383,8 +393,10 @@ def InitSys(PXISlotMap=None, OfflineMode=False):
 
     """
     # convert to ctypes for library call
-    global modules
     global init_done
+
+    if modules is None:
+        modules = [2]
 
     if init_done:
         log.warning("Init already done")
@@ -458,6 +470,7 @@ def BootModule(
     BootPattern=0x7F,
     section=None,
     verbose=False,
+    modules=None,
 ):
     """Uses the XIA library to boot the module.
 
@@ -489,6 +502,8 @@ def BootModule(
         use a different section from the config file to boot the firmware
     verbose : bool
         print out what firmware we are using
+    modules : list
+        list of modules used (list of slot numbers)
 
     Returns
     -------
@@ -502,6 +517,9 @@ def BootModule(
     if boot_done:
         log.warning("boot already done")
         return 0
+
+    if modules is None:
+        modules = [2]
 
     # allow pathlib.Path objects
     if not isinstance(DSPParFile, Path):
@@ -543,13 +561,7 @@ def BootModule(
     CDSPParFile = ctypes.c_char_p(bytes(DSPParFile))
     CDSPVarFile = ctypes.c_char_p(bytes(DSPVarFile))
     if ModNum is None:
-        if modules is None:
-            log.error(
-                "You need to set ModNum or the global variable modules need to be set!"
-            )
-            return -1
-        else:
-            CModNum = ctypes.c_ushort(len(modules))
+        CModNum = ctypes.c_ushort(len(modules))
     else:
         CModNum = ctypes.c_ushort(ModNum)
     CBootPattern = ctypes.c_ushort(BootPattern)
@@ -689,14 +701,14 @@ def WriteChanParam(ChanParName, ChanParData, module, channel):
         ChanParName in valid_channel_parameter_names
     ), "Not a valid channel parameter name"
 
-    if ChanParName in [
-        "CHANNEL_CSRA",
-        "CHANNEL_CSRB",
-        "MultiplicityMaskL",
-        "MultiplicityMaskH",
-    ]:
-        data = [str(int(x)) for x in ChanParData]
-        ChanParData = int("".join(data), 2)
+    # if ChanParName in [
+    #    "CHANNEL_CSRA",
+    #    "CHANNEL_CSRB",
+    #    "MultiplicityMaskL",
+    #    "MultiplicityMaskH",
+    # ]:
+    #    data = [str(int(x)) for x in ChanParData]
+    #    ChanParData = int("".join(data), 2)
 
     # convert to ctypes for library call
     CChanParName = ctypes.c_char_p(bytes(ChanParName, "utf8"))
@@ -902,7 +914,7 @@ start_hist_run_prototype = ctypes.WINFUNCTYPE(
 CStartHistRun = start_hist_run_prototype(("Pixie16StartHistogramRun", PixieAppDLL))
 
 
-def start_histogram_run(module=None, resume=False):
+def start_histogram_run(module=None, resume=False, modules=None):
     """Uses the XIA library to start an MCA run in one channel in a module.
 
     Parameters
@@ -916,8 +928,13 @@ def start_histogram_run(module=None, resume=False):
     resume : bool
          Resume the run?
 
+    modules :  list[int]
+         List of slots that have modules installed, defaults to a single one in slot2
+
     """
 
+    if modules is None:
+        modules = [2]
     if module is None:
         module = len(modules)
     if module is None:
@@ -949,7 +966,7 @@ CStartListModeRun = start_listmode_run_prototype(
 )
 
 
-def start_listmode_run(module=None, runtype=0x100, resume=False):
+def start_listmode_run(module=None, runtype=0x100, resume=False, modules=None):
     """Uses the XIA library to start a list mode run in one channel in a module.
 
     Parameters
@@ -963,8 +980,12 @@ def start_listmode_run(module=None, runtype=0x100, resume=False):
          taks number
     resume :
          resume run?
+    modules : list[int]
+         list of slots that have modules installed, defaults to one module in slot 2
     """
 
+    if modules is None:
+        modules = [2]
     if module is None:
         module = len(modules)
     if module is None:

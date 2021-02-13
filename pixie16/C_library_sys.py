@@ -51,11 +51,11 @@ from .config import lib_sys
 from .C_library_app import ProgramFippi, ProgramSetDACs, converter_IEEE754_to_ulong
 from . import variables
 
-if sys.maxsize > 2 ** 32:
+if sys.maxsize > 2 ** 31 - 1:
     print("WARNING: need to run 32bit python to use this library")
 #    sys.exit()
 
-if lib_sys:
+if not lib_sys:
     print("[ERROR] no path for lib_app set.")
     sys.exit()
 
