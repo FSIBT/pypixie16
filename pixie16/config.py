@@ -39,7 +39,7 @@ def config_get_parameters(section, name):
         print("   app = '<path do PixieAppDll.dll>")
         print("   sys = '<path do Pixie16SysDll.dll>")
         print("   [Data]")
-        print("   datair = '<path where the data files should live")
+        print("   datadir = '<path where the data files should live")
         print("   [Firmware.default]")
         print("   ComFPGAConfigFile = '<path do syspixie16 firmware>")
         print("   SPFPGAConfigFile = '<path do fippixie16 firmware>")
