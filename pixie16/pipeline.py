@@ -140,7 +140,7 @@ class Pipeline:
         self.status = {}
         self.i = 0
         self.start_time = 0
-        self.run_time = 0
+        self.runtime = 0
 
         # we'll use a single event for all tasks
         self.stop_event = multiprocessing.Event()
@@ -182,10 +182,13 @@ class Pipeline:
         try:
             while True:
                 value = self.status_queue.get(block=False)
-                self.run_time = round(time.time() - self.start_time, 2)
                 self.status.update(value)
         except queue.Empty:
             pass
+        if "runtime" in self.status:
+            self.runtime = self.status["runtime"]
+        else:
+            self.runtime = round(time.time() - self.start_time, 2)
 
     def wait_with_progress(self, total):
         try:
@@ -194,8 +197,8 @@ class Pipeline:
                     time.sleep(0.1)
                     self.update_status()
                     pbar.set_postfix(self.status)
-                    if self.run_time < total:
-                        pbar.n = self.run_time
+                    if self.runtime < total:
+                        pbar.n = self.runtime
                     else:
                         pbar.n = total
                     pbar.update(0)
