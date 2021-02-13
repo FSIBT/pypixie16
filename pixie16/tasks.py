@@ -25,7 +25,7 @@ class DummyData(Task):
         self.pos = 0
         if self.chunk_size > self.length:
             print("[ERROR] chunk_size too big")
-        self.modules = [2, 8]
+        self.modules = [2]
         self.mycounter = 0
 
     def do_work(self, value):
@@ -87,7 +87,7 @@ class GatherData(Task):
         self.mycounter += 1
 
         for i, data in enumerate(value):
-            self.data[i].extend(data)
+            self.data[i].append(data)
 
         data_size = max(sys.getsizeof(d) for d in self.data.values())
         if data_size > self.maxsize:
@@ -101,10 +101,11 @@ class GatherData(Task):
 
     def cleanup(self):
         out = {k: np.array(v).flatten() for k, v in self.data.items()}
-        if self.save_binary:
-            self.save_data(out)
-        if self.output_queue:
-            self.output_queue.put(self.out)
+        if out:
+            if self.save_binary:
+                self.save_data(out)
+            if self.output_queue:
+                self.output_queue.put(out)
 
 
 class ConvertToEvents(Task):
@@ -141,12 +142,12 @@ class SortEvents(Task):
     def do_work(self, value):
         self.data.extend(value)
         if len(self.data) > self.maxsize:
+            self.data.sort(key=lambda x: x.timestamp)
             out = self.data[: self.N_to_sort]
             self.data = self.data[self.N_to_sort :]
-            out.sort(key=lambda x: x.timestamp)
             return out
 
     def cleanup(self):
-        out = self.data
-        out.sort(key=lambda x: x.timestamp)
-        self.output_queue.put(out)
+        self.data.sort(key=lambda x: x.timestamp)
+        if self.output_queue:
+            self.output_queue.put(self.data)
