@@ -27,12 +27,16 @@ class dummy:
         print(f"    args:  {args} ")
         for k, v in kwargs.items():
             print(f"    kwargs: {k} {v}")
+        return dummy("internal")
 
     def __enter__(self):
         pass
 
-    def __exit__(self):
+    def __exit__(self, type, value, tb):
         pass
+
+    def __len__(self):
+        return 0
 
 
 def __getattr__(*args, **kwargs):
