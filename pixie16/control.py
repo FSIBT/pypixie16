@@ -14,7 +14,9 @@ import logging
 from pathlib import Path
 import sys
 import time
+from typing import Iterable, List, Tuple, Dict, Union, Optional, ByteString
 
+import numpy as np
 import tqdm
 
 from .config import config, inifile, data_dir
@@ -29,14 +31,14 @@ if sys.maxsize > 2 ** 31 - 1:
 log = logging.getLogger(__name__)
 
 
-def set_sync_mode(modules):
+def set_sync_mode(modules: Iterable[int]) -> None:
     """Turn on sync mode for every module."""
     for m, _ in enumerate(modules):
         WriteModParam("SYNCH_WAIT", 1, m)
         WriteModParam("IN_SYNCH", 0, m)
 
 
-def list_firmware():
+def list_firmware() -> None:
     """List all firmwars defined in the config files"""
     print(f"The config file used is: {inifile}")
     print("The following firmware definitions exists")
@@ -54,7 +56,7 @@ def list_firmware():
     )
 
 
-def set_traces(module, channel, status):
+def set_traces(module: int, channel: int, status: bool) -> None:
     """Turn on/off taking traces for a certain channel in a specific module"""
 
     channel_setting = ReadChanParam("CHANNEL_CSRA", module, channel)
@@ -64,7 +66,9 @@ def set_traces(module, channel, status):
     WriteChanParam("CHANNEL_CSRA", channel_setting, module, channel)
 
 
-def read_list_mode_fifo(check=True, threshold=1024, modules=None):
+def read_list_mode_fifo(
+    check: bool = True, threshold: int = 1024, modules: Iterable[int] = None
+) -> List[np.ndarray]:
     """Reads data from pixies FIFO across all modules defined in pixie16.control.modules
 
     Parameters
@@ -107,7 +111,7 @@ def read_list_mode_fifo(check=True, threshold=1024, modules=None):
     return output
 
 
-def run_list_mode(filename=None, runtime=5):
+def run_list_mode(filename: Optional[str] = None, runtime: int = 5) -> None:
     """Run the pixie16 in list mode
 
     Start and stop a list mode run. The module needs to be
@@ -184,12 +188,19 @@ def run_list_mode(filename=None, runtime=5):
             d.newbyteorder("S").tofile(outfile)
 
 
-def reset_coincidence_setting(channels) -> None:
+def reset_coincidence_setting(channels: Iterable[Tuple[int, int]]) -> None:
     """Reset all setting in regards to coincedence mode.
 
     Also, unsets capturing traces, etc.
 
     This is usefule before an MCA run for example to just get raw channel spectra.
+
+    Parameters
+    ----------
+
+    channels
+        List of (module, channel) tuples
+
     """
 
     settings = OrderedDict(
@@ -212,10 +223,20 @@ def reset_coincidence_setting(channels) -> None:
     change_setting_dict(settings, auto_update=False)
 
 
-def enable_trace_settings(channels, disable_CFD: bool = True) -> None:
-    """Enable traces, historgramns, and sums.
+def enable_trace_settings(
+    channels: Iterable[List[int, int]], disable_CFD: bool = True
+) -> None:
+    """Enable traces, historgrams, and sums.
 
     Also turn CFD settings off (or optionally leave unchanged).
+
+    Parameters
+    ----------
+
+    channels
+        List of (modules, channel) tuples
+    disable_CFD
+        Option to disable CFD for the listed channels
 
     """
 
@@ -235,17 +256,25 @@ def enable_trace_settings(channels, disable_CFD: bool = True) -> None:
         change_setting_dict(settings, auto_update=False)
 
 
-def take_MCA_spectra(channels, modules, duration):
+def take_MCA_spectra(
+    channels: Iterable[Tuple[int, int]], duration: float
+) -> List[np.ndarray]:
     """Takes MCA spectra for a certain time on the specified channels.
 
-    This just does the data acquisition and does not return the data.
+    This does the data acquisition and returns the data.
 
     Parameters
     ----------
-    channels : List(int, int)
-         list of (modules, channel number) tuples
-    duration  : float
+    channels
+         list of (modules, cqhannel number) tuples
+    duration
          MCA time in seconds
+
+    Returns
+    -------
+    list(nd.ndarray)
+         List of numpy arrays. One for each channel.
+
     """
 
     settings = OrderedDict(
@@ -255,6 +284,8 @@ def take_MCA_spectra(channels, modules, duration):
         }
     )
     change_setting_dict(settings, auto_update=False)
+
+    modules = list(set([x for x, y in channels]))
 
     # take MCA spectra
     print("[INFO] Taking MCA spectrum", end="", flush=True)
@@ -281,8 +312,13 @@ def take_MCA_spectra(channels, modules, duration):
     for m, _ in enumerate(modules):
         EndRun(m)
 
+    data = [ReadHistogramFromModule(m, c) for m, c in channels]
+    return data
 
-def take_list_mode_data(modules, duration):
+
+def take_list_mode_data(
+    modules: Iterable[int], duration: float
+) -> Dict[int, ByteString]:
     """Take list mode data for a certain time.
 
     It also stops at 1 Gb of raw data to avoid too much memory use.
@@ -291,13 +327,16 @@ def take_list_mode_data(modules, duration):
 
     Parameters
     ----------
-    modules: list(int)
-    duration: float
+    modules
+       List of modules
+    duration
+       Length in seconds of how long data is acquired for
 
     Returns
     -------
-    dictionary with the raw binary data in it. Each module gets is a key
-    in the dictionary and the values are the bytestring.
+    dict[int, ByteString]
+       Dictionary with the raw binary data in it. Each module gets is a key
+       in the dictionary and the values are the bytestring.
 
     """
 
@@ -340,7 +379,7 @@ def take_list_mode_data(modules, duration):
 
 
 @contextmanager
-def temporary_settings(modules):
+def temporary_settings(modules: Iterable[int]) -> None:
     """Making it easy to temporary change settings in the pixie16.
 
     A context manager that will remember the current setting, execute

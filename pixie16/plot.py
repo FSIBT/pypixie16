@@ -1,17 +1,19 @@
 # -*- coding: utf-8 -*-
 from functools import wraps
 import random
-from typing import Union, List, Optional
+from typing import Union, List, Tuple, Optional, Sequence, Iterable
 import warnings
 
 import numpy as np
+import matplotlib
 from matplotlib import pyplot as plt
 from matplotlib.colors import LogNorm
 from matplotlib.backends.backend_pdf import PdfPages
 import datashader as ds
 import datashader.transfer_functions as tf
+
 from .analyze import calculate_CFD_using_FF
-from .read import Event
+from .read import Event, Settings
 
 
 # suppress some datashader warnings, remove again in the future?
@@ -44,21 +46,24 @@ def ensure_namedtuple(f):
     return wrap
 
 
-def filter_events(events, N=None, randomize=False):
-    """Pick N (random) events from list of events"""
+def filter_events(
+    events: Iterable[Event], N: Optional[int] = None, randomize: bool = False,
+) -> Iterable[Event]:
+    """Pick N (random) events from a list of events"""
 
-    Nevents = len(events)
+    N_events = len(events)
 
-    if N is not None:
-        if Nevents > N:
-            if randomize:
-                events = random.sample(events, N)
-            else:
-                events = events[:N]
-        else:
-            print(
-                f"[WARNING] plotting: got less events than requested for plotting {Nevents} < {N}"
-            )
+    if N is None:
+        return events
+
+    if N_events > N:
+        if randomize:
+            return random.sample(events, N)
+        return events[:N]
+
+    print(
+        f"[WARNING] plotting: got less events than requested for plotting {N_events} < {N}"
+    )
     return events
 
 
@@ -91,32 +96,39 @@ def create_title_page(
     plt.close(fig)
 
 
-def advindexing_roll(A, r):
+def advindexing_roll(A: np.ndarray, r: np.ndarray) -> np.ndarray:
     """Shift trace matrix A by r indices.
-    traces and r must be > 1D numpy arrays"""
 
-    if isinstance(A, np.ndarray) and isinstance(r, np.ndarray):
-        rows, column_indices = np.ogrid[: A.shape[0], : A.shape[1]]
-        r[r < 0] += A.shape[1]
-        column_indices = column_indices - r[:, np.newaxis]
-    else:
-        raise TypeError("Wrong type. Need numpy arrays")
+    Traces and r must be > 1D numpy arrays
+
+    """
+
+    for arg in [A, r]:
+        if not isinstance(arg, np.ndarray):
+            raise TypeError("Wrong type. Need numpy arrays")
+
+    rows, column_indices = np.ogrid[: A.shape[0], : A.shape[1]]
+    r[r < 0] += A.shape[1]
+    column_indices = column_indices - r[:, np.newaxis]
+
     return A[rows, column_indices]
 
 
-def create_persistent_plot(traces, x_range=None, ax=None):
+def create_persistent_plot(
+    traces: np.ndarray,
+    x_range: Optional[Sequence[float]] = None,
+    ax: Optional[matplotlib.axes.Axes] = None,
+) -> None:
     """Create persistence plot
 
     Parameters
     ----------
 
-    traces :
+    traces
         2D numpy array (N, M) where N is the number of traces and M the length of the traces
-
-    x_range :
+    x_range
         desired range of time axis. If None, it goes from 0 to 2*M in ns
-
-    ax :
+    ax
         a matplotlib axes to plot on. If None, we create a new figure
         and show it at the end. Otherwise this needs to be an array of
         matplotlib axis objects: one axis for each channel present in
@@ -148,7 +160,14 @@ def create_persistent_plot(traces, x_range=None, ax=None):
         plt.close(fig)
 
 
-def find_sums(traces, SlowLength, SlowGap, trailsum, gapsum, leadsum):
+def find_sums(
+    traces: np.ndarray,
+    SlowLength: Iterable[int],
+    SlowGap: Iterable[int],
+    trailsum: Iterable[int],
+    gapsum: Iterable[int],
+    leadsum: Iterable[int],
+) -> Tuple[np.ndarray, np.ndarray]:
     """Find the location of the 3 reported sums in a trace that are used to calculate the energy.
 
     For this to work, bit 12 of register A (CaptureSums) needs to be set for the channel.
@@ -156,11 +175,11 @@ def find_sums(traces, SlowLength, SlowGap, trailsum, gapsum, leadsum):
     Parameters
     ----------
 
-    traces :
+    traces
         2D numpy array (N, M) where N is the number of traces and M the length of the traces.
-    SlowLength : list
+    SlowLength
         List of the length of the Ls for each trace in traces.
-    SlowGap : list
+    SlowGap
         List of the length of the Gs for each trace in traces.
     trailsum :
         Array/List of N values that contains the values of the first reported sum, which contains L values.
@@ -208,7 +227,14 @@ def find_sums(traces, SlowLength, SlowGap, trailsum, gapsum, leadsum):
     return sumIDX, Esums
 
 
-def MCA(data, ax=None, rebin=1, title=None, pdf=None, log=False):
+def MCA(
+    data: np.ndarray,
+    ax: Optional[matplotlib.axes.Axes] = None,
+    rebin: int = 1,
+    title: Optional[str] = None,
+    pdf: Optional[PdfPages] = None,
+    log: bool = False,
+) -> None:
     """Plot MCA spectra
 
     If pdf is given, it will save the figure inside the pdf (to be used with PdfPages)
@@ -219,14 +245,16 @@ def MCA(data, ax=None, rebin=1, title=None, pdf=None, log=False):
 
     data :
        Data from ReadHistogramFromModule
-    ax :
+    ax
        The axis to plot on, if None, we create a new figure and axis
-    rebin : int
+    rebin
        Rebin the data by summing over this amount of bins
-    title : str
+    title
        Add this title to the plot
-    pdf : matplotlib.backends.backend_pdf.PdfPages
+    pdf
        if present, we save the plot in the pdf
+    log
+       plot y-axis in log scale
 
     """
     ax_orig = ax
@@ -246,77 +274,41 @@ def MCA(data, ax=None, rebin=1, title=None, pdf=None, log=False):
         plt.close(fig)
 
 
-def print_timing():
-    pass
-
-
-def histogram_FF():
-    pass
-
-
-def histogram_CFD():
-    pass
-
-
-def histogram_helper(Y, **kwargs):
-    plt.hist(Y, **kwargs)
-    pass
-
-
-@ensure_namedtuple
-def histogram_energy(events, **kwargs):
-    # filter events
-    E = [e.energy for e in events]
-    histogram_helper(E, xlabel="E [MeV]", **kwargs)
-
-
-def histogram_arrival_times():
-    pass
-
-
-def histogram_times():
-    pass
-
-
-def FF():
-    pass
-
-
 def CFD(
-    events,
-    setting,
-    w=0.3125,
-    N=None,
-    randomize=False,
-    persistent=False,
-    title=None,
-    ax=None,
-    pdf=None,
-):
+    events: Iterable[Event],
+    setting: Settings,
+    w: float = 0.3125,
+    N: Optional[int] = None,
+    randomize: bool = False,
+    persistent: bool = False,
+    title: Optional[str] = None,
+    ax: Optional[matplotlib.axes.Axes] = None,
+    pdf: Optional[PdfPages] = None,
+) -> None:
     """Plot CFD and FastFilter several traces
 
     Parameters
     ----------
 
-    events :
+    events
         List of events (perhaps already filtered) from read.read_list_mode_data()
         Need to be from a single channel.
-    setting : read.Settings
+    setting
         A read.Settings object
-    w : float
+    w
         The `w` used for the CFD calculation
-    N : int
+    N
         Number of traces to plot, if `None` all traces will be plotted.
-    randomize : bool
+    randomize
         if True and N is smaller than the total amount of traces, randomly pick traces
-    persistent : bool
+    persistent
         Use datashader to plot traces
-    title : str
+    title
         Title to add to plot
-    ax : matplotlib.axes.Axes
+    ax
         a matplotlib axes to plot on. If None, we create a new figure
         and show it at the end.
-    pdf : matplotlib.backends.backend_pdf.PdfPages
+    pdf
        if present, we save the plot in the pdf
 
     """
@@ -393,15 +385,15 @@ def CFD(
 
 
 def energy_sums(
-    events,
-    setting,
-    N=None,
-    randomize=False,
-    persistent=True,
-    title=None,
-    ax=None,
-    pdf=None,
-):
+    events: Iterable[Event],
+    setting: Settings,
+    N: Optional[int] = None,
+    randomize: bool = False,
+    persistent: bool = True,
+    title: Optional[str] = None,
+    ax: Optional[matplotlib.axes.Axes] = None,
+    pdf: Optional[PdfPages] = None,
+) -> None:
     """Plots traces aligned to position of the energy sums.
 
     Plots vertical lines at the position of the energy sums only if all events
@@ -410,22 +402,22 @@ def energy_sums(
     Parameters
     ----------
 
-    events :
+    events
         List of events (perhaps already filtered) from read.read_list_mode_data()
-    setting : read.Settings
+    setting
         A read.Settings object
-    N : int
+    N
         Number of traces to plot, if `None` all traces will be plotted.
-    randomize : bool
+    randomize
         if True and N is smaller than the total amount of traces, randomly pick traces
-    persistent : bool
+    persistent
         Use datashader to plot traces
-    title : str
+    title
         Title to add to plot
-    ax : matplotlib.axes.Axes
+    ax
         a matplotlib axes to plot on. If None, we create a new figure
         and show it at the end.
-    pdf : matplotlib.backends.backend_pdf.PdfPages
+    pdf
        if present, we save the plot in the pdf
 
     """
