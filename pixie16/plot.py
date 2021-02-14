@@ -1,17 +1,20 @@
 # -*- coding: utf-8 -*-
 from functools import wraps
 import random
+from typing import Union, List, Optional
+import warnings
+
 import numpy as np
 from matplotlib import pyplot as plt
 from matplotlib.colors import LogNorm
+from matplotlib.backends.backend_pdf import PdfPages
 import datashader as ds
 import datashader.transfer_functions as tf
 from .analyze import calculate_CFD_using_FF
 from .read import Event
 
-# suppress some datashader warnings, remove again in the future?
-import warnings
 
+# suppress some datashader warnings, remove again in the future?
 warnings.simplefilter(action="ignore", category=FutureWarning)
 
 
@@ -59,7 +62,9 @@ def filter_events(events, N=None, randomize=False):
     return events
 
 
-def create_title_page(title, pdf=None):
+def create_title_page(
+    title: Union[str, List[str]], pdf: Optional[PdfPages] = None,
+) -> None:
     """Helper function to create a title page
 
     The function will create a title centered in a plot.
@@ -69,12 +74,15 @@ def create_title_page(title, pdf=None):
     Parameters
     ----------
 
-    title :  str
-       The title
-    pdf : matplotlib.backends.backend_pdf.PdfPages
+    title
+       The title, if a list of str, then each will be put on a single line
+    pdf
        The pdf where the title page should be added to.
 
     """
+    if isinstance(str, (list, tuple)):
+        title = "\n".join(title)
+
     fig = plt.figure()
     plt.axis("off")
     plt.text(0.5, 0.5, title, ha="center", va="center")
@@ -85,7 +93,7 @@ def create_title_page(title, pdf=None):
 
 def advindexing_roll(A, r):
     """Shift trace matrix A by r indices.
-       traces and r must be > 1D numpy arrays"""
+    traces and r must be > 1D numpy arrays"""
 
     if isinstance(A, np.ndarray) and isinstance(r, np.ndarray):
         rows, column_indices = np.ogrid[: A.shape[0], : A.shape[1]]
@@ -97,7 +105,7 @@ def advindexing_roll(A, r):
 
 
 def create_persistent_plot(traces, x_range=None, ax=None):
-    """ Create persistence plot
+    """Create persistence plot
 
     Parameters
     ----------
