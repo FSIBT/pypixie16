@@ -31,9 +31,9 @@ log = logging.getLogger(__name__)
 
 def set_sync_mode(modules):
     """Turn on sync mode for every module."""
-    for mod in modules:
-        WriteModParam("SYNCH_WAIT", 1, mod)
-        WriteModParam("IN_SYNCH", 0, mod)
+    for m, _ in enumerate(modules):
+        WriteModParam("SYNCH_WAIT", 1, m)
+        WriteModParam("IN_SYNCH", 0, m)
 
 
 def list_firmware():
@@ -268,7 +268,7 @@ def take_MCA_spectra(channels, modules, duration):
     with tqdm.tqdm(total=duration, desc="MCA", unit="s", unit_scale=True) as pbar_mca:
         while keep_running and (time.time() - start < duration):
             keep_running = False
-            for m in modules:
+            for m, _ in enumerate(modules):
                 r = CheckRunStatus(m)
                 sys.stdout.flush()
                 if r == 1:
@@ -278,7 +278,7 @@ def take_MCA_spectra(channels, modules, duration):
             pbar_mca.update(dt - pbar_mca.n)
         pbar_mca.update(duration - pbar_mca.n)
     print()
-    for m in modules:
+    for m, _ in enumerate(modules):
         EndRun(m)
 
 
@@ -345,16 +345,16 @@ def temporary_settings(modules):
 
     A context manager that will remember the current setting, execute
     some code that can change those settings, and then reset the
-    setting back to the original
+    setting back to the original.
 
     """
 
     # get the current settings
-    current_settings = [read_raw_settings(m, N=1280) for m in modules]
+    current_settings = [read_raw_settings(m, N=1280) for m, _ in enumerate(modules)]
 
     try:
         yield None  # this is were the code gets executed
     finally:
         # write the old settings back
-        for m in modules:
+        for m, _ in enumerate(modules):
             write_raw_settings(m, current_settings[m])
