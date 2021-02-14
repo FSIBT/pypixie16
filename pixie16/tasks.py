@@ -15,7 +15,6 @@ class DummyData(Task):
     def __init__(self, runtime):
         super().__init__()
         self.runtime = runtime
-        self.start_time = time.time()
 
     def custom_init(self):
         file = Path(__file__).parent.parent / "tests/pixie16-data-01.bin"
@@ -48,7 +47,6 @@ class TakeData(Task):
 
     def custom_init(self):
         print("save settings")
-        self.start_time = time.time()
         self.name = "Take Data"
 
         control.start_listmode_run()

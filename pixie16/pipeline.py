@@ -62,6 +62,7 @@ class Task(multiprocessing.Process):
         self.input_queue = None
         self.output_queue = None
         self.status_queue = None
+        self.start_time = None
         self.name = "general task"
         self.done = False
         self.custom_init()
@@ -102,6 +103,9 @@ class Task(multiprocessing.Process):
                             continue
                     except queue.Empty:
                         continue
+                # save the time we do the first work unit
+                if self.start_time is None:
+                    self.start_time = time.time()
                 # do the work
                 out = self.do_work(value)
 
