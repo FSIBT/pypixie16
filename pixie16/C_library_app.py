@@ -701,14 +701,15 @@ def WriteChanParam(ChanParName, ChanParData, module, channel):
         ChanParName in valid_channel_parameter_names
     ), "Not a valid channel parameter name"
 
-    # if ChanParName in [
-    #    "CHANNEL_CSRA",
-    #    "CHANNEL_CSRB",
-    #    "MultiplicityMaskL",
-    #    "MultiplicityMaskH",
-    # ]:
-    #    data = [str(int(x)) for x in ChanParData]
-    #    ChanParData = int("".join(data), 2)
+    if ChanParName in [
+        "CHANNEL_CSRA",
+        "CHANNEL_CSRB",
+        "MultiplicityMaskL",
+        "MultiplicityMaskH",
+    ]:
+        if isinstance(ChanParData, (list, tuple)):
+            data = [str(int(x)) for x in ChanParData]
+            ChanParData = int("".join(data), 2)
 
     # convert to ctypes for library call
     CChanParName = ctypes.c_char_p(bytes(ChanParName, "utf8"))
