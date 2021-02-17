@@ -740,6 +740,8 @@ def ReadFIFO(module, words):
     ret = CReadFIFO(Cdata, Cwords, Cmodule)
     if ret >= 0:
         log.debug("Read FIFO from Mod Success!")
+    elif ret == -1:
+        log.error(f"Invalid Pixie16 module number {module}")
     else:
         log.error("got an error in ReadFIFO")
 

@@ -43,7 +43,12 @@ class DummyData(Task):
 
 
 class TakeData(Task):
-    """Task to aquire data, each binary blob from the FPGA will be put in the queue."""
+    """Task to aquire data, each binary blob from the FPGA will be put in the queue.
+
+    Note: this does not work as is. The Task must also call InitSys
+    and BootModule to be able to talk to the pixie16.
+
+    """
 
     def custom_init(self):
         print("save settings")
@@ -87,18 +92,23 @@ class GatherData(Task):
         for i, data in enumerate(value):
             self.data[i].append(data)
 
-        data_size = max(sys.getsizeof(d) for d in self.data.values())
+        data_sizes = [sys.getsizeof(d) for d in self.data.values()]
+        if not data_sizes:
+            return
+
+        data_size = max(data_sizes)
+
         if data_size > self.maxsize:
             # TODO: check if this is the correct way to flatten or if
             # we need to transpose
-            out = {k: np.array(v).flatten() for k, v in self.data.items()}
+            out = {k: np.concatenate(v) for k, v in self.data.items()}
             if self.save_binary:
                 self.save_data(out)
             self.data = defaultdict(list)
             return out
 
     def cleanup(self):
-        out = {k: np.array(v).flatten() for k, v in self.data.items()}
+        out = {k: np.concatenate(v) for k, v in self.data.items()}
         if out:
             if self.save_binary:
                 self.save_data(out)

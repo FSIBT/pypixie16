@@ -102,9 +102,6 @@ if not initfile.exists():
     )
 
 
-# set up logging
-log = logging.getLogger(__name__)
-
 PixieAppDLL = ctypes.cdll.LoadLibrary(str(lib_app))
 
 # some globals
@@ -385,7 +382,7 @@ init_sys_prototype = ctypes.WINFUNCTYPE(
 Cinit_sys = init_sys_prototype(("Pixie16InitSystem", PixieAppDLL))
 
 
-def InitSys(PXISlotMap=None, OfflineMode=False, modules=None):
+def InitSys(PXISlotMap=None, OfflineMode=False, modules=None, verbose=True):
     """Uses the XIA library to initialize the system.
 
     PXISlotMap:   array containing the slot numbers of each module
@@ -406,7 +403,8 @@ def InitSys(PXISlotMap=None, OfflineMode=False, modules=None):
     if PXISlotMap is not None:
         modules = PXISlotMap
 
-    print(f"[INFO] Using modules in slot(s) {' '.join([str(x) for x in modules])}.")
+    if verbose:
+        print(f"[INFO] Using modules in slot(s) {' '.join([str(x) for x in modules])}.")
 
     NumModules = len(modules)
     CNumModules = ctypes.c_ushort(NumModules)
@@ -1003,8 +1001,16 @@ def start_listmode_run(module=None, runtype=0x100, resume=False, modules=None):
     ret = CStartListModeRun(Cmodule, CrunType, Cmode)
     if ret == 0:
         log.debug("Start List Mode Run Success!")
+    elif ret == -1:
+        log.error("Invalid Pixie16 module number")
+    elif ret == -2:
+        log.error("Invalid run mode")
+    elif ret == -3:
+        log.error("Failed to start list mode run! ... need to reboot")
+    elif ret == -4:
+        log.error("Invalid run type")
     else:
-        log.error("got an error in StartListModeRun")
+        log.error("got an unkown error in StartListModeRun")
 
     return ret
 

@@ -67,7 +67,7 @@ def set_traces(module: int, channel: int, status: bool) -> None:
 
 
 def read_list_mode_fifo(
-    check: bool = True, threshold: int = 1024, modules: Iterable[int] = None
+    check: bool = True, threshold: int = 1024, modules: Optional[Iterable[int]] = None
 ) -> List[np.ndarray]:
     """Reads data from pixies FIFO across all modules defined in pixie16.control.modules
 
@@ -224,7 +224,7 @@ def reset_coincidence_setting(channels: Iterable[Tuple[int, int]]) -> None:
 
 
 def enable_trace_settings(
-    channels: Iterable[List[int, int]], disable_CFD: bool = True
+    channels: Iterable[List[int]], disable_CFD: bool = True
 ) -> None:
     """Enable traces, historgrams, and sums.
 
