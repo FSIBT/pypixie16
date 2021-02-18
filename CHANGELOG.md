@@ -13,10 +13,13 @@ and this project tries to adhere to [Semantic Versioning](https://semver.org/spe
 - pyproject.toml for black, pylint, and setuptools_scm config
 - config.py: path to firmware, etc
 - control.py: more high level functions to run data acquisition
+- pipeline.py/tasks.py: multiprocess classes to run data acquisition pipeline in parallel
+- tests for code in pixie16/analysis.py
 ### Changed
 - dropped python 3.6 (since we are using dataclasses, a 3.7 feature)
 - switched to setuptools_scm
-- moved C-library interface to their own files
+- moved low level C-library interface to their own files
+- lots of cleanup across the code base
 
 ## [0.5] - 2020-04-06
 ### Added

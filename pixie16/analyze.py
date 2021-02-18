@@ -2,9 +2,101 @@
 Functions to help analyze PIXIE-16 data
 """
 
+from functools import wraps
+
 import numpy as np
 
 
+def ensure_2d_array(f):
+    """Convert 1D numpy array to 2D arrays and back.
+
+    Using this decorator ensures that the first argument is always a 2d array.
+    This way all functions below only need to handle that case.
+
+    """
+
+    @wraps(f)
+    def wrap(*args, **kwargs):
+        # check if first argument is accessible and a numpy array
+        try:
+            array = args[0]
+        except IndexError:
+            raise TypeError(
+                f"[ERROR] {f.__name__}: first argument needs to be a numpy array"
+            )
+        if not isinstance(array, np.ndarray):
+            raise TypeError(
+                f"[ERROR] {f.__name__}: first argument needs to be a numpy array"
+            )
+
+        # convert 1D to 2D if needed
+        if len(array.shape) == 1:
+            array = array[np.newaxis, :]
+            args = list(args)
+            args[0] = array
+            one_dim = True
+        else:
+            one_dim = False
+
+        # call orginal function now with a 2D array
+        out = f(*args, **kwargs)
+
+        # convert 2D array back to 1D if needed
+        if one_dim:
+            if isinstance(out, np.ndarray):
+                out = out[0]
+            elif isinstance(out, (list, tuple)):
+                out = (o[0] for o in out)
+        return out
+
+    return wrap
+
+
+@ensure_2d_array
+def convert_trace_to_FPGA(traces: np.ndarray, filter_range: int = 0):
+    """Sum up 2**filter_range steps in trace to match FPGA clock cycle.
+
+    The FPGA (100 MHz = 10 ns) always handels at least 5 data points
+    (2ns) at a time. It does this by adding up 5 data points into a
+    single point.
+
+    For some calculations the FPGA sums up more data points (up to
+    2^filter_range), for example, for the energy calculations the minimum
+    filter_range setting is 1.
+
+    Parameters
+    ----------
+    traces
+        A 1D or 2D array of 2 ns time step data. For 1D, the number of
+        data points, M, needs to be a multiple of 5*2^filter_range. For 2D, the
+        size N,M of the array needs to confirm to N traces with a
+        length of M, where M needs to fulfill the same constraints as
+        in the 1D case.
+    filter_range
+        5*2^filter_range points will be added up
+
+    Result
+    ------
+        For the 1D case, return a ndarray with size M/(5*2^filter_range) and
+        for the 2D case, return a N,M/(5*2^filter_range) array
+
+    """
+    N, M = traces.shape
+
+    if filter_range < 0:
+        raise ValueError("The filter_range parameter needs to be >= 0")
+
+    group = 5 * 2 ** filter_range
+
+    if M % group != 0:
+        raise ValueError(
+            f"The trace length is not a multiple of 5*2^filter_range, for filter_range={filter_range}"
+        )
+
+    return traces.reshape(N, M // group, group).sum(axis=2)
+
+
+@ensure_2d_array
 def calculate_CFD(traces, t=None, CFD_threshold=None, w=1, B=5, D=5, L=1, Nbkgd=100):
     """Calculate the CFD trace as is done by the PIXIE
 
@@ -23,13 +115,6 @@ def calculate_CFD(traces, t=None, CFD_threshold=None, w=1, B=5, D=5, L=1, Nbkgd=
        errors               True/False array if CFD could be established or not
 
     """
-
-    if len(traces.shape) == 1:
-        traces = traces[np.newaxis, :]
-        one_dim = True
-    else:
-        one_dim = False
-
     traces = traces.astype(np.int64)
     NR_traces, length = traces.shape
     errors = np.zeros(NR_traces, dtype=np.bool)
@@ -94,14 +179,10 @@ def calculate_CFD(traces, t=None, CFD_threshold=None, w=1, B=5, D=5, L=1, Nbkgd=
         else:
             cfdtrigger[i] = zer
 
-    if one_dim:
-        cfdtrigger = cfdtrigger[0]
-        CFD = CFD[0]
-        errors = errors[0]
-
     return CFD, cfdtime, errors
 
 
+@ensure_2d_array
 def calculate_CFD_using_FF(
     traces,
     t=None,
@@ -135,12 +216,6 @@ def calculate_CFD_using_FF(
        IDXerr   numpy array: index of CFD errors
 
     """
-
-    if len(traces.shape) == 1:
-        traces = traces[np.newaxis, :]
-        one_dim = True
-    else:
-        one_dim = False
 
     traces = traces.astype(np.int64)
     NR_traces, length = traces.shape
@@ -220,16 +295,71 @@ def calculate_CFD_using_FF(
         cfdtimeIDX.append(i)
     cfdtime = np.array(cfdtime)
 
-    if one_dim:
-        cfdtime = cfdtime[0]
-        CFD = CFD[0]
-
     print("Calculated CFD errors = ", CFDerror)
     print("Events with noise above fast filter threshold = ", low)
 
     return CFD, cfdtime, fast_filter, IDXerr
 
 
+@ensure_2d_array
+def calculate_fast_filter(
+    traces: np.ndarray, L: int = 1, G: int = 1, filter_range: int = 0
+) -> np.ndarray:
+    """Calculate the fast filter response.
+
+    Parameters
+    ----------
+    traces
+       1D or 2D array of 1 or N traces of lengths M.
+    L
+       in FPGA units, 1 = 10 ns
+    G
+       in FPGA units, 1 = 10 ns
+    filter_range
+       number of FPGA steps in 2^filter_range that are summed up
+
+    Returns
+    -------
+    np.ndarray
+       The calculated fast filter response of the whole trace.
+
+    """
+    assert isinstance(L, int)
+    assert L > 0
+    assert isinstance(G, int)
+    assert G > 0
+
+    traces = traces.astype(np.int64)
+
+    traces = convert_trace_to_FPGA(traces, filter_range=filter_range)
+    NR_traces, length = traces.shape
+
+    # create an empty array of the correct length
+    result = np.zeros((NR_traces, length - 2 * L - G + 1))
+
+    # do as much as possible using numpy, one probably can and should
+    # get rid of the for-loop here too, just not sure at the moment
+    # how to do it
+    for k in range(2 * L + G - 1, length):
+        result[:, k - 2 * L - G + 1] = traces[:, k - L + 1 : k + 1].sum(
+            axis=1
+        ) - traces[:, k - 2 * L - G + 1 : k - L - G + 1].sum(axis=1)
+
+    return result
+
+
+@ensure_2d_array
+def get_fast_trigger_index(traces, threshold):
+    """Return the indices where the trace value is >= threshold."""
+
+    trigger_pos = [
+        np.argwhere((trace[:-1] < threshold) & (trace[1:] > threshold)).flatten() + 1
+        for trace in traces
+    ]
+    return trigger_pos
+
+
+@ensure_2d_array
 def calculate_filter(traces, L=10, G=10):
     """Calculate the fast and slow filter response from the PIXIE
 
@@ -246,13 +376,6 @@ def calculate_filter(traces, L=10, G=10):
     output:
        result   (N, M-2L-G+1)
     """
-
-    if len(traces.shape) == 1:
-        traces = traces[np.newaxis, :]
-        one_dim = True
-    else:
-        one_dim = False
-
     assert (L % 5 == 0) and (
         G % 5 == 0
     ), "Filter settings needs to be multiple of 5 (FPGA clock cycles)"
@@ -265,8 +388,7 @@ def calculate_filter(traces, L=10, G=10):
     # scale to 10 ns FPGA clock cycles, e.g. 5 time steps per cycle
     L = L // 5
     G = G // 5
-    traces = np.reshape(traces, (NR_traces, length // 5, 5))
-    traces = traces.sum(axis=2)
+    traces = convert_trace_to_FPGA(traces, filter_range=0)
     NR_traces, length = traces.shape
 
     # create an empty array of the correct length
@@ -283,8 +405,5 @@ def calculate_filter(traces, L=10, G=10):
     # scale back to 2 ns timesteps
     result = np.repeat(result, 5, axis=1)
     result = result / L
-
-    if one_dim:
-        result = result[0]
 
     return result
