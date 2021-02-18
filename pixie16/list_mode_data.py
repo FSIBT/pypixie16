@@ -11,81 +11,93 @@ import parse
 WORD_SIZE = 4
 
 
-class WordsIO:
-
-    def __init__(self, files):
-        if isinstance(files, str):
-            self.files = [files]
-        else:
-            self.files = files
-        file_sizes_in_bytes = [os.stat(filename).st_size for filename in self.files]
-        self.accumulated_file_sizes_in_bytes = [0].extend(accumulate(file_sizes_in_bytes))
-        self.current_file_index = 0
-        self.current_file = open(self.files[0], 'rb')
-
-    def set_current_file(self, file_index):
-        if self.current_file_index != file_index:
-            self.current_file = open(self.files[file_index], 'rb')
-            self.current_file_index = file_index
-
-    def file_index_from_byte_index(self, byte_index):
-        return bisect(self.accumulated_file_sizes_in_bytes, byte_index) - 1
-
-    def seek(self, word_index):
-        byte_index = word_index * WORD_SIZE
-        file_index = self.file_index_from_byte_index(byte_index)
-        self.set_current_file(file_index)
-        self.current_file.seek(byte_index - self.accumulated_file_sizes_in_bytes[file_index])
-
-    def read(self, size):
-        size_in_bytes = size * WORD_SIZE
-        binary_data = bytearray()
-        while True:
-            binary_data.extend(self.current_file.read(size_in_bytes - len(binary_data)))
-            if len(binary_data) == size_in_bytes:
-                break
-            else:
-                self.set_current_file(self.current_file_index+1)
-        return tuple(bitstruct.byteswap(str(WORD_SIZE), binary_data[i*WORD_SIZE: (i+1)*WORD_SIZE]) for i in range(size))
-
-
 @dataclass
 class Event:
+    channel: int
+    crate: int
+    slot: int
+    timestamp: int
+    CFD_fraction: int
+    energy: int
+    trace: np.ndarray
+    CFD_error: bool
+    pileup: bool
+    trace_flag: bool
+    Esum_trailing: int
+    Esum_leading: int
+    Esum_gap: int
+    baseline: float
 
+
+def bytes_to_words(bytes_data):
+    n_words = len(bytes_data) // WORD_SIZE
+    return tuple(bitstruct.byteswap(str(WORD_SIZE), bytes_data[i*WORD_SIZE: (i+1)*WORD_SIZE]) for i in range(n_words))
+
+
+class WordsIO:
+
+    def __init__(self, binary_data):
+        self.binary_data = bytearray(binary_data)
+
+    # in words
+    def __len__(self):
+        return len(self.binary_data) // WORD_SIZE
+
+    def put(self, additional_binary_data):
+        self.binary_data.extend(additional_binary_data)
+
+    def read(self, size):
+        res = self.peek(size)
+        del self.binary_data[:size*WORD_SIZE]
+        return res
+
+    def peek(self, size):
+        if size > len(self):
+            raise IndexError(f'Requested {size} words, only {len(self)} words in object')
+        return bytes_to_words(self.binary_data[:size*WORD_SIZE])
 
 
 class ListModeData:
 
-    def __init__(self, files):
-        self.files = files
-        self._words = WordsIO(files)
-        self.event_indexes = []
+    def __init__(self, binary_data):
+        self.words_stream = WordsIO(binary_data)
 
-    def seek(self, event_index):
-        pass
+    # in bytes
+    def __len__(self):
+        return len(self.words_stream) * WORD_SIZE
 
-    def read(self, size):
-        if size < 1:
-            raise ValueError('non positive size given')
-        return tuple(self.read1() for _ in range(size))
+    def put(self, additional_binary_data):
+        self.words_stream.put(additional_binary_data)
 
-    def read1(self):
-        event_values = unpack_word(self._words.read(1), 0)
-        for word_number, word_bytes in enumerate(self._words.read(event_values['Event Length']-1), start=1):
+    def read(self):
+        try:
+            event_values = unpack_word(self.words_stream.peek(1), 0)
+            _, *rest_of_event_words = self.words_stream.read(event_values['Event Length'])
+        except IndexError:
+            raise IndexError('No more complete events')
+        for word_number, word_bytes in enumerate(rest_of_event_words, start=1):
             event_values.update(unpack_word(word_bytes, word_number))
-        event_values['time of arrival'] = calc_time_of_arrival(event_values['EVTTIME_LO'], event_values['EVTTIME_HI'],
-                                                               event_values['CFD trigger source bits'],
-                                                               event_values['CFD Fractional Time'])
-        event_values['External Timestamp'] = calc_external_timestamp(event_values['Ext_TS_Lo'],
-                                                                     event_values['Ext_TS_Hi'])
-        trace_keys = filter(event_values, lambda k: parse.parse(trace_field_name_format, k))
-        sorted_trace_keys = sorted(trace_keys, key=lambda k: parse.parse(trace_field_name_format, k))
-        event_values['traces'] = np.array([event_values[key] for key in sorted_trace_keys])
-
-
-
-    def iterevents(self):
-        pass
+        CFD_error = calc_CFD_error(event_values['CFD Fractional Time'])
+        CFD_fraction = calc_CFD_fraction(event_values['CFD trigger source bits'], event_values['CFD Fractional Time'])
+        timestamp = calc_eventtime(event_values['EVTTIME_LO'], event_values['EVTTIME_HI'])
+        trace_keys = (trace_field_name_format.format(i) for i in range(event_values['Trace Length']))
+        trace = np.array([event_values[key] for key in trace_keys])
+        return Event(
+            event_values['Chan#'],
+            event_values['CrateID'],
+            event_values['SlotID'],
+            timestamp,
+            CFD_fraction,
+            event_values['Event Energy'],
+            trace,
+            CFD_error,
+            event_values['Finish Code'],
+            event_values['Trace Out-of-Range Flag'],
+            event_values.get('Energy sum trailing', 0),
+            event_values.get('Energy sum leading', 0),
+            event_values.get('Energy sum gap', 0),
+            event_values.get('Baseline', 0)
+        )
 
 
 word_formats = {
@@ -126,9 +138,19 @@ def unpack_word(word_data, word_number):
     return bitstruct.unpack_dict(fmt, field_names, word_data)
 
 
-def calc_time_of_arrival(evttime_lo, evvtime_hi, cfd_trigger_source_bits, cfd_fractional_time):
-    evt = evttime_lo + evvtime_hi*2**32
-    return (evt*5 + (cfd_trigger_source_bits-1) + cfd_fractional_time/8192)*2
+def calc_CFD_error(cfd_trigger_source_bits):
+    return cfd_trigger_source_bits == 7
+
+
+def calc_CFD_fraction(cfd_trigger_source_bits, cfd_fractional_time):
+    if calc_CFD_error(cfd_trigger_source_bits):
+        return 0
+    else:
+        return ((cfd_trigger_source_bits-1) + cfd_fractional_time//8192) * 2
+
+
+def calc_eventtime(evttime_lo, evvtime_hi):
+    return (evttime_lo + evvtime_hi*2**32) * 10
 
 
 def calc_external_timestamp(ext_ts_lo, ext_ts_hi):
