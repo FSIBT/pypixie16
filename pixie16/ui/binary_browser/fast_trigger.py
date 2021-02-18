@@ -12,6 +12,11 @@ from PyQt5.QtWidgets import (
 
 from ..plot import Plot
 from ..widgets import LabelAndIntNumber, VStack
+from ...analyze import (
+    convert_trace_to_FPGA,
+    calculate_fast_filter,
+    get_fast_trigger_index,
+)
 
 
 class FastTrigger(QWidget):
@@ -49,11 +54,12 @@ class FastTrigger(QWidget):
         self.energy_plot = Plot(main=main)
         self.energy_linearity_plot = Plot(main=main)
 
-        self.data = []
         self.N = 10
-        n = np.linspace(0, 1, self.N)
-        cmap = cm.get_cmap("jet")
-        self.colors = [cmap(i) for i in n]
+        self.raw_data = np.zeros(self.N)[:, np.newaxis]
+        self.data = np.zeros(self.N)[:, np.newaxis]
+        self.fast_trigger = np.zeros(self.N)[:, np.newaxis]
+        # get N colors for plotting
+        self.colors = cm.get_cmap("jet")(np.linspace(0, 1, self.N))
         self.triggers = np.zeros(self.N)
         self.baseline_index = 1
         self.energy_values = np.zeros(self.N)
@@ -135,23 +141,20 @@ class FastTrigger(QWidget):
         events = [
             d for d in self.main.data if d.channel == channel and len(d.trace) > 0
         ]
-        events.sort(key=lambda x: x.energy)
         if not len(events):
             print(f"[Info]: no events for channel {channel} that have traces")
             return
+        events.sort(key=lambda x: x.energy)
+
+        # pick N events equally spaced in energy sorted event list
         N = np.linspace(0, 1, self.N) * (len(events) - 1)
         N = sorted({int(n) for n in N})
+
         self.trace_plot.axes.clear()
-        self.data = []
-        for i, n in enumerate(N):
-            trace = events[n].trace
-            L = trace.shape[0]
-            trace = trace.reshape(L // 5, 5)
-            trace = trace.sum(axis=1)
-            self.data.append(trace)
-            self.trace_plot.axes.plot(
-                trace, color=self.colors[i], drawstyle="steps-mid"
-            )
+        self.raw_data = np.array([events[n].trace for n in N])
+        self.data_FPGA = convert_trace_to_FPGA(self.raw_data)
+        for i, ft in enumerate(self.data_FPGA):
+            self.trace_plot.axes.plot(ft, color=self.colors[i], drawstyle="steps-mid")
         self.trace_plot.axes.set_title("traces")
         self.trace_plot.axes.set_xlabel("FPGA cycles")
         self.trace_plot.canvas.draw()
@@ -180,28 +183,21 @@ class FastTrigger(QWidget):
             return
 
         length = len(self.data[0])
-        result = np.zeros(length - 2 * L - G + 1)
 
-        fast_triggers = []
+        self.fast_triggers = calculate_fast_filter(self.raw_data, L=L, G=G)
 
-        for i, trace in enumerate(self.data):
-            trace = trace.astype(np.int64)
+        self.triggers = get_fast_trigger_index(self.fast_triggers, T)
 
-            for k in range(2 * L + G - 1, length):
-                result[k - 2 * L - G + 1] = (
-                    trace[k - L + 1 : k + 1].sum()
-                    - trace[k - 2 * L - G + 1 : k - L - G + 1].sum()
-                )
+        # plots traces
+        for i, trace in enumerate(self.fast_triggers):
+            self.fast_plot.axes.plot(trace, color=self.colors[i], drawstyle="steps-mid")
 
-            fast_triggers.append(result.copy())
-            self.fast_plot.axes.plot(
-                result, color=self.colors[i], drawstyle="steps-mid"
-            )
-            for trigger_pos, (left, right) in enumerate(zip(result[:-1], result[1:])):
-                if left < T and right >= T:
-                    self.fast_plot.axes.axvline(trigger_pos, color=self.colors[i])
-                    if self.triggers[i] == 0:
-                        self.triggers[i] = trigger_pos
+        # plot triggers
+        for i, positions in enumerate(self.triggers):
+            for p in positions:
+                self.fast_plot.axes.axvline(p, color=self.colors[i])
+
+        # plot threshold
         self.fast_plot.axes.axhline(T, color="black")
 
         # calc noise level
@@ -216,10 +212,10 @@ class FastTrigger(QWidget):
         self.baseline_index = first_trigger_offset
 
         if first_trigger_offset > 0:
-            average_noise = [r[:first_trigger_offset].std() for r in fast_triggers]
+            average_noise = [r[:first_trigger_offset].std() for r in self.fast_triggers]
             average_noise = np.asarray(average_noise).mean()
 
-            max_noise = [r[:first_trigger_offset].max() for r in fast_triggers]
+            max_noise = [r[:first_trigger_offset].max() for r in self.fast_triggers]
             max_noise = np.asarray(max_noise).max()
 
             self.fast_plot.axes.set_title(
