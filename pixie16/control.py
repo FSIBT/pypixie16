@@ -257,7 +257,10 @@ def enable_trace_settings(
 
 
 def take_MCA_spectra(
-    channels: Iterable[Tuple[int, int]], duration: float
+    channels: Iterable[Tuple[int, int]],
+    duration: float,
+    verbose: bool = True,
+    position: int = 0,
 ) -> List[np.ndarray]:
     """Takes MCA spectra for a certain time on the specified channels.
 
@@ -288,7 +291,8 @@ def take_MCA_spectra(
     modules = list(set([x for x, y in channels]))
 
     # take MCA spectra
-    print("[INFO] Taking MCA spectrum", end="", flush=True)
+    if verbose:
+        print("[INFO] Taking MCA spectrum", end="", flush=True)
 
     start_histogram_run()
     sys.stdout.flush()
@@ -296,7 +300,9 @@ def take_MCA_spectra(
 
     start = time.time()
     keep_running = True
-    with tqdm.tqdm(total=duration, desc="MCA", unit="s", unit_scale=True) as pbar_mca:
+    with tqdm.tqdm(
+        total=duration, desc="MCA", unit="s", unit_scale=True, position=position
+    ) as pbar_mca:
         while keep_running and (time.time() - start < duration):
             keep_running = False
             for m, _ in enumerate(modules):
