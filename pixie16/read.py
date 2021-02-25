@@ -284,7 +284,7 @@ def read_list_mode_data(
                     ] = SUMS.unpack_from(buffer.read(4 * 4))
                 else:
                     raise NotImplementedError(
-                        f"Do not know what to do with header_length {header_length}"
+                        f"Do not know what to do with header_length {header_length}, parsed {nr_event}"
                     )
             except struct.error:
                 # no more data available
