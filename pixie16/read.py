@@ -208,13 +208,14 @@ def read_list_mode_data(
     filename can be either a pathlib.Path object or a myIO object defined in pixie16.read.
     """
 
-    if not (isinstance(filename, Path) or isinstance(filename, myIO)):
+    if not isinstance(filename, (Path, myIO)):
         try:
             filename_new = Path(filename)
+            print(f"[INFO] convert {filename} to Path object")
         except TypeError:
-            print(f"Error: cannot convert {filename} to Path object")
+            print(f"[ERROR] cannot convert {filename} to Path object")
             print(
-                f"Error: filename {filename} needs to be a pathlib.Path, str, or myIO object"
+                f"[ERROR] filename {filename} needs to be a pathlib.Path, str, or myIO object"
             )
             return
         filename = filename_new
