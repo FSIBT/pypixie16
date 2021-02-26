@@ -68,10 +68,11 @@ class GatherData(Task):
 
     def custom_init(self):
         self.data = defaultdict(list)
-        self.maxsize = 10e6  # in bytes
+        self.maxsize = 50e6  # in bytes
         self.save_binary = False
         self.name = "Gather Data"
         self.mycounter = 0
+        self.last_update = time.time()
 
     def save_data(self, out):
         timestamp = datetime.today().strftime("%Y-%m-%d-%H-%M-%S")
@@ -86,17 +87,31 @@ class GatherData(Task):
                     break
             v.tofile(str(file))
 
+    def get_size(self):
+        out = []
+        for data_list in self.data.values():
+            size = 0
+            for element in data_list:
+                size += element.nbytes
+            out.append(size)
+        if out:
+            return max(out)
+        return 0
+
     def do_work(self, value):
         self.mycounter += 1
 
         for i, data in enumerate(value):
             self.data[i].append(data)
 
-        data_sizes = [sys.getsizeof(d) for d in self.data.values()]
-        if not data_sizes:
+        data_size = self.get_size()
+        if not data_size:
             return
 
-        data_size = max(data_sizes)
+        current_time = time.time()
+        if self.status_queue and (current_time - self.last_update > 0.5):
+            self.status_queue.put({"data_size": data_size})
+            self.last_update = current_time
 
         if data_size > self.maxsize:
             # TODO: check if this is the correct way to flatten or if
