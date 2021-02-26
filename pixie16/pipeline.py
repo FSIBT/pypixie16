@@ -200,7 +200,10 @@ class Pipeline:
                 while self.is_alive():
                     time.sleep(0.1)
                     self.update_status()
-                    pbar.set_postfix(self.status)
+                    # no need to also show runtime in postfix
+                    postfix = self.status.copy()
+                    postfix.pop("runtime", None)
+                    pbar.set_postfix(postfix)
                     if self.runtime < total:
                         pbar.n = self.runtime
                     else:
