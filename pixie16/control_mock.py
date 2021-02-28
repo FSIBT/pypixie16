@@ -1,16 +1,29 @@
-print("*" * 80)
-print("*" + " " * 78 + "*")
-print(
-    "* Mocking pixie library: this is only useful for debugging                     *"
-)
-print(
-    "*  If you see this message you are trying to run pixie control code in 64 bit  *"
-)
-print(
-    "*  but you need to run this in 32 bit using a 32 bit python install            *"
-)
-print("*" + " " * 78 + "*")
-print("*" * 80)
+"""Overwrite all functions in control with dummy objects."""
+
+printed_warning = False
+
+
+def print_warning():
+    global printed_warning
+
+    if printed_warning:
+        return
+
+    print("*" * 80)
+    print("*" + " " * 78 + "*")
+    print(
+        "*  Mocking pixie library: this is only useful for debugging                    *"
+    )
+    print(
+        "*  If you see this message you are trying to run pixie control code in 64 bit  *"
+    )
+    print(
+        "*  but you need to run this in 32 bit using a 32 bit python install            *"
+    )
+    print("*" + " " * 78 + "*")
+    print("*" * 80)
+
+    printed_warning = True
 
 
 class dummy:
@@ -18,6 +31,7 @@ class dummy:
         self.args = args
         self.name = self.args[0]
         self.kwargs = kwargs
+        print_warning()
 
     def __getattr__(self, *args, **kwargs):
         print(self.args[0])
