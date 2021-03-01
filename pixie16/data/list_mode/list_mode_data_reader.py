@@ -1,4 +1,7 @@
-from dataclasses import dataclass
+"""implementation of queues for parsing list mode data from the pixie16"""
+
+
+from collections import namedtuple
 from typing import Union
 
 import bitstruct
@@ -8,22 +11,25 @@ import numpy as np
 WORD_SIZE = 4
 
 
-@dataclass
-class Event:
-    channel: int
-    crate: int
-    slot: int
-    timestamp: int
-    CFD_fraction: int
-    energy: int
-    trace: np.ndarray
-    CFD_error: bool
-    pileup: bool
-    trace_flag: bool
-    Esum_trailing: int
-    Esum_leading: int
-    Esum_gap: int
-    baseline: float
+Event = namedtuple(
+    "Event",
+    [
+        "channel",
+        "crate",
+        "slot",
+        "timestamp",
+        "CFD_fraction",
+        "energy",
+        "trace",
+        "CFD_error",
+        "pileup",
+        "trace_flag",
+        "Esum_trailing",
+        "Esum_leading",
+        "Esum_gap",
+        "baseline",
+    ],
+)
 
 
 # returns bytes correctly byteswapped and in word sizes
