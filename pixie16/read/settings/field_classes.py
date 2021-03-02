@@ -50,7 +50,7 @@ class EntityMeta(type):
 
 
 class Entity(metaclass=EntityMeta):
-    """Entity with units fields"""
+    """Entity with settings fields"""
 
 
 # ----------------------------------------------------------------------------------------------------------------------
@@ -78,7 +78,6 @@ def int_to_bits(i, bits_length):
 
 
 BIT_FIELD_SIZE_TBL = {
-    # in format (number of fields, number of bits per field)
     'MultiplicityMaskL': 32,
     'MultiplicityMaskH': 32,
     'FastTrigBackplaneEna': 32,

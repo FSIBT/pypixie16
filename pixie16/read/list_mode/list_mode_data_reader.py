@@ -4,6 +4,8 @@
 from collections import namedtuple
 from typing import Union
 
+import pandas as pd
+
 import bitstruct
 import numpy as np
 
@@ -38,18 +40,30 @@ def bytes_to_words(bytes_data):
     return tuple(bitstruct.byteswap(str(WORD_SIZE), bytes_data[i*WORD_SIZE: (i+1)*WORD_SIZE]) for i in range(n_words))
 
 
+class EmptyError(Exception):
+    """"To be raised if an empty queue is popped or peeked"""
+
+
+class LeftoverBytesError(Exception):
+    """To be raised if a queue with a partial word/event left is popped or peeked"""
+
+
+
 class WordsIO:
     """A binary data FIFO queue/transformer. Put in binary data as any sized bytes or bytearray objects and take them
     out as Pixie16 word sized/formatted bytes (refer to user manual List Mode Data Structures section).
     """
 
-    def __init__(self, binary_data: Union[bytes, bytearray]):
+    def __init__(self, binary_data: Union[bytes, bytearray] = b''):
         """Initialize queue"""
         self.binary_data = bytearray(binary_data)
 
     def __len__(self):
         """Number of words in queue"""
         return len(self.binary_data) // WORD_SIZE
+
+    def is_empty(self):
+        return len(self) == 0
 
     def put(self, additional_binary_data: Union[bytes, bytearray]):
         """Put more bytes into queue"""
@@ -63,8 +77,10 @@ class WordsIO:
 
     def peek(self, size):
         """Get the top size words from queue without removing them."""
-        if size > len(self):
-            raise IndexError(f'Requested {size} words, only {len(self)} words in object')
+        if self.is_empty():
+            raise EmptyError()
+        elif size > len(self):
+            raise LeftoverBytesError(f'Requested {size} words, only {len(self)} words in object')
         return bytes_to_words(self.binary_data[:size*WORD_SIZE])
 
 
@@ -130,13 +146,17 @@ class ListModeDataReader:
     out as Pixie16 events (refer to user manual List Mode Data Structures section).
     """
 
-    def __init__(self, binary_data: Union[bytes, bytearray]):
+    def __init__(self, binary_data: Union[bytes, bytearray] = b''):
         """Initialize queue"""
         self.words_stream = WordsIO(binary_data)
 
     def __len__(self):
         """Number of bytes in queue"""
         return len(self.words_stream) * WORD_SIZE
+
+    def is_empty(self):
+        """Utility function to indicate if there is no bytes left in the queue"""
+        return self.words_stream.is_empty()
 
     def put(self, additional_binary_data: Union[bytes, bytearray]):
         """Put more bytes into queue"""
@@ -150,8 +170,8 @@ class ListModeDataReader:
         try:
             event_values = unpack_word(self.words_stream.peek(1)[0], 0)
             _, *rest_of_event_words = self.words_stream.pop(event_values['Event Length'])
-        except IndexError:
-            raise IndexError('No more complete events')
+        except LeftoverBytesError:
+            raise LeftoverBytesError('No more complete events')
 
         # unpack words into their field values
         for word_number, word_bytes in enumerate(rest_of_event_words, start=1):
@@ -182,3 +202,49 @@ class ListModeDataReader:
             event_values.get('Energy sum gap', 0),
             event_values.get('Baseline', 0.)
         )
+
+
+class FilesIO:
+
+    def __init__(self, files):
+        self.files = files
+        self.current_file_index = 0
+        self.current_file = open(files[0], 'rb')
+        self._is_empty = False
+
+    def is_empty(self):
+        return self._is_empty
+
+    def go_to_next_file(self):
+        if self.current_file_index == len(self.files)-1:
+            self._is_empty = True
+            raise EmptyError()
+        else:
+            self.current_file_index += 1
+            self.current_file = open(self.files[self.current_file_index], 'rb')
+
+    def pop(self, size):
+        b = bytearray()
+        while True:
+            b.extend(self.current_file.read(size - len(b)))
+            if len(b) < size:
+                try:
+                    self.go_to_next_file()
+                except EmptyError:
+                    return b
+            else:
+                return b
+
+
+def read_list_mode_data(files, buffer_size=int(1e9)):
+    reader = ListModeDataReader()
+    bytes_stream = FilesIO(files)
+    events = []
+    while not bytes_stream.is_empty():
+        try:
+            events.append(reader.pop())
+        except (EmptyError, LeftoverBytesError):
+            reader.put(bytes_stream.pop(buffer_size))
+    if not reader.is_empty():
+        raise LeftoverBytesError()
+    return pd.DataFrame.from_records(events, columns=Event._fields)

@@ -40,11 +40,11 @@ class Settings(Entity):
 
     def get(self, key, channel=None, as_pint=False):
         value = getattr(self, key)
+        if channel is not None:
+            value = value[channel]
         if as_pint:
             units = getattr(self.ureg, SETTINGS_UNITS_TBL[key])
             value = value * units
-        if channel is not None:
-            value = value[channel]
         return value
 
     @classmethod
