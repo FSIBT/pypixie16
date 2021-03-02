@@ -48,7 +48,6 @@ class LeftoverBytesError(Exception):
     """To be raised if a queue with a partial word/event left is popped or peeked"""
 
 
-
 class WordsIO:
     """A binary data FIFO queue/transformer. Put in binary data as any sized bytes or bytearray objects and take them
     out as Pixie16 word sized/formatted bytes (refer to user manual List Mode Data Structures section).
@@ -130,7 +129,7 @@ def calc_cfd_fraction(cfd_trigger_source_bits, cfd_fractional_time):
     if calc_cfd_error(cfd_trigger_source_bits):
         return 0
     else:
-        return ((cfd_trigger_source_bits-1) + cfd_fractional_time//8192) * 2
+        return ((cfd_trigger_source_bits-1) + cfd_fractional_time/8192) * 2
 
 
 def calc_eventtime(evttime_lo, evvtime_hi):
@@ -171,7 +170,7 @@ class ListModeDataReader:
             event_values = unpack_word(self.words_stream.peek(1)[0], 0)
             _, *rest_of_event_words = self.words_stream.pop(event_values['Event Length'])
         except LeftoverBytesError:
-            raise LeftoverBytesError('No more complete events')
+            raise LeftoverBytesError('Partial event left at the end of queue')
 
         # unpack words into their field values
         for word_number, word_bytes in enumerate(rest_of_event_words, start=1):
@@ -245,6 +244,6 @@ def read_list_mode_data(files, buffer_size=int(1e9)):
             events.append(reader.pop())
         except (EmptyError, LeftoverBytesError):
             reader.put(bytes_stream.pop(buffer_size))
-    if not reader.is_empty():
-        raise LeftoverBytesError()
+    while not reader.is_empty():
+        events.append(reader.pop())
     return pd.DataFrame.from_records(events, columns=Event._fields)
