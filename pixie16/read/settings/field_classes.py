@@ -3,6 +3,8 @@ from typing import Tuple
 
 
 class NotImplementedAttr:
+    """An 'abstract attribute' class that allows for initialization for an owner instance but not access to this
+    attribute"""
 
     def __init__(self, err_msg):
         self.err_msg = err_msg
@@ -12,19 +14,28 @@ class NotImplementedAttr:
 
 
 class SettingsFieldBase:
+    """A descriptor base class that will get derived settings values according to some logic. Said logic should be
+    defined in a subclass's implementation of derive_field_value"""
+
     name = NotImplementedAttr(
         'A SettingsFieldBase instance can only be defined as an attribute in a subclass of Entity'
     )
 
     @property
     def storage_names(self) -> Tuple[str]:
+        """Name of the raw settings file field(s) used to store the value of this derived field. Default is set to the
+        name of this field."""
         return self.name,
 
     def get_storage_values(self, instance):
+        """Utility function to grab the values of the storage fields zipped together."""
         storage_values = []
         for sn in self.storage_names:
+            # If the storage name is the name of this field, grab the value with dict syntax to avoid infinite recursion
             if sn == self.name:
                 sv = instance.__dict__[sn]
+            # If not, use getattr so that we can also grab derived fields (whose values are not directly stored in
+            # __dict__)
             else:
                 sv = getattr(instance, sn)
             storage_values.append(sv)
@@ -32,15 +43,24 @@ class SettingsFieldBase:
 
     @abc.abstractmethod
     def derive_field_value(self, instance, *storage_values):
-        pass
+        """An abstract method that should implement the logic to derive the value of this field from the raw settings
+        file values."""
 
     def __get__(self, instance, owner):
+        """Get the value of this field. All the logic for how to combine raw settings values is left to
+        derive_field_values"""
         storage_values = self.get_storage_values(instance)
         return tuple(self.derive_field_value(instance, *v) for v in storage_values)
 
+    def __set__(self, instance, value):
+        """By default SettingsFields are not settable."""
+        raise AttributeError('The set method is not defined for this attribute')
+
 
 class EntityMeta(type):
-    """Metaclass for settings class. Adapted from the Fluent Python book"""
+    """Metaclass for settings class. Assigns the name of the variable that holds the instances of SettingsFieldBase,
+    call one such instance s, to s.name. E.g. if apple = SettingFieldSubclass() were defined in an EntityMeta class then
+    apple.name would be 'apple'. Adapted from the Fluent Python book"""
 
     def __init__(cls, name, bases, attr_dict):
         super().__init__(name, bases, attr_dict)
@@ -61,6 +81,8 @@ def combine_hi_lo_registers(hi, lo):
 
 
 class ABField(SettingsFieldBase):
+    """A SettingsField to derives fields separated into hi lo 32 bit register subfields. Referred to as 'AB' classes
+    because such fields are named 'FastPeaksA' and 'FastPeaksB' for example."""
 
     @property
     def storage_names(self) -> Tuple[str]:
@@ -90,6 +112,7 @@ BIT_FIELD_SIZE_TBL = {
 
 
 class BinaryField(SettingsFieldBase):
+    """A SettingsField to derive values that are meant to be interpreted as binary digits but are stored as ints"""
 
     def derive_field_value(self, instance, *storage_values):
         int_value, = storage_values
@@ -102,6 +125,7 @@ def calc_trace_delay(paf_length, trigger_delay):
 
 
 class TraceDelayField(SettingsFieldBase):
+    """A SettingsField to derive trace delay"""
 
     storage_names = ('PAFlength', 'TriggerDelay')
 
@@ -115,6 +139,7 @@ def calc_offset_voltage(offset_dac):
 
 
 class OffsetVoltageField(SettingsFieldBase):
+    """A SettingsField to derive offset voltage"""
 
     storage_names = ('OffsetDAC',)
 

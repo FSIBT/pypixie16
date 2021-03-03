@@ -2,7 +2,7 @@
 
 
 from collections import namedtuple
-from typing import Union
+from typing import Union, Tuple
 
 import pandas as pd
 
@@ -34,8 +34,8 @@ Event = namedtuple(
 )
 
 
-# returns bytes correctly byteswapped and in word sizes
 def bytes_to_words(bytes_data):
+    """returns bytes correctly byteswapped and in word sizes"""
     n_words = len(bytes_data) // WORD_SIZE
     return tuple(bitstruct.byteswap(str(WORD_SIZE), bytes_data[i*WORD_SIZE: (i+1)*WORD_SIZE]) for i in range(n_words))
 
@@ -62,6 +62,7 @@ class WordsIO:
         return len(self.binary_data) // WORD_SIZE
 
     def is_empty(self):
+        """Utility function to indicate if there is no bytes left in the queue"""
         return len(self) == 0
 
     def put(self, additional_binary_data: Union[bytes, bytearray]):
@@ -204,6 +205,7 @@ class ListModeDataReader:
 
 
 class FilesIO:
+    """An object to stream bytes from a list of files"""
 
     def __init__(self, files):
         self.files = files
@@ -212,9 +214,11 @@ class FilesIO:
         self._is_empty = False
 
     def is_empty(self):
+        """Utility function to indicate if there is no bytes left in the queue"""
         return self._is_empty
 
     def go_to_next_file(self):
+        """Increments the current file/file index to the next file. Raises EmptyError if there are no more files."""
         if self.current_file_index == len(self.files)-1:
             self._is_empty = True
             raise EmptyError()

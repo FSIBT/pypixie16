@@ -10,6 +10,7 @@ MODULE_SIZE = 4 * 1280
 
 
 def create_settings_ureg(fast_filter_range, slow_filter_range):
+    """Creates a pint unit registry with pixie units specific to the settings of this run"""
     ureg = pint.UnitRegistry()
     ureg.define('ADC_cycles = 2*ns')
     ureg.define('FPGA_cycles = 5*ADC_cycles')
@@ -19,7 +20,10 @@ def create_settings_ureg(fast_filter_range, slow_filter_range):
 
 
 class Settings(Entity):
+    """Class that holds settings data from the pixie16. All settings values can be accessed as attributes or through
+    the get method."""
 
+    # Derived fields. Look at field_classes.py for implementations/field logic
     FastPeaks = ABField()
     RealTime = ABField()
     RunTime = ABField()
@@ -35,10 +39,13 @@ class Settings(Entity):
     TraceDelay = TraceDelayField()
 
     def __init__(self, **kwargs):
+        # set all key value pairs as attributes
         self.__dict__.update(kwargs)
+        # create a unit registry with pixie units specific to the settings of this run
         self.ureg = create_settings_ureg(self.FastFilterRange, self.SlowFilterRange)
 
     def get(self, key, channel=None, as_pint=False):
+        """A utility function to get a channel's settings value or get a settings value with units"""
         value = getattr(self, key)
         if channel is not None:
             value = value[channel]
@@ -49,6 +56,7 @@ class Settings(Entity):
 
     @classmethod
     def from_file(cls, file, module=0):
+        """An alternate initializer. Takes the name as a settings file and returns a Settings object."""
         # get bytes from file
         with open(file, 'rb') as fp:
             binary_data = memoryview(fp.read())
@@ -70,4 +78,5 @@ class Settings(Entity):
 
 
 def load_settings(file, module=0):
+    """Takes the name of a settings file and the index of the module of interest. Returns a Settings object."""
     return Settings.from_file(file, module)
