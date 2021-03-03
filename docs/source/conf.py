@@ -14,7 +14,7 @@ import os
 import sys
 
 sys.path.insert(0, os.path.abspath("../.."))
-
+on_rtd = os.environ.get("READTHEDOCS") == "True"
 
 # some modules don't load on RTD, so we need to mock them, see
 # https://read-the-docs.readthedocs.io/en/latest/faq.html#i-get-import-errors-on-libraries-that-depend-on-c-modules
@@ -29,18 +29,19 @@ class Mock(MagicMock):
 
 MOCK_MODULES = ["ctypes", "numpy", "pandas"]
 sys.modules.update((mod_name, Mock()) for mod_name in MOCK_MODULES)
-
-
 # -- Project information -----------------------------------------------------
 
 project = "pixie16"
-copyright = "2019, Arun Persaud et al."
+copyright = "2019, The Regents of the University of California through Lawrence Berkeley National Laboratory (subject to receipt of any required approvals from the U.S. Dept. of Energy). All rights reserved"
 author = "Arun Persaud et al."
 
 # The full version, including alpha/beta/rc tags
-from pixie16._version import get_versions
+from pkg_resources import get_distribution, DistributionNotFound
 
-release = get_versions()["version"]
+try:
+    release = get_distribution("pixie16").version
+except DistributionNotFound:
+    release = "unkown"
 
 # -- General configuration ---------------------------------------------------
 
@@ -50,7 +51,7 @@ master_doc = "index"
 # Add any Sphinx extension module names here, as strings. They can be
 # extensions coming with Sphinx (named 'sphinx.ext.*') or your custom
 # ones.
-extensions = ["sphinx.ext.autodoc", "sphinxcontrib.napoleon"]
+extensions = ["sphinx.ext.autodoc", "sphinx.ext.napoleon"]
 
 # Add any paths that contain templates here, relative to this directory.
 templates_path = ["_templates"]
@@ -72,3 +73,22 @@ html_theme = "alabaster"
 # relative to this directory. They are copied after the builtin static files,
 # so a file named "default.css" will overwrite the builtin "default.css".
 html_static_path = ["_static"]
+source_suffix = {
+    ".rst": "restructuredtext",
+    ".md": "markdown",
+}
+
+from recommonmark.parser import CommonMarkParser
+
+
+class CustomCommonMarkParser(CommonMarkParser):
+    def visit_document(self, node):
+        pass
+
+
+def setup(app):
+    app.add_source_parser(CustomCommonMarkParser)
+
+
+# mock some imports
+autodoc_mock_imports = ["ctypes", "numpy", "pandas", "pint"]
