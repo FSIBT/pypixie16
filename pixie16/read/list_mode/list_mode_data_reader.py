@@ -227,6 +227,7 @@ class FilesIO:
             self.current_file = open(self.files[self.current_file_index], 'rb')
 
     def pop(self, size):
+        """Gets size bytes from the queue"""
         b = bytearray()
         while True:
             b.extend(self.current_file.read(size - len(b)))
@@ -240,14 +241,17 @@ class FilesIO:
 
 
 def read_list_mode_data(files, buffer_size=int(1e9)):
+    """Loads a list of binary files into a pandas DataFrame"""
     reader = ListModeDataReader()
     bytes_stream = FilesIO(files)
     events = []
+    # Empty the bytes_stream into the reader
     while not bytes_stream.is_empty():
         try:
             events.append(reader.pop())
         except (EmptyError, LeftoverBytesError):
             reader.put(bytes_stream.pop(buffer_size))
+    # Empty the rest of reader into events
     while not reader.is_empty():
         events.append(reader.pop())
     return pd.DataFrame.from_records(events, columns=Event._fields)

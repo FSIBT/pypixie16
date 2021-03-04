@@ -9,7 +9,7 @@ from contextlib import contextmanager
 from collections import namedtuple
 from pathlib import Path
 
-from .variables import settings
+from variables import settings
 
 
 Event = namedtuple(
