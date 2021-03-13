@@ -56,7 +56,7 @@ class FastTrigger(QWidget):
 
         self.N = 10
         self.raw_data = np.zeros(self.N)[:, np.newaxis]
-        self.data = np.zeros(self.N)[:, np.newaxis]
+        self.data_FPGA = np.zeros(self.N)[:, np.newaxis]
         self.fast_trigger = np.zeros(self.N)[:, np.newaxis]
         # get N colors for plotting
         self.colors = cm.get_cmap("jet")(np.linspace(0, 1, self.N))
@@ -179,10 +179,10 @@ class FastTrigger(QWidget):
         self.triggers *= 0
 
         self.fast_plot.axes.clear()
-        if not self.data:
+        if self.data_FPGA.max() == 0:
             return
 
-        length = len(self.data[0])
+        length = len(self.data_FPGA[0])
 
         self.fast_triggers = calculate_fast_filter(self.raw_data, L=L, G=G)
 
@@ -257,7 +257,7 @@ class FastTrigger(QWidget):
         # check how long the trace is, if it is too short, we try to
         # fix it by adding data points at `baseline` value to the
         # trace on the left and right
-        length = len(self.data[0]) // self.slow_filter_range
+        length = len(self.data_FPGA[0]) // self.slow_filter_range
         pad_data = False
 
         if length - 2 * L - G + 1 <= 0:
@@ -285,12 +285,12 @@ class FastTrigger(QWidget):
         c1 = c3 * qL
 
         # self.data is already in FPGA cycles
-        baseline = [t[: self.baseline_index].mean() for t in self.data]
+        baseline = [t[: self.baseline_index].mean() for t in self.data_FPGA]
         # convert to energy cycles
         baseline_pad = np.asarray(baseline).mean() * self.slow_filter_range
         baseline = baseline_pad * (L + G) * 4 * c2
 
-        for i, trace in enumerate(self.data):
+        for i, trace in enumerate(self.data_FPGA):
             # need to convert to avoid overflows in the sums
             trace = trace.astype(np.int64)
 
@@ -351,11 +351,11 @@ class FastTrigger(QWidget):
     def update_energy_linearity(self):
         L = self.energy_linearity.value["L"]
 
-        baseline = [t[: self.baseline_index].mean() for t in self.data]
+        baseline = [t[: self.baseline_index].mean() for t in self.data_FPGA]
         baseline = np.asarray(baseline).mean()
 
         energy = np.zeros(self.N)
-        for i, trace in enumerate(self.data):
+        for i, trace in enumerate(self.data_FPGA):
             trigger_pos = int(self.triggers[i])
             if trigger_pos:
                 if trigger_pos + L < len(trace):

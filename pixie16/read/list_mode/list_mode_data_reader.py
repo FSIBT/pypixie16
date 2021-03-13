@@ -37,7 +37,12 @@ Event = namedtuple(
 def bytes_to_words(bytes_data):
     """returns bytes correctly byteswapped and in word sizes"""
     n_words = len(bytes_data) // WORD_SIZE
-    return tuple(bitstruct.byteswap(str(WORD_SIZE), bytes_data[i*WORD_SIZE: (i+1)*WORD_SIZE]) for i in range(n_words))
+    return tuple(
+        bitstruct.byteswap(
+            str(WORD_SIZE), bytes_data[i * WORD_SIZE : (i + 1) * WORD_SIZE]
+        )
+        for i in range(n_words)
+    )
 
 
 class EmptyError(Exception):
@@ -53,7 +58,7 @@ class WordsIO:
     out as Pixie16 word sized/formatted bytes (refer to user manual List Mode Data Structures section).
     """
 
-    def __init__(self, binary_data: Union[bytes, bytearray] = b''):
+    def __init__(self, binary_data: Union[bytes, bytearray] = b""):
         """Initialize queue"""
         self.binary_data = bytearray(binary_data)
 
@@ -72,7 +77,7 @@ class WordsIO:
     def pop(self, size):
         """Pop the top size words from queue"""
         res = self.peek(size)
-        del self.binary_data[:size*WORD_SIZE]
+        del self.binary_data[: size * WORD_SIZE]
         return res
 
     def peek(self, size):
@@ -80,38 +85,45 @@ class WordsIO:
         if self.is_empty():
             raise EmptyError()
         elif size > len(self):
-            raise LeftoverBytesError(f'Requested {size} words, only {len(self)} words in object')
-        return bytes_to_words(self.binary_data[:size*WORD_SIZE])
+            raise LeftoverBytesError(
+                f"Requested {size} words, only {len(self)} words in object"
+            )
+        return bytes_to_words(self.binary_data[: size * WORD_SIZE])
 
 
 WORD_FORMATS = {
-    0: ('b1u14u5u4u4u4', ('Finish Code', 'Event Length', 'Header Length', 'CrateID', 'SlotID', 'Chan#')),
-    1: ('u32', ('EVTTIME_LO',)),
-    2: ('u3u13u16', ('CFD trigger source bits', 'CFD Fractional Time', 'EVTTIME_HI')),
-    3: ('b1u15u16', ('Trace Out-of-Range Flag', 'Trace Length', 'Event Energy')),
-    4: ('u32', ('Energy sum trailing',)),
-    5: ('u32', ('Energy sum leading',)),
-    6: ('u32', ('Energy sum gap',)),
-    7: ('u32', ('Baseline',)),
-    8: ('u32', ('QDCSum0',)),
-    9: ('u32', ('QDCSum1',)),
-    10: ('u32', ('QDCSum2',)),
-    11: ('u32', ('QDCSum3',)),
-    12: ('u32', ('QDCSum4',)),
-    13: ('u32', ('QDCSum5',)),
-    14: ('u32', ('QDCSum6',)),
-    15: ('u32', ('QDCSum7',)),
-    16: ('u32', ('Ext_TS_Lo',)),
-    17: ('p16u16', ('Ext_TS_Hi',)),
+    0: (
+        "b1u14u5u4u4u4",
+        ("Finish Code", "Event Length", "Header Length", "CrateID", "SlotID", "Chan#"),
+    ),
+    1: ("u32", ("EVTTIME_LO",)),
+    2: ("u3u13u16", ("CFD trigger source bits", "CFD Fractional Time", "EVTTIME_HI")),
+    3: ("b1u15u16", ("Trace Out-of-Range Flag", "Trace Length", "Event Energy")),
+    4: ("u32", ("Energy sum trailing",)),
+    5: ("u32", ("Energy sum leading",)),
+    6: ("u32", ("Energy sum gap",)),
+    7: ("u32", ("Baseline",)),
+    8: ("u32", ("QDCSum0",)),
+    9: ("u32", ("QDCSum1",)),
+    10: ("u32", ("QDCSum2",)),
+    11: ("u32", ("QDCSum3",)),
+    12: ("u32", ("QDCSum4",)),
+    13: ("u32", ("QDCSum5",)),
+    14: ("u32", ("QDCSum6",)),
+    15: ("u32", ("QDCSum7",)),
+    16: ("u32", ("Ext_TS_Lo",)),
+    17: ("p16u16", ("Ext_TS_Hi",)),
 }
 
-TRACE_FIELD_NAME_FORMAT = 'ADC Data #{:d}'
+TRACE_FIELD_NAME_FORMAT = "ADC Data #{:d}"
 
 
 def trace_format(word_number):
     trace_number = word_number - 18
-    field_names = tuple(TRACE_FIELD_NAME_FORMAT.format(i) for i in (trace_number + 1, trace_number))
-    return 'p2u14p2u14', field_names
+    field_names = tuple(
+        TRACE_FIELD_NAME_FORMAT.format(i) for i in (trace_number + 1, trace_number)
+    )
+    return "p2u14p2u14", field_names
 
 
 def unpack_word(word_data: Union[bytes, bytearray], word_number):
@@ -130,15 +142,15 @@ def calc_cfd_fraction(cfd_trigger_source_bits, cfd_fractional_time):
     if calc_cfd_error(cfd_trigger_source_bits):
         return 0
     else:
-        return ((cfd_trigger_source_bits-1) + cfd_fractional_time/8192) * 2
+        return ((cfd_trigger_source_bits - 1) + cfd_fractional_time / 8192) * 2
 
 
 def calc_eventtime(evttime_lo, evvtime_hi):
-    return (evttime_lo + evvtime_hi*2**32) * 10
+    return (evttime_lo + evvtime_hi * 2 ** 32) * 10
 
 
 def calc_external_timestamp(ext_ts_lo, ext_ts_hi):
-    return ext_ts_lo + ext_ts_hi*2**32
+    return ext_ts_lo + ext_ts_hi * 2 ** 32
 
 
 class ListModeDataReader:
@@ -146,7 +158,7 @@ class ListModeDataReader:
     out as Pixie16 events (refer to user manual List Mode Data Structures section).
     """
 
-    def __init__(self, binary_data: Union[bytes, bytearray] = b''):
+    def __init__(self, binary_data: Union[bytes, bytearray] = b""):
         """Initialize queue"""
         self.words_stream = WordsIO(binary_data)
 
@@ -169,38 +181,47 @@ class ListModeDataReader:
         # if the complete next event isn't in queue an exception is thrown but no data is discarded
         try:
             event_values = unpack_word(self.words_stream.peek(1)[0], 0)
-            _, *rest_of_event_words = self.words_stream.pop(event_values['Event Length'])
+            _, *rest_of_event_words = self.words_stream.pop(
+                event_values["Event Length"]
+            )
         except LeftoverBytesError:
-            raise LeftoverBytesError('Partial event left at the end of queue')
+            raise LeftoverBytesError("Partial event left at the end of queue")
 
         # unpack words into their field values
         for word_number, word_bytes in enumerate(rest_of_event_words, start=1):
             event_values.update(unpack_word(word_bytes, word_number))
 
         # calculate event values that need to be derived from field values
-        CFD_error = calc_cfd_error(event_values['CFD Fractional Time'])
-        CFD_fraction = calc_cfd_fraction(event_values['CFD trigger source bits'], event_values['CFD Fractional Time'])
-        timestamp = calc_eventtime(event_values['EVTTIME_LO'], event_values['EVTTIME_HI'])
+        CFD_error = calc_cfd_error(event_values["CFD Fractional Time"])
+        CFD_fraction = calc_cfd_fraction(
+            event_values["CFD trigger source bits"], event_values["CFD Fractional Time"]
+        )
+        timestamp = calc_eventtime(
+            event_values["EVTTIME_LO"], event_values["EVTTIME_HI"]
+        )
 
         # collect traces into a numpy array
-        trace_keys = (TRACE_FIELD_NAME_FORMAT.format(i) for i in range(event_values['Trace Length']))
+        trace_keys = (
+            TRACE_FIELD_NAME_FORMAT.format(i)
+            for i in range(event_values["Trace Length"])
+        )
         trace = np.array([event_values[key] for key in trace_keys])
 
         return Event(
-            event_values['Chan#'],
-            event_values['CrateID'],
-            event_values['SlotID'],
+            event_values["Chan#"],
+            event_values["CrateID"],
+            event_values["SlotID"],
             timestamp,
             CFD_fraction,
-            event_values['Event Energy'],
+            event_values["Event Energy"],
             trace,
             CFD_error,
-            event_values['Finish Code'],
-            event_values['Trace Out-of-Range Flag'],
-            event_values.get('Energy sum trailing', 0),
-            event_values.get('Energy sum leading', 0),
-            event_values.get('Energy sum gap', 0),
-            event_values.get('Baseline', 0.)
+            event_values["Finish Code"],
+            event_values["Trace Out-of-Range Flag"],
+            event_values.get("Energy sum trailing", 0),
+            event_values.get("Energy sum leading", 0),
+            event_values.get("Energy sum gap", 0),
+            event_values.get("Baseline", 0.0),
         )
 
 
@@ -210,7 +231,7 @@ class FilesIO:
     def __init__(self, files):
         self.files = files
         self.current_file_index = 0
-        self.current_file = open(files[0], 'rb')
+        self.current_file = open(files[0], "rb")
         self._is_empty = False
 
     def is_empty(self):
@@ -219,12 +240,12 @@ class FilesIO:
 
     def go_to_next_file(self):
         """Increments the current file/file index to the next file. Raises EmptyError if there are no more files."""
-        if self.current_file_index == len(self.files)-1:
+        if self.current_file_index == len(self.files) - 1:
             self._is_empty = True
             raise EmptyError()
         else:
             self.current_file_index += 1
-            self.current_file = open(self.files[self.current_file_index], 'rb')
+            self.current_file = open(self.files[self.current_file_index], "rb")
 
     def pop(self, size):
         """Gets size bytes from the queue"""
