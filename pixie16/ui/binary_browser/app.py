@@ -95,6 +95,8 @@ class BinaryApp(BaseApp):
             pixie16.read.read_list_mode_data(self.filename, keep_trace=True)
         )
         self.parse_data()
+        self.set_data_model()
+        self.update_gui()
 
         # count events per channel
         tmp = Counter([x.channel for x in self.data])
@@ -112,11 +114,13 @@ class BinaryApp(BaseApp):
 
     def parse_data(self):
         self.channels = sorted(set(x.channel for x in self.data))
-
         self.data = sorted(self.data, key=lambda x: x.timestamp)
+
+    def set_data_model(self):
         self.model = BinaryDataModel(self.data)
         self.dataview.setModel(self.model)
 
+    def update_gui(self):
         self.fasttrigger.add_channels()
 
         self.channel_select.clear_channels()
