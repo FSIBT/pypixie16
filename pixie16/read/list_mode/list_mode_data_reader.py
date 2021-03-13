@@ -276,3 +276,21 @@ def read_list_mode_data(files, buffer_size=int(1e9)):
     while not reader.is_empty():
         events.append(reader.pop())
     return pd.DataFrame.from_records(events, columns=Event._fields)
+
+
+def read_list_mode_data_as_events(files, buffer_size=int(1e9), max_size=None):
+    "Hack for binary browser, need to fix this"
+    reader = ListModeDataReader()
+    bytes_stream = FilesIO(files)
+    events = []
+    while not bytes_stream.is_empty():
+        try:
+            events.append(reader.pop())
+            if max_size:
+                if len(events) > max_size:
+                    break
+        except (EmptyError, LeftoverBytesError):
+            reader.put(bytes_stream.pop(buffer_size))
+    while not reader.is_empty():
+        events.append(reader.pop())
+    return events
