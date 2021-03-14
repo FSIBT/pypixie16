@@ -92,7 +92,7 @@ class BinaryApp(BaseApp):
 
         self.filename = Path(self.filename)
         self.data = list(
-            pixie16.read.read_list_mode_data(self.filename, keep_trace=True)
+            pixie16.old_read.read_list_mode_data(self.filename, keep_trace=True)
         )
         self.parse_data()
         self.set_data_model()

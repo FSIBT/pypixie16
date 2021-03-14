@@ -19,4 +19,4 @@ from . import scan
 from . import pipeline
 from . import tasks
 
-__all__ = ["read", "analyze", "plot", "ui", "scan", "control", "pipeline", "tasks"]
+__all__ = ["old_read.py", "analyze", "plot", "ui", "scan", "control", "pipeline", "tasks"]

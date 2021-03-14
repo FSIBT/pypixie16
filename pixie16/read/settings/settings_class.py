@@ -59,7 +59,7 @@ class Settings(Entity):
         """An alternate initializer. Takes the name as a settings file and returns a Settings object."""
         # get bytes from file
         with open(file, 'rb') as fp:
-            binary_data = memoryview(fp.read())
+            binary_data = fp.read()
         binary_data = binary_data[module * MODULE_SIZE: (module + 1) * MODULE_SIZE]
 
         # unpack field values from bytes

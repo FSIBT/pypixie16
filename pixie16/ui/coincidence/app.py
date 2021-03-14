@@ -66,7 +66,7 @@ class CoincidenceApp(BaseApp):
             return
 
         self.settings_filename = Path(self.settings_filename)
-        self.settings = pixie16.read.Settings(self.settings_filename, 0)
+        self.settings = pixie16.old_read.Settings(self.settings_filename, 0)
 
         channels = [i for i, x in enumerate(self.settings.MultiplicityMaskL) if x != 0]
         if len(channels) < 1:

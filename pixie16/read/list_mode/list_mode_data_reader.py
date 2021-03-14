@@ -2,7 +2,7 @@
 
 
 from collections import namedtuple
-from typing import Union, Tuple
+from typing import Union
 
 import pandas as pd
 
@@ -63,8 +63,8 @@ class WordsIO:
         self.binary_data = bytearray(binary_data)
 
     def __len__(self):
-        """Number of words in queue"""
-        return len(self.binary_data) // WORD_SIZE
+        """Number of bytes in queue"""
+        return len(self.binary_data)
 
     def is_empty(self):
         """Utility function to indicate if there is no bytes left in the queue"""
@@ -164,7 +164,7 @@ class ListModeDataReader:
 
     def __len__(self):
         """Number of bytes in queue"""
-        return len(self.words_stream) * WORD_SIZE
+        return len(self.words_stream)
 
     def is_empty(self):
         """Utility function to indicate if there is no bytes left in the queue"""

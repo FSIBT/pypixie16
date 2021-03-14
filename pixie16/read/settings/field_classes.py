@@ -13,7 +13,7 @@ class NotImplementedAttr:
         raise NotImplementedError(self.err_msg)
 
 
-class SettingsFieldBase:
+class SettingsFieldBase(abc.ABC):
     """A descriptor base class that will get derived settings values according to some logic. Said logic should be
     defined in a subclass's implementation of derive_field_value"""
 
