@@ -30,6 +30,14 @@ Event = namedtuple(
         "Esum_leading",
         "Esum_gap",
         "baseline",
+        "QDCSum0",
+        "QDCSum1",
+        "QDCSum2",
+        "QDCSum3",
+        "QDCSum4",
+        "QDCSum5",
+        "QDCSum6",
+        "QDCSum7"
     ],
 )
 
@@ -218,10 +226,18 @@ class ListModeDataReader:
             CFD_error,
             event_values["Finish Code"],
             event_values["Trace Out-of-Range Flag"],
-            event_values.get("Energy sum trailing", 0),
-            event_values.get("Energy sum leading", 0),
-            event_values.get("Energy sum gap", 0),
-            event_values.get("Baseline", 0.0),
+            event_values.get("Energy sum trailing", -1),
+            event_values.get("Energy sum leading", -1),
+            event_values.get("Energy sum gap", -1),
+            event_values.get("Baseline", -1.0),
+            event_values.get("QDCSum0", -1),
+            event_values.get("QDCSum1", -1),
+            event_values.get("QDCSum2", -1),
+            event_values.get("QDCSum3", -1),
+            event_values.get("QDCSum4", -1),
+            event_values.get("QDCSum5", -1),
+            event_values.get("QDCSum6", -1),
+            event_values.get("QDCSum7", -1)
         )
 
 
