@@ -16,8 +16,8 @@ import sys
 sys.path.insert(0, os.path.abspath("../.."))
 on_rtd = os.environ.get("READTHEDOCS") == "True"
 
-# some modules don't load on RTD, so we need to mock them, see
-# https://read-the-docs.readthedocs.io/en/latest/faq.html#i-get-import-errors-on-libraries-that-depend-on-c-modules
+# ctypes doesn't seem to work with autodoc_mock_imports...and we have
+# to manually import it so that it doesn't try to import the dll
 from unittest.mock import MagicMock
 
 
@@ -27,8 +27,22 @@ class Mock(MagicMock):
         return MagicMock()
 
 
-MOCK_MODULES = ["ctypes", "numpy", "pandas"]
+MOCK_MODULES = [
+    "ctypes",
+]
 sys.modules.update((mod_name, Mock()) for mod_name in MOCK_MODULES)
+
+# for all other libraries we can let autodoc know to mock them.
+autodoc_mock_imports = [
+    "fast_histogram",
+    "numpy",
+    "pandas",
+    "pint",
+    "datashader",
+    "matplotlib",
+    "tqdm",
+    "PyQt5",
+]
 # -- Project information -----------------------------------------------------
 
 project = "pixie16"
@@ -88,7 +102,3 @@ class CustomCommonMarkParser(CommonMarkParser):
 
 def setup(app):
     app.add_source_parser(CustomCommonMarkParser)
-
-
-# mock some imports
-autodoc_mock_imports = ["ctypes", "numpy", "pandas", "pint"]

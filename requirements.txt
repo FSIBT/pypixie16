@@ -2,6 +2,8 @@ docopt
 numpy
 appdirs
 pandas
+pint
+bitstruct
 matplotlib
 datashader
 sphinxcontrib-napoleon

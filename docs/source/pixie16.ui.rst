@@ -21,14 +21,6 @@ pixie16.ui.plot module
    :undoc-members:
    :show-inheritance:
 
-pixie16.ui.ui module
---------------------
-
-.. automodule:: pixie16.ui.ui
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
 pixie16.ui.widgets module
 -------------------------
 

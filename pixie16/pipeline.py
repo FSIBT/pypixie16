@@ -49,10 +49,9 @@ class Task(multiprocessing.Process):
     a Task:
 
     custom_init(): gets called once during init()
-    do_calc(value):
-       gets called continously in a while loop without an input queue
-       or gets called whenever a value arrives in the input queue.
-       If the tasks is done, do_calc should set self.done to True.
+    do_calc(value): gets called continously in a while loop without an input queue
+    or gets called whenever a value arrives in the input queue.
+    If the tasks is done, do_calc should set self.done to True.
     cleanup(): option to close any files, etc.
     """
 

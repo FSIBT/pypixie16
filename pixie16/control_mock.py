@@ -54,4 +54,6 @@ class dummy:
 
 
 def __getattr__(*args, **kwargs):
+    if args[0] == "__all__":
+        return []
     return dummy(*args, **kwargs)

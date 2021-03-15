@@ -8,7 +8,6 @@ Subpackages
    :maxdepth: 4
 
    pixie16.read
-   pixie16.settings
    pixie16.ui
 
 Submodules
@@ -62,22 +61,6 @@ pixie16.control\_mock module
    :undoc-members:
    :show-inheritance:
 
-pixie16.create\_variable\_list module
--------------------------------------
-
-.. automodule:: pixie16.create_variable_list
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
-pixie16.mytest module
----------------------
-
-.. automodule:: pixie16.mytest
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
 pixie16.pipeline module
 -----------------------
 
@@ -94,26 +77,11 @@ pixie16.plot module
    :undoc-members:
    :show-inheritance:
 
-pixie16.read module
--------------------
-
-.. automodule:: pixie16.read
-   :members:
-   :undoc-members:
-   :show-inheritance:
 
 pixie16.scan module
 -------------------
 
 .. automodule:: pixie16.scan
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
-pixie16.settings\_data module
------------------------------
-
-.. automodule:: pixie16.settings_data
    :members:
    :undoc-members:
    :show-inheritance:
