@@ -2,6 +2,7 @@
 
 
 from collections import namedtuple
+from itertools import islice
 from typing import Union
 
 import pandas as pd
@@ -277,36 +278,29 @@ class FilesIO:
                 return b
 
 
-def read_list_mode_data(files, buffer_size=int(1e9)):
-    """Loads a list of binary files into a pandas DataFrame"""
+def events_from_files_generator(files, buffer_size=int(1e9)):
+    """Yields events from a list of binary files"""
     reader = ListModeDataReader()
     bytes_stream = FilesIO(files)
-    events = []
     # Empty the bytes_stream into the reader
     while not bytes_stream.is_empty():
         try:
-            events.append(reader.pop())
+            yield reader.pop()
         except (EmptyError, LeftoverBytesError):
             reader.put(bytes_stream.pop(buffer_size))
-    # Empty the rest of reader into events
+    # Empty the rest of reader
     while not reader.is_empty():
-        events.append(reader.pop())
+        yield reader.pop()
+
+
+def read_list_mode_data(files, buffer_size=int(1e9)):
+    """Loads a list of binary files into a pandas DataFrame"""
+    gen = events_from_files_generator(files, buffer_size)
+    events = tuple(gen)
     return pd.DataFrame.from_records(events, columns=Event._fields)
 
 
 def read_list_mode_data_as_events(files, buffer_size=int(1e9), max_size=None):
-    "Hack for binary browser, need to fix this"
-    reader = ListModeDataReader()
-    bytes_stream = FilesIO(files)
-    events = []
-    while not bytes_stream.is_empty():
-        try:
-            events.append(reader.pop())
-            if max_size:
-                if len(events) > max_size:
-                    break
-        except (EmptyError, LeftoverBytesError):
-            reader.put(bytes_stream.pop(buffer_size))
-    while not reader.is_empty():
-        events.append(reader.pop())
-    return events
+    """Returns a list of at most max_size events from files"""
+    gen = events_from_files_generator(files, buffer_size)
+    return list(islice(gen, max_size))
