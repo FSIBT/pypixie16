@@ -23,6 +23,7 @@ setup(
         "docopt",
         "fast-histogram",
         "matplotlib",
+        "more_itertools",
         "numpy",
         "pandas",
         "PyQt5",

@@ -38,7 +38,7 @@ Event = namedtuple(
         "QDCSum4",
         "QDCSum5",
         "QDCSum6",
-        "QDCSum7"
+        "QDCSum7",
     ],
 )
 
@@ -238,8 +238,16 @@ class ListModeDataReader:
             event_values.get("QDCSum4", -1),
             event_values.get("QDCSum5", -1),
             event_values.get("QDCSum6", -1),
-            event_values.get("QDCSum7", -1)
+            event_values.get("QDCSum7", -1),
         )
+
+    def pop_all(self):
+        events = []
+        while True:
+            try:
+                events.append(self.pop())
+            except (EmptyError, LeftoverBytesError):
+                return events
 
 
 class FilesIO:

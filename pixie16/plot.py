@@ -19,31 +19,7 @@ from .read import Event, Settings
 # suppress some datashader warnings, remove again in the future?
 warnings.simplefilter(action="ignore", category=FutureWarning)
 
-
 DATA_POINTS_PER_FPGA_CYCLE = 5
-
-
-def ensure_namedtuple(f):
-    """This decorator makes sure that the first argument is an instant of Events.
-
-    This way, we can guarantee that we can use things like e.channel inside the function
-
-    We also print a warning if there are no events given
-    """
-
-    @wraps(f)
-    def wrap(*args, **kwargs):
-        try:
-            event = args[0][0]
-        except IndexError:
-            print(f"[WARNING] {f.__name__}: no events")
-            return
-        if not isinstance(event, Event):
-            events = [Event(e) for e in args[0]]
-            args[0] = events
-        return f(*args, **kwargs)
-
-    return wrap
 
 
 def filter_events(
@@ -323,10 +299,10 @@ def CFD(
         return
     channel = list(channels)[0]
 
-    CFDth = setting.units.CFDThresh[channel]
+    CFDth = setting.CFDThresh[channel]
     Lf = int(setting.FastLength[channel])
     Gf = int(setting.FastGap[channel])
-    FFth = setting.units.FastThresh[channel]
+    FFth = setting.FastThresh[channel]  # TODO: check scaling, perhaps x/L*5
 
     # parameters needed for CFD calculation
     w = [w]
@@ -502,7 +478,8 @@ def energy_sums(
         )
         ch = list(channels)[0]
         ax.set_title(
-            f"channel: {ch}; number of traces: {len(trace)}; live time: {setting.units.LiveTime[ch]}"
+            f"channel: {ch}; number of traces: {len(trace)};"
+            f" live time: {setting.get('LiveTime', channel=ch, as_pint=True)}"
         )
     else:
         print(

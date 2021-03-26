@@ -31,13 +31,13 @@ status bar. An example use of 3 different tasks is:
 
 """
 
-
 import multiprocessing
 import queue
 import sys
 import time
 import traceback
 
+from more_itertools import pairwise
 import tqdm
 
 
@@ -155,7 +155,7 @@ class Pipeline:
             t.status_queue = self.status_queue
 
         if len(tasks) > 1:
-            for A, B in zip(tasks[:-1], tasks[1:]):
+            for A, B in pairwise(tasks):
                 self.link_tasks(A, B)
 
     def link_tasks(self, A, B):

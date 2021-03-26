@@ -90,7 +90,7 @@ def read_list_mode_fifo(
 
     if check:
         do_read = False
-        for i, _ in enumerate(modules):
+        for i in range(len(modules)):
             number_of_words = ReadFIFOStatus(i)
             if number_of_words > threshold:
                 do_read = True
@@ -100,12 +100,12 @@ def read_list_mode_fifo(
 
     output = []
     if do_read:
-        for i, _ in enumerate(modules):
+        for i in range(len(modules)):
             number_of_words = ReadFIFOStatus(i)
             if number_of_words > 0:
                 data = ReadFIFO(i, number_of_words)
             else:
-                data = None
+                data = np.array([], dtype=np.uint32)
             output.append(data)
 
     return output

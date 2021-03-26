@@ -116,14 +116,14 @@ class GatherData(Task):
         if data_size > self.maxsize:
             # TODO: check if this is the correct way to flatten or if
             # we need to transpose
-            out = {k: np.concatenate(v) for k, v in self.data.items()}
+            out = {k: np.concatenate(v) for k, v in self.data.items() if v}
             if self.save_binary:
                 self.save_data(out)
             self.data = defaultdict(list)
             return out
 
     def cleanup(self):
-        out = {k: np.concatenate(v) for k, v in self.data.items()}
+        out = {k: np.concatenate(v) for k, v in self.data.items() if v}
         if out:
             if self.save_binary:
                 self.save_data(out)
@@ -135,42 +135,38 @@ class ConvertToEvents(Task):
     """Task to convert data stream to events"""
 
     def custom_init(self):
-        read.buffer.clear()
+        self.list_mode_readers = {}
         self.name = "Convert to events"
 
     def do_work(self, value_dict):
-        out = []
-        for v in value_dict.values():
-            data = read.myIO(v.tobytes())
-            # this is currenlty only workiong for a single
-            # module... for multiple modules, we would need to have a
-            # buffer for each module
-            out += list(
-                read.read_list_mode_data(
-                    data, return_namedtuple=True, clear_buffer=False
-                )
-            )
-        return out
+        for i, v in value_dict.items():
+            if i not in self.list_mode_readers:
+                self.list_mode_readers[i] = read.ListModeDataReader()
+            self.list_mode_readers[i].put(v.tobytes())
+        return {mod: reader.pop_all() for mod, reader in self.list_mode_readers.items()}
 
 
 class SortEvents(Task):
     """Task to sort events by timestamp."""
 
     def custom_init(self):
-        self.data = []
+        self.data = defaultdict(list)
         self.maxsize = 10_000
         self.N_to_sort = 8_000
         self.name = "Sort events"
 
     def do_work(self, value):
-        self.data.extend(value)
-        if len(self.data) > self.maxsize:
-            self.data.sort(key=lambda x: x.timestamp)
-            out = self.data[: self.N_to_sort]
-            self.data = self.data[self.N_to_sort :]
-            return out
+        out = {}
+        for k, v in value.items():
+            self.data[k].extend(v)
+            if len(self.data[k]) > self.maxsize:
+                self.data[k].sort(key=lambda x: x.timestamp)
+                out[k] = self.data[k][: self.N_to_sort]
+                self.data[k] = self.data[k][self.N_to_sort :]
+        return out
 
     def cleanup(self):
-        self.data.sort(key=lambda x: x.timestamp)
+        for k, v in self.data.items():
+            self.data[k].sort(key=lambda x: x.timestamp)
         if self.output_queue:
             self.output_queue.put(self.data)
