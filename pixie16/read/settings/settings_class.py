@@ -44,6 +44,9 @@ class Settings(Entity):
         # create a unit registry with pixie units specific to the settings of this run
         self.ureg = create_settings_ureg(self.FastFilterRange, self.SlowFilterRange)
 
+    def __getitem__(self, item):
+        return self.get(item)
+
     def get(self, key, channel=None, as_pint=False):
         """A utility function to get a channel's settings value or get a settings value with units"""
         value = getattr(self, key)

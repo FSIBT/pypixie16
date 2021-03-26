@@ -100,7 +100,7 @@ class WordsIO:
         return bytes_to_words(self.binary_data[: size * WORD_SIZE])
 
 
-WORD_FORMATS = {
+HEADER_FORMATS = {
     0: (
         "b1u14u5u4u4u4",
         ("Finish Code", "Event Length", "Header Length", "CrateID", "SlotID", "Chan#"),
@@ -124,23 +124,15 @@ WORD_FORMATS = {
     17: ("p16u16", ("Ext_TS_Hi",)),
 }
 
-TRACE_FIELD_NAME_FORMAT = "ADC Data #{:d}"
 
-
-def trace_format(word_number):
-    trace_number = word_number - 18
-    field_names = tuple(
-        TRACE_FIELD_NAME_FORMAT.format(i) for i in (trace_number + 1, trace_number)
-    )
-    return "p2u14p2u14", field_names
-
-
-def unpack_word(word_data: Union[bytes, bytearray], word_number):
-    if word_number > 17:
-        fmt, field_names = trace_format(word_number)
-    else:
-        fmt, field_names = WORD_FORMATS[word_number]
+def unpack_header_word(word_data: Union[bytes, bytearray], word_number):
+    fmt, field_names = HEADER_FORMATS[word_number]
     return bitstruct.unpack_dict(fmt, field_names, word_data)
+
+
+def unpack_trace_word(word_data: Union[bytes, bytearray]):
+    fmt = "p2u14p2u14"
+    return bitstruct.unpack(fmt, word_data)[::-1]
 
 
 def calc_cfd_error(cfd_trigger_source_bits):
@@ -189,16 +181,21 @@ class ListModeDataReader:
         # try to get all the words for the next event
         # if the complete next event isn't in queue an exception is thrown but no data is discarded
         try:
-            event_values = unpack_word(self.words_stream.peek(1)[0], 0)
+            event_values = unpack_header_word(self.words_stream.peek(1)[0], 0)
             _, *rest_of_event_words = self.words_stream.pop(
                 event_values["Event Length"]
             )
         except LeftoverBytesError:
             raise LeftoverBytesError("Partial event left at the end of queue")
 
-        # unpack words into their field values
+        # unpack words/trace into their field values
+        trace = []
         for word_number, word_bytes in enumerate(rest_of_event_words, start=1):
-            event_values.update(unpack_word(word_bytes, word_number))
+            if word_number < event_values["Header Length"]:
+                event_values.update(unpack_header_word(word_bytes, word_number))
+            else:
+                trace.append(unpack_trace_word(word_bytes))
+        trace = np.array(trace)
 
         # calculate event values that need to be derived from field values
         CFD_error = calc_cfd_error(event_values["CFD Fractional Time"])
@@ -208,13 +205,6 @@ class ListModeDataReader:
         timestamp = calc_eventtime(
             event_values["EVTTIME_LO"], event_values["EVTTIME_HI"]
         )
-
-        # collect traces into a numpy array
-        trace_keys = (
-            TRACE_FIELD_NAME_FORMAT.format(i)
-            for i in range(event_values["Trace Length"])
-        )
-        trace = np.array([event_values[key] for key in trace_keys])
 
         return Event(
             event_values["Chan#"],
@@ -241,13 +231,15 @@ class ListModeDataReader:
             event_values.get("QDCSum7", -1),
         )
 
-    def pop_all(self):
-        events = []
+    def iterevents(self):
         while True:
             try:
-                events.append(self.pop())
+                yield self.pop()
             except (EmptyError, LeftoverBytesError):
-                return events
+                return
+
+    def pop_all(self):
+        return tuple(self.iterevents())
 
 
 class FilesIO:
@@ -290,15 +282,11 @@ def events_from_files_generator(files, buffer_size=int(1e9)):
     """Yields events from a list of binary files"""
     reader = ListModeDataReader()
     bytes_stream = FilesIO(files)
-    # Empty the bytes_stream into the reader
     while not bytes_stream.is_empty():
-        try:
-            yield reader.pop()
-        except (EmptyError, LeftoverBytesError):
-            reader.put(bytes_stream.pop(buffer_size))
-    # Empty the rest of reader
-    while not reader.is_empty():
-        yield reader.pop()
+        reader.put(bytes_stream.pop(buffer_size))
+        yield from reader.iterevents()
+    if not reader.is_empty():
+        raise LeftoverBytesError()
 
 
 def read_list_mode_data(files, buffer_size=int(1e9)):
