@@ -132,7 +132,7 @@ def unpack_header_word(word_data: Union[bytes, bytearray], word_number):
 
 def unpack_trace_word(word_data: Union[bytes, bytearray]):
     fmt = "p2u14p2u14"
-    return bitstruct.unpack(fmt, word_data)[::-1]
+    return bitstruct.unpack(fmt, word_data)
 
 
 def calc_cfd_error(cfd_trigger_source_bits):
