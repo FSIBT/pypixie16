@@ -208,6 +208,7 @@ def MCA(
     ax: Optional[matplotlib.axes.Axes] = None,
     rebin: int = 1,
     title: Optional[str] = None,
+    label: Optional[str] = None,
     pdf: Optional[PdfPages] = None,
     log: bool = False,
 ) -> None:
@@ -237,7 +238,7 @@ def MCA(
     if ax is None:
         fig, ax = plt.subplots()
     data = data.reshape(-1, rebin).sum(axis=1)
-    ax.plot(data)
+    ax.plot(data, label=label)
     if log:
         ax.set_yscale("log")
     ax.set_xlabel("Channel")
@@ -245,7 +246,7 @@ def MCA(
     if title:
         ax.set_title(title)
     if pdf:
-        pdf.savefig()
+        pdf.savefig(fig)
     if ax_orig is None:
         plt.close(fig)
 
