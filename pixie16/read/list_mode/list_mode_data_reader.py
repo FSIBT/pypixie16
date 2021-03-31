@@ -194,7 +194,7 @@ class ListModeDataReader:
             if word_number < event_values["Header Length"]:
                 event_values.update(unpack_header_word(word_bytes, word_number))
             else:
-                trace.append(unpack_trace_word(word_bytes))
+                trace.extend(unpack_trace_word(word_bytes))
         trace = np.array(trace)
 
         # calculate event values that need to be derived from field values
