@@ -61,7 +61,7 @@ def create_title_page(
        The pdf where the title page should be added to.
 
     """
-    if isinstance(str, (list, tuple)):
+    if isinstance(title, (list, tuple)):
         title = "\n".join(title)
 
     fig = plt.figure()
