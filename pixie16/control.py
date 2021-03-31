@@ -269,7 +269,7 @@ def take_MCA_spectra(
     Parameters
     ----------
     channels
-         list of (modules, cqhannel number) tuples
+         list of (modules, channel number) tuples
     duration
          MCA time in seconds
 
