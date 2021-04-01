@@ -18,14 +18,14 @@ class SettingsFieldBase(abc.ABC):
     defined in a subclass's implementation of derive_field_value"""
 
     name = NotImplementedAttr(
-        'A SettingsFieldBase instance can only be defined as an attribute in a subclass of Entity'
+        "A SettingsFieldBase instance can only be defined as an attribute in a subclass of Entity"
     )
 
     @property
     def storage_names(self) -> Tuple[str]:
         """Name of the raw settings file field(s) used to store the value of this derived field. Default is set to the
         name of this field."""
-        return self.name,
+        return (self.name,)
 
     def get_storage_values(self, instance):
         """Utility function to grab the values of the storage fields zipped together."""
@@ -39,7 +39,7 @@ class SettingsFieldBase(abc.ABC):
             else:
                 sv = getattr(instance, sn)
             storage_values.append(sv)
-        return zip(storage_values)
+        return zip(*storage_values)
 
     @abc.abstractmethod
     def derive_field_value(self, instance, *storage_values):
@@ -54,7 +54,7 @@ class SettingsFieldBase(abc.ABC):
 
     def __set__(self, instance, value):
         """By default SettingsFields are not settable."""
-        raise AttributeError('The set method is not defined for this attribute')
+        raise AttributeError("The set method is not defined for this attribute")
 
 
 class EntityMeta(type):
@@ -77,7 +77,7 @@ class Entity(metaclass=EntityMeta):
 
 
 def combine_hi_lo_registers(hi, lo):
-    return hi*2**32 + lo
+    return hi * 2 ** 32 + lo
 
 
 class ABField(SettingsFieldBase):
@@ -86,7 +86,7 @@ class ABField(SettingsFieldBase):
 
     @property
     def storage_names(self) -> Tuple[str]:
-        return self.name + 'A', self.name + 'B'
+        return self.name + "A", self.name + "B"
 
     def derive_field_value(self, instance, *storage_values):
         A, B = storage_values
@@ -95,19 +95,19 @@ class ABField(SettingsFieldBase):
 
 def int_to_bits(i, bits_length):
     """Converts int values to binary (in the form of a tuple of 0's and 1's)"""
-    bit_fmt = '{' + ':0' + bits_length + '}'
-    return tuple(int(j) for j in bit_fmt.format(i))
+    bit_fmt = f"{{:0{bits_length}b}}"
+    return tuple(tuple(int(j) for j in bit_fmt.format(value)) for value in i)
 
 
 BIT_FIELD_SIZE_TBL = {
-    'MultiplicityMaskL': 32,
-    'MultiplicityMaskH': 32,
-    'FastTrigBackplaneEna': 32,
-    'TrigConfig': 32,
-    'ChanCSRa': 22,
-    'ChanCSRb': 22,
-    'ModCSRA': 14,
-    'ModCSRB': 14
+    "MultiplicityMaskL": 32,
+    "MultiplicityMaskH": 32,
+    "FastTrigBackplaneEna": 32,
+    "TrigConfig": 32,
+    "ChanCSRa": 22,
+    "ChanCSRb": 22,
+    "ModCSRA": 14,
+    "ModCSRB": 14,
 }
 
 
@@ -115,7 +115,7 @@ class BinaryField(SettingsFieldBase):
     """A SettingsField to derive values that are meant to be interpreted as binary digits but are stored as ints"""
 
     def derive_field_value(self, instance, *storage_values):
-        int_value, = storage_values
+        (int_value,) = storage_values
         bits_length = BIT_FIELD_SIZE_TBL[self.name]
         return int_to_bits(int_value, bits_length)
 
@@ -127,7 +127,7 @@ def calc_trace_delay(paf_length, trigger_delay):
 class TraceDelayField(SettingsFieldBase):
     """A SettingsField to derive trace delay"""
 
-    storage_names = ('PAFlength', 'TriggerDelay')
+    storage_names = ("PAFlength", "TriggerDelay")
 
     def derive_field_value(self, instance, *storage_values):
         paf_length, trigger_delay = storage_values
@@ -135,14 +135,14 @@ class TraceDelayField(SettingsFieldBase):
 
 
 def calc_offset_voltage(offset_dac):
-    return 1.5 * ((32768 - offset_dac)/32768)
+    return 1.5 * ((32768 - offset_dac) / 32768)
 
 
 class OffsetVoltageField(SettingsFieldBase):
     """A SettingsField to derive offset voltage"""
 
-    storage_names = ('OffsetDAC',)
+    storage_names = ("OffsetDAC",)
 
     def derive_field_value(self, instance, *storage_values):
-        offset_dac, = storage_values
+        (offset_dac,) = storage_values
         return calc_offset_voltage(offset_dac)
