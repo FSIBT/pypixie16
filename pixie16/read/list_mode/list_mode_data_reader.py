@@ -303,7 +303,7 @@ def to_list(obj):
 
 def read_list_mode_data(files, buffer_size=int(1e9)):
     """Loads a list of binary files into a pandas DataFrame"""
-    file = to_list(files)
+    files = to_list(files)
     gen = events_from_files_generator(files, buffer_size)
     events = tuple(gen)
     return pd.DataFrame.from_records(events, columns=Event._fields)
@@ -311,6 +311,6 @@ def read_list_mode_data(files, buffer_size=int(1e9)):
 
 def read_list_mode_data_as_events(files, buffer_size=int(1e9), max_size=None):
     """Returns a list of at most max_size events from files"""
-    file = to_files_list(files)
+    files = to_list(files)
     gen = events_from_files_generator(files, buffer_size)
     return list(islice(gen, max_size))
