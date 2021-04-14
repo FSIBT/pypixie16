@@ -290,15 +290,20 @@ def events_from_files_generator(files, buffer_size=int(1e9)):
         raise LeftoverBytesError()
 
 
-def to_files_list(obj):
-    if isinstance(obj, (str, pathlib.Path)):
+def to_list(obj):
+    if isinstance(obj, str):
         obj = [obj]
+    else:
+        try:
+            obj = list(obj)
+        except TypeError:
+            obj = [obj]
     return obj
 
 
 def read_list_mode_data(files, buffer_size=int(1e9)):
     """Loads a list of binary files into a pandas DataFrame"""
-    file = to_files_list(files)
+    file = to_list(files)
     gen = events_from_files_generator(files, buffer_size)
     events = tuple(gen)
     return pd.DataFrame.from_records(events, columns=Event._fields)
