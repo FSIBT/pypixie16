@@ -1,9 +1,10 @@
 import sys
 
-from . import read
+# from . import old_read
 from . import plot
 from . import ui
 from . import analyze
+from . import read
 
 from ._version import version as __version__
 
@@ -19,4 +20,4 @@ from . import scan
 from . import pipeline
 from . import tasks
 
-__all__ = ["old_read.py", "analyze", "plot", "ui", "scan", "control", "pipeline", "tasks"]
+__all__ = ["analyze", "plot", "ui", "scan", "control", "pipeline", "tasks"]

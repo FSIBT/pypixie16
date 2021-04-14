@@ -38,6 +38,12 @@ class SettingsFieldBase(abc.ABC):
             # __dict__)
             else:
                 sv = getattr(instance, sn)
+            try:
+                if isinstance(sv, str):
+                    raise NotImplementedError('Did not expect any settings to be saved as string')
+                sv = list(sv)
+            except TypeError:
+                sv = [sv]
             storage_values.append(sv)
         return zip(*storage_values)
 
@@ -50,7 +56,11 @@ class SettingsFieldBase(abc.ABC):
         """Get the value of this field. All the logic for how to combine raw settings values is left to
         derive_field_values"""
         storage_values = self.get_storage_values(instance)
-        return tuple(self.derive_field_value(instance, *v) for v in storage_values)
+        res = tuple(self.derive_field_value(instance, *v) for v in storage_values)
+        if len(res) == 1:
+            return res[0]
+        else:
+            return res
 
     def __set__(self, instance, value):
         """By default SettingsFields are not settable."""
