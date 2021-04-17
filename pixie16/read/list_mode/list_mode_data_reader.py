@@ -199,7 +199,7 @@ class ListModeDataReader:
         trace = np.array(trace)
 
         # calculate event values that need to be derived from field values
-        CFD_error = calc_cfd_error(event_values["CFD Fractional Time"])
+        CFD_error = calc_cfd_error(event_values["CFD trigger source bits"])
         CFD_fraction = calc_cfd_fraction(
             event_values["CFD trigger source bits"], event_values["CFD Fractional Time"]
         )
