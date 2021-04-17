@@ -18,7 +18,7 @@ setup(
     packages=["pixie16"],
     install_requires=[
         "appdirs",
-        "bitstruct",
+        "cbitstruct",
         "datashader",
         "docopt",
         "fast-histogram",

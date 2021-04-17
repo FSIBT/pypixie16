@@ -8,7 +8,7 @@ from typing import Union
 
 import pandas as pd
 
-import bitstruct
+import cbitstruct as bitstruct
 import numpy as np
 
 
