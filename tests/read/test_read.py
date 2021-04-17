@@ -30,7 +30,13 @@ def split_list_mode_binary_files():
 def list_mode_data_events():
     path = Path(__file__).parent
     events_file = path / "pixie16-events.hdf"
-    return pd.read_hdf(events_file)
+    data = pd.read_hdf(events_file)
+    # fix some data types
+    for column in ["pileup", "trace_flag"]:
+        data[column] = data[column].astype(bool)
+    for column in ["Esum_trailing", "Esum_leading", "Esum_gap", "baseline"]:
+        data[column] = data[column].replace([0], -1)
+    return data
 
 
 class TestReadListModeData:
