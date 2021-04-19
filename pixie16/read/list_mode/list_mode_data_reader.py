@@ -249,7 +249,9 @@ class FilesIO:
     def __init__(self, files):
         self.files = files
         self.current_file_index = 0
-        self.current_file = open(files[0], "rb")
+        self.current_file = (
+            None  # don't open it already, since that makes FileIo non-pickable
+        )
         self._is_empty = False
 
     def is_empty(self):
@@ -263,11 +265,16 @@ class FilesIO:
             raise EmptyError()
         else:
             self.current_file_index += 1
+            self.current_file.close()
             self.current_file = open(self.files[self.current_file_index], "rb")
 
     def pop(self, size):
         """Gets size bytes from the queue"""
         b = bytearray()
+
+        if self.current_file is None:
+            self.current_file = open(self.files[self.current_file_index], "rb")
+
         while True:
             b.extend(self.current_file.read(size - len(b)))
             if len(b) < size:
