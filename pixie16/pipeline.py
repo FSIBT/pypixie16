@@ -7,7 +7,7 @@ with the pixie16, convert the binary data to event data and do some
 calculation on them.
 
 To use the classes, create custom Task that inherit the base
-class. Overwrite the custom_init function if needed and the do_work
+class. Overwrite the init function if needed and the do_work
 function to process the current work load. The cleanup function can be
 overwritten to close files and is called once the tasks is finished or
 if it gets a keyboard interrupt.
@@ -48,7 +48,6 @@ class Task(multiprocessing.Process):
     provide functions that should be overwritten when customizing
     a Task:
 
-    custom_init(): gets called once during init()
     do_calc(value): gets called continously in a while loop without an input queue
     or gets called whenever a value arrives in the input queue.
     If the tasks is done, do_calc should set self.done to True.
@@ -64,15 +63,23 @@ class Task(multiprocessing.Process):
         self.start_time = None
         self.name = "general task"
         self.done = False
-        self.custom_init()
-
-    def custom_init(self):
-        """Can be overwritten to open files, create counters, etc."""
-        pass
+        self.last_update = time.time()
 
     def cleanup(self):
         """Can be overwritten to close any open files, etc"""
         pass
+
+    def status_update(self, name, value):
+        """Send a status update to the main pipeline.
+
+        Status updates are only send at least 0.5 seconds apart so
+        that they don't spam the status queue.
+
+        """
+        current_time = time.time()
+        if self.status_queue and (current_time - self.last_update > 0.5):
+            self.status_queue.put({name: value})
+            self.last_update = current_time
 
     def do_work(self, value):
         """Needs to be overwritten to do the work.

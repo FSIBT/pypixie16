@@ -16,7 +16,6 @@ class DummyData(Task):
         super().__init__()
         self.runtime = runtime
 
-    def custom_init(self):
         file = Path(__file__).parent.parent / "tests/pixie16-data-01.bin"
         self.data = file.read_bytes()
         self.length = len(self.data)
@@ -50,7 +49,8 @@ class TakeData(Task):
 
     """
 
-    def custom_init(self):
+    def __init__(self):
+        super().__init__()
         print("save settings")
         self.name = "Take Data"
 
@@ -66,13 +66,13 @@ class TakeData(Task):
 class GatherData(Task):
     """Task to create larger data buckets out of the data directly from the FPGA."""
 
-    def custom_init(self):
+    def __init__(self):
+        super().__init__()
         self.data = defaultdict(list)
         self.maxsize = 50e6  # in bytes
         self.save_binary = False
         self.name = "Gather Data"
         self.mycounter = 0
-        self.last_update = time.time()
 
     def save_data(self, out):
         timestamp = datetime.today().strftime("%Y-%m-%d-%H-%M-%S")
@@ -108,10 +108,7 @@ class GatherData(Task):
         if not data_size:
             return
 
-        current_time = time.time()
-        if self.status_queue and (current_time - self.last_update > 0.5):
-            self.status_queue.put({"data_size": data_size})
-            self.last_update = current_time
+        self.status_udpate("data size", data_size)
 
         if data_size > self.maxsize:
             # TODO: check if this is the correct way to flatten or if
@@ -134,7 +131,8 @@ class GatherData(Task):
 class ConvertToEvents(Task):
     """Task to convert data stream to events"""
 
-    def custom_init(self):
+    def __init__(self):
+        super().__init__()
         self.list_mode_readers = {}
         self.name = "Convert to events"
 
@@ -149,24 +147,92 @@ class ConvertToEvents(Task):
 class SortEvents(Task):
     """Task to sort events by timestamp."""
 
-    def custom_init(self):
-        self.data = defaultdict(list)
-        self.maxsize = 10_000
-        self.N_to_sort = 8_000
+    def __init__(self, maxsize=10_000, number_to_sort=8_000):
+        super().__init__()
+        self.data = []
+        assert (
+            number_to_sort < maxsize
+        ), "The number_to_sort needs to be smaller than maxisze"
+        self.maxsize = maxsize
+        self.N_to_sort = number_to_sort
         self.name = "Sort events"
 
     def do_work(self, value):
-        out = {}
-        for k, v in value.items():
-            self.data[k].extend(v)
-            if len(self.data[k]) > self.maxsize:
-                self.data[k].sort(key=lambda x: x.timestamp)
-                out[k] = self.data[k][: self.N_to_sort]
-                self.data[k] = self.data[k][self.N_to_sort :]
-        return out
+        out = []
+        self.data.extend(value)
+        self.status_update("sort queue", len(self.data))
+        while len(self.data) > self.maxsize:
+            self.data.sort(key=lambda x: x.timestamp)
+            out = self.data[: self.N_to_sort]
+            self.data = self.data[self.N_to_sort :]
+            if out and self.output_queue:
+                self.output_queue.put(out)
 
     def cleanup(self):
-        for k, v in self.data.items():
-            self.data[k].sort(key=lambda x: x.timestamp)
+        self.data.sort(key=lambda x: x.timestamp)
         if self.output_queue:
             self.output_queue.put(self.data)
+        self.data = []
+
+
+class GatherEvents(Task):
+    """Gather Events into larger chunks."""
+
+    def __init__(self, size=1_000_000):
+        super().__init__()
+        self.data = []
+        self.size = size
+        self.nr = 0
+
+    def do_work(self, value):
+        self.data.extend(value)
+        if len(self.data) > self.size:
+            out = self.data
+            self.data = []
+            self.nr += 1
+            return out
+
+        self.status_update("gathered events", self.nr)
+        self.status_update("gathered queue", len(self.data))
+
+    def cleanup(self):
+        if self.output_queue and self.data:
+            self.output_queue.put(self.data)
+        self.data = []
+
+
+class LoadFiles(Task):
+    """Load events from a list of files,"""
+
+    def __init__(self, file_list, batch_size=1_000):
+        super().__init__()
+        self.files = file_list
+        self.byte_stream = read.FilesIO(self.files)
+        self.buffer_size = 1_000_000
+        self.reader = read.ListModeDataReader()
+        self.number_of_events_to_read = batch_size
+        self.nr_of_events = 0
+        self.nr_of_events2 = 0
+
+    def do_work(self, value):
+        try:
+            events = []
+            for i in range(self.number_of_events_to_read):
+                event = None
+                try:
+                    event = self.reader.pop()
+                except (read.LeftoverBytesError, read.EmptyError):
+                    if not self.byte_stream.is_empty():
+                        self.reader.put(self.byte_stream.pop(self.buffer_size))
+                    continue
+                events.append(event)
+            if events and self.output_queue:
+                self.output_queue.put(events)
+                self.nr_of_events2 += len(events)
+            self.nr_of_events += self.number_of_events_to_read
+        except StopIteration as e:
+            self.done = True
+            print(e, flush=True)
+
+        self.status_update("read events", self.nr_of_events)
+        self.status_update("runtime", self.byte_stream.current_file_index)
