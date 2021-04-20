@@ -69,7 +69,7 @@ class Task(multiprocessing.Process):
         """Can be overwritten to close any open files, etc"""
         pass
 
-    def status_update(self, name, value):
+    def send_status(self, value_dict):
         """Send a status update to the main pipeline.
 
         Status updates are only send at least 0.5 seconds apart so
@@ -78,7 +78,7 @@ class Task(multiprocessing.Process):
         """
         current_time = time.time()
         if self.status_queue and (current_time - self.last_update > 0.5):
-            self.status_queue.put({name: value})
+            self.status_queue.put(value_dict)
             self.last_update = current_time
 
     def do_work(self, value):

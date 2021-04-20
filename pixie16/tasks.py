@@ -108,7 +108,7 @@ class GatherData(Task):
         if not data_size:
             return
 
-        self.status_udpate("data size", data_size)
+        self.send_status("data size", data_size)
 
         if data_size > self.maxsize:
             # TODO: check if this is the correct way to flatten or if
@@ -160,7 +160,7 @@ class SortEvents(Task):
     def do_work(self, value):
         out = []
         self.data.extend(value)
-        self.status_update("sort queue", len(self.data))
+        self.send_status({"sort queue": len(self.data)})
         while len(self.data) > self.maxsize:
             self.data.sort(key=lambda x: x.timestamp)
             out = self.data[: self.N_to_sort]
@@ -192,8 +192,7 @@ class GatherEvents(Task):
             self.nr += 1
             return out
 
-        self.status_update("gathered events", self.nr)
-        self.status_update("gathered queue", len(self.data))
+        self.send_status({"gathered events": self.nr, "gathered queue": len(self.data)})
 
     def cleanup(self):
         if self.output_queue and self.data:
@@ -235,5 +234,10 @@ class LoadFiles(Task):
         except StopIteration as e:
             self.done = True
 
-        self.status_update("read events", self.nr_of_events)
-        self.status_update("runtime", self.byte_stream.current_file_index)
+        self.send_status(
+            {
+                "read events": self.nr_of_events,
+                "runtime": self.byte_stream.current_file_index,
+                "file": self.byte_stream.current_file_index,
+            }
+        )
