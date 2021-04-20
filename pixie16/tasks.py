@@ -212,7 +212,7 @@ class LoadFiles(Task):
         self.reader = read.ListModeDataReader()
         self.number_of_events_to_read = batch_size
         self.nr_of_events = 0
-        self.nr_of_events2 = 0
+        self.name = "Loading binary data from files"
 
     def do_work(self, value):
         try:
@@ -224,15 +224,16 @@ class LoadFiles(Task):
                 except (read.LeftoverBytesError, read.EmptyError):
                     if not self.byte_stream.is_empty():
                         self.reader.put(self.byte_stream.pop(self.buffer_size))
-                    continue
+                        continue
+                    else:
+                        self.done = True
+                        break
                 events.append(event)
             if events and self.output_queue:
                 self.output_queue.put(events)
-                self.nr_of_events2 += len(events)
-            self.nr_of_events += self.number_of_events_to_read
+                self.nr_of_events += len(events)
         except StopIteration as e:
             self.done = True
-            print(e, flush=True)
 
         self.status_update("read events", self.nr_of_events)
         self.status_update("runtime", self.byte_stream.current_file_index)

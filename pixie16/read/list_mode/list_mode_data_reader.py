@@ -249,9 +249,7 @@ class FilesIO:
     def __init__(self, files):
         self.files = files
         self.current_file_index = 0
-        self.current_file = (
-            None  # don't open it already, since that makes FileIo non-pickable
-        )
+        self.current_file = None
         self._is_empty = False
 
     def is_empty(self):
