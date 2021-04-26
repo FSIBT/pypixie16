@@ -1,8 +1,15 @@
 pixie16 package
 ===============
 
+The package consists of several modules and subpackages.
+
 Subpackages
 -----------
+
+Currently there are two subpackages for reading binary data such as
+list mode data and settings data and another package ofr UI elements
+that are used in the Qt-based interfaces provided to, for example,
+look at binary data files.
 
 .. toctree::
    :maxdepth: 4
@@ -61,14 +68,6 @@ pixie16.control\_mock module
    :undoc-members:
    :show-inheritance:
 
-pixie16.pipeline module
------------------------
-
-.. automodule:: pixie16.pipeline
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
 pixie16.plot module
 -------------------
 
@@ -77,11 +76,18 @@ pixie16.plot module
    :undoc-members:
    :show-inheritance:
 
-
 pixie16.scan module
 -------------------
 
 .. automodule:: pixie16.scan
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+pixie16.pipeline module
+-----------------------
+
+.. automodule:: pixie16.pipeline
    :members:
    :undoc-members:
    :show-inheritance:
@@ -102,10 +108,3 @@ pixie16.variables module
    :undoc-members:
    :show-inheritance:
 
-Module contents
----------------
-
-.. automodule:: pixie16
-   :members:
-   :undoc-members:
-   :show-inheritance:
