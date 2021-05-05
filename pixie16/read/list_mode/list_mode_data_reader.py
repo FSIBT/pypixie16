@@ -84,21 +84,28 @@ class WordsIO:
         """Put more bytes into queue"""
         self.binary_data.extend(additional_binary_data)
 
-    def pop(self, size):
+    def pop(self, size, raw=False):
         """Pop the top size words from queue"""
-        res = self.peek(size)
+        res = self.peek(size, raw=raw)
         del self.binary_data[: size * WORD_SIZE]
         return res
 
-    def peek(self, size):
-        """Get the top size words from queue without removing them."""
+    def peek(self, size, raw=False):
+        """Get the top size words from queue without removing them.
+
+        Return either tuple of WORD-sized, byte-swapped data (raw==True)
+        or bytearraw (raw==False).
+        """
         if self.is_empty():
             raise EmptyError()
         elif size > len(self):
             raise LeftoverBytesError(
                 f"Requested {size} words, only {len(self)} words in object"
             )
-        return bytes_to_words(self.binary_data[: size * WORD_SIZE])
+        if raw:
+            return self.binary_data[: size * WORD_SIZE]
+        else:
+            return bytes_to_words(self.binary_data[: size * WORD_SIZE])
 
 
 HEADER_FORMATS = {
@@ -129,11 +136,6 @@ HEADER_FORMATS = {
 def unpack_header_word(word_data: Union[bytes, bytearray], word_number):
     fmt, field_names = HEADER_FORMATS[word_number]
     return bitstruct.unpack_dict(fmt, field_names, word_data)
-
-
-def unpack_trace_word(word_data: Union[bytes, bytearray]):
-    fmt = "p2u14p2u14"
-    return bitstruct.unpack(fmt, word_data)
 
 
 def calc_cfd_error(cfd_trigger_source_bits):
@@ -183,20 +185,29 @@ class ListModeDataReader:
         # if the complete next event isn't in queue an exception is thrown but no data is discarded
         try:
             event_values = unpack_header_word(self.words_stream.peek(1)[0], 0)
-            _, *rest_of_event_words = self.words_stream.pop(
-                event_values["Event Length"]
-            )
+            header_length = event_values["Header Length"]
+            event_length = event_values["Event Length"]
+
+            _, *rest_of_event_words = self.words_stream.pop(header_length)
+            trace_length = event_length - header_length
+            if trace_length:
+                trace_data = self.words_stream.pop(trace_length, raw=True)
+            else:
+                trace_data = None
         except LeftoverBytesError:
             raise LeftoverBytesError("Partial event left at the end of queue")
 
         # unpack words/trace into their field values
-        trace = []
         for word_number, word_bytes in enumerate(rest_of_event_words, start=1):
-            if word_number < event_values["Header Length"]:
-                event_values.update(unpack_header_word(word_bytes, word_number))
-            else:
-                trace.extend(unpack_trace_word(word_bytes))
-        trace = np.array(trace)
+            event_values.update(unpack_header_word(word_bytes, word_number))
+
+        if trace_data:
+            trace = np.frombuffer(trace_data, f"({trace_length},2)<u2", count=1)[
+                0, :, :
+            ]
+            trace = trace.flatten()
+        else:
+            trace = []
 
         # calculate event values that need to be derived from field values
         CFD_error = calc_cfd_error(event_values["CFD trigger source bits"])
