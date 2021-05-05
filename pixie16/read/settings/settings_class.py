@@ -1,7 +1,5 @@
 import struct
 
-import pint
-
 from .units import SETTINGS_UNITS_TBL
 from .file_format import SETTINGS_FILE_FORMAT
 from .field_classes import (
@@ -17,6 +15,8 @@ MODULE_SIZE = 4 * 1280
 
 def create_settings_ureg(fast_filter_range, slow_filter_range):
     """Creates a pint unit registry with pixie units specific to the settings of this run"""
+    import pint
+
     ureg = pint.UnitRegistry()
     ureg.define("ADC_cycles = 2*ns")
     ureg.define("FPGA_cycles = 5*ADC_cycles")
