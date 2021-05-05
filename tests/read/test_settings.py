@@ -16,6 +16,7 @@ class TestReadSettingsData:
 
         livetime = s.get("LiveTime", channel=3, as_pint=True)
 
-        assert livetime.to("seconds").magnitude == 159.67725438
+        assert round(livetime.to("seconds").magnitude, 2) == 599.82
+        assert s["LiveTime"][9] == 59981879462
         assert s.FastGap[3] == 10
         assert s.Log2Ebin[3] == 4294967295
