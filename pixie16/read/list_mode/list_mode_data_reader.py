@@ -112,7 +112,7 @@ HEADER_FORMATS = {
     4: ("u32", ("Energy sum trailing",)),
     5: ("u32", ("Energy sum leading",)),
     6: ("u32", ("Energy sum gap",)),
-    7: ("u32", ("Baseline",)),
+    7: ("f32", ("Baseline",)),
     8: ("u32", ("QDCSum0",)),
     9: ("u32", ("QDCSum1",)),
     10: ("u32", ("QDCSum2",)),
