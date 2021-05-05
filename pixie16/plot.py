@@ -4,20 +4,16 @@ import random
 from typing import Union, List, Tuple, Optional, Sequence, Iterable
 import warnings
 
+from fast_histogram import histogram2d
 import numpy as np
 import matplotlib
 from matplotlib import pyplot as plt
 from matplotlib.colors import LogNorm
 from matplotlib.backends.backend_pdf import PdfPages
-import datashader as ds
-import datashader.transfer_functions as tf
 
 from .analyze import calculate_CFD_using_FF
 from .read import Event, Settings
 
-
-# suppress some datashader warnings, remove again in the future?
-warnings.simplefilter(action="ignore", category=FutureWarning)
 
 DATA_POINTS_PER_FPGA_CYCLE = 5
 
@@ -117,11 +113,20 @@ def create_persistent_plot(
         x_range = [mytime[0], mytime[-1]]
     y_range = [traces.min(), traces.max()]
 
-    # using datashader to create persistent plot
-    cvs = ds.Canvas(plot_height=400, plot_width=1000, x_range=x_range, y_range=y_range)
-    df = ds.utils.dataframe_from_multiple_sequences(mytime, traces)
-    agg = cvs.line(df, "x", "y", agg=ds.count())
-    img = tf.shade(agg, how="eq_hist")
+    # using datashader-like feature to create persistent plotxlim, ylims
+    # height and width of the image
+    Nx = traces.shape[1]
+    Ny = 400
+
+    data_points_x = []
+    data_points_y = []
+
+    for t in traces:
+        data_points_x.extend(mytime)
+        data_points_y.extend(t)
+    img = histogram2d(
+        data_points_x, data_points_y, bins=(Nx, Ny), range=(x_range, y_range)
+    ).T
 
     ax_orig = ax
     if ax_orig is None:
@@ -279,7 +284,7 @@ def CFD(
     randomize
         if True and N is smaller than the total amount of traces, randomly pick traces
     persistent
-        Use datashader to plot traces
+        Use datashader-like plot of traces
     title
         Title to add to plot
     ax
@@ -388,7 +393,7 @@ def energy_sums(
     randomize
         if True and N is smaller than the total amount of traces, randomly pick traces
     persistent
-        Use datashader to plot traces
+        Use datashader-like plot of traces
     title
         Title to add to plot
     ax
