@@ -108,7 +108,7 @@ class GatherData(Task):
         if not data_size:
             return
 
-        self.send_status("data size", data_size)
+        self.send_status({"data size": data_size})
 
         if data_size > self.maxsize:
             # TODO: check if this is the correct way to flatten or if
