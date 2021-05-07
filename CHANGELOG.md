@@ -17,6 +17,7 @@ and this project tries to adhere to [Semantic Versioning](https://semver.org/spe
 - tests for code in pixie16/analysis.py
 ### Changed
 - dropped python 3.6 (since we are using dataclasses, a 3.7 feature)
+- replaced datashader with fast-histograms to speed up import
 - switched to setuptools_scm
 - moved low level C-library interface to their own files
 - lots of cleanup across the code base

@@ -38,7 +38,6 @@ autodoc_mock_imports = [
     "numpy",
     "pandas",
     "pint",
-    "datashader",
     "matplotlib",
     "tqdm",
     "PyQt5",

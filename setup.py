@@ -19,7 +19,6 @@ setup(
     install_requires=[
         "appdirs",
         "cbitstruct",
-        "datashader",
         "docopt",
         "fast-histogram",
         "matplotlib",
