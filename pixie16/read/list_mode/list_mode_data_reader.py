@@ -47,12 +47,8 @@ Event = namedtuple(
 def bytes_to_words(bytes_data):
     """returns bytes correctly byteswapped and in word sizes"""
     n_words = len(bytes_data) // WORD_SIZE
-    return tuple(
-        bitstruct.byteswap(
-            str(WORD_SIZE), bytes_data[i * WORD_SIZE : (i + 1) * WORD_SIZE]
-        )
-        for i in range(n_words)
-    )
+    data = bitstruct.byteswap(str(WORD_SIZE) * n_words, bytes_data)
+    return tuple(data[i * WORD_SIZE : (i + 1) * WORD_SIZE] for i in range(n_words))
 
 
 class EmptyError(Exception):
