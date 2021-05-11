@@ -89,8 +89,8 @@ class WordsIO:
     def peek(self, size, raw=False):
         """Get the top size words from queue without removing them.
 
-        Return either tuple of WORD-sized, byte-swapped data (raw==True)
-        or bytearraw (raw==False).
+        Return either tuple of WORD-sized, byte-swapped data (raw==False)
+        or just raw bytes (raw==True).
         """
         if self.is_empty():
             raise EmptyError()
