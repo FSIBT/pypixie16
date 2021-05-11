@@ -94,7 +94,7 @@ class WordsIO:
         """
         if self.is_empty():
             raise EmptyError()
-        elif size > len(self):
+        elif size * WORD_SIZE > len(self):
             raise LeftoverBytesError(
                 f"Requested {size} words, only {len(self)} words in object"
             )
