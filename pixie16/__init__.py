@@ -1,6 +1,5 @@
 import sys
 
-# from . import old_read
 from . import plot
 from . import ui
 from . import analyze
