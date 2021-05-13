@@ -3,7 +3,6 @@
 
 from collections import namedtuple
 from itertools import islice
-import pathlib
 from typing import Union
 
 import pandas as pd
@@ -60,8 +59,12 @@ class LeftoverBytesError(Exception):
 
 
 class WordsIO:
-    """A binary data FIFO queue/transformer. Put in binary data as any sized bytes or bytearray objects and take them
-    out as Pixie16 word sized/formatted bytes (refer to user manual List Mode Data Structures section).
+    """A binary data FIFO queue/transformer.
+
+    Put in binary data as any sized bytes or bytearray objects and
+    take them out as Pixie16 word sized/formatted bytes (refer to user
+    manual List Mode Data Structures section).
+
     """
 
     def __init__(self, binary_data: Union[bytes, bytearray] = b""):
@@ -94,14 +97,15 @@ class WordsIO:
         """
         if self.is_empty():
             raise EmptyError()
-        elif size * WORD_SIZE > len(self):
+
+        if size * WORD_SIZE > len(self):
             raise LeftoverBytesError(
                 f"Requested {size} words, only {len(self)} words in object"
             )
+
         if raw:
             return self.binary_data[: size * WORD_SIZE]
-        else:
-            return bytes_to_words(self.binary_data[: size * WORD_SIZE])
+        return bytes_to_words(self.binary_data[: size * WORD_SIZE])
 
 
 HEADER_FORMATS = {
@@ -154,8 +158,12 @@ def calc_external_timestamp(ext_ts_lo, ext_ts_hi):
 
 
 class ListModeDataReader:
-    """A binary data FIFO queue/transformer. Put in binary data as any sized bytes or bytearray objects and take them
-    out as Pixie16 events (refer to user manual List Mode Data Structures section).
+    """A binary data FIFO queue/transformer.
+
+    Put in binary data as any sized bytes or bytearray objects and
+    take them out as Pixie16 events (refer to user manual List Mode
+    Data Structures section).
+
     """
 
     def __init__(self, binary_data: Union[bytes, bytearray] = b""):
