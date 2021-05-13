@@ -14,7 +14,7 @@ class BinaryDataModel(QAbstractTableModel):
     def __init__(self, data):
         super().__init__()
         self._data = data
-        self.header = pixie16.old_read.Event._fields
+        self.header = pixie16.read.Event._fields
         self.icon_true = QCommonStyle().standardIcon(QStyle.SP_DialogApplyButton)
         self.icon_false = QCommonStyle().standardIcon(QStyle.SP_DialogCancelButton)
 
