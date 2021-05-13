@@ -106,7 +106,7 @@ class ABField(SettingsFieldBase):
 def int_to_bits(i, bits_length):
     """Converts int values to binary (in the form of a tuple of 0's and 1's)"""
     bit_fmt = f"{{:0{bits_length}b}}"
-    return tuple(tuple(int(j) for j in bit_fmt.format(value)) for value in i)
+    return tuple(int(j) for j in bit_fmt.format(i))
 
 
 BIT_FIELD_SIZE_TBL = {

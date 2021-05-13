@@ -5,7 +5,7 @@ SETTINGS_UNITS_TBL = {
     "RealTime": "FPGA_cycles",
     "LiveTime": "FPGA_cycles",
     "RunTime": "FPGA_cycles",
-    "ExtDelayLen": "FPGA_cycles",
+    "ExternDelayLen": "FPGA_cycles",
     "ModNum": "unknown",
     "ModCSRA": "bits",
     "ModCSRB": "bits",
