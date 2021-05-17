@@ -19,7 +19,7 @@ DATA_POINTS_PER_FPGA_CYCLE = 5
 
 
 def filter_events(
-    events: Iterable[Event], N: Optional[int] = None, randomize: bool = False,
+    events: Iterable[Event], N: Optional[int] = None, randomize: bool = False
 ) -> Iterable[Event]:
     """Pick N (random) events from a list of events"""
 
@@ -34,13 +34,13 @@ def filter_events(
         return events[:N]
 
     print(
-        f"[WARNING] plotting: got less events than requested for plotting {N_events} < {N}"
+        f"[Warning] plotting: got less events than requested for plotting {N_events} < {N}"
     )
     return events
 
 
 def create_title_page(
-    title: Union[str, List[str]], pdf: Optional[PdfPages] = None,
+    title: Union[str, List[str]], pdf: Optional[PdfPages] = None
 ) -> None:
     """Helper function to create a title page
 
@@ -107,6 +107,9 @@ def create_persistent_plot(
         events.
 
     """
+    N = len(traces)
+    if not N:
+        print("[Warning] no traces in persistince plot", flush=True)
     mytime = np.linspace(0, 2 * (traces.shape[1] - 1), traces.shape[1])  # in ns
 
     if x_range is None:
@@ -121,9 +124,9 @@ def create_persistent_plot(
     data_points_x = []
     data_points_y = []
 
-    for t in traces:
-        data_points_x.extend(mytime)
-        data_points_y.extend(t)
+    data_points_x = mytime[np.newaxis, :].repeat(N, axis=0).flatten()
+    data_points_y = traces.flatten()
+
     img = histogram2d(
         data_points_x, data_points_y, bins=(Nx, Ny), range=(x_range, y_range)
     ).T
@@ -195,8 +198,10 @@ def find_sums(
                 # print(f'found it at {sumIDX}')
                 break
         else:
-            print("Error: Could not find sums!")
-            print("Error: Try increasing trace length and/or trace delay and run again")
+            print("[ERROR] Could not find sums!")
+            print(
+                "[ERROR] Try increasing trace length and/or trace delay and run again"
+            )
             print(
                 "Ideal settings for offline computation: trace length > 2*Ls+Gs"
                 + " pretrigger length > 3*Ls+Gs (p.69, rev. 01/2019)"
@@ -300,7 +305,7 @@ def CFD(
     channels = {e.channel for e in events}
     if len(channels) != 1:
         print(
-            "[Error] Can only plot CFD for events from a single channel at the moment"
+            "[ERROR] Can only plot CFD for events from a single channel at the moment"
         )
         return
     channel = list(channels)[0]
@@ -319,7 +324,7 @@ def CFD(
     traces = [e.trace for e in events]
     for t in traces:
         if t is None:
-            print("[Error] Missing trace...skip plotting")
+            print("[ERROR] Missing trace...skip plotting")
             return
     traces = np.asarray(traces)
 
