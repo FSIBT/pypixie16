@@ -113,7 +113,7 @@ class BinaryApp(BaseApp):
             )
 
     def parse_data(self):
-        self.channels = sorted(set(x.channel for x in self.data))
+        self.channels = sorted({x.channel for x in self.data})
         self.data = sorted(self.data, key=lambda x: x.timestamp)
 
     def set_data_model(self):

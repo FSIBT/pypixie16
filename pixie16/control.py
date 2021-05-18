@@ -288,7 +288,7 @@ def take_MCA_spectra(
     )
     change_setting_dict(settings, auto_update=False)
 
-    modules = list(set([x for x, y in channels]))
+    modules = list({x for x, y in channels})
 
     # take MCA spectra
     if verbose:

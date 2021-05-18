@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 from functools import wraps
 import random
 from typing import Union, List, Tuple, Optional, Sequence, Iterable

@@ -13,7 +13,7 @@ commands = docopt.docopt(__doc__)
 
 filename = commands["<filename>"]
 
-with open(filename, "r") as f:
+with open(filename) as f:
     lines = f.readlines()
 
 values = {}

@@ -40,7 +40,9 @@ class SettingsFieldBase(abc.ABC):
                 sv = getattr(instance, sn)
             try:
                 if isinstance(sv, str):
-                    raise NotImplementedError('Did not expect any settings to be saved as string')
+                    raise NotImplementedError(
+                        "Did not expect any settings to be saved as string"
+                    )
                 sv = list(sv)
             except TypeError:
                 sv = [sv]
