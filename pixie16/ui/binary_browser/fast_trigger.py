@@ -93,7 +93,7 @@ class FastTrigger(QWidget):
         )
 
         self.energy_linearity = VStack(
-            [LabelAndIntNumber("Integration Length", name="L"),],
+            [LabelAndIntNumber("Integration Length", name="L")],
             callback=self.update_energy_linearity,
         )
 
@@ -202,7 +202,7 @@ class FastTrigger(QWidget):
 
         # calc noise level
         try:
-            first_trigger_offset = int(self.triggers[self.triggers > 0].min() - 10)
+            first_trigger_offset = int(min(t[0] for t in self.triggers) - 10)
         except ValueError:
             print(
                 "[Warning]: No trigger found, using the first 20% of the trace to estimate baseline",
@@ -306,10 +306,10 @@ class FastTrigger(QWidget):
                 pad = np.ones(pad_length) * int(baseline_pad)
                 trace = np.concatenate([pad, trace, pad])
 
-            if self.triggers[i]:
+            if len(self.triggers[i]):
                 # calculate trigger position in new time units
                 trigger_pos = (
-                    int(self.triggers[i]) // self.slow_filter_range - 2 * L - G + P
+                    int(self.triggers[i][0]) // self.slow_filter_range - 2 * L - G + P
                 )
                 if pad_data:
                     trigger_pos += pad_length
@@ -322,7 +322,7 @@ class FastTrigger(QWidget):
                 result[k - 2 * L - G + 1] = (
                     4 * (-c1 * S1 + c2 * S2 + c3 * S3) - baseline
                 )
-                if self.triggers[i]:
+                if len(self.triggers[i]):
                     if k - 2 * L - G + 1 == trigger_pos:
                         print(
                             f"[INFO] found peaksample position {i}: ",
@@ -336,10 +336,10 @@ class FastTrigger(QWidget):
             self.energy_plot.axes.plot(
                 result, color=self.colors[i], drawstyle="steps-mid"
             )
-            if self.triggers[i]:
+            if len(self.triggers[i]):
                 if 0 < trigger_pos < len(result):
                     self.energy_plot.axes.plot(
-                        trigger_pos, result[trigger_pos], "o", color=self.colors[i],
+                        trigger_pos, result[trigger_pos], "o", color=self.colors[i]
                     )
             self.energy_plot.axes.set_xlabel(f"{self.slow_filter_range*10} ns cycles")
             self.energy_plot.axes.set_ylabel("Energy")
@@ -356,7 +356,7 @@ class FastTrigger(QWidget):
 
         energy = np.zeros(self.N)
         for i, trace in enumerate(self.data_FPGA):
-            trigger_pos = int(self.triggers[i])
+            trigger_pos = int(self.triggers[i][0])
             if trigger_pos:
                 if trigger_pos + L < len(trace):
                     energy[i] = (
