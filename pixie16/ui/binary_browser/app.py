@@ -16,6 +16,7 @@ from PyQt5.QtWidgets import (
 import pixie16
 
 from ..widgets import BaseApp
+from ..helper import busy_cursor
 from ..plot import Plot
 from .channel_select import ChannelSelect
 from .fast_trigger import FastTrigger
@@ -91,10 +92,11 @@ class BinaryApp(BaseApp):
             return
 
         self.filename = Path(self.filename)
-        self.data = list(pixie16.read.read_list_mode_data_as_events(self.filename))
-        self.parse_data()
-        self.set_data_model()
-        self.update_gui()
+        with busy_cursor(self.app):
+            self.data = list(pixie16.read.read_list_mode_data_as_events(self.filename))
+            self.parse_data()
+            self.set_data_model()
+            self.update_gui()
 
         # count events per channel
         tmp = Counter([x.channel for x in self.data])
