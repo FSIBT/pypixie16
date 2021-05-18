@@ -1,3 +1,4 @@
+from pathlib import Path
 import sys
 from typing import List
 
@@ -94,9 +95,11 @@ class BaseApp(QMainWindow):
         super().__init__()
         self.app = app
         self.name = name
+        self.data_path = Path.home()
 
         if sys.platform == "win32":
             QIcon.setThemeSearchPaths([r"c:\Program Files\Git\usr\share\icons"])
+
         QIcon.setThemeName("Adwaita")
 
         # set up the window

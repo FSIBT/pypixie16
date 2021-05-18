@@ -1,12 +1,7 @@
 from pathlib import Path
 
 from PyQt5.QtGui import QIcon
-from PyQt5.QtWidgets import (
-    QAction,
-    QFileDialog,
-    QVBoxLayout,
-    QWidget,
-)
+from PyQt5.QtWidgets import QAction, QFileDialog, QVBoxLayout, QWidget
 
 import pixie16
 
@@ -55,7 +50,7 @@ class CoincidenceApp(BaseApp):
     def open_file(self, filename=None) -> None:
         if filename is None or not isinstance(filename, (str, Path)):
             self.settings_filename, _ = QFileDialog.getOpenFileName(
-                self, "Open file", "e:\\ROOTS", "Settings files (*.set)"
+                self, "Open file", str(self.data_path), "Settings files (*.set)"
             )
         else:
             self.settings_filename = filename

@@ -81,7 +81,7 @@ class BinaryApp(BaseApp):
     def open_file(self, filename=None) -> None:
         if filename is None or not isinstance(filename, (str, Path)):
             self.filename, _ = QFileDialog.getOpenFileName(
-                self, "Open file", "e:\\ROOTS", "Binary files (*.bin)"
+                self, "Open file", str(self.data_path), "Binary files (*.bin)"
             )
         else:
             self.filename = filename
