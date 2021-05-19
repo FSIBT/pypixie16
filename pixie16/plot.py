@@ -120,9 +120,6 @@ def create_persistent_plot(
     Nx = traces.shape[1]
     Ny = 400
 
-    data_points_x = []
-    data_points_y = []
-
     data_points_x = mytime[np.newaxis, :].repeat(N, axis=0).flatten()
     data_points_y = traces.flatten()
 
@@ -141,6 +138,8 @@ def create_persistent_plot(
 
     if ax_orig is None:
         plt.close(fig)
+
+    return img
 
 
 def find_sums(
