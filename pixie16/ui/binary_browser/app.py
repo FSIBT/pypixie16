@@ -33,6 +33,7 @@ class BinaryApp(BaseApp):
         self.channels = []
         self.selected_channels = []
         self.data = []
+        self.model = None
 
         FileButton = QAction(QIcon.fromTheme("document-open"), "Open", self)
         FileButton.setShortcut("Ctrl+O")
@@ -128,6 +129,8 @@ class BinaryApp(BaseApp):
 
     def tab_change(self, i):
         if not self.data:
+            return
+        if not self.model:
             return
 
         indexes = self.dataview.selectionModel().selectedRows()
