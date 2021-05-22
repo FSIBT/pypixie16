@@ -39,8 +39,9 @@ Event = namedtuple(
         "QDCSum5",
         "QDCSum6",
         "QDCSum7",
+        "ext_timestamp",
     ],
-    defaults=(-1, -1, -1, -1.0, -1, -1, -1, -1, -1, -1, -1, -1),
+    defaults=(-1, -1, -1, -1.0, -1, -1, -1, -1, -1, -1, -1, -1, -1.0),
 )
 
 
@@ -109,12 +110,16 @@ class WordsIO:
         return byteswap_data(self.binary_data[: size * WORD_SIZE])
 
 
-HEADER_FORMATS = {
-    0: (
+# Events in list mode consist of one mandatory group ("header") and 3 optional groups
+# for energy sums, Qsums, and an external timestamp
+# we define the corresponding bit patterns to be used with bitstruct here, see
+# page 72 of the pixie16 manual, version 3.06
+EVENTS_PARTS = {
+    "first row": (
         "b1u14u5u4u4u4",
-        ("Finish Code", "Event Length", "Header Length", "CrateID", "SlotID", "Chan#"),
+        ("pileup", "Event Length", "Header Length", "crate", "slot", "channel"),
     ),
-    4: (
+    "header": (
         "b1u14u5u4u4u4u32u3u13u16b1u15u16",
         (
             "pileup",
@@ -132,38 +137,78 @@ HEADER_FORMATS = {
             "energy",
         ),
     ),
-    8: (
-        "b1u14u5u4u4u4u32u3u13u16b1u15u16u32u32u32f32",
+    "energy": (
+        "u32" * 3 + "f32",
+        ("Esum_trailing", "Esum_leading", "Esum_gap", "baseline",),
+    ),
+    "Qsums": (
+        "u32" * 8,
         (
-            "pileup",
-            "Event Length",
-            "Header Length",
-            "crate",
-            "slot",
-            "channel",
-            "EVTTIME_LO",
-            "CFD trigger source bits",
-            "CFD Fractional Time",
-            "EVTTIME_HI",
-            "trace_flag",
-            "Trace Length",
-            "energy",
-            "Esum_trailing",
-            "Esum_leading",
-            "Esum_gap",
-            "baseline",
+            "QDCSum0",
+            "QDCSum1",
+            "QDCSum2",
+            "QDCSum3",
+            "QDCSum4",
+            "QDCSum5",
+            "QDCSum6",
+            "QDCSum7",
         ),
     ),
-    8: ("u32", ("QDCSum0",)),
-    9: ("u32", ("QDCSum1",)),
-    10: ("u32", ("QDCSum2",)),
-    11: ("u32", ("QDCSum3",)),
-    12: ("u32", ("QDCSum4",)),
-    13: ("u32", ("QDCSum5",)),
-    14: ("u32", ("QDCSum6",)),
-    15: ("u32", ("QDCSum7",)),
-    16: ("u32", ("Ext_TS_Lo",)),
-    17: ("p16u16", ("Ext_TS_Hi",)),
+    "Ext Time": ("u32p16u16", ("Ext_TS_Lo", "Ext_TS_Hi",),),
+}
+
+# We now build all possible combinations out of these parts that can
+# show up in list mode data We also add a "0" option to just read the
+# first row, since this row contains the header length we need to read
+HEADER_FORMATS = {
+    0: (EVENTS_PARTS["first row"][0], EVENTS_PARTS["first row"][1]),
+    4: (EVENTS_PARTS["header"][0], EVENTS_PARTS["header"][1]),
+    6: (
+        EVENTS_PARTS["header"][0] + EVENTS_PARTS["Ext Time"][0],
+        EVENTS_PARTS["header"][1] + EVENTS_PARTS["Ext Time"][1],
+    ),
+    8: (
+        EVENTS_PARTS["header"][0] + EVENTS_PARTS["energy"][0],
+        EVENTS_PARTS["header"][1] + EVENTS_PARTS["energy"][1],
+    ),
+    12: (
+        EVENTS_PARTS["header"][0] + EVENTS_PARTS["Qsums"][0],
+        EVENTS_PARTS["header"][1] + EVENTS_PARTS["Qsums"][1],
+    ),
+    16: (
+        EVENTS_PARTS["header"][0]
+        + EVENTS_PARTS["energy"][0]
+        + EVENTS_PARTS["Qsums"][0],
+        EVENTS_PARTS["header"][1]
+        + EVENTS_PARTS["energy"][1]
+        + EVENTS_PARTS["Qsums"][1],
+    ),
+    10: (
+        EVENTS_PARTS["header"][0]
+        + EVENTS_PARTS["energy"][0]
+        + EVENTS_PARTS["Ext Time"][0],
+        EVENTS_PARTS["header"][1]
+        + EVENTS_PARTS["energy"][1]
+        + EVENTS_PARTS["Ext Time"][1],
+    ),
+    14: (
+        EVENTS_PARTS["header"][0]
+        + EVENTS_PARTS["Qsums"][0]
+        + EVENTS_PARTS["Ext Time"][0],
+        EVENTS_PARTS["header"][1]
+        + EVENTS_PARTS["Qsums"][1]
+        + EVENTS_PARTS["Ext Time"][1],
+    ),
+    18: (
+        EVENTS_PARTS["header"][0]
+        + EVENTS_PARTS["energy"][0]
+        + EVENTS_PARTS["Qsums"][0]
+        + EVENTS_PARTS["Ext Time"][0],
+        EVENTS_PARTS["header"][1]
+        + EVENTS_PARTS["energy"][1]
+        + EVENTS_PARTS["Qsums"][1]
+        + EVENTS_PARTS["Ext Time"][1],
+    ),
 }
 
 
@@ -254,6 +299,12 @@ class ListModeDataReader:
         timestamp = calc_eventtime(
             event_values.pop("EVTTIME_LO"), event_values.pop("EVTTIME_HI")
         )
+        if "Ext_TS_Lo" in event_values:
+            ext_timestamp = calc_external_timestamp(
+                events_values.pop("Ext_TS_Lo"), events_values.pop("Ext_TS_Hi")
+            )
+            events_values.update({"ext_timestamp": ext_timestamp})
+
         for key in ["Event Length", "Header Length", "Trace Length"]:
             if key in event_values:
                 del event_values[key]
