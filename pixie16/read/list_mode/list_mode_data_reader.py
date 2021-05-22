@@ -40,18 +40,19 @@ Event = namedtuple(
         "QDCSum6",
         "QDCSum7",
     ],
+    defaults=(-1, -1, -1, -1.0, -1, -1, -1, -1, -1, -1, -1, -1),
 )
 
 
-def bytes_to_words(bytes_data):
+def byteswap_data(bytes_data):
     """returns bytes correctly byteswapped and in word sizes"""
     n_words = len(bytes_data) // WORD_SIZE
     data = bitstruct.byteswap(str(WORD_SIZE) * n_words, bytes_data)
-    return tuple(data[i * WORD_SIZE : (i + 1) * WORD_SIZE] for i in range(n_words))
+    return data
 
 
 class EmptyError(Exception):
-    """"To be raised if an empty queue is popped or peeked"""
+    """To be raised if an empty queue is popped or peeked"""
 
 
 class LeftoverBytesError(Exception):
@@ -105,7 +106,7 @@ class WordsIO:
 
         if raw:
             return self.binary_data[: size * WORD_SIZE]
-        return bytes_to_words(self.binary_data[: size * WORD_SIZE])
+        return byteswap_data(self.binary_data[: size * WORD_SIZE])
 
 
 HEADER_FORMATS = {
@@ -113,13 +114,46 @@ HEADER_FORMATS = {
         "b1u14u5u4u4u4",
         ("Finish Code", "Event Length", "Header Length", "CrateID", "SlotID", "Chan#"),
     ),
-    1: ("u32", ("EVTTIME_LO",)),
-    2: ("u3u13u16", ("CFD trigger source bits", "CFD Fractional Time", "EVTTIME_HI")),
-    3: ("b1u15u16", ("Trace Out-of-Range Flag", "Trace Length", "Event Energy")),
-    4: ("u32", ("Energy sum trailing",)),
-    5: ("u32", ("Energy sum leading",)),
-    6: ("u32", ("Energy sum gap",)),
-    7: ("f32", ("Baseline",)),
+    4: (
+        "b1u14u5u4u4u4u32u3u13u16b1u15u16",
+        (
+            "pileup",
+            "Event Length",
+            "Header Length",
+            "crate",
+            "slot",
+            "channel",
+            "EVTTIME_LO",
+            "CFD trigger source bits",
+            "CFD Fractional Time",
+            "EVTTIME_HI",
+            "trace_flag",
+            "Trace Length",
+            "energy",
+        ),
+    ),
+    8: (
+        "b1u14u5u4u4u4u32u3u13u16b1u15u16u32u32u32f32",
+        (
+            "pileup",
+            "Event Length",
+            "Header Length",
+            "crate",
+            "slot",
+            "channel",
+            "EVTTIME_LO",
+            "CFD trigger source bits",
+            "CFD Fractional Time",
+            "EVTTIME_HI",
+            "trace_flag",
+            "Trace Length",
+            "energy",
+            "Esum_trailing",
+            "Esum_leading",
+            "Esum_gap",
+            "baseline",
+        ),
+    ),
     8: ("u32", ("QDCSum0",)),
     9: ("u32", ("QDCSum1",)),
     10: ("u32", ("QDCSum2",)),
@@ -188,11 +222,10 @@ class ListModeDataReader:
         # try to get all the words for the next event
         # if the complete next event isn't in queue an exception is thrown but no data is discarded
         try:
-            event_values = unpack_header_word(self.words_stream.peek(1)[0], 0)
-            header_length = event_values["Header Length"]
-            event_length = event_values["Event Length"]
-
-            _, *rest_of_event_words = self.words_stream.pop(header_length)
+            event_header = unpack_header_word(self.words_stream.peek(1), 0)
+            header_length = event_header["Header Length"]
+            event_length = event_header["Event Length"]
+            header_words = self.words_stream.pop(header_length)
             trace_length = event_length - header_length
             if trace_length:
                 trace_data = self.words_stream.pop(trace_length, raw=True)
@@ -202,8 +235,7 @@ class ListModeDataReader:
             raise LeftoverBytesError("Partial event left at the end of queue")
 
         # unpack words/trace into their field values
-        for word_number, word_bytes in enumerate(rest_of_event_words, start=1):
-            event_values.update(unpack_header_word(word_bytes, word_number))
+        event_values = unpack_header_word(header_words, header_length)
 
         if trace_data:
             trace = np.frombuffer(trace_data, f"({trace_length},2)<u2", count=1)[
@@ -214,38 +246,28 @@ class ListModeDataReader:
             trace = []
 
         # calculate event values that need to be derived from field values
-        CFD_error = calc_cfd_error(event_values["CFD trigger source bits"])
+        CFD_bits = event_values.pop("CFD trigger source bits")
+        CFD_error = calc_cfd_error(CFD_bits)
         CFD_fraction = calc_cfd_fraction(
-            event_values["CFD trigger source bits"], event_values["CFD Fractional Time"]
+            CFD_bits, event_values.pop("CFD Fractional Time")
         )
         timestamp = calc_eventtime(
-            event_values["EVTTIME_LO"], event_values["EVTTIME_HI"]
+            event_values.pop("EVTTIME_LO"), event_values.pop("EVTTIME_HI")
+        )
+        for key in ["Event Length", "Header Length", "Trace Length"]:
+            if key in event_values:
+                del event_values[key]
+
+        event_values.update(
+            {
+                "timestamp": timestamp,
+                "CFD_fraction": CFD_fraction,
+                "trace": trace,
+                "CFD_error": CFD_error,
+            }
         )
 
-        return Event(
-            event_values["Chan#"],
-            event_values["CrateID"],
-            event_values["SlotID"],
-            timestamp,
-            CFD_fraction,
-            event_values["Event Energy"],
-            trace,
-            CFD_error,
-            event_values["Finish Code"],
-            event_values["Trace Out-of-Range Flag"],
-            event_values.get("Energy sum trailing", -1),
-            event_values.get("Energy sum leading", -1),
-            event_values.get("Energy sum gap", -1),
-            event_values.get("Baseline", -1.0),
-            event_values.get("QDCSum0", -1),
-            event_values.get("QDCSum1", -1),
-            event_values.get("QDCSum2", -1),
-            event_values.get("QDCSum3", -1),
-            event_values.get("QDCSum4", -1),
-            event_values.get("QDCSum5", -1),
-            event_values.get("QDCSum6", -1),
-            event_values.get("QDCSum7", -1),
-        )
+        return Event(**event_values)
 
     def iterevents(self):
         while True:
