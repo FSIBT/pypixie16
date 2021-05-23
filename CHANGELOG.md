@@ -21,6 +21,9 @@ and this project tries to adhere to [Semantic Versioning](https://semver.org/spe
 - switched to setuptools_scm
 - moved low level C-library interface to their own files
 - lots of cleanup across the code base
+- replaced read_list_mode_data and reading of settings with new implementation.
+  Settings can now be read with units using `pint` which makes transforming of units easier.
+
 
 ## [0.5] - 2020-04-06
 ### Added
