@@ -113,7 +113,7 @@ def create_persistent_plot(
 
     if x_range is None:
         x_range = [mytime[0], mytime[-1]]
-    y_range = [traces.min(), traces.max()]
+    y_range = [traces.min() * 0.85, traces.max() * 1.15]
 
     # using datashader-like feature to create persistent plotxlim, ylims
     # height and width of the image
@@ -131,12 +131,18 @@ def create_persistent_plot(
     if ax_orig is None:
         fig, ax = plt.subplots(figsize=(12, 6))
     ax.imshow(
-        img, extent=x_range + y_range, aspect="auto", origin="lower", norm=LogNorm()
+        img + 1e-3,  # add 1e-3 to avoid problems with 0 in LogNorm
+        extent=x_range + y_range,
+        aspect="auto",
+        origin="lower",
+        norm=LogNorm(),
+        cmap="inferno",
     )
     ax.set_xlabel("Time [ns]")
     ax.set_ylabel("ADC units [a.u]")
 
     if ax_orig is None:
+        plt.show()
         plt.close(fig)
 
     return img
