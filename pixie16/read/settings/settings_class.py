@@ -1,3 +1,5 @@
+"""The main implementation of the Settings class."""
+
 import struct
 
 from .units import SETTINGS_UNITS_TBL

@@ -7,7 +7,7 @@ Subpackages
 -----------
 
 Currently there are two subpackages for reading binary data such as
-list mode data and settings data and another package ofr UI elements
+list mode data and settings data and another package for UI elements
 that are used in the Qt-based interfaces provided to, for example,
 look at binary data files.
 
@@ -21,7 +21,7 @@ Submodules
 ----------
 
 pixie16.C\_library\_app module
-------------------------------
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 .. automodule:: pixie16.C_library_app
    :members:
@@ -29,7 +29,7 @@ pixie16.C\_library\_app module
    :show-inheritance:
 
 pixie16.C\_library\_sys module
-------------------------------
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 .. automodule:: pixie16.C_library_sys
    :members:
@@ -37,7 +37,7 @@ pixie16.C\_library\_sys module
    :show-inheritance:
 
 pixie16.analyze module
-----------------------
+^^^^^^^^^^^^^^^^^^^^^^
 
 .. automodule:: pixie16.analyze
    :members:
@@ -45,7 +45,7 @@ pixie16.analyze module
    :show-inheritance:
 
 pixie16.config module
----------------------
+^^^^^^^^^^^^^^^^^^^^^
 
 .. automodule:: pixie16.config
    :members:
@@ -53,7 +53,7 @@ pixie16.config module
    :show-inheritance:
 
 pixie16.control module
-----------------------
+^^^^^^^^^^^^^^^^^^^^^^
 
 .. automodule:: pixie16.control
    :members:
@@ -61,7 +61,7 @@ pixie16.control module
    :show-inheritance:
 
 pixie16.control\_mock module
-----------------------------
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 .. automodule:: pixie16.control_mock
    :members:
@@ -69,7 +69,7 @@ pixie16.control\_mock module
    :show-inheritance:
 
 pixie16.plot module
--------------------
+^^^^^^^^^^^^^^^^^^^
 
 .. automodule:: pixie16.plot
    :members:
@@ -77,7 +77,7 @@ pixie16.plot module
    :show-inheritance:
 
 pixie16.scan module
--------------------
+^^^^^^^^^^^^^^^^^^^
 
 .. automodule:: pixie16.scan
    :members:
@@ -85,7 +85,7 @@ pixie16.scan module
    :show-inheritance:
 
 pixie16.pipeline module
------------------------
+^^^^^^^^^^^^^^^^^^^^^^^
 
 .. automodule:: pixie16.pipeline
    :members:
@@ -93,7 +93,7 @@ pixie16.pipeline module
    :show-inheritance:
 
 pixie16.tasks module
---------------------
+^^^^^^^^^^^^^^^^^^^^
 
 .. automodule:: pixie16.tasks
    :members:
@@ -101,7 +101,7 @@ pixie16.tasks module
    :show-inheritance:
 
 pixie16.variables module
-------------------------
+^^^^^^^^^^^^^^^^^^^^^^^^
 
 .. automodule:: pixie16.variables
    :members:

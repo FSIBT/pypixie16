@@ -1,9 +1,6 @@
 pixie16.read.settings package
 =============================
 
-Submodules
-----------
-
 pixie16.read.settings.field\_classes module
 -------------------------------------------
 
@@ -36,10 +33,3 @@ pixie16.read.settings.units module
    :undoc-members:
    :show-inheritance:
 
-Module contents
----------------
-
-.. automodule:: pixie16.read.settings
-   :members:
-   :undoc-members:
-   :show-inheritance:

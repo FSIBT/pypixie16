@@ -10,7 +10,13 @@ just bug-report or enhancement requests are also a good way to contribute.
 ## Coding guidelines
 
 We use black to format our code and pre-commit to ensure that all
-commits run through git first and also that all tests are run.
+commits run black before being commited.
+
+Also please run the tests using
+```
+python -m pytest
+```
+before submitting any code.
 
 To get a copy of the repository, you can clone it using
 

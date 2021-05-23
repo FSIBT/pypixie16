@@ -1,6 +1,7 @@
 # automatically created by running "create_variable_list.py Pixie16DSP_revfgeneral_14b500m_r35207.var"
 # do not modify manually unless you know what you are doing ;)
 
+
 settings = {
     "ModNum": [0, 1],
     "ModCSRA": [1, 1],

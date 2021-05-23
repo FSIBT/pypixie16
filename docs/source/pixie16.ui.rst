@@ -14,7 +14,7 @@ Submodules
 ----------
 
 pixie16.ui.plot module
-----------------------
+^^^^^^^^^^^^^^^^^^^^^^
 
 .. automodule:: pixie16.ui.plot
    :members:
@@ -22,17 +22,10 @@ pixie16.ui.plot module
    :show-inheritance:
 
 pixie16.ui.widgets module
--------------------------
+^^^^^^^^^^^^^^^^^^^^^^^^^
 
 .. automodule:: pixie16.ui.widgets
    :members:
    :undoc-members:
    :show-inheritance:
 
-Module contents
----------------
-
-.. automodule:: pixie16.ui
-   :members:
-   :undoc-members:
-   :show-inheritance:

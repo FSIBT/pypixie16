@@ -1,3 +1,8 @@
+"""Classes for each field inside a setings file.
+
+These contain helper functions to, for example, combine the HI and LO values of timestamps.
+"""
+
 import abc
 from typing import Tuple
 

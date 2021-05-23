@@ -14,7 +14,8 @@ and this project tries to adhere to [Semantic Versioning](https://semver.org/spe
 - config.py: path to firmware, etc
 - control.py: more high level functions to run data acquisition
 - pipeline.py/tasks.py: multiprocess classes to run data acquisition pipeline in parallel
-- tests for code in pixie16/analysis.py
+- updated tests, e.g., for code in pixie16/analysis.py and new settings and list-data reader
+
 ### Changed
 - dropped python 3.6 (since we are using dataclasses, a 3.7 feature)
 - replaced datashader with fast-histograms to speed up import
@@ -23,7 +24,7 @@ and this project tries to adhere to [Semantic Versioning](https://semver.org/spe
 - lots of cleanup across the code base
 - replaced read_list_mode_data and reading of settings with new implementation.
   Settings can now be read with units using `pint` which makes transforming of units easier.
-
+- updated documentation
 
 ## [0.5] - 2020-04-06
 ### Added

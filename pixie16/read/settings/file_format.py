@@ -1,3 +1,5 @@
+"""This file defines the binary layout of a setting file."""
+
 SETTINGS_FILE_FORMAT = {
     "ModNum": (0, "<1L"),
     "ModCSRA": (4, "<1L"),

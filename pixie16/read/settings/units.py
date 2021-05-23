@@ -1,3 +1,6 @@
+"""This file defines the default units for each element in the setting class."""
+
+
 SETTINGS_UNITS_TBL = {
     "OffsetVoltage": "V",
     "TraceDelay": "FPGA_cycles",

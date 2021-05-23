@@ -1,9 +1,6 @@
 pixie16.ui.binary\_browser package
 ==================================
 
-Submodules
-----------
-
 pixie16.ui.binary\_browser.app module
 -------------------------------------
 
@@ -32,14 +29,6 @@ pixie16.ui.binary\_browser.fast\_trigger module
 -----------------------------------------------
 
 .. automodule:: pixie16.ui.binary_browser.fast_trigger
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
-Module contents
----------------
-
-.. automodule:: pixie16.ui.binary_browser
    :members:
    :undoc-members:
    :show-inheritance:
