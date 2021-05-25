@@ -7,14 +7,7 @@ from . import read
 
 from ._version import version as __version__
 
-
-if sys.maxsize > 2 ** 31 - 1:
-    # 64 bit systems
-    from . import control_mock as control
-if sys.maxsize == 2 ** 31 - 1:
-    # 32 bit systems can also use the controls
-    from . import control
-
+from . import control
 from . import scan
 from . import pipeline
 from . import tasks

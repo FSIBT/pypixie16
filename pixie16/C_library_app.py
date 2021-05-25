@@ -1,5 +1,7 @@
 """Interface to C-libary function provided by XIA in app DLL.
 
+Currently calling the XIA C-library functions is only supported on Windows.
+
 This file provides python function that directly call functions in the
 app.dll libarary using ctypes.
 
@@ -69,6 +71,7 @@ import ctypes
 import logging
 from pathlib import Path
 import sys
+from unittest.mock import MagicMock
 
 import numpy as np
 
@@ -82,27 +85,31 @@ from .config import (
     firmware_dsp_var,
 )
 
-if sys.maxsize > 2 ** 32:
-    print("[Warning] need to run 32bit python to use this library")
-#    sys.exit()
-
-if not lib_app:
-    print("[ERROR] no path for lib_app set.")
-    sys.exit()
-
 # set up logging
 log = logging.getLogger(__name__)
 
-current_dir = Path(".")
-# make sure pxisys.ini is available
-initfile = current_dir / "pxisys.ini"
-if not initfile.exists():
-    log.error(
-        f"Error: please copy the pxisys.ini file into the directory: {current_dir}"
-    )
+if sys.platform == "win32":
+    # currently only support windows control libraries
+    if sys.maxsize > 2 ** 31 - 1:
+        print("[WARNING] need to run 32bit python to use the control library")
+    if not lib_app:
+        print("[ERROR] no path for lib_app set.")
+        sys.exit()
+    current_dir = Path(".")
 
-
-PixieAppDLL = ctypes.cdll.LoadLibrary(str(lib_app))
+    # make sure pxisys.ini is available
+    initfile = current_dir / "pxisys.ini"
+    if not initfile.exists():
+        log.error(
+            f"Error: please copy the pxisys.ini file into the directory: {current_dir}"
+        )
+    PixieAppDLL = ctypes.cdll.LoadLibrary(str(lib_app))
+    PROTO = ctypes.WINFUNCTYPE
+else:
+    # on all other platforms we mock the DLL calls
+    # mostly so that readthedocs can still build the documentation
+    PixieAppDLL = MagicMock()
+    PROTO = MagicMock()
 
 # some globals
 init_done = False
@@ -168,7 +175,7 @@ valid_channel_parameter_names = [
 # functions in the PixieAppDLL
 
 # Pixie16ReadHistogramFromFile
-read_histogram_prototype = ctypes.WINFUNCTYPE(
+read_histogram_prototype = PROTO(
     ctypes.c_int,
     ctypes.c_char_p,
     ctypes.POINTER(ctypes.c_ulong),
@@ -225,7 +232,7 @@ def ReadHistogramFromFileAll(filename, module, N=32768):
 
 
 # Pixie16GetModuleEvents
-GetModuleEvents_prototype = ctypes.WINFUNCTYPE(
+GetModuleEvents_prototype = PROTO(
     ctypes.c_int, ctypes.c_char_p, ctypes.POINTER(ctypes.c_ulong)
 )
 
@@ -262,7 +269,7 @@ def GetModuleEvents(filename, max_number_of_modules=14):
 
 # Pixie16GetEventsInfo
 
-GetEventsInfo_prototype = ctypes.WINFUNCTYPE(
+GetEventsInfo_prototype = PROTO(
     ctypes.c_int, ctypes.c_char_p, ctypes.POINTER(ctypes.c_ulong), ctypes.c_ushort
 )
 
@@ -333,7 +340,7 @@ def GetEventsInfo(filename, module):
 
 # Pixie16ReadListModeTrace
 
-ReadListModeTrace_prototype = ctypes.WINFUNCTYPE(
+ReadListModeTrace_prototype = PROTO(
     ctypes.c_int,
     ctypes.c_char_p,
     ctypes.POINTER(ctypes.c_ushort),
@@ -375,7 +382,7 @@ def ReadListModeTrace(filename, Event):
 
 
 # Pixie16InitSystem
-init_sys_prototype = ctypes.WINFUNCTYPE(
+init_sys_prototype = PROTO(
     ctypes.c_int, ctypes.c_ushort, ctypes.POINTER(ctypes.c_ushort), ctypes.c_ushort
 )
 
@@ -442,7 +449,7 @@ def InitSys(PXISlotMap=None, OfflineMode=False, modules=None, verbose=True):
 
 
 # Pixie16BootModule
-boot_module_prototype = ctypes.WINFUNCTYPE(
+boot_module_prototype = PROTO(
     ctypes.c_int,
     ctypes.c_char_p,
     ctypes.c_char_p,
@@ -632,7 +639,7 @@ def BootModule(
 
 
 # Pixie16ExitSystem
-exit_sys_prototype = ctypes.WINFUNCTYPE(ctypes.c_int, ctypes.c_ushort)
+exit_sys_prototype = PROTO(ctypes.c_int, ctypes.c_ushort)
 
 Cexit_sys = exit_sys_prototype(("Pixie16ExitSystem", PixieAppDLL))
 
@@ -678,7 +685,7 @@ def ExitSys(ModNum):
 
 
 # Pixie16WriteSglChanPar
-write_chan_param_prototype = ctypes.WINFUNCTYPE(
+write_chan_param_prototype = PROTO(
     ctypes.c_int, ctypes.c_char_p, ctypes.c_double, ctypes.c_ushort, ctypes.c_ushort
 )
 
@@ -725,7 +732,7 @@ def WriteChanParam(ChanParName, ChanParData, module, channel):
 
 
 # Pixie16ReadSglChanPar
-read_chan_param_prototype = ctypes.WINFUNCTYPE(
+read_chan_param_prototype = PROTO(
     ctypes.c_int,
     ctypes.c_char_p,
     ctypes.POINTER(ctypes.c_double),
@@ -808,7 +815,7 @@ def converter_ulong_to_IEEE754(x):
 
 
 # Pixie16WriteSglModPar
-write_mod_param_prototype = ctypes.WINFUNCTYPE(
+write_mod_param_prototype = PROTO(
     ctypes.c_int, ctypes.c_char_p, ctypes.c_ulong, ctypes.c_ushort
 )
 
@@ -848,7 +855,7 @@ def WriteModParam(ModParName, ModParData, module):
 
 
 # Pixie16ReadSglModPar
-read_mod_param_prototype = ctypes.WINFUNCTYPE(
+read_mod_param_prototype = PROTO(
     ctypes.c_int, ctypes.c_char_p, ctypes.POINTER(ctypes.c_ulong), ctypes.c_ushort
 )
 
@@ -906,9 +913,7 @@ def set_run_time(runtime, module):
 
 
 # Pixie16StartHistogramRun
-start_hist_run_prototype = ctypes.WINFUNCTYPE(
-    ctypes.c_int, ctypes.c_ushort, ctypes.c_ushort
-)
+start_hist_run_prototype = PROTO(ctypes.c_int, ctypes.c_ushort, ctypes.c_ushort)
 
 CStartHistRun = start_hist_run_prototype(("Pixie16StartHistogramRun", PixieAppDLL))
 
@@ -956,7 +961,7 @@ def start_histogram_run(module=None, resume=False, modules=None):
 
 
 # Pixie16StartListModeRun
-start_listmode_run_prototype = ctypes.WINFUNCTYPE(
+start_listmode_run_prototype = PROTO(
     ctypes.c_int, ctypes.c_ushort, ctypes.c_ushort, ctypes.c_ushort
 )
 
@@ -1016,7 +1021,7 @@ def start_listmode_run(module=None, runtype=0x100, resume=False, modules=None):
 
 
 # Pixie16CheckRunStatus
-check_run_status_prototype = ctypes.WINFUNCTYPE(ctypes.c_int, ctypes.c_ushort)
+check_run_status_prototype = PROTO(ctypes.c_int, ctypes.c_ushort)
 
 CCheckRunStatus = check_run_status_prototype(("Pixie16CheckRunStatus", PixieAppDLL))
 
@@ -1046,7 +1051,7 @@ def CheckRunStatus(module):
 
 
 # Pixie16ReadHistogramFromModule
-read_hist_mod_prototype = ctypes.WINFUNCTYPE(
+read_hist_mod_prototype = PROTO(
     ctypes.c_int,
     ctypes.POINTER(ctypes.c_uint),
     ctypes.c_uint,
@@ -1094,7 +1099,7 @@ def ReadHistogramFromModule(module, channel, N=32768):
 
 
 # Pixie16EndRun
-end_run_prototype = ctypes.WINFUNCTYPE(ctypes.c_int, ctypes.c_ushort)
+end_run_prototype = PROTO(ctypes.c_int, ctypes.c_ushort)
 
 Cend_run = end_run_prototype(("Pixie16EndRun", PixieAppDLL))
 
@@ -1119,7 +1124,7 @@ def EndRun(ModNum):
 
 
 # ProgramFippi
-program_fippi_prototype = ctypes.WINFUNCTYPE(ctypes.c_int, ctypes.c_uint)
+program_fippi_prototype = PROTO(ctypes.c_int, ctypes.c_uint)
 
 Cprogram_fippi = program_fippi_prototype(("Pixie16ProgramFippi", PixieAppDLL))
 
@@ -1150,7 +1155,7 @@ def ProgramFippi(modnum):
 
 
 # SetDACS (voltage offsets)
-program_SetDACs_prototype = ctypes.WINFUNCTYPE(ctypes.c_int, ctypes.c_uint)
+program_SetDACs_prototype = PROTO(ctypes.c_int, ctypes.c_uint)
 
 Cprogram_SetDACs = program_SetDACs_prototype(("Pixie16SetDACs", PixieAppDLL))
 
@@ -1181,7 +1186,7 @@ def ProgramSetDACs(modnum):
 
 
 # Pixie16SaveDSPParametersToFile
-save_dsp_param_prototype = ctypes.WINFUNCTYPE(ctypes.c_int, ctypes.c_char_p)
+save_dsp_param_prototype = PROTO(ctypes.c_int, ctypes.c_char_p)
 
 Csave_dsp_param = save_dsp_param_prototype(
     ("Pixie16SaveDSPParametersToFile", PixieAppDLL)

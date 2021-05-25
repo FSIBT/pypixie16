@@ -23,10 +23,6 @@ from .config import config, inifile, data_dir
 from .C_library_app import *
 from .C_library_sys import *
 
-if sys.maxsize > 2 ** 31 - 1:
-    print("WARNING: need to run 32bit python to use this library")
-#    sys.exit()
-
 # set up logging
 log = logging.getLogger(__name__)
 

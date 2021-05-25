@@ -1,5 +1,7 @@
 """Interface to C-libary function provided by XIA in sys DLL.
 
+Currently calling the XIA C-library functions is only supported on Windows.
+
 This file provides python function that directly call functions in the
 sys.dll libarary using ctypes.
 
@@ -44,6 +46,7 @@ import ctypes
 import logging
 from pathlib import Path
 import sys
+from unittest.mock import MagicMock
 
 import numpy as np
 
@@ -51,18 +54,29 @@ from .config import lib_sys
 from .C_library_app import ProgramFippi, ProgramSetDACs, converter_IEEE754_to_ulong
 from . import variables
 
-if sys.maxsize > 2 ** 31 - 1:
-    print("WARNING: need to run 32bit python to use this library")
-#    sys.exit()
-
-if not lib_sys:
-    print("[ERROR] no path for lib_app set.")
-    sys.exit()
-
 # set up logging
 log = logging.getLogger(__name__)
 
-PixieSysDLL = ctypes.cdll.LoadLibrary(str(lib_sys))
+if sys.platform == "win32":
+    # currently only support windows control libraries
+    if sys.maxsize > 2 ** 31 - 1:
+        print("[WARNING] need to run 32bit python to use this library")
+    if not lib_sys:
+        print("[ERROR] no path for lib_app set.")
+        sys.exit()
+
+    # make sure pxisys.ini is available
+    initfile = current_dir / "pxisys.ini"
+    if not initfile.exists():
+        log.error(
+            f"Error: please copy the pxisys.ini file into the directory: {current_dir}"
+        )
+
+    PixieSysDLL = ctypes.cdll.LoadLibrary(str(lib_sys))
+    PROTO = ctypes.CFUNCTYPE
+else:
+    PixieSysDLL = MagicMock()
+    PROTO = MagicMock()
 
 SETTINGS = variables.settings
 SETTINGS_NAME_CHANNEL = []
@@ -74,17 +88,8 @@ for name, (startpos, length) in SETTINGS.items():
         SETTINGS_NAME_MODULE.append(name)
 
 
-current_dir = Path(".")
-# make sure pxisys.ini is available
-initfile = current_dir / "pxisys.ini"
-if not initfile.exists():
-    log.error(
-        f"Error: please copy the pxisys.ini file into the directory: {current_dir}"
-    )
-
-
 # read/write setting in pixie directly
-pixie_DSP_memory_io_prototype = ctypes.CFUNCTYPE(
+pixie_DSP_memory_io_prototype = PROTO(
     ctypes.c_int,
     ctypes.POINTER(ctypes.c_uint),
     ctypes.c_uint,
@@ -677,7 +682,7 @@ def change_setting_dict(settings, auto_update=True):
 
 
 # read data directly for list mode
-Pixie_Read_ExtFIFOStatus_prototype = ctypes.CFUNCTYPE(
+Pixie_Read_ExtFIFOStatus_prototype = PROTO(
     ctypes.c_int, ctypes.POINTER(ctypes.c_uint), ctypes.c_ushort
 )
 
@@ -707,7 +712,7 @@ def ReadFIFOStatus(module):
     return Cwords.value
 
 
-Pixie_ExtFIFO_Read_prototype = ctypes.CFUNCTYPE(
+Pixie_ExtFIFO_Read_prototype = PROTO(
     ctypes.c_int, ctypes.POINTER(ctypes.c_uint), ctypes.c_uint, ctypes.c_ushort
 )
 
