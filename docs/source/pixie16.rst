@@ -60,14 +60,6 @@ pixie16.control module
    :undoc-members:
    :show-inheritance:
 
-pixie16.control\_mock module
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-.. automodule:: pixie16.control_mock
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
 pixie16.plot module
 ^^^^^^^^^^^^^^^^^^^
 
@@ -99,12 +91,3 @@ pixie16.tasks module
    :members:
    :undoc-members:
    :show-inheritance:
-
-pixie16.variables module
-^^^^^^^^^^^^^^^^^^^^^^^^
-
-.. automodule:: pixie16.variables
-   :members:
-   :undoc-members:
-   :show-inheritance:
-

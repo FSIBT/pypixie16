@@ -1,4 +1,4 @@
-"""python interface to controlling the pixie16.
+"""Python interface to controlling the pixie16.
 
 Consists of python calls directly to two C-libraries provided by XIA and
 some high level functions to make running the pixie16 easier in python.
