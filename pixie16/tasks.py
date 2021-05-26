@@ -151,6 +151,7 @@ class PickSingleModule(Task):
     """
 
     def __init__(self, module=0):
+        super().__init__()
         self.module = 0
 
     def do_work(self, value):
