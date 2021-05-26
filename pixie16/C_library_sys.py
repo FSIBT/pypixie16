@@ -57,15 +57,13 @@ from . import variables
 # set up logging
 log = logging.getLogger(__name__)
 
-if sys.platform == "win32":
-    # currently only support windows control libraries
-    if sys.maxsize > 2 ** 31 - 1:
-        print("[WARNING] need to run 32bit python to use this library")
+if sys.platform == "win32" and sys.maxsize < 2 ** 32:
     if not lib_sys:
         print("[ERROR] no path for lib_app set.")
         sys.exit()
 
     # make sure pxisys.ini is available
+    current_dir = Path(".")
     initfile = current_dir / "pxisys.ini"
     if not initfile.exists():
         log.error(
@@ -75,6 +73,8 @@ if sys.platform == "win32":
     PixieSysDLL = ctypes.cdll.LoadLibrary(str(lib_sys))
     PROTO = ctypes.CFUNCTYPE
 else:
+    if sys.platform == "win32":
+        print("[WARNING] need to run 32bit python to use this library")
     PixieSysDLL = MagicMock()
     PROTO = MagicMock()
 

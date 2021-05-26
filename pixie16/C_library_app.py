@@ -88,10 +88,7 @@ from .config import (
 # set up logging
 log = logging.getLogger(__name__)
 
-if sys.platform == "win32":
-    # currently only support windows control libraries
-    if sys.maxsize > 2 ** 31 - 1:
-        print("[WARNING] need to run 32bit python to use the control library")
+if sys.platform == "win32" and sys.maxsize < 2 ** 32:
     if not lib_app:
         print("[ERROR] no path for lib_app set.")
         sys.exit()
@@ -106,6 +103,9 @@ if sys.platform == "win32":
     PixieAppDLL = ctypes.cdll.LoadLibrary(str(lib_app))
     PROTO = ctypes.WINFUNCTYPE
 else:
+    if sys.platform == "win32":
+        print("[WARNING] need to run 32bit python to use the control library")
+
     # on all other platforms we mock the DLL calls
     # mostly so that readthedocs can still build the documentation
     PixieAppDLL = MagicMock()
