@@ -1,6 +1,6 @@
 # Getting started
 
-## Installationg
+## Installation
 
 Pypixie16 is available on [PyPi](https://pypi.org/project/pypixie16/)
 and can therefore easily be installed using pip.
