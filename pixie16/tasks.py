@@ -144,6 +144,19 @@ class ConvertToEvents(Task):
         return {mod: reader.pop_all() for mod, reader in self.list_mode_readers.items()}
 
 
+class PickSingleModule(Task):
+    """Task to pick events from a single module.
+
+    Takes output from, e.g., ConvertToEvents and outputs only the data for a single module.
+    """
+
+    def __init__(self, module=0):
+        self.module = 0
+
+    def do_work(self, value):
+        return value[self.module]
+
+
 class SortEvents(Task):
     """Task to sort events by timestamp."""
 
