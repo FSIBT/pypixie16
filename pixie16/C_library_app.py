@@ -103,13 +103,14 @@ if sys.platform == "win32" and sys.maxsize < 2 ** 32:
     PixieAppDLL = ctypes.cdll.LoadLibrary(str(lib_app))
     PROTO = ctypes.WINFUNCTYPE
 else:
-    if sys.platform == "win32":
-        print("[WARNING] need to run 32bit python to use the control library")
-
     # on all other platforms we mock the DLL calls
     # mostly so that readthedocs can still build the documentation
-    PixieAppDLL = MagicMock()
-    PROTO = MagicMock()
+    PixieAppDLL = MagicMock(
+        name="Need to run in 32 bit mode on Windows to use the control module"
+    )
+    PROTO = MagicMock(
+        name="Need to run in 32 bit mode on Windows to use the control module"
+    )
 
 # some globals
 init_done = False

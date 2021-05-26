@@ -73,10 +73,12 @@ if sys.platform == "win32" and sys.maxsize < 2 ** 32:
     PixieSysDLL = ctypes.cdll.LoadLibrary(str(lib_sys))
     PROTO = ctypes.CFUNCTYPE
 else:
-    if sys.platform == "win32":
-        print("[WARNING] need to run 32bit python to use this library")
-    PixieSysDLL = MagicMock()
-    PROTO = MagicMock()
+    PixieSysDLL = MagicMock(
+        name="Need to run in 32 bit mode on Windows to use the control module"
+    )
+    PROTO = MagicMock(
+        name="Need to run in 32 bit mode on Windows to use the control module"
+    )
 
 SETTINGS = variables.settings
 SETTINGS_NAME_CHANNEL = []
