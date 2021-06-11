@@ -151,6 +151,7 @@ class Pipeline:
         self.i = 0
         self.start_time = 0
         self.runtime = 0
+        self.queues = {}
 
         # we'll use a single event for all tasks
         self.stop_event = multiprocessing.Event()
@@ -169,6 +170,8 @@ class Pipeline:
         q = multiprocessing.Queue()
         A.output_queue = q
         B.input_queue = q
+        self.queues[A.name] = q
+        print(f"debug: setting up pipeline link: {A.name} -> {B.name}", flush=True)
 
     def start(self):
         self.start_time = time.time()
@@ -209,6 +212,8 @@ class Pipeline:
                     # no need to also show runtime in postfix
                     postfix = self.status.copy()
                     postfix.pop("runtime", None)
+                    for name, q in self.queues.items():
+                        postfix[name] = q.qsize()
                     pbar.set_postfix(postfix)
                     if self.runtime < total:
                         pbar.n = self.runtime

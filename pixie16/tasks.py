@@ -64,12 +64,18 @@ class TakeData(Task):
 
 
 class GatherData(Task):
-    """Task to create larger data buckets out of the data directly from the FPGA."""
+    """Task to create larger data buckets out of the data directly from the FPGA.
 
-    def __init__(self):
+    It has two different buckets: one for sending data to the next queue
+    and one for saving data to disk.
+    """
+
+    def __init__(self, maxsize=50e6, save_size=None):
         super().__init__()
-        self.data = defaultdict(list)
-        self.maxsize = 50e6  # in bytes
+        self.data_queue = defaultdict(list)
+        self.data_disk = defaultdict(list)
+        self.maxsize = maxsize  # in bytes
+        self.save_size = save_size or maxsize
         self.save_binary = False
         self.name = "Gather Data"
         self.mycounter = 0
@@ -87,9 +93,9 @@ class GatherData(Task):
                     break
             v.tofile(str(file))
 
-    def get_size(self):
+    def get_size(self, data):
         out = []
-        for data_list in self.data.values():
+        for data_list in data.values():
             size = 0
             for element in data_list:
                 size += element.nbytes
@@ -102,30 +108,40 @@ class GatherData(Task):
         self.mycounter += 1
 
         for i, data in enumerate(value):
-            self.data[i].append(data)
+            self.data_queue[i].append(data)
+            self.data_disk[i].append(data)
 
-        data_size = self.get_size()
+        # handle data for saving
+        data_size = self.get_size(self.data_disk)
+        if data_size:
+            self.send_status({"data disk size": data_size})
+            if data_size > self.save_size:
+                out = {k: np.concatenate(v) for k, v in self.data_disk.items() if v}
+                if self.save_binary:
+                    self.save_data(out)
+                self.data_disk = defaultdict(list)
+
+        # handle data for queue
+        data_size = self.get_size(self.data_queue)
         if not data_size:
             return
 
-        self.send_status({"data size": data_size})
+        self.send_status({"data queue size": data_size})
 
         if data_size > self.maxsize:
-            # TODO: check if this is the correct way to flatten or if
-            # we need to transpose
-            out = {k: np.concatenate(v) for k, v in self.data.items() if v}
-            if self.save_binary:
-                self.save_data(out)
-            self.data = defaultdict(list)
+            out = {k: np.concatenate(v) for k, v in self.data_queue.items() if v}
+            self.data_queue = defaultdict(list)
             return out
 
     def cleanup(self):
-        out = {k: np.concatenate(v) for k, v in self.data.items() if v}
-        if out:
-            if self.save_binary:
-                self.save_data(out)
+        out_queue = {k: np.concatenate(v) for k, v in self.data_queue.items() if v}
+        out_disk = {k: np.concatenate(v) for k, v in self.data_disk.items() if v}
+        if out_queue:
             if self.output_queue:
-                self.output_queue.put(out)
+                self.output_queue.put(out_queue)
+        if out_disk:
+            if self.save_binary:
+                self.save_data(out_disk)
 
 
 class ConvertToEvents(Task):
@@ -152,7 +168,8 @@ class PickSingleModule(Task):
 
     def __init__(self, module=0):
         super().__init__()
-        self.module = 0
+        self.module = module
+        self.name = f"Reduce to module {module}"
 
     def do_work(self, value):
         return value[self.module]
@@ -197,6 +214,7 @@ class GatherEvents(Task):
         self.data = []
         self.size = size
         self.nr = 0
+        self.name = f"Gather events (size={size})"
 
     def do_work(self, value):
         self.data.extend(value)
@@ -212,6 +230,8 @@ class GatherEvents(Task):
         if self.output_queue and self.data:
             self.output_queue.put(self.data)
         self.data = []
+        self.nr += 1
+        self.send_status({"gathered events": self.nr, "gathered queue": len(self.data)})
 
 
 class LoadFiles(Task):
