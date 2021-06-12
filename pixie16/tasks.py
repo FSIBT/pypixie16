@@ -16,8 +16,9 @@ class DummyData(Task):
         super().__init__()
         self.runtime = runtime
 
+        self.name = "Data generator"
         file = Path(__file__).parent.parent / "tests/pixie16-data-01.bin"
-        self.data = file.read_bytes()
+        self.data = np.fromfile(file, dtype=np.uint8)
         self.length = len(self.data)
         self.chunk_size = 20_000
         self.pos = 0
@@ -34,8 +35,8 @@ class DummyData(Task):
         if self.pos + self.chunk_size < self.length:
             out = self.data[self.pos : self.pos + self.chunk_size]
         else:
+            out = self.data[self.pos :]
             self.pos = 0
-            out = self.data[self.pos : self.pos + self.chunk_size]
         self.pos += self.chunk_size
         ret = [out for m in self.modules]
         return ret
@@ -70,28 +71,26 @@ class GatherData(Task):
     and one for saving data to disk.
     """
 
-    def __init__(self, maxsize=50e6, save_size=None):
+    def __init__(self, maxsize=50e6, save_size=None, path=None):
         super().__init__()
         self.data_queue = defaultdict(list)
         self.data_disk = defaultdict(list)
         self.maxsize = maxsize  # in bytes
         self.save_size = save_size or maxsize
-        self.save_binary = False
+        self.save_binary = save_size is not None
         self.name = "Gather Data"
         self.mycounter = 0
+        self.file_counter = 0
+        self.path = path or Path(".")
 
     def save_data(self, out):
         timestamp = datetime.today().strftime("%Y-%m-%d-%H-%M-%S")
         for k, v in out.items():
             i = 0
-            file = Path(f"data-mod{k}-{timestamp}-{i:03d}.bin")
-            while file.exists():
-                i += 1
-                file = Path(f"data-mod{k}-{timestamp}-{i:03d}.bin")
-                if i > 999:
-                    print("[ERROR] GatherData Task: too many binary files")
-                    break
+            file = self.path / f"data-mod{k}-{timestamp}-{self.file_counter:05d}.bin"
+            print(file.absolute(), flush=True)
             v.tofile(str(file))
+        self.file_counter += 1
 
     def get_size(self, data):
         out = []

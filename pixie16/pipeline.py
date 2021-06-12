@@ -212,8 +212,6 @@ class Pipeline:
                     # no need to also show runtime in postfix
                     postfix = self.status.copy()
                     postfix.pop("runtime", None)
-                    for name, q in self.queues.items():
-                        postfix[name] = q.qsize()
                     pbar.set_postfix(postfix)
                     if self.runtime < total:
                         pbar.n = self.runtime
