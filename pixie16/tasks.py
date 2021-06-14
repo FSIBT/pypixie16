@@ -125,10 +125,10 @@ class GatherData(Task):
 
         # handle data for queue
         data_size = self.get_size(self.data_queue)
+        self.send_status({"data queue size": data_size})
+
         if not data_size:
             return
-
-        self.send_status({"data queue size": data_size})
 
         if data_size > self.maxsize:
             out = {k: np.concatenate(v) for k, v in self.data_queue.items() if v}
@@ -194,7 +194,6 @@ class SortEvents(Task):
     def do_work(self, value):
         out = []
         self.data.extend(value)
-        self.send_status({"sort queue": self.nr_sorted})
         while len(self.data) > self.maxsize:
             self.data.sort(key=lambda x: x.timestamp)
             out = self.data[: self.N_to_sort]
@@ -202,6 +201,7 @@ class SortEvents(Task):
             if out and self.output_queue:
                 self.output_queue.put(out)
                 self.nr_sorted += 1
+        self.send_status({"sorted blocks": self.nr_sorted})
 
     def cleanup(self):
         self.data.sort(key=lambda x: x.timestamp)
