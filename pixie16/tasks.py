@@ -12,12 +12,16 @@ from . import read
 
 
 class DummyData(Task):
-    def __init__(self, runtime):
+    def __init__(self, runtime, filename=None):
         super().__init__()
         self.runtime = runtime
+        self.filename = filename
 
         self.name = "Data generator"
-        file = Path(__file__).parent.parent / "tests/pixie16-data-01.bin"
+        if filename is None:
+            file = Path(__file__).parent.parent / "tests/pixie16-data-01.bin"
+        else:
+            file = Path(filename)
         self.data = np.fromfile(file, dtype=np.uint8)
         self.length = len(self.data)
         self.chunk_size = 20_000
@@ -88,7 +92,6 @@ class GatherData(Task):
         for k, v in out.items():
             i = 0
             file = self.path / f"data-mod{k}-{timestamp}-{self.file_counter:05d}.bin"
-            print(file.absolute(), flush=True)
             v.tofile(str(file))
         self.file_counter += 1
 
@@ -186,17 +189,19 @@ class SortEvents(Task):
         self.maxsize = maxsize
         self.N_to_sort = number_to_sort
         self.name = "Sort events"
+        self.nr_sorted = 0
 
     def do_work(self, value):
         out = []
         self.data.extend(value)
-        self.send_status({"sort queue": len(self.data)})
+        self.send_status({"sort queue": self.nr_sorted})
         while len(self.data) > self.maxsize:
             self.data.sort(key=lambda x: x.timestamp)
             out = self.data[: self.N_to_sort]
             self.data = self.data[self.N_to_sort :]
             if out and self.output_queue:
                 self.output_queue.put(out)
+                self.nr_sorted += 1
 
     def cleanup(self):
         self.data.sort(key=lambda x: x.timestamp)
@@ -269,8 +274,7 @@ class LoadFiles(Task):
 
         self.send_status(
             {
-                "read events": self.nr_of_events,
+                "read events": f"{self.nr_of_events:.2e}",
                 "runtime": self.byte_stream.current_file_index,
-                "file": self.byte_stream.current_file_index,
             }
         )

@@ -61,6 +61,7 @@ class Task(multiprocessing.Process):
         self.output_queue = None
         self.status_queue = None
         self.start_time = None
+        self.stop_time = None
         self.name = "general task"
         self.done = False
         self.last_update = time.time()
@@ -134,6 +135,9 @@ class Task(multiprocessing.Process):
         # if we are done, indicate that the queue should end
         if self.output_queue:
             self.output_queue.put(None)
+        self.stop_time = time.time()
+
+        # print(f"Finished Tasks {self.name}")
 
 
 class Pipeline:
@@ -145,8 +149,9 @@ class Pipeline:
 
     """
 
-    def __init__(self, tasks):
+    def __init__(self, tasks, verbose=False):
         self._tasks = tasks
+        self.verbose = verbose
         self.status = {}
         self.i = 0
         self.start_time = 0
@@ -171,7 +176,10 @@ class Pipeline:
         A.output_queue = q
         B.input_queue = q
         self.queues[A.name] = q
-        print(f"debug: setting up pipeline link: {A.name} -> {B.name}", flush=True)
+        if self.verbose:
+            print(
+                f"[Pipeline] setting up pipeline link: {A.name} -> {B.name}", flush=True
+            )
 
     def start(self):
         self.start_time = time.time()
