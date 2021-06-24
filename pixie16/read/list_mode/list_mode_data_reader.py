@@ -301,9 +301,9 @@ class ListModeDataReader:
         )
         if "Ext_TS_Lo" in event_values:
             ext_timestamp = calc_external_timestamp(
-                events_values.pop("Ext_TS_Lo"), events_values.pop("Ext_TS_Hi")
+                event_values.pop("Ext_TS_Lo"), event_values.pop("Ext_TS_Hi")
             )
-            events_values.update({"ext_timestamp": ext_timestamp})
+            event_values.update({"ext_timestamp": ext_timestamp})
 
         for key in ["Event Length", "Header Length", "Trace Length"]:
             if key in event_values:
