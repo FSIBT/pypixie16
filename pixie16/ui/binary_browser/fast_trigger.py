@@ -123,6 +123,9 @@ class FastTrigger(QWidget):
             if name == plot_name:
                 for c in [0, 1]:
                     tmp = self.grid.itemAtPosition(1 + i, c).widget()
+                    if tmp is None:
+                        print(f' no items at {i+1} {c} for {name}"')
+                        continue
                     tmp.setHidden(not tmp.isHidden())
 
     def add_channels(self):
@@ -203,7 +206,7 @@ class FastTrigger(QWidget):
         # calc noise level
         try:
             first_trigger_offset = int(min(t[0] for t in self.triggers) - 10)
-        except ValueError:
+        except (ValueError, IndexError):
             print(
                 "[Warning]: No trigger found, using the first 20% of the trace to estimate baseline",
                 flush=True,
@@ -356,7 +359,10 @@ class FastTrigger(QWidget):
 
         energy = np.zeros(self.N)
         for i, trace in enumerate(self.data_FPGA):
-            trigger_pos = int(self.triggers[i][0])
+            try:
+                trigger_pos = int(self.triggers[i][0])
+            except IndexError:
+                trigger_pos = 0
             if trigger_pos:
                 if trigger_pos + L < len(trace):
                     energy[i] = (
