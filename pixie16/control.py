@@ -62,6 +62,21 @@ def set_traces(module: int, channel: int, status: bool) -> None:
     WriteChanParam("CHANNEL_CSRA", channel_setting, module, channel)
 
 
+def empty_fifo(module: int) -> None:
+    """Read all data in a fifo of a specific module and discard it."""
+
+    while ReadFIFOStatus(module):
+        number_of_words = ReadFIFOStatus(module)
+        ReadFIFO(i, number_of_words)
+
+
+def empty_all_fifos(modules: Iterable[int]) -> None:
+    """Read data from all fifos and discard it."""
+
+    for m in modules:
+        empty_fifo(m)
+
+
 def read_list_mode_fifo(
     check: bool = True, threshold: int = 1024, modules: Optional[Iterable[int]] = None
 ) -> List[np.ndarray]:
