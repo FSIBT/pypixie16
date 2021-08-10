@@ -971,7 +971,7 @@ CStartListModeRun = start_listmode_run_prototype(
 )
 
 
-def start_listmode_run(module=None, runtype=0x100, resume=False, modules=None):
+def start_listmode_run(module=None, resume=False, modules=None):
     """Uses the XIA library to start a list mode run in one channel in a module.
 
     Parameters
@@ -981,10 +981,8 @@ def start_listmode_run(module=None, runtype=0x100, resume=False, modules=None):
          module number
          0,..., k-1 to start individual modules, k to start all modules
          None to use module wide definition of modules
-    runtype :
-         taks number
     resume :
-         resume run?
+         If `False` erase histogram and statistics information
     modules : list[int]
          list of slots that have modules installed, defaults to one module in slot 2
     """
