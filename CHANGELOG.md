@@ -6,6 +6,19 @@ and this project tries to adhere to [Semantic Versioning](https://semver.org/spe
 
 ## [Unreleased]
 
+## [0.7] - 2022-01-29
+### Added
+- Function that empties the FIFO
+- pipeline & tasks: add names to some predefined tasks
+- binary browser: captures some more errors when calculating fast_triggers
+
+### Changed
+- remove unused argument from `start_listmode_run`
+
+### Fixed
+- fix type in `ListModeDataReader`
+- pipeline & tasks: fix status updates
+
 ## [0.6] - 2021-05-25
 ### Added
 - added 1d and 2d parameter scan functionality
@@ -33,6 +46,7 @@ and this project tries to adhere to [Semantic Versioning](https://semver.org/spe
 - added this CHANGELOG.md
 - when plotting MCA spectra add option to rebin
 - add python 3.8 to setup.py
+
 ### Changed
 - fixed missing parameters in control.py
 - fixed up more doc-strings
