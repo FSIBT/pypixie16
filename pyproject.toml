@@ -1,5 +1,6 @@
 [build-system]
 requires = ["setuptools>=42", "wheel", "setuptools_scm[toml]>=3.4"]
+build-backend = "setuptools.build_meta"
 
 [tool.setuptools_scm]
 write_to = "pixie16/_version.py"
@@ -12,12 +13,25 @@ max-line-length="88"
 
 [tool.pylint."MESSAGES CONTROL"]
 # bad-continuation: Black does the job, no need to check.
-disable = "bad-continuation, logging-fstring-interpolation"
+disable = "bad-continuation, logging-fstring-interpolation, line-too-long"
 
 [tool.pylint.MASTER]
 extension-pkg-whitelist="PyQt5"
+jobs=4
 
 [tool.pylint.TYPECHECK]
 # zmq.{LINGER,REQ,ROUTER,NOBLOCK} are dynamically generated and so pylint
 # doesn't see them, causing false positives.
-generated-members="REQ,RCVTIMEO"
+generated-members=[
+        "REQ",
+        "REP",
+        "RCVTIMEO",
+        "PUB",
+        "SUB",
+        "NOBLOCK",
+        "AF_INET",
+        "SOCK_STREAM",
+        "TCP_NODELAY",
+        "SOCK_DGRAM",
+        "IPPROTO_TCP",
+        ]
