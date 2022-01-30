@@ -18,6 +18,7 @@ and this project tries to adhere to [Semantic Versioning](https://semver.org/spe
 ### Fixed
 - fix type in `ListModeDataReader`
 - pipeline & tasks: fix status updates
+- building docs (missing mock for cbitstruct)
 
 ## [0.6] - 2021-05-25
 ### Added
