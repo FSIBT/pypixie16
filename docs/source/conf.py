@@ -34,6 +34,7 @@ sys.modules.update((mod_name, Mock()) for mod_name in MOCK_MODULES)
 
 # for all other libraries we can let autodoc know to mock them.
 autodoc_mock_imports = [
+    "cbitstruct",
     "fast_histogram",
     "numpy",
     "pandas",
