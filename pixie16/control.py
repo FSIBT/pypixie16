@@ -334,7 +334,7 @@ def take_MCA_spectra(
 
 
 def take_list_mode_data(
-    modules: Iterable[int], duration: float
+    modules: Iterable[int], duration: float, newline=True
 ) -> Dict[int, ByteString]:
     """Take list mode data for a certain time.
 
@@ -377,7 +377,10 @@ def take_list_mode_data(
             dt = round(time.time() - start, 2)
             pbar_traces.update(dt - pbar_traces.n)
         pbar_traces.update(duration - pbar_traces.n)
-    print()
+    pbar_traces.close()
+
+    if newline:
+        print(flush=True)
 
     # stop run
     for i, _ in enumerate(modules):
