@@ -477,6 +477,7 @@ def BootModule(
     section=None,
     verbose=False,
     modules=None,
+    check_boot_done=True,
 ):
     """Uses the XIA library to boot the module.
 
@@ -520,7 +521,7 @@ def BootModule(
 
     global boot_done
 
-    if boot_done:
+    if check_boot_done and boot_done:
         log.warning("boot already done")
         return 0
 
