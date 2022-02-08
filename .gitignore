@@ -19,3 +19,5 @@ pixie16/_version.py
 
 # editor backups
 *~
+.vs
+.idea
