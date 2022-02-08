@@ -124,6 +124,7 @@ import logging
 from pathlib import Path
 import sys
 from typing import Dict, List, Union, Optional
+from typing import Iterable as Iterable_type
 from unittest.mock import MagicMock
 
 import numpy as np
@@ -963,7 +964,7 @@ def tau_finder(module: int) -> np.ndarray:
 
 def write_single_channel_parameter(
     channel_parameter_name: str,
-    channel_parameter_data: Union[int, float, Iterable[bool]],
+    channel_parameter_data: Union[int, float, Iterable_type[bool]],
     module: int,
     channel: int,
 ) -> None:
