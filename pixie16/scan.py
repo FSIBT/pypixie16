@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 import sys
-import typing
+from typing import Optional
 
 from matplotlib import pyplot as plt
 import numpy as np
@@ -65,8 +65,8 @@ class ScanParameter:
 def parameter_scan_1d(
     parameter: ScanParameter,
     dwelltime: int = 1,
-    title: typing.Optional[str] = None,
-    savefile: typing.Optional[str] = None,
+    title: Optional[str] = None,
+    savefile: Optional[str] = None,
 ):
     """Do a 1D parameter scan on the pixie16.
 
@@ -103,8 +103,10 @@ def parameter_scan_1d(
             while check == 1:
                 # Check Run Status
                 plt.pause(1)
-                check = control.CheckRunStatus(parameter.module)
-            out = control.ReadHistogramFromModule(paramter.module, parameter.channel)
+                check = control.check_run_status()
+            out = control.read_histogram_from_module(
+                parameter.module, parameter.channel
+            )
             Y.append(np.sum(out))
 
             ax.clear()
@@ -130,8 +132,8 @@ def parameter_scan_2d(
     parameterA: ScanParameter,
     parameterB: ScanParameter,
     dwelltime: int = 1,
-    title: typing.Optional[str] = None,
-    savefile: typing.Optional[str] = None,
+    title: Optional[str] = None,
+    savefile: Optional[str] = None,
 ):
     """Do a 2D parameter scan on the pixie16.
 
@@ -179,8 +181,8 @@ def parameter_scan_2d(
                 while check == 1:
                     # Check Run Status
                     plt.pause(1)
-                    check = control.CheckRunStatus(parameterB.module)
-                out = control.ReadHistogramFromModule(
+                    check = control.check_run_status()
+                out = control.read_histogram_from_module(
                     parameterB.module, parameterB.channel
                 )
                 Z[i, j] = np.sum(out)

@@ -22,6 +22,13 @@ import tqdm
 from .config import config, inifile, data_dir
 from . import config
 from . import C_library_sdk as SDK
+
+# lift some functions directly in this namespace
+from .C_library_sdk import (
+    read_histogram_from_module,
+    load_dsp_parameters_from_file,
+    save_dsp_parameters_as_json,
+)
 from . import variables
 
 # set up logging
@@ -238,6 +245,61 @@ def empty_all_fifos() -> None:
         empty_fifo(m)
 
 
+def start_histogram_run() -> None:
+    """Start a histogram run.
+
+    Uses the module list defined during `init`.
+    """
+    SDK.start_histogram_run(len(module_list))
+
+
+def start_list_mode_run() -> None:
+    """Start a list mode run.
+
+    Uses the module list defined during `init`.
+    """
+    SDK.start_list_mode_run(len(module_list))
+
+
+def check_run_status() -> bool:
+    """Checks the run status of all known modules."""
+
+    status = True
+    for m, _ in enumerate(module_list):
+        status = status & SDK.check_run_status(m)
+    return status
+
+
+def get_stats() -> List:
+    """Get statistics for all modules."""
+    return [SDK.read_statistics_from_module(m) for m, _ in enumerate(module_list)]
+
+
+def save_stats_to_file(filename: Path) -> None:
+    """Get statistics for all modules and save as json to file.
+
+    Parameters
+    ----------
+    filename
+        name to save the settings to
+    """
+    stats = get_stats()
+    with filename.open("w") as f:
+        json.dump(stats, f)
+
+
+def end_run() -> None:
+    """Calls end_run on all the modules."""
+    for m, _ in enumerate(module_list):
+        SDK.end_run(m)
+
+
+def exit_system() -> None:
+    """Calls exit_system on all the modules."""
+    for m, _ in enumerate(module_list):
+        SDK.exit_system(m)
+
+
 def read_list_mode_fifo(
     check: bool = True, threshold: int = 1024, modules: Optional[Iterable[int]] = None
 ) -> List[np.ndarray]:
@@ -335,7 +397,7 @@ def run_list_mode(filename: Optional[str] = None, runtime: int = 5) -> None:
         return
 
     with filename.open("wb") as outfile:
-        SDK.start_list_mode_run(len(module_list))
+        start_list_mode_run()
         start = time.time()
         stop = start + runtime
 
@@ -455,7 +517,7 @@ def take_MCA_spectra(
     if verbose:
         print("[INFO] Taking MCA spectrum", end="", flush=True)
 
-    SDK.start_histogram_run(len(module_list))
+    start_histogram_run()
     sys.stdout.flush()
     time.sleep(0.5)
 
@@ -512,7 +574,7 @@ def take_list_mode_data(
     if modules is None:
         modules = module_list
 
-    SDK.start_list_mode_run(len(modules))
+    start_list_mode_run()
 
     # initialize output module
     raw_data = {i: b"" for i, _ in enumerate(modules)}
@@ -553,6 +615,13 @@ def take_list_mode_data(
     return raw_data
 
 
+def read_settings_from_file(filename: Path):
+    """Reads the settings from a new-style json settings file."""
+    with filename.open("r") as f:
+        data = json.load(f)
+    return data
+
+
 def read_settings() -> Dict:
     """Read the current setting into memory.
 
@@ -567,8 +636,7 @@ def read_settings() -> Dict:
     f = tempfile.NamedTemporaryFile(suffix=".json", delete=False)
     filename = Path(f.name)
     SDK.save_dsp_parameters_as_json(filename)
-    with filename.open("r") as f:
-        data = json.load(f)
+    data = read_settings_from_file(filename)
     filename.unlink()
     return data
 

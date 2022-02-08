@@ -464,6 +464,8 @@ def check_run_status(module: int) -> Union[bool, None]:
         return True
     if ret == 0:
         return False
+    # ret < 0 indicates an error
+    return False
 
 
 def end_run(module: int) -> None:
@@ -813,7 +815,7 @@ def read_single_module_parameter(
         return np.ctypeslib.as_array(CModParData)
 
 
-def read_statistics_from_module(module: int):
+def read_statistics_from_module(module: int) -> Dict:
     """Read statistics from a module.
 
     Parameters
@@ -823,8 +825,8 @@ def read_statistics_from_module(module: int):
 
     Returns
     -------
-    list
-       Return stats for each channel
+    dict
+       Return stats for one module
     """
     Cmodule = ctypes.c_ushort(module)
 
@@ -864,8 +866,17 @@ def read_statistics_from_module(module: int):
                 "output_count_rate": stats[5][ch],
             }
         )
+    out = {
+        "module": module,
+        "real_time": stats[0],
+        "live_time": stats[1],
+        "input_counts": stats[2],
+        "input_count_rate": stats[3],
+        "output_counts": stats[4],
+        "output_count_rate": stats[5],
+    }
 
-    return stats
+    return out
 
 
 def save_dsp_parameters_as_json(filename: Path) -> None:

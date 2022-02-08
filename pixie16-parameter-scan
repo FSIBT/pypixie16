@@ -43,8 +43,8 @@ datadir = Path(".")
 
 
 # Initialize System, load config file
-pxcontrol.InitSys(modules=[2])
-pxcontrol.BootModule(commands["<settingfile>"])
+pxcontrol.init_and_boot(modules=[2])
+pxcontrol.load_dsp_parameters_from_file(Path(commands["<settingfile>"]))
 
 
 # Run info
@@ -105,16 +105,10 @@ elif N == 2:
 else:
     print("Only 1d and 2d scans are implemented")
 
-newfile = datadir / f"{today}-scan-{run:03d}.set"
-pxcontrol.SaveParam(newfile)
+newfile = datadir / f"{today}-scan-{run:03d}-setting.json"
+pxcontrol.save_dsp_parameters_as_json(newfile)
+newfile = datadir / f"{today}-scan-{run:03d}-stats.json"
+pxcontrol.save_stats_to_file(newfile)
 
-# End Run, probably not needed, since run should have ended in while loop above
-if N == 1:
-    pxcontrol.EndRun(parameter.module)
-    pxcontrol.ExitSys(parameter.module)
-if N == 2:
-    pxcontrol.EndRun(parameterA.module)
-    pxcontrol.ExitSys(parameterA.module)
-    if parameterA.module != parameterB.module:
-        pxcontrol.EndRun(parameterB.module)
-        pxcontrol.ExitSysm(parameterB.module)
+pxcontrol.end_run()
+pxcontrol.exit_system()

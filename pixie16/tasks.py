@@ -59,7 +59,7 @@ class TakeData(Task):
         print("save settings")
         self.name = "Take Data"
 
-        control.start_listmode_run()
+        control.start_list_mode_run()
 
     def do_work(self, value):
         return control.read_list_mode_fifo(threshold=64 * 1024)

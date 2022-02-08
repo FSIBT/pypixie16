@@ -27,9 +27,9 @@ import sys
 import time
 from pathlib import Path
 
-settingfile = commands["<file>"]
+settingfile = Path(commands["<file>"])
 # r'E:\ROOTS\XIA-pulse-shape\2019-04-08-API-Cblock0013.set'
-outfile = commands["<outfile>"]
+outfile = Path(commands["<outfile>"])
 
 if commands["set"]:
     if not name in pixie16.variables.settings:
@@ -50,13 +50,18 @@ if commands["set"]:
             print("Error: outfile exists already")
             sys.exit(2)
 
-    pixie16.control.InitSys(PXISlotMap=SLOTS, modules=modules)
-    pixie16.control.BootModule(settingfile)
+    pixie16.control.init_and_boot(
+        offline_mode=False,
+        section_name="default",
+        modules=SLOTS,
+    )
+    settings = pixie16.control.read_settings_from_file(settingfile)
     for c in channel:
-        pixie16.control.change_setting(name, value, c, module)
+        pixie16.control.change_setting(settings, name, value, c, module)
+    pixie16.control.write_settings(settings)
     if outfile:
-        pixie16.control.SaveParam(outfile)
-    pixie16.control.ExitSys(0)
+        pixie16.control.save_dsp_parameters_as_json(outfile)
+    pixie16.control.exit_system()
 
 elif commands["read"]:
     if not name in pixie16.variables.settings:
@@ -65,9 +70,13 @@ elif commands["read"]:
 
     module = int(module)
 
-    pixie16.control.InitSys(PXISlotMap=SLOTS, modules=modules)
-    pixie16.control.BootModule(settingfile)
-    A = pixie16.control.read_raw_settings(module)
+    pixie16.control.init_and_boot(
+        offline_mode=False,
+        section_name="default",
+        modules=SLOTS,
+    )
+    pixie16.control.load_dsp_parameters_from_file(settingfile)
+    A = pixie16.control.read_settings_from_file(module)
     offset, nr = pixie16.variables.settings[name]
     print(f"Name: {name}")
     if nr > 1:
@@ -78,13 +87,17 @@ elif commands["read"]:
         print(f"Module setting")
         print(f"      {A[offset]}")
 
-    pixie16.control.ExitSys(0)
+    pixie16.control.exit_system()
 
 elif commands["load"]:
     print(f"Loading settingfile {settingfile}")
-    pixie16.control.InitSys(PXISlotMap=SLOTS, modules=modules)
-    pixie16.control.BootModule(settingfile)
-    pixie16.control.ExitSys(0)
+    pixie16.control.init_and_boot(
+        offline_mode=False,
+        section_name="default",
+        modules=SLOTS,
+    )
+    pixie16.control.load_dsp_parameters_from_file(settingfile)
+    pixie16.control.exit_system()
 
 elif commands["list"]:
     for n in sorted(pixie16.variables.settings):
