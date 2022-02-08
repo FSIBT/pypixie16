@@ -1,6 +1,8 @@
 import configparser
 import os
 from pathlib import Path
+import sys
+from typing import List
 
 import appdirs
 
@@ -10,10 +12,6 @@ inifile = Path(dirs.user_config_dir) / "config.ini"
 
 config = configparser.ConfigParser()
 config.read(inifile)
-
-# set path so that we have pxisys.ini in the directory
-current_dir = Path(__file__).parent.parent
-os.chdir(current_dir)
 
 
 def config_get_parameters(section, name):
@@ -32,37 +30,68 @@ def config_get_parameters(section, name):
         print(f"No {name} found in {section}, please add it to {inifile}")
         print(f"   The file should contain something like:")
         print(f"       [{section}]")
-        print(f"       {name} = <setting for  {name}>")
+        print(f"       {name} = <setting for {name}>")
         print()
         print("The file should contain the following sections and keys:")
         print("   [Libraries]")
-        print("   app = '<path do PixieAppDll.dll>")
-        print("   sys = '<path do Pixie16SysDll.dll>")
+        print("   sdk = <path to Pixie16Api.dll>")
         print("   [Data]")
-        print("   datadir = '<path where the data files should live")
+        print("   datadir = <path where the data files should live>")
         print("   [Firmware.default]")
-        print("   ComFPGAConfigFile = '<path do syspixie16 firmware>")
-        print("   SPFPGAConfigFile = '<path do fippixie16 firmware>")
-        print("   DSPCodeFile = '<path do Pixie16DSP*.ldr>")
-        print("   DSPVarFile = '<path do Pixie16DSP*.var>")
+        print("   ComFPGAConfigFile = <path to syspixie16 firmware>")
+        print("   SPFPGAConfigFile = <path to fippixie16 firmware>")
+        print("   DSPCodeFile = <path to Pixie16DSP*.ldr>")
+        print("   DSPVarFile = <path to Pixie16DSP*.var>")
+        print("   SettingFile = <path to default setting file>")
         print()
         # sys.exit()
     return path
 
 
-lib_app = config_get_parameters("Libraries", "app")
-lib_sys = config_get_parameters("Libraries", "sys")
+def load_config(section_name: str) -> List[Path]:
+    section = f"Firmware.{section_name}"
+    if section not in config.sections():
+        print("Error: cannot find section {section} in the config file {inifile}")
+        sys.exit(1)
+    # load new path to firmware
+    firmware_com = config_get_parameters(section, "ComFPGAConfigFile")
+    firmware_sp = config_get_parameters(section, "SPFPGAConfigFile")
+    firmware_dsp_code = config_get_parameters(section, "DSPCodeFile")
+    firmware_dsp_var = config_get_parameters(section, "DSPVarFile")
+    setting_file = config_get_parameters(section, "SettingFile")
 
+    return [
+        firmware_com,
+        firmware_sp,
+        firmware_dsp_code,
+        firmware_dsp_var,
+        setting_file,
+    ]
+
+
+def list_firmware() -> None:
+    """List all firmwars defined in the config file."""
+    print(f"The config file used is: {inifile}")
+    print("The following firmware definitions exists")
+    names = []
+    for section in config.sections():
+        if not section.startswith("Firmware."):
+            continue
+        print(f"{section}")
+        names.append(section[9:])
+        for key in config[section].keys():
+            print(f"   {key} = {config[section][key]}")
+    print(
+        f'Use only the name after the "." for the name of'
+        f' the firmware: {", ".join(names)}'
+    )
+
+
+sdk = config_get_parameters("Libraries", "sdk")
 data_dir = config_get_parameters("Data", "datadir")
-
-firmware_com = config_get_parameters("Firmware.default", "ComFPGAConfigFile")
-firmware_sp = config_get_parameters("Firmware.default", "SPFPGAConfigFile")
-firmware_dsp_code = config_get_parameters("Firmware.default", "DSPCodeFile")
-firmware_dsp_var = config_get_parameters("Firmware.default", "DSPVarFile")
-
 
 # make sure the library directory in the path, so that we can find
 # dependencies, otherwise we get a "[WinError 126] The specified
 # module could not be found" error
-if lib_app:
-    os.environ["PATH"] = str(lib_app.parent) + ";" + os.environ["PATH"]
+if sdk:
+    os.environ["PATH"] = str(sdk.parent) + ";" + os.environ["PATH"]
