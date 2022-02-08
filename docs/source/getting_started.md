@@ -27,6 +27,12 @@ pip install -e .
 ```
 from within the git repository.
 
+If you want to run tests or build the docs locally, you need to add
+these as extras during the pip install:
+```
+pip install -e ".[test,docs]"
+```
+
 
 ## Configuration
 
@@ -39,8 +45,7 @@ exist, the module will let you know the path and content for the file.
 As an example, the following will set
 ```
 [Libraries]
-app = c:\Users\experiment\pixie16-software\PixieAppDll.dll
-sys = c:\Users\experiment\pixie16-software\Pixie16SysDll.dll
+sdk = c:\Users\experiment\pixie16-software\PixieAppDll.dll
 
 [Data]
 datadir = c:\Users\experiment\data
@@ -50,14 +55,13 @@ ComFPGAConfigFile = c:\Users\experiment\pixie16-software\syspixie16
 SPFPGAConfigFile = c:\Users\experiment\pixie16-software\fippixie16
 DSPCodeFile = c:\Users\experiment\pixie16-software\Pixie16DSP.ldr
 DSPVarFile = c:\Users\experiment\pixie16-software\Pixie16DSP.var
+SettingFile = c:\Users\experiment\default-setting-file.json
 ```
 
 Apart from the path to the library, the config file also includes the
 path to the firmware that should be used (here multiple configuration
 can be saved by using "Firmware.<name>" as additional header and the
 path to where the data should be stored.
-
-Furthermore the file `pxisys.ini` needs to be copied to the git repository.
 
 ## Using the module
 

@@ -23,30 +23,60 @@ This is based on version 3.3.0a2 of XIA's SDK.
 
 Here is the list of supported functions and their names in our package:
 
-Pixie16AcquireADCTrace           -> acquire_adc_trace
-Pixie16AdjustOffsets             -> adjust_offsets
-Pixie16BLcutFinder               -> baseline_cut_finder
-Pixie16BootModule                -> boot_module
-Pixie16CheckExternalFIFOStatus   -> check_external_FIFO_status
-Pixie16CheckRunStatus            -> check_run_status
-Pixie16EndRun                    -> end_run
-Pixie16ExitSystem                -> exit_system
-Pixie16InitSystem                -> init_system
-Pixie16LoadDSPParametersFromFile -> load_dsp_parameters_from_file
-Pixie16ReadDataFromExternalFIFO  -> read_data_from_external_FIFO
-Pixie16ReadHistogramFromModule   -> read_histogram_from_module
-Pixie16ReadModuleInfo            -> read_module_info
-Pixie16ReadSglChanBaselines      -> read_baselines
-Pixie16ReadSglChanPar            -> read_single_channel_parameter
-Pixie16ReadSglModPar             -> read_single_module_parameter
-Pixie16ReadStatisticsFromModule  -> read_statistics_from_module
-Pixie16SaveDSPParametersToFile   -> save_dsp_parameters_as_json
-Pixie16SetDACs                   -> set_DACs
-Pixie16StartHistogramRun         -> start_histogram_run
-Pixie16StartListModeRun          -> start_list_mode_run
-Pixie16TauFinder                 -> tau_finder
-Pixie16WriteSglChanPar           -> write_single_channel_parameter
-Pixie16WriteSglModPar            -> write_single_module_parameter
+.. list-table:: Functions
+   :widths: 25 25
+   :header-rows: 1
+
+   * - SDK name
+     - python name
+   * - Pixie16AcquireADCTrace
+     - acquire_adc_trace
+   * - Pixie16AdjustOffsets
+     - adjust_offsets
+   * - Pixie16BLcutFinder
+     - baseline_cut_finder
+   * - Pixie16BootModule
+     - boot_module
+   * - Pixie16CheckExternalFIFOStatus
+     - check_external_FIFO_status
+   * - Pixie16CheckRunStatus
+     - check_run_status
+   * - Pixie16EndRun
+     - end_run
+   * - Pixie16ExitSystem
+     - exit_system
+   * - Pixie16InitSystem
+     - init_system
+   * - Pixie16LoadDSPParametersFromFile
+     - load_dsp_parameters_from_file
+   * - Pixie16ReadDataFromExternalFIFO
+     - read_data_from_external_FIFO
+   * - Pixie16ReadHistogramFromModule
+     - read_histogram_from_module
+   * - Pixie16ReadModuleInfo
+     - read_module_info
+   * - Pixie16ReadSglChanBaselines
+     - read_baselines
+   * - Pixie16ReadSglChanPar
+     - read_single_channel_parameter
+   * - Pixie16ReadSglModPar
+     - read_single_module_parameter
+   * - Pixie16ReadStatisticsFromModule
+     - read_statistics_from_module
+   * - Pixie16SaveDSPParametersToFile
+     - save_dsp_parameters_as_json
+   * - Pixie16SetDACs
+     - set_DACs
+   * - Pixie16StartHistogramRun
+     - start_histogram_run
+   * - Pixie16StartListModeRun
+     - start_list_mode_run
+   * - Pixie16TauFinder
+     - tau_finder
+   * - Pixie16WriteSglChanPar
+     - write_single_channel_parameter
+   * - Pixie16WriteSglModPar
+     - write_single_module_parameter
 
 XIA's library provides several other functions that we do not expose
 direclty, but use in some of our calls. For example,

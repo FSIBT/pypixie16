@@ -186,8 +186,8 @@ def set_module_parameter(name: str, value, module: int):
 def set_run_time(runtime, module):
     """Sets the run time for the next run.
 
-    Paramters
-    ---------
+    Parameters
+    ----------
     runtime
         time in seconds
     module

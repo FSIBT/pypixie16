@@ -5,19 +5,22 @@ Pypixie16 is an open-source python package that allows the control of
 `XIA`_'s `Pixie-16`_ 16-channel PXI Digital Pulse Processor.
 
 For controlling the data acquisition the package provides an interface
-to XIA's C-library that needs to be available for the package to
-function. Furthermore, for controlling the instrument, a 32-bit python
-needs to be used, since the C-libraries are 32-bit only.
-This library provides some low level adapters to the C-library, as
-well as, some higher level function and classes to make data
-acquisition more pythonic and easy.
+to XIA's C-library `SDK`_ that needs to be installed and compiled for
+the package to function. This python library provides all functions of
+the C-library as python functions, as well as, some higher level
+functions and classes to make data acquisition more pythonic and easy.
+Furthermore, this module also provides some Qt user interfaces to
+browse binary data files and helper functions to analyze data.
 
-To acuire data a multiprocessing pipeline can be created easily that
-will take binary data and transform it for example to pandas
+Pypixie16 has been tested using the 64-bit version of XIA's library
+complied with Visual Studio 2022 on Windows.
+
+To acquire data a multiprocessing pipeline can be created easily that
+will take binary data and transform it, for example, to pandas
 dataframes.
 
-Furthermore, the library also provides methods to read settings file,
-and binary data. These work on either 32-bit or 64 bit platforms.
+Furthermore, the library also provides methods to read settings file (old style and new),
+and binary data.
 
 .. toctree::
    :maxdepth: 2
@@ -37,3 +40,4 @@ Indices and tables
 
 .. _XIA: https://xia.com/
 .. _Pixie-16: https://xia.com/dgf_pixie-16.html
+.. _SDK: https://docs.pixie16.xia.com/

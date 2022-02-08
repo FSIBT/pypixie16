@@ -20,74 +20,14 @@ look at binary data files.
 Submodules
 ----------
 
-pixie16.C\_library\_app module
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.. toctree::
+   :maxdepth: 4
 
-.. automodule:: pixie16.C_library_app
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
-pixie16.C\_library\_sys module
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-.. automodule:: pixie16.C_library_sys
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
-pixie16.analyze module
-^^^^^^^^^^^^^^^^^^^^^^
-
-.. automodule:: pixie16.analyze
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
-pixie16.config module
-^^^^^^^^^^^^^^^^^^^^^
-
-.. automodule:: pixie16.config
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
-pixie16.control module
-^^^^^^^^^^^^^^^^^^^^^^
-
-.. automodule:: pixie16.control
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
-pixie16.plot module
-^^^^^^^^^^^^^^^^^^^
-
-.. automodule:: pixie16.plot
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
-pixie16.scan module
-^^^^^^^^^^^^^^^^^^^
-
-.. automodule:: pixie16.scan
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
-pixie16.pipeline module
-^^^^^^^^^^^^^^^^^^^^^^^
-
-.. automodule:: pixie16.pipeline
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
-pixie16.tasks module
-^^^^^^^^^^^^^^^^^^^^
-
-.. automodule:: pixie16.tasks
-   :members:
-   :undoc-members:
-   :show-inheritance:
+   pixie16.c-library-sdk
+   pixie16.analyze
+   pixie16.config
+   pixie16.control
+   pixie16.plot
+   pixie16.scan
+   pixie16.pipeline
+   pixie16.tasks

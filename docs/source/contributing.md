@@ -1,8 +1,7 @@
 # Contributing
 
 Contributions are very welcome. The best way to contribute is to first get in contact
-with us by filing an issue to see if your proposed changes agree with
-our plans for the project.
+with us by filing an issue to see if your proposed changes can be easily added to the project.
 
 Apart from contributing actual code, improvements of the documentations or
 just bug-report or enhancement requests are also a good way to contribute.
@@ -33,5 +32,5 @@ pre-commit install
 
 from within the git repository.
 
-And use the issue tracker and pull requests in bitbucket.
+And use the [issue tracker](https://bitbucket.org/berkeleylab/pypixie16/issues?status=new&status=open) and pull requests in bitbucket.
 
