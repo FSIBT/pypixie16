@@ -6,6 +6,18 @@ and this project tries to adhere to [Semantic Versioning](https://semver.org/spe
 
 ## [Unreleased]
 
+### Changed
+- Renamed 'master' branch to 'main'
+
+### Added
+- Support for new SDK from XIA (version 3.3a2). In the process we made some function names more pythonic and clearer and added better documentation. One big change is the way settings files are saved now (two instead of one and the format changed from binary to json)
+
+### Removed
+- Support for old XIA library (Some low leve functions got removed)
+
+### Fixed
+- Building of docs
+
 ## [0.7] - 2022-01-29
 ### Added
 - Function that empties the FIFO
