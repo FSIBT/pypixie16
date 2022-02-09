@@ -126,7 +126,7 @@ class BaseApp(QMainWindow):
 
     def about(self):
         """Print some help that is useful for debugging"""
-        pyversion = ".".join([str(i) for i in sys.version_info])
+        pyversion = ".".join(str(i) for i in sys.version_info)
         QMessageBox.about(
             self,
             "About",

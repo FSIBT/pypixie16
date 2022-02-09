@@ -139,7 +139,12 @@ EVENTS_PARTS = {
     ),
     "energy": (
         "u32" * 3 + "f32",
-        ("Esum_trailing", "Esum_leading", "Esum_gap", "baseline",),
+        (
+            "Esum_trailing",
+            "Esum_leading",
+            "Esum_gap",
+            "baseline",
+        ),
     ),
     "Qsums": (
         "u32" * 8,
@@ -154,7 +159,13 @@ EVENTS_PARTS = {
             "QDCSum7",
         ),
     ),
-    "Ext Time": ("u32p16u16", ("Ext_TS_Lo", "Ext_TS_Hi",),),
+    "Ext Time": (
+        "u32p16u16",
+        (
+            "Ext_TS_Lo",
+            "Ext_TS_Hi",
+        ),
+    ),
 }
 
 # We now build all possible combinations out of these parts that can
