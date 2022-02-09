@@ -1,9 +1,43 @@
 """Python interface to controlling the pixie16.
 
-Uses  the C-library provided by XIA and adds
-higher level functions to make running the pixie16 easier in python.
+Based on XIA's C-library from their SDK, we try to provide a more
+pythonic interface, make use of a config file to store different
+configurations, and supply addtional functionality.
 
-At the moment this also only supports Windows, but other platforms should be easy to add.
+The config file (which is a requirement) stores some of the parameter
+for booting the pixie as well as the main output directory. Therefore,
+our boot and init commands take less parameters then their SDK version.
+
+Once the `init_system` function was called, we also cache the list of
+modules. We then provide functions that don't need the addtional input
+of curent modules.
+
+We provide some functions to modify channel and module parameters
+directly on the pixie, as well as, setting the run time and sync mode
+or enabling taking traces. Furthermore, there we provide function to
+start/stop acquisition and get information on all modules and save
+this to a json file.
+
+We also provide our own mechanism of changing settings by providing a
+dictionary with name of the settings as key in the dictioinary and the
+settings value only provided for the channels in use. Since the
+pixie16 provides many settings by manipulating bits in a 32bit
+integer, we provide functions that help with this and one can access
+bits by name (inspired by the names in the manual).  We also provide
+the option to overwrite some of the calculated values such as
+`PAFlength` or have them calculated automatically.
+
+TODO:
+* rename functions related to settings to make it clear if we
+  are reading/writing to a file or to the pixie
+* provide functions that call read_histogram_from_module,
+  load_dsp_parameters_from_file, save_dsp_parameters_as_json, so that
+  we don't have to lift any function from the SDK direclty anymore.
+* can we get rid of variables.py?
+
+At the moment pypixie16 only supports Windows, but other platforms
+should be easy to add.
+
 """
 from contextlib import contextmanager
 from collections import OrderedDict
@@ -402,15 +436,11 @@ def run_list_mode(filename: Optional[str] = None, runtime: int = 5) -> None:
         stop = start + runtime
 
         while time.time() < stop:
-            tic = time.time()
             data = read_list_mode_fifo()
             for d in data:
                 d.newbyteorder("S").tofile(outfile)
-            toc = time.time()
-            print(f" elapsed time  {toc-tic:.6f}")
 
-        for i, _ in enumerate(module_list):
-            SDK.end_run(i)
+        end_run()
         time.sleep(0.4)
 
         # read final data
@@ -452,11 +482,14 @@ def reset_coincidence_setting(channels: Iterable[Tuple[int, int]]) -> None:
 
 
 def enable_trace_settings(
-    channels: Iterable[List[int]], disable_CFD: bool = True
+    channels: Iterable[Tuple[int, int]], disable_CFD: bool = True
 ) -> None:
-    """Enable traces, historgrams, and sums.
+    """Enable traces, histograms, and sums.
 
-    Also turn CFD settings off (or optionally leave unchanged).
+    Also turn CFD settings off (or optionally leave unchanged).  These
+    data are useful when trying to analyze traces and optimize
+    settings offline by trying out different settings values in
+    software, for example, using pypixie16's binary-browser.
 
     Parameters
     ----------
@@ -464,6 +497,7 @@ def enable_trace_settings(
         List of (modules, channel) tuples
     disable_CFD
         Option to disable CFD for the listed channels
+
     """
     settings = OrderedDict(
         {
@@ -511,7 +545,7 @@ def take_MCA_spectra(
     )
     change_setting_from_dict(settings, auto_update=False)
 
-    modules = list({x for x, y in channels})
+    modules = list({x for x, y in channels})  # unique list of modules
 
     # take MCA spectra
     if verbose:
@@ -538,8 +572,7 @@ def take_MCA_spectra(
             pbar_mca.update(dt - pbar_mca.n)
         pbar_mca.update(duration - pbar_mca.n)
     print()
-    for m, _ in enumerate(modules):
-        SDK.end_run(m)
+    end_run()
 
     data = [SDK.read_histogram_from_module(m, c) for m, c in channels]
     return data
@@ -599,10 +632,7 @@ def take_list_mode_data(
     if newline:
         print(flush=True)
 
-    # stop run
-    for i, _ in enumerate(modules):
-        SDK.end_run(i)
-
+    end_run()
     time.sleep(0.5)
 
     # read remainig data in queue

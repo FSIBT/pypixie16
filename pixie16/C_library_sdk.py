@@ -6,20 +6,23 @@ Currently calling the XIA C-library functions is only supported on
 Windows. Adding Linux support should be relatively straight forward
 though (just changing the ctype loading of the library).
 
-We provide access to the following XIA functions and try to provide a
+We provide access to all XIA functions and try to provide a
 more pythonic interface. This include providing our own names for the
 functions (mostly just removing the Pixie16 in front and converting
 from CamelCase to lower case seperated by underscores).
 
-This file only includes the functions below, we then build a set of
-function on top of these in control.py.
+This file only includes the functions that are in XIA's library and a
+very few helper functions. We see these as more low level functions
+and build our own set of python function on top of these in control.py
+that automate several aspects, e.g. providing information from a
+config file, etc. See config.py for more details.
 
 XIA's code can be found here:
   https://github.com/xiallc/pixie_sdk
 Their document can be accessed here:
   https://docs.pixie16.xia.com/
 
-This is based on version 3.3.0a2 of XIA's SDK.
+This is based on version 3.3a2 of XIA's SDK.
 
 Here is the list of supported functions and their names in our package:
 
