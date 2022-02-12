@@ -32,7 +32,7 @@ Here is the list of supported functions and their names in our package:
 
    * - SDK name
      - python name
-   * - Pixie16AcquireADCTrace
+   * - Pixie16AcquireADCTrace, Pixie16ReadSglChanADCTrace
      - acquire_adc_trace
    * - Pixie16AdjustOffsets
      - adjust_offsets
@@ -44,6 +44,8 @@ Here is the list of supported functions and their names in our package:
      - check_external_FIFO_status
    * - Pixie16CheckRunStatus
      - check_run_status
+   * - Pixi16CopyDSPParameters
+     - copy_DSP_parameters
    * - Pixie16EndRun
      - end_run
    * - Pixie16ExitSystem
@@ -58,13 +60,20 @@ Here is the list of supported functions and their names in our package:
      - read_histogram_from_module
    * - Pixie16ReadModuleInfo
      - read_module_info
-   * - Pixie16ReadSglChanBaselines
+   * - Pixie16ReadSglChanBaselines, Pixie16AcquireBaselines
      - read_baselines
    * - Pixie16ReadSglChanPar
      - read_single_channel_parameter
    * - Pixie16ReadSglModPar
      - read_single_module_parameter
-   * - Pixie16ReadStatisticsFromModule
+   * - Pixie16ReadStatisticsFromModule,
+       Pixie16GetStatisticsSize,
+       Pixie16ComputeRealTime,
+       Pixie16ComputeLiveTime,
+       Pixie16ComputeRawInputCount,
+       Pixie16ComputeInputCountRate,
+       Pixie16ComputeRawOutputCount,
+       Pixie16ComputeOutputCountRate
      - read_statistics_from_module
    * - Pixie16SaveDSPParametersToFile
      - save_dsp_parameters_as_json
@@ -84,11 +93,6 @@ Here is the list of supported functions and their names in our package:
 XIA's library provides several other functions that we do not expose
 direclty, but use in some of our calls. For example,
 `acquire_adc_trace` include the XIA call to set up the measurement.
-
-TODO:
-* check all parameters
-* add type hints
-* write adapter function to read/write to temperoray file and get setting into memory
 
 """
 
@@ -247,13 +251,11 @@ def check_return_code(return_code: int, function: str) -> None:
         Name of the function that produced the error code
     """
     if return_code < 0:
-        # msg = ctypes.create_string_buffer(1024, 1024)
-        # SDK.PixieGetReturnCodeText(return_code, msg, 1024)
+        msg = ctypes.create_string_buffer(1024, 1024)
+        SDK.PixieGetReturnCodeText(return_code, msg, 1024)
 
-        # msg = "".join([x.decode() for x in msg if x]).strip()
-
-        # log.error(f"{function} failed with Error Code {return_code} : {msg}.")
-        log.error(f"{function} failed with Error Code {return_code}")
+        msg = "".join(x.decode() for x in msg if x).strip()
+        log.error(f"{function} failed with Error Code {return_code} : {msg}.")
 
 
 def acquire_adc_trace(module: int) -> List[np.ndarray]:
@@ -276,8 +278,9 @@ def acquire_adc_trace(module: int) -> List[np.ndarray]:
 
     traces = []
     for ch in range(16):
+        Cch = ctypes.c_ushort(ch)
         trc_length = ctypes.c_uint(0)
-        ret = SDK.PixieGetTraceLength(Cmodule, ch, ctypes.byref(trc_length))
+        ret = SDK.PixieGetTraceLength(Cmodule, Cch, ctypes.byref(trc_length))
         check_return_code(ret, "PixieGetTraceLength")
 
         trace = (ctypes.c_ushort * trc_length.value)()
@@ -285,7 +288,7 @@ def acquire_adc_trace(module: int) -> List[np.ndarray]:
             ctypes.cast(trace, ctypes.POINTER(ctypes.c_ushort * 1)),
             trc_length,
             Cmodule,
-            ch,
+            Cch,
         )
         check_return_code(ret, "Pixie16ReadSglChanADCTrace")
 
@@ -304,29 +307,29 @@ def adjust_offsets(module: int) -> None:
     module
        Module number to collect traces from
     """
-    Cmodule = ctypes.c_uint(module)
+    Cmodule = ctypes.c_ushort(module)
 
     ret = SDK.Pixie16AdjustOffsets(Cmodule)
     check_return_code(ret, "Pixie16AdjustOffsets")
 
 
-def baseline_cut_finder(module: int) -> None:
-    """Find an appropriate baseline cuts for a module.
+def baseline_cut_finder(module: int, channel: int) -> None:
+    """Find an appropriate baseline cuts for a channel in a module.
 
     Parameters
     ----------
     module
-       Module number to collect traces from
+       Module number
+    channel
+       Channel number
     """
     Cmodule = ctypes.c_ushort(module)
 
-    vals = []
-    for ch in range(16):
-        val = ctypes.c_uint32(0)
-        ret = SDK.Pixie16BLcutFinder(Cmodule, ch, ctypes.byref(val))
-        check_return_code(ret, "Pixie16BLcutFinder")
-        vals.append(val.value)
-    return vals
+    Cch = ctypes.c_ushort(channel)
+    val = ctypes.c_uint32(0)
+    ret = SDK.Pixie16BLcutFinder(Cmodule, Cch, ctypes.byref(val))
+    check_return_code(ret, "Pixie16BLcutFinder")
+    return ret
 
 
 def boot_module(
@@ -443,7 +446,8 @@ def check_external_FIFO_status(module: int) -> int:
     return Cwords.value
 
 
-def check_run_status(module: int) -> Union[bool, None]:
+def check_run_status(module: int) -> bool:
+
     """Check the run status of a module.
 
     See page 17 in the manual.
@@ -469,6 +473,74 @@ def check_run_status(module: int) -> Union[bool, None]:
         return False
     # ret < 0 indicates an error
     return False
+
+
+def copy_DSP_parameters(
+    bitmask: int,
+    source_module: int,
+    source_channel: int,
+    destination_mask: List[List[bool]],
+) -> None:
+    """Copy DSP parameters from one module to other modules.
+
+    The bit mask allows to select 13 different parameter groups that will be copied or not:
+
+    .. list-table:: Functions
+       :widths: 25 25
+       :header-rows: 1
+
+       * - Bit
+         - Item
+       * - 0
+         - Filter (energy and trigger)
+       * - 1
+         - Analog signal conditioning (polarity, dc-offset, gain/attenuation)
+       * - 2
+         - Histogram control (minimum energy, binning factor)
+       * - 3
+         - Decay time
+       * - 4
+         - Pulse shape analysis (trace length and trace delay)
+       * - 5
+         - Baseline control (baseline cut, baseline percentage)
+       * - 7
+         - Channel CSRA register (good channel, trigger enabled, etc.)
+       * - 8
+         - CFD trigger (CFD delay, scaling factor)
+       * - 9
+         - Trigger stretch lengths (veto, external trigger, etc.)
+       * - 10
+         - FIFO delays (analog input delay, fast trigger output delay, etc.)
+       * - 11
+         - Multiplicity (bit masks, thresholds, etc.)
+       * - 12
+         - QDC (QDC sum lengths)
+
+    Paramters
+    ---------
+    bitmask
+        Bit pattern of what to copy, see above
+    source_module
+        The module number to copy from
+    source_channel
+        The source channel
+    destination_mask
+        List of List. For each module in the system a List of 16 True/False
+        values that indicate if the settings should be copied to this module
+        and this channel.
+    """
+    # flatten the list
+    destination_mask = [ch_bit for module in destination_mask for ch_bit in module]
+
+    CModNum = ctypes.c_ushort(source_module)
+    CChannel = ctypes.c_ushort(source_channel)
+    Cbitmask = ctypes.c_ushort(bitmask)
+    CDestinationMask = (ctypes.c_ushort * len(destination_mask))()
+    for i, value in enumerate(destination_mask):
+        CDestinationMask[i] = value
+
+    ret = SDK.Pixie16CopyDSPParameters(Cbitmask, CModNum, CChannel, CDestinationMask)
+    check_return_code(ret, "copy_DSP_parameters")
 
 
 def end_run(module: int) -> None:
@@ -625,7 +697,7 @@ def read_histogram_from_module(module: int, channel: int, N: int = 32768) -> np.
     Cmodule = ctypes.c_ushort(module)
     Cchannel = ctypes.c_ushort(channel)
     result = (ctypes.c_uint * N)()
-    N = ctypes.c_ulong(N)
+    N = ctypes.c_uint(N)
 
     ret = SDK.Pixie16ReadHistogramFromModule(result, N, Cmodule, Cchannel)
     check_return_code(ret, "read_histogram_from_module")
@@ -646,10 +718,10 @@ def read_module_info(module: int) -> Dict:
     dict
        dictionary with serial number, revision and other information
     """
-    Cmodule = ctypes.c_uint(module)
+    Cmodule = ctypes.c_ushort(module)
 
-    sn = ctypes.c_uint()
     rev = ctypes.c_ushort()
+    sn = ctypes.c_uint()
     adc_bits = ctypes.c_ushort()
     adc_msps = ctypes.c_ushort()
     num_channels = ctypes.c_ushort()
@@ -694,21 +766,21 @@ def read_baselines(module: int) -> List[List[np.ndarray]]:
 
     baselines = []
     timestamps = []
-    max_num_baselines = ctypes.c_uint(0)
+    max_num_baselines = 3640
+
+    Cmax_num_baselines = ctypes.c_ushort(max_num_baselines)
 
     for ch in range(16):
-        ret = SDK.PixieGetMaxNumBaselines(Cmodule, ch, ctypes.byref(max_num_baselines))
-        check_return_code(ret, "PixieGetMaxNumBaselines")
-
-        bl = (ctypes.c_double * max_num_baselines.value)()
-        ts = (ctypes.c_double * max_num_baselines.value)()
+        Cch = ctypes.c_ushort(ch)
+        bl = (ctypes.c_double * max_num_baselines)()
+        ts = (ctypes.c_double * max_num_baselines)()
 
         ret = SDK.Pixie16ReadSglChanBaselines(
             ctypes.cast(bl, ctypes.POINTER(ctypes.c_double * 1)),
             ctypes.cast(ts, ctypes.POINTER(ctypes.c_double * 1)),
-            max_num_baselines,
+            Cmax_num_baselines,
             Cmodule,
-            ch,
+            Cch,
         )
         check_return_code(ret, "Pixie16ReadSglChanBaselines")
 
@@ -807,7 +879,7 @@ def read_single_module_parameter(
     # convert to ctypes for library call
     CModParName = ctypes.c_char_p(bytes(module_parameter_name, "utf8"))
     Cmodule = ctypes.c_ushort(module)
-    CModParData = (ctypes.c_ulong)()
+    CModParData = (ctypes.c_uint)()
 
     ret = SDK.Pixie16ReadSglModPar(CModParName, ctypes.byref(CModParData), Cmodule)
     check_return_code(ret, "read_single_module_parameter")
@@ -911,7 +983,7 @@ def set_DACs(module: int) -> None:
     module
         the module that will be updated
     """
-    Cmod = ctypes.c_uint(module)
+    Cmod = ctypes.c_ushort(module)
 
     ret = SDK.Pixie16SetDACs(Cmod)
     check_return_code(ret, "set_DACs")
@@ -970,7 +1042,10 @@ def tau_finder(module: int) -> np.ndarray:
     Cmodule = ctypes.c_ushort(module)
     Ctaus = (ctypes.c_double * 16)()
 
-    ret = SDK.Pixie16TauFinder(Cmodule, Ctaus)
+    ret = SDK.Pixie16TauFinder(
+        Cmodule,
+        ctypes.cast(Ctaus, ctypes.POINTER(ctypes.c_double * 1)),
+    )
     check_return_code(ret, "tau_finder")
 
     return np.ctypeslib.as_array(Ctaus)
@@ -1049,7 +1124,7 @@ def write_single_module_parameter(
     if module_parameter_name in parameter_list_convert_from_IEEE:
         CModParData = converter_IEEE754_to_ulong(module_parameter_data)
     else:
-        CModParData = ctypes.c_ulong(module_parameter_data)
+        CModParData = ctypes.c_uint(module_parameter_data)
     Cmodule = ctypes.c_ushort(module)
 
     ret = SDK.Pixie16WriteSglModPar(CModParName, CModParData, Cmodule)
