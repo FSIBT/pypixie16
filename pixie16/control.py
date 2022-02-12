@@ -27,14 +27,6 @@ bits by name (inspired by the names in the manual).  We also provide
 the option to overwrite some of the calculated values such as
 `PAFlength` or have them calculated automatically.
 
-TODO:
-* rename functions related to settings to make it clear if we
-  are reading/writing to a file or to the pixie
-* provide functions that call read_histogram_from_module,
-  load_dsp_parameters_from_file, save_dsp_parameters_as_json, so that
-  we don't have to lift any function from the SDK direclty anymore.
-* can we get rid of variables.py?
-
 At the moment pypixie16 only supports Windows, but other platforms
 should be easy to add.
 
@@ -57,12 +49,6 @@ from .config import config, inifile, data_dir
 from . import config
 from . import C_library_sdk as SDK
 
-# lift some functions directly in this namespace
-from .C_library_sdk import (
-    read_histogram_from_module,
-    load_dsp_parameters_from_file,
-    save_dsp_parameters_as_json,
-)
 from . import variables
 
 # set up logging
@@ -181,7 +167,7 @@ def set_sync_mode(modules: Optional[Iterable[int]]) -> None:
 
 
 def set_channel_parameter(name: str, value, module: int, channel: int):
-    """Set and read back a parameter in a channel.
+    """Set and read back a parameter for a channel on the pixie16.
 
     Parameters
     ----------
@@ -205,7 +191,7 @@ def set_channel_parameter(name: str, value, module: int, channel: int):
 
 
 def set_module_parameter(name: str, value, module: int):
-    """Set and read back a parameter in a module.
+    """Set and read back a parameter for a module on the pixie16.
 
     Parameters
     ----------
@@ -225,7 +211,7 @@ def set_module_parameter(name: str, value, module: int):
 
 
 def set_run_time(runtime, module):
-    """Sets the run time for the next run.
+    """Sets the run time for the next run on the pixie16.
 
     Parameters
     ----------
@@ -238,7 +224,7 @@ def set_run_time(runtime, module):
 
 
 def set_traces(module: int, channel: int, status: bool) -> None:
-    """Turn on/off taking traces for a certain channel in a specific module.
+    """Turn on/off taking traces for a certain channel in a specific module on the pixie16.
 
     Parameters
     ----------
@@ -309,7 +295,7 @@ def get_stats() -> List:
     return [SDK.read_statistics_from_module(m) for m, _ in enumerate(module_list)]
 
 
-def save_stats_to_file(filename: Path) -> None:
+def save_stats_to_json(filename: Path) -> None:
     """Get statistics for all modules and save as json to file.
 
     Parameters
@@ -318,6 +304,10 @@ def save_stats_to_file(filename: Path) -> None:
         name to save the settings to
     """
     stats = get_stats()
+    if filename.is_file():
+        log.error(f"Filename {filename} exists. Not overwriting!!")
+        return
+
     with filename.open("w") as f:
         json.dump(stats, f)
 
@@ -515,6 +505,24 @@ def enable_trace_settings(
         change_setting_from_dict(settings, auto_update=False)
 
 
+def read_histograms(module_channels: Iterable[Tuple[int, int]]) -> List[np.ndarray]:
+    """Read histograms from several channels.
+
+    Uses (module, channel) tuples, e.g. [(0, 8), (0, 3)] to read histograms.
+
+    Parameters
+    ----------
+    module_channels
+        List of tuples of (module, channel) to define which histograms we want to read
+
+    Returns
+    -------
+    List[np.ndarray]
+        List of numpy arrays with the histograms
+    """
+    return [SDK.read_histogram_from_module(m, c) for m, c in module_channels]
+
+
 def take_MCA_spectra(
     channels: Iterable[Tuple[int, int]],
     duration: float,
@@ -574,13 +582,12 @@ def take_MCA_spectra(
     print()
     end_run()
 
-    data = [SDK.read_histogram_from_module(m, c) for m, c in channels]
-    return data
+    return read_histograms(channels)
 
 
 def take_list_mode_data(
     duration: float,
-    newline=True,
+    newline: bool = True,
     modules: Optional[Iterable[int]] = None,
 ) -> Dict[int, ByteString]:
     """Take list mode data for a certain time.
@@ -645,7 +652,7 @@ def take_list_mode_data(
     return raw_data
 
 
-def read_settings_from_file(filename: Path):
+def read_settings_from_json(filename: Path):
     """Reads the settings from a new-style json settings file."""
     with filename.open("r") as f:
         data = json.load(f)
@@ -655,18 +662,18 @@ def read_settings_from_file(filename: Path):
 def read_settings() -> Dict:
     """Read the current setting into memory.
 
-    Reads the setting into a temporary json file using XIA library and then read in the json.
+    Reads the setting into a temporary json file using XIA's library and then parse that file.
 
     Returns
     -------
-    A dictonary of setting data
+       A dictonary of setting data
     """
     # note: using tempfile in a context manager has problems on windows when writing and
     # then reading from the same file
     f = tempfile.NamedTemporaryFile(suffix=".json", delete=False)
     filename = Path(f.name)
     SDK.save_dsp_parameters_as_json(filename)
-    data = read_settings_from_file(filename)
+    data = read_settings_from_json(filename)
     filename.unlink()
     return data
 
@@ -707,8 +714,16 @@ def temporary_settings() -> None:
         write_settings(current_settings)
 
 
-def change_setting(setting, name: str, value, channel=None, module=0):
+def _change_setting_locally(setting, name: str, value, channel=None, module=0):
     """Changes a single setting inside an object returned by read_settings.
+
+    This function does not talk to the pixie16 and only changes the value
+    inside a dict that then late can be written to the pixie16. This way
+    multiple changes can be made and data only needs to be transfered once
+    to the pixie16.
+
+    Users of pypixie16 should use `change_setting_from_dict` to modify settings
+    or if they only want to change a single setting we provide `change_setting`.
 
     Parameters
     ----------
@@ -725,7 +740,6 @@ def change_setting(setting, name: str, value, channel=None, module=0):
     module
         Module number
     """
-
     # ensure correct sign for
     if name in ["Log2Ebin", "Log2Bweight"]:
         value = -abs(value)
@@ -772,10 +786,10 @@ def change_setting(setting, name: str, value, channel=None, module=0):
     return setting
 
 
-def change_setting_in_pixie16(
+def change_setting(
     name: str, value, channel: Optional[int] = None, module: int = 0
 ) -> None:
-    """Changes the value of a single setting
+    """Changes the value of a single setting on the pixie16.
 
     First reads all values, changes one and then sends the new setting
     back to the pixie.
@@ -795,12 +809,12 @@ def change_setting_in_pixie16(
     """
     setting = read_settings()
 
-    new = change_setting(setting, name, value, channel, module)
+    new = _change_setting_locally(setting, name, value, channel, module)
 
     write_settings(new)
 
 
-def change_channel_register_bit(
+def _change_channel_register_bit_locally(
     setting, name: str, value: bool, bit: int, channel: int, module: int = 0
 ):
     """Update a bit in a channel register.
@@ -833,7 +847,7 @@ def change_channel_register_bit(
     return setting
 
 
-def change_module_register_bit(
+def _change_module_register_bit_locally(
     setting, name: str, value: bool, bit: int, module: int = 0
 ):
     """Update a bit in module register.
@@ -864,15 +878,17 @@ def change_module_register_bit(
     return setting
 
 
-def change_CSRA_bit(setting, value: bool, channel: int, module: int, bit: int):
-    return change_channel_register_bit(setting, "ChanCSRa", value, bit, channel, module)
+def _change_CSRA_bit_locally(setting, value: bool, channel: int, module: int, bit: int):
+    return _change_channel_register_bit_locally(
+        setting, "ChanCSRa", value, bit, channel, module
+    )
 
 
-def change_CSRB_bit(setting, value: bool, module: int, bit: int):
-    return change_module_register_bit(setting, "ModCSRB", value, bit, module)
+def _change_CSRB_bit_locally(setting, value: bool, module: int, bit: int):
+    return _change_module_register_bit_locally(setting, "ModCSRB", value, bit, module)
 
 
-def change_CSRA(setting, name: str, value, channel: int, module: int):
+def _change_CSRA_locally(setting, name: str, value, channel: int, module: int):
     """Update bits by name for channel CSRa
 
     Parameters
@@ -890,49 +906,55 @@ def change_CSRA(setting, name: str, value, channel: int, module: int):
     """
     if name == "FastTrigSelect":
         # value: 'external' or 'group'
-        return change_CSRA_bit(setting, value == "external", channel, module, 0)
+        return _change_CSRA_bit_locally(
+            setting, value == "external", channel, module, 0
+        )
     elif name == "ModValSignal":
         # value: 'modgate' or 'global'
-        return change_CSRA_bit(setting, value == "modgate", channel, module, 1)
+        return _change_CSRA_bit_locally(setting, value == "modgate", channel, module, 1)
     elif name == "GoodChannel":
         # value: True = enable channel
-        return change_CSRA_bit(setting, value, channel, module, 2)
+        return _change_CSRA_bit_locally(setting, value, channel, module, 2)
     elif name == "ChanValSignal":
         # value: 'channelgate' or 'channelvalidation'
-        return change_CSRA_bit(setting, value == "channelgate", channel, module, 3)
+        return _change_CSRA_bit_locally(
+            setting, value == "channelgate", channel, module, 3
+        )
     elif name == "RejectIfFull":
         # value: True = reject data if buffer is full
-        return change_CSRA_bit(setting, value, channel, module, 4)
+        return _change_CSRA_bit_locally(setting, value, channel, module, 4)
     elif name == "Polarity":
         # value: True=positive slope, False=negative slope
-        return change_CSRA_bit(setting, value == "positive", channel, module, 5)
+        return _change_CSRA_bit_locally(
+            setting, value == "positive", channel, module, 5
+        )
     elif name == "EnableVeto":
         # value: True = enable veto
-        return change_CSRA_bit(setting, value, channel, module, 6)
+        return _change_CSRA_bit_locally(setting, value, channel, module, 6)
     elif name == "CaptureHistogram":
         # value: True = enable capture of MCA histograms
-        return change_CSRA_bit(setting, value, channel, module, 7)
+        return _change_CSRA_bit_locally(setting, value, channel, module, 7)
     elif name == "CaptureTrace":
         # value: True = enable capture trace
-        return change_CSRA_bit(setting, value, channel, module, 8)
+        return _change_CSRA_bit_locally(setting, value, channel, module, 8)
     elif name == "EnableQDC":
         # value: True = enable capture QDC sums
-        return change_CSRA_bit(setting, value, channel, module, 9)
+        return _change_CSRA_bit_locally(setting, value, channel, module, 9)
     elif name == "EnableCFD":
         # value: True = enable CFD
-        return change_CSRA_bit(setting, value, channel, module, 10)
+        return _change_CSRA_bit_locally(setting, value, channel, module, 10)
     elif name == "EnableModVal":
         # value: True = enable module validation
-        return change_CSRA_bit(setting, value, channel, module, 11)
+        return _change_CSRA_bit_locally(setting, value, channel, module, 11)
     elif name == "CaptureSums":
         # value: True = enable capture raw energy susms
-        return change_CSRA_bit(setting, value, channel, module, 12)
+        return _change_CSRA_bit_locally(setting, value, channel, module, 12)
     elif name == "EnableChannelVal":
         # value: True = enable channel validation
-        return change_CSRA_bit(setting, value, channel, module, 13)
+        return _change_CSRA_bit_locally(setting, value, channel, module, 13)
     elif name == "Gain":
         # value: 0.625 or 2.5
-        return change_CSRA_bit(setting, value == 2.5, channel, module, 14)
+        return _change_CSRA_bit_locally(setting, value == 2.5, channel, module, 14)
     elif name == "RejectPileup":
         # value: 'all' (no energies for pileup events),
         #        'single' (reject pileup),
@@ -941,29 +963,33 @@ def change_CSRA(setting, name: str, value, channel: int, module: int):
         #                       events, no single events)
         bit0 = (value == "single") or (value == "pileup-only")
         bit1 = (value == "pileup") or (value == "pileup-only")
-        setting = change_CSRA_bit(setting, bit0, channel, module, 15)
-        setting = change_CSRA_bit(setting, bit1, channel, module, 16)
+        setting = _change_CSRA_bit_locally(setting, bit0, channel, module, 15)
+        setting = _change_CSRA_bit_locally(setting, bit1, channel, module, 16)
         return setting
     elif name == "SkipLargePulses":
         # value: True = don't record traces for large pulses
-        return change_CSRA_bit(setting, value, channel, module, 17)
+        return _change_CSRA_bit_locally(setting, value, channel, module, 17)
     elif name == "GroupTrigSignal":
         # value: 'external' or 'local'
-        return change_CSRA_bit(setting, value == "external", channel, module, 18)
+        return _change_CSRA_bit_locally(
+            setting, value == "external", channel, module, 18
+        )
     elif name == "ChannelVetoSignal":
         # value: 'channel' or 'front'
-        return change_CSRA_bit(setting, value == "channel", channel, module, 19)
+        return _change_CSRA_bit_locally(
+            setting, value == "channel", channel, module, 19
+        )
     elif name == "ModVetoSignal":
         # value: 'module' or 'front'
-        return change_CSRA_bit(setting, value == "module", channel, module, 20)
+        return _change_CSRA_bit_locally(setting, value == "module", channel, module, 20)
     elif name == "ExtTimestamps":
         # value: True = include external timestamps in header
-        return change_CSRA_bit(setting, value, channel, module, 21)
+        return _change_CSRA_bit_locally(setting, value, channel, module, 21)
     else:
         raise KeyError(f"Error: unknown key for ChannelCSRa {name}")
 
 
-def change_CSRB(setting, name: str, value: float, module: int):
+def _change_CSRB_locally(setting, name: str, value: float, module: int):
     """Update bits by name for the module CSRb.
 
     Parameters
@@ -979,36 +1005,36 @@ def change_CSRB(setting, name: str, value: float, module: int):
     """
     if name == "BackplanePullup":
         # value: True = connect backplane to pullup resistor
-        return change_CSRB_bit(setting, value, module, 0)
+        return _change_CSRB_bit_locally(setting, value, module, 0)
     elif name == "Director":
         # value: True = set to director
-        return change_CSRB_bit(setting, value, module, 4)
+        return _change_CSRB_bit_locally(setting, value, module, 4)
     elif name == "ChassisMaster":
         # value: True = set to chassis master
-        return change_CSRB_bit(setting, value, module, 6)
+        return _change_CSRB_bit_locally(setting, value, module, 6)
     elif name == "GlobalFastTrigger":
         # value: True = select global fast trigger source
-        return change_CSRB_bit(setting, value, module, 7)
+        return _change_CSRB_bit_locally(setting, value, module, 7)
     elif name == "ExternalTrigger":
         # value: True = select external trigger source
-        return change_CSRB_bit(setting, value, module, 8)
+        return _change_CSRB_bit_locally(setting, value, module, 8)
     elif name == "ExternalInhibit":
         # value: True = use inhibit
-        return change_CSRB_bit(setting, value, module, 10)
+        return _change_CSRB_bit_locally(setting, value, module, 10)
     elif name == "DistributeClocks":
         # value: True = multiple crates
-        return change_CSRB_bit(setting, value, module, 11)
+        return _change_CSRB_bit_locally(setting, value, module, 11)
     elif name == "SortEvents":
         # value: True = sort events based on timestamp
-        return change_CSRB_bit(setting, value, module, 12)
+        return _change_CSRB_bit_locally(setting, value, module, 12)
     elif name == "ConnectFastTriggerBP":
         # value: True = Connect the fast trigger to the backplane
-        return change_CSRB_bit(setting, value, module, 13)
+        return _change_CSRB_bit_locally(setting, value, module, 13)
     else:
         raise KeyError(f"Error: unknown key for ModuleCSRb {name}")
 
 
-def get_setting_value(
+def _get_setting_value(
     name: str, settings_dict, channels: List[Tuple[int, int]], current_settings
 ) -> List[Union[int, float]]:
     """Returns name from setting dictionary or from memory.
@@ -1059,7 +1085,7 @@ def change_setting_from_dict(settings, auto_update=True):
 
     The dictionary must also contain an entry called 'channels' that
     list all channels that should be set. Channels should be pairs in
-    the form [module, channel].
+    the form (module, channel).
 
     This function will also set variabels that depend on other
     variables (e.g. PeakSample depends on SlowLength).  However, if
@@ -1101,8 +1127,8 @@ def change_setting_from_dict(settings, auto_update=True):
 
     # update depend values
     if "SlowLength" in settings or "SlowGap" in settings:
-        SL = get_setting_value("SlowLength", settings, channels, current)
-        SG = get_setting_value("SlowGap", settings, channels, current)
+        SL = _get_setting_value("SlowLength", settings, channels, current)
+        SG = _get_setting_value("SlowGap", settings, channels, current)
         for i, (sl, sg) in enumerate(zip(SL, SG)):
             if sl + sg > 127:
                 print(f"Warning: SlowLength + SlowGap > 127. SL {SL} SG {SG}")
@@ -1123,9 +1149,11 @@ def change_setting_from_dict(settings, auto_update=True):
         settings["SlowGap"] = SG
 
     if auto_update and ("PeakSample" not in settings):
-        filter_range = get_setting_value("SlowFilterRange", settings, channels, current)
-        SL = get_setting_value("SlowLength", settings, channels, current)
-        SG = get_setting_value("SlowGap", settings, channels, current)
+        filter_range = _get_setting_value(
+            "SlowFilterRange", settings, channels, current
+        )
+        SL = _get_setting_value("SlowLength", settings, channels, current)
+        SG = _get_setting_value("SlowGap", settings, channels, current)
         PeakSample = []
         for sl, sg, f in zip(SL, SG, filter_range):
             if f > 6:
@@ -1137,14 +1165,16 @@ def change_setting_from_dict(settings, auto_update=True):
         settings["PeakSample"] = PeakSample
 
     if auto_update and ("PeakSep" not in settings):
-        SL = get_setting_value("SlowLength", settings, channels, current)
-        SG = get_setting_value("SlowGap", settings, channels, current)
+        SL = _get_setting_value("SlowLength", settings, channels, current)
+        SG = _get_setting_value("SlowGap", settings, channels, current)
         PeakSep = [sl + sg for sl, sg in zip(SL, SG)]
         settings["PeakSep"] = PeakSep
 
     if auto_update and ("TriggerDelay" not in settings):
-        filter_range = get_setting_value("SlowFilterRange", settings, channels, current)
-        PeakSep = get_setting_value("PeakSep", settings, channels, current)
+        filter_range = _get_setting_value(
+            "SlowFilterRange", settings, channels, current
+        )
+        PeakSep = _get_setting_value("PeakSep", settings, channels, current)
         settings["TriggerDelay"] = [
             (p - 1) * 2 ** f for f, p in zip(filter_range, PeakSep)
         ]
@@ -1152,12 +1182,12 @@ def change_setting_from_dict(settings, auto_update=True):
         print("Warning: PAFlength and TraceDelay set. TraceDelay will be ignored.")
         settings.pop("TraceDelay")
     if auto_update and ("PAFlength" not in settings) and ("TraceDelay" in settings):
-        TriggerDelay = get_setting_value("TriggerDelay", settings, channels, current)
-        FastFilterRange = get_setting_value(
+        TriggerDelay = _get_setting_value("TriggerDelay", settings, channels, current)
+        FastFilterRange = _get_setting_value(
             "FastFilterRange", settings, channels, current
         )
-        TraceDelay = get_setting_value("TraceDelay", settings, channels, current)
-        FIFOLength = get_setting_value("FIFOLength", settings, channels, current)
+        TraceDelay = _get_setting_value("TraceDelay", settings, channels, current)
+        FIFOLength = _get_setting_value("FIFOLength", settings, channels, current)
         settings.pop("TraceDelay")
 
         PAFlength = [
@@ -1167,18 +1197,18 @@ def change_setting_from_dict(settings, auto_update=True):
 
         settings["PAFlength"] = PAFlength
     if auto_update and ("PAFlength" in settings):
-        PAFlength = get_setting_value("PAFlength", settings, channels, current)
-        FIFOLength = get_setting_value("FIFOLength", settings, channels, current)
-        FastFilterRange = get_setting_value(
+        PAFlength = _get_setting_value("PAFlength", settings, channels, current)
+        FIFOLength = _get_setting_value("FIFOLength", settings, channels, current)
+        FastFilterRange = _get_setting_value(
             "FastFilterRange", settings, channels, current
         )
         if "TraceDelay" in settings:
-            TraceDelay = get_setting_value("TraceDelay", settings, channels, current)
+            TraceDelay = _get_setting_value("TraceDelay", settings, channels, current)
             TraceDelay = [
                 x / 5 for x in TraceDelay
             ]  # convert from data points to FPGA cycles
         else:
-            TriggerDelay = get_setting_value(
+            TriggerDelay = _get_setting_value(
                 "TriggerDelay", settings, channels, current
             )
             TraceDelay = [
@@ -1218,7 +1248,7 @@ def change_setting_from_dict(settings, auto_update=True):
         ]:
             if isinstance(values, int):
                 for mod in modules:
-                    current = change_CSRB(current, name, values, mod)
+                    current = _change_CSRB_locally(current, name, values, mod)
             else:
                 raise NotImplementedError("Need to add CSRB for non-int values")
         # single bit settings CSRA
@@ -1249,7 +1279,7 @@ def change_setting_from_dict(settings, auto_update=True):
                 if len(values) == len(channels):
                     for value, channel in zip(values, channels):
                         mod, ch = channel
-                        current = change_CSRA(current, name, value, ch, mod)
+                        current = _change_CSRA_locally(current, name, value, ch, mod)
                 else:
                     raise TypeError(
                         f"Wrong type (or length) for channel parameter {name}"
@@ -1258,17 +1288,17 @@ def change_setting_from_dict(settings, auto_update=True):
             else:
                 for channel in channels:
                     mod, ch = channel
-                    current = change_CSRA(current, name, values, ch, mod)
+                    current = _change_CSRA_locally(current, name, values, ch, mod)
         elif name in SETTINGS_NAME_CHANNEL:
             if isinstance(settings[name], (list, tuple)):
                 if len(settings[name]) == len(channels):
                     for value, channel in zip(settings[name], channels):
                         mod, ch = channel
-                        change_setting(current, name, value, ch, mod)
+                        _change_setting_locally(current, name, value, ch, mod)
                 elif len(settings[name]) == len(modules):
                     for value, mod in zip(settings[name], modules):
                         for ch in range(16):
-                            change_setting(current, name, value, ch, mod)
+                            _change_setting_locally(current, name, value, ch, mod)
                 else:
                     raise TypeError(
                         f"Wrong type (or length) for channel parameter {name}"
@@ -1278,7 +1308,7 @@ def change_setting_from_dict(settings, auto_update=True):
                 value = settings[name]
                 for mod in modules:
                     for ch in range(16):
-                        change_setting(current, name, value, ch, mod)
+                        _change_setting_locally(current, name, value, ch, mod)
             else:
                 raise TypeError(
                     "Wrong type (or length) for channel parameter"
@@ -1287,16 +1317,16 @@ def change_setting_from_dict(settings, auto_update=True):
         elif name in SETTINGS_NAME_MODULE:
             if isinstance(settings[name], int):
                 for mod in modules:
-                    change_setting(current, name, settings[name], None, mod)
+                    _change_setting_locally(current, name, settings[name], None, mod)
             elif isinstance(settings[name], (list, tuple)):
                 for mod, value in zip(modules, settings[name]):
-                    change_setting(current, name, value, None, mod)
+                    _change_setting_locally(current, name, value, None, mod)
         else:
             log.error(f"Change settings dict: unkown settings name {name}")
 
     # always enable all channels, we don't get any data otherwise... bug in pixie16?
     for m in modules:
         for c in range(16):
-            current[m] = change_CSRA_bit(current[m], True, c, 2)
+            current[m] = _change_CSRA_bit_locally(current[m], True, c, 2)
 
     write_settings(current)

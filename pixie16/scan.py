@@ -104,9 +104,7 @@ def parameter_scan_1d(
                 # Check Run Status
                 plt.pause(1)
                 check = control.check_run_status()
-            out = control.read_histogram_from_module(
-                parameter.module, parameter.channel
-            )
+            out = control.read_histograms((parameter.module, parameter.channel))
             Y.append(np.sum(out))
 
             ax.clear()
@@ -182,9 +180,7 @@ def parameter_scan_2d(
                     # Check Run Status
                     plt.pause(1)
                     check = control.check_run_status()
-                out = control.read_histogram_from_module(
-                    parameterB.module, parameterB.channel
-                )
+                out = control.read_histograms((parameterB.module, parameterB.channel))
                 Z[i, j] = np.sum(out)
 
                 ax.clear()
