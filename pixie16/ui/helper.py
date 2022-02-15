@@ -1,3 +1,5 @@
+"""Some helper functions."""
+
 from contextlib import contextmanager
 
 from PyQt5.QtCore import Qt

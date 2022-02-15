@@ -1,10 +1,18 @@
+"""Functions that allow a 1d and 2d parameter scan using the pixie16.
+
+During the parameter scan, one or two settings are changed and a MCA
+histogram. The histogram is integrated and plotted against the
+parameter.
+
+"""
 from dataclasses import dataclass
 import sys
+import time
 from typing import Optional
 
 from matplotlib import pyplot as plt
 import numpy as np
-import tqdm
+from tqdm import tqdm
 
 from . import control
 
@@ -49,6 +57,8 @@ PARAMETER_NAMES = [x[0] for x in PARAMETERS]
 
 @dataclass
 class ScanParameter:
+    """A convenient class to store scan parameters."""
+
     name: str
     module: int
     channel: int
@@ -57,6 +67,7 @@ class ScanParameter:
     step: float
 
     def range(self) -> np.ndarray:
+        """Return the values that should be scanned."""
         return np.linspace(
             self.start, self.stop, (self.stop - self.start) / self.step + 1
         )
@@ -64,16 +75,14 @@ class ScanParameter:
 
 def parameter_scan_1d(
     parameter: ScanParameter,
-    dwelltime: int = 1,
+    dwelltime: int = 0,
     title: Optional[str] = None,
     savefile: Optional[str] = None,
 ):
     """Do a 1D parameter scan on the pixie16.
 
     This function assumes that the pixie16 is already booted and ready to take MCA data.
-
     """
-
     if parameter.name not in PARAMETER_NAMES:
         print(
             f"ERROR: parameter {parameter.name} not known. Needs ot be one of {','.join(PARAMETER_NAMES)}"
@@ -96,6 +105,8 @@ def parameter_scan_1d(
                 parameter.name, x * 1e-3, parameter.module, parameter.channel
             )
             X.append(value)
+
+            time.sleep(dwelltime)
 
             control.start_histogram_run()
 
@@ -129,7 +140,7 @@ def parameter_scan_1d(
 def parameter_scan_2d(
     parameterA: ScanParameter,
     parameterB: ScanParameter,
-    dwelltime: int = 1,
+    dwelltime: int = 0,
     title: Optional[str] = None,
     savefile: Optional[str] = None,
 ):
@@ -138,9 +149,7 @@ def parameter_scan_2d(
     This function assumes that the pixie16 is already booted and ready to take MCA data.
 
     The data plotted will be from moduleB/channelB.
-
     """
-
     for parameter in [parameterA.name, parameterB.name]:
         if parameter not in PARAMETER_NAMES:
             print(
@@ -172,6 +181,8 @@ def parameter_scan_2d(
                 )
                 X.append(Xvalue)
                 Y.append(Yvalue)
+
+                time.sleep(dwelltime)
 
                 control.start_histogram_run()
 

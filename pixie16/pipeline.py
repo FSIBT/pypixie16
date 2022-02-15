@@ -87,12 +87,14 @@ class Task(multiprocessing.Process):
 
         value will be the current element in the queue.
         """
-        pass
+        raise NotImplementedError
 
     def stop(self):
+        """Set signal that will stop all workers."""
         self.stop_event.set()
 
     def join(self, *args, **kwargs):
+        """Stop all workers and wait until they are done."""
         self.stop()
         super().join(*args, **kwargs)
 
@@ -172,6 +174,7 @@ class Pipeline:
                 self.link_tasks(A, B)
 
     def link_tasks(self, A, B):
+        """Link two tasks in a pipeline using a queue."""
         q = multiprocessing.Queue()
         A.output_queue = q
         B.input_queue = q
@@ -182,24 +185,32 @@ class Pipeline:
             )
 
     def start(self):
+        """Start all tasks."""
         self.start_time = time.time()
         for t in self._tasks:
             t.start()
 
     def join(self):
+        """Join all tasks, i.e. wait until they are all done."""
         for t in self._tasks:
             t.join()
 
     def stop(self):
+        """Stop all workers in the pipeline."""
         self.stop_event.set()
 
     def is_alive(self):
+        """Check if any task is still running."""
         for t in self._tasks:
             if t.is_alive():
                 return True
         return False
 
     def update_status(self):
+        """Look at the status queue and update the pipeline status.
+
+        We also parse out the runtime of the pixie16 if present.
+        """
         try:
             while True:
                 value = self.status_queue.get(block=False)
@@ -212,6 +223,10 @@ class Pipeline:
             self.runtime = round(time.time() - self.start_time, 2)
 
     def wait_with_progress(self, total):
+        """Create a progress bar while the pipeline is running and show the status updates.
+
+        The run can be interruptted using Ctrl-C.
+        """
         try:
             with tqdm.tqdm(total=total) as pbar:
                 while self.is_alive():

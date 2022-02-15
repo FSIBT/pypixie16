@@ -1,3 +1,5 @@
+"""Functions to load settings from a config file."""
+
 import configparser
 import os
 from pathlib import Path
@@ -28,7 +30,7 @@ def config_get_parameters(section, name):
         path = None
         print()
         print(f"No {name} found in {section}, please add it to {inifile}")
-        print(f"   The file should contain something like:")
+        print("   The file should contain something like:")
         print(f"       [{section}]")
         print(f"       {name} = <setting for {name}>")
         print()
@@ -49,6 +51,10 @@ def config_get_parameters(section, name):
 
 
 def load_config(section_name: str) -> List[Path]:
+    """Load firmware, etc setting that are defined in a section of the config file.
+
+    Sections are defined with 'Firmware.<sectionname>'.
+    """
     section = f"Firmware.{section_name}"
     if section not in config.sections():
         print("Error: cannot find section {section} in the config file {inifile}")

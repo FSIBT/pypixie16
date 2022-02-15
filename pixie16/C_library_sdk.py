@@ -13,9 +13,10 @@ from CamelCase to lower case seperated by underscores).
 
 This file only includes the functions that are in XIA's library and a
 very few helper functions. We see these as more low level functions
-and build our own set of python function on top of these in control.py
-that automate several aspects, e.g. providing information from a
-config file, etc. See config.py for more details.
+and build our own set of python function on top of these in
+`control.py` that automate several aspects, e.g. providing information
+from a config file, etc. See config.py for more details. There should
+be no need for the user to call any of the functions in here directly.
 
 XIA's code can be found here:
   https://github.com/xiallc/pixie_sdk
@@ -886,8 +887,8 @@ def read_single_module_parameter(
 
     if module_parameter_name in parameter_list_convert_to_IEEE:
         return np.ctypeslib.as_array(converter_ulong_to_IEEE754(CModParData))
-    else:
-        return np.ctypeslib.as_array(CModParData)
+
+    return np.ctypeslib.as_array(CModParData)
 
 
 def read_statistics_from_module(module: int) -> Dict:

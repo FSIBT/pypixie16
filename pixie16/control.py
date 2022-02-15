@@ -45,10 +45,8 @@ from typing import Iterable, List, Tuple, Dict, Union, Optional, ByteString
 import numpy as np
 import tqdm
 
-from .config import config, inifile, data_dir
 from . import config
 from . import C_library_sdk as SDK
-
 from . import variables
 
 # set up logging
@@ -59,11 +57,11 @@ module_list: List[int] = [2]  # default setting, overwritten by init_and_boot
 SETTINGS = variables.settings
 SETTINGS_NAME_CHANNEL = []
 SETTINGS_NAME_MODULE = []
-for name, (startpos, length) in SETTINGS.items():
+for setting_name, (startpos, length) in SETTINGS.items():
     if length == 16:
-        SETTINGS_NAME_CHANNEL.append(name)
+        SETTINGS_NAME_CHANNEL.append(setting_name)
     else:
-        SETTINGS_NAME_MODULE.append(name)
+        SETTINGS_NAME_MODULE.append(setting_name)
 
 
 def init(modules: List[int], offline_mode: bool = False, verbose: bool = False) -> None:
@@ -412,7 +410,7 @@ def run_list_mode(filename: Optional[str] = None, runtime: int = 5) -> None:
     if not filename.startswith(YYYYMMDD):
         filename = f"{YYYYMMDD}-{filename}"
     # add correct directory
-    filename = data_dir / YYYYMMDD / filename
+    filename = config.data_dir / YYYYMMDD / filename
     # make sure directory exists
     filename.parent.mkdir(parents=True, exist_ok=True)
 
@@ -644,10 +642,12 @@ def take_list_mode_data(
 
     # read remainig data in queue
     tmp = read_list_mode_fifo(check=False)
-    if tmp:
-        for i, _ in enumerate(modules):
-            if tmp[i] is not None:
-                raw_data[i] += tmp[i].tobytes()
+    if not tmp:
+        return raw_data
+
+    for i, _ in enumerate(modules):
+        if tmp[i] is not None:
+            raw_data[i] += tmp[i].tobytes()
 
     return raw_data
 
@@ -909,53 +909,53 @@ def _change_CSRA_locally(setting, name: str, value, channel: int, module: int):
         return _change_CSRA_bit_locally(
             setting, value == "external", channel, module, 0
         )
-    elif name == "ModValSignal":
+    if name == "ModValSignal":
         # value: 'modgate' or 'global'
         return _change_CSRA_bit_locally(setting, value == "modgate", channel, module, 1)
-    elif name == "GoodChannel":
+    if name == "GoodChannel":
         # value: True = enable channel
         return _change_CSRA_bit_locally(setting, value, channel, module, 2)
-    elif name == "ChanValSignal":
+    if name == "ChanValSignal":
         # value: 'channelgate' or 'channelvalidation'
         return _change_CSRA_bit_locally(
             setting, value == "channelgate", channel, module, 3
         )
-    elif name == "RejectIfFull":
+    if name == "RejectIfFull":
         # value: True = reject data if buffer is full
         return _change_CSRA_bit_locally(setting, value, channel, module, 4)
-    elif name == "Polarity":
+    if name == "Polarity":
         # value: True=positive slope, False=negative slope
         return _change_CSRA_bit_locally(
             setting, value == "positive", channel, module, 5
         )
-    elif name == "EnableVeto":
+    if name == "EnableVeto":
         # value: True = enable veto
         return _change_CSRA_bit_locally(setting, value, channel, module, 6)
-    elif name == "CaptureHistogram":
+    if name == "CaptureHistogram":
         # value: True = enable capture of MCA histograms
         return _change_CSRA_bit_locally(setting, value, channel, module, 7)
-    elif name == "CaptureTrace":
+    if name == "CaptureTrace":
         # value: True = enable capture trace
         return _change_CSRA_bit_locally(setting, value, channel, module, 8)
-    elif name == "EnableQDC":
+    if name == "EnableQDC":
         # value: True = enable capture QDC sums
         return _change_CSRA_bit_locally(setting, value, channel, module, 9)
-    elif name == "EnableCFD":
+    if name == "EnableCFD":
         # value: True = enable CFD
         return _change_CSRA_bit_locally(setting, value, channel, module, 10)
-    elif name == "EnableModVal":
+    if name == "EnableModVal":
         # value: True = enable module validation
         return _change_CSRA_bit_locally(setting, value, channel, module, 11)
-    elif name == "CaptureSums":
+    if name == "CaptureSums":
         # value: True = enable capture raw energy susms
         return _change_CSRA_bit_locally(setting, value, channel, module, 12)
-    elif name == "EnableChannelVal":
+    if name == "EnableChannelVal":
         # value: True = enable channel validation
         return _change_CSRA_bit_locally(setting, value, channel, module, 13)
-    elif name == "Gain":
+    if name == "Gain":
         # value: 0.625 or 2.5
         return _change_CSRA_bit_locally(setting, value == 2.5, channel, module, 14)
-    elif name == "RejectPileup":
+    if name == "RejectPileup":
         # value: 'all' (no energies for pileup events),
         #        'single' (reject pileup),
         #        'pileup' (trace, timestamp for pileup, no trace for single)
@@ -966,27 +966,27 @@ def _change_CSRA_locally(setting, name: str, value, channel: int, module: int):
         setting = _change_CSRA_bit_locally(setting, bit0, channel, module, 15)
         setting = _change_CSRA_bit_locally(setting, bit1, channel, module, 16)
         return setting
-    elif name == "SkipLargePulses":
+    if name == "SkipLargePulses":
         # value: True = don't record traces for large pulses
         return _change_CSRA_bit_locally(setting, value, channel, module, 17)
-    elif name == "GroupTrigSignal":
+    if name == "GroupTrigSignal":
         # value: 'external' or 'local'
         return _change_CSRA_bit_locally(
             setting, value == "external", channel, module, 18
         )
-    elif name == "ChannelVetoSignal":
+    if name == "ChannelVetoSignal":
         # value: 'channel' or 'front'
         return _change_CSRA_bit_locally(
             setting, value == "channel", channel, module, 19
         )
-    elif name == "ModVetoSignal":
+    if name == "ModVetoSignal":
         # value: 'module' or 'front'
         return _change_CSRA_bit_locally(setting, value == "module", channel, module, 20)
-    elif name == "ExtTimestamps":
+    if name == "ExtTimestamps":
         # value: True = include external timestamps in header
         return _change_CSRA_bit_locally(setting, value, channel, module, 21)
-    else:
-        raise KeyError(f"Error: unknown key for ChannelCSRa {name}")
+
+    raise KeyError(f"Error: unknown key for ChannelCSRa {name}")
 
 
 def _change_CSRB_locally(setting, name: str, value: float, module: int):
@@ -1006,32 +1006,32 @@ def _change_CSRB_locally(setting, name: str, value: float, module: int):
     if name == "BackplanePullup":
         # value: True = connect backplane to pullup resistor
         return _change_CSRB_bit_locally(setting, value, module, 0)
-    elif name == "Director":
+    if name == "Director":
         # value: True = set to director
         return _change_CSRB_bit_locally(setting, value, module, 4)
-    elif name == "ChassisMaster":
+    if name == "ChassisMaster":
         # value: True = set to chassis master
         return _change_CSRB_bit_locally(setting, value, module, 6)
-    elif name == "GlobalFastTrigger":
+    if name == "GlobalFastTrigger":
         # value: True = select global fast trigger source
         return _change_CSRB_bit_locally(setting, value, module, 7)
-    elif name == "ExternalTrigger":
+    if name == "ExternalTrigger":
         # value: True = select external trigger source
         return _change_CSRB_bit_locally(setting, value, module, 8)
-    elif name == "ExternalInhibit":
+    if name == "ExternalInhibit":
         # value: True = use inhibit
         return _change_CSRB_bit_locally(setting, value, module, 10)
-    elif name == "DistributeClocks":
+    if name == "DistributeClocks":
         # value: True = multiple crates
         return _change_CSRB_bit_locally(setting, value, module, 11)
-    elif name == "SortEvents":
+    if name == "SortEvents":
         # value: True = sort events based on timestamp
         return _change_CSRB_bit_locally(setting, value, module, 12)
-    elif name == "ConnectFastTriggerBP":
+    if name == "ConnectFastTriggerBP":
         # value: True = Connect the fast trigger to the backplane
         return _change_CSRB_bit_locally(setting, value, module, 13)
-    else:
-        raise KeyError(f"Error: unknown key for ModuleCSRb {name}")
+
+    raise KeyError(f"Error: unknown key for ModuleCSRb {name}")
 
 
 def _get_setting_value(
@@ -1327,6 +1327,6 @@ def change_setting_from_dict(settings, auto_update=True):
     # always enable all channels, we don't get any data otherwise... bug in pixie16?
     for m in modules:
         for c in range(16):
-            current[m] = _change_CSRA_bit_locally(current[m], True, c, 2)
+            current[m] = _change_CSRA_bit_locally(current[m], True, c, m, 2)
 
     write_settings(current)

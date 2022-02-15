@@ -1,7 +1,12 @@
+"""A collection of tasks that can be used in a pipeline.
+
+These tasks can also easily by sub-classed to create custom ones or
+used as an example on how to write your own.
+
+"""
 from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
-import sys
 import time
 
 import numpy as np
@@ -12,6 +17,12 @@ from . import read
 
 
 class DummyData(Task):
+    """A class that will send dummy data into a pipeline.
+
+    This can be used as a first task in a pipeline during testing and
+    when the pixie16 is not online/available.
+    """
+
     def __init__(self, runtime, filename=None):
         super().__init__()
         self.runtime = runtime
@@ -51,7 +62,6 @@ class TakeData(Task):
 
     Note: this does not work as is. The Task must also call InitSys
     and BootModule to be able to talk to the pixie16.
-
     """
 
     def __init__(self):
@@ -90,7 +100,6 @@ class GatherData(Task):
     def save_data(self, out):
         timestamp = datetime.today().strftime("%Y-%m-%d-%H-%M-%S")
         for k, v in out.items():
-            i = 0
             file = self.path / f"data-mod{k}-{timestamp}-{self.file_counter:05d}.bin"
             v.tofile(str(file))
         self.file_counter += 1
@@ -147,7 +156,7 @@ class GatherData(Task):
 
 
 class ConvertToEvents(Task):
-    """Task to convert data stream to events"""
+    """Task to convert data stream to events."""
 
     def __init__(self):
         super().__init__()
@@ -165,7 +174,8 @@ class ConvertToEvents(Task):
 class PickSingleModule(Task):
     """Task to pick events from a single module.
 
-    Takes output from, e.g., ConvertToEvents and outputs only the data for a single module.
+    Takes output from, e.g., ConvertToEvents and outputs only the data
+    for a single module.
     """
 
     def __init__(self, module=0):
@@ -254,7 +264,7 @@ class LoadFiles(Task):
     def do_work(self, value):
         try:
             events = []
-            for i in range(self.number_of_events_to_read):
+            for _ in range(self.number_of_events_to_read):
                 event = None
                 try:
                     event = self.reader.pop()
@@ -262,14 +272,13 @@ class LoadFiles(Task):
                     if not self.byte_stream.is_empty():
                         self.reader.put(self.byte_stream.pop(self.buffer_size))
                         continue
-                    else:
-                        self.done = True
-                        break
+                    self.done = True
+                    break
                 events.append(event)
             if events and self.output_queue:
                 self.output_queue.put(events)
                 self.nr_of_events += len(events)
-        except StopIteration as e:
+        except StopIteration:
             self.done = True
 
         self.send_status(
