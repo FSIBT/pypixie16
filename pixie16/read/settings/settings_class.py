@@ -1,5 +1,7 @@
 """The main implementation of the Settings class."""
 
+import json
+from pathlib import Path
 import struct
 
 from .units import SETTINGS_UNITS_TBL
@@ -67,10 +69,23 @@ class Settings(Entity):
         return value
 
     @classmethod
-    def from_file(cls, file, module=0):
+    def from_file(cls, file: Path, module=0):
         """An alternate initializer. Takes the name as a settings file and returns a Settings object."""
+        if file.suffix == ".json":
+            with file.open("r") as fp:
+                data = json.load(fp)
+                data = data[module]
+                data = {
+                    **data["channel"]["input"],
+                    **data["metadata"],
+                    **data["module"]["input"],
+                }
+            return cls(**data)
+
+        # handle old style setting file
+
         # get bytes from file
-        with open(file, "rb") as fp:
+        with file.open("rb") as fp:
             binary_data = fp.read()
         binary_data = binary_data[module * MODULE_SIZE : (module + 1) * MODULE_SIZE]
 
