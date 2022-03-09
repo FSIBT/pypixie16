@@ -761,6 +761,7 @@ def _change_setting_locally(setting, name: str, value, channel=None, module=0):
     module
         Module number
     """
+
     # ensure correct sign for
     if name in ["Log2Ebin", "Log2Bweight"]:
         value = -abs(value)
@@ -1056,7 +1057,7 @@ def _change_CSRB_locally(setting, name: str, value: float, module: int):
 
 
 def _get_setting_value(
-    name: str, settings_dict, channels: List[Tuple[int, int]], current_settings
+    name: str, settings_dict: Dict, channels: List[Tuple[int, int]], current_settings
 ) -> List[Union[int, float]]:
     """Returns name from setting dictionary or from memory.
 
@@ -1068,7 +1069,7 @@ def _get_setting_value(
     ----------
     name
         Setting name
-    settings
+    settings_dict
         dictionary with new values to be set
     channels
         List of (module, channels) pairs
@@ -1082,6 +1083,7 @@ def _get_setting_value(
         A list of the same length as channels with the values for each channel.
         Similar to the values that need to be used in `change_settings_from_dict`.
     """
+
     if name in settings_dict:
         temp = settings_dict[name]
         if isinstance(temp, (int, float)):
