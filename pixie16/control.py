@@ -148,7 +148,7 @@ def init_and_boot(
     boot(section_name, boot_pattern=boot_pattern, verbose=verbose)
 
 
-def set_sync_mode(modules: Optional[Iterable[int]]) -> None:
+def set_sync_mode(modules: Optional[Iterable[int]] = None) -> None:
     """Turn on sync mode for every module.
 
     Parameters
