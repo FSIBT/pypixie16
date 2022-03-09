@@ -787,12 +787,16 @@ def _change_setting_locally(setting, name: str, value, channel=None, module=0):
 
     if channel is None:
         current = setting[module]["module"]["input"][name]
-        if len(current) != len(value):
-            raise ValueError(
-                f"change_setting: wrong number of arguments" f" for setting {name}.",
-                f" Need {len(current)}, got {len(value)}",
-            )
-        setting[module]["module"]["input"][name] = value
+        if isinstance(value, (int, float)):
+            setting[module]["channel"]["input"][name] = value
+        else:
+            if len(current) != len(value):
+                raise ValueError(
+                    f"change_setting: wrong number of arguments"
+                    f" for setting {name}.",
+                    f" Need {len(current)}, got {len(value)}",
+                )
+            setting[module]["module"]["input"][name] = value
     else:
         current = setting[module]["channel"]["input"][name]
         if isinstance(value, (int, float)):
@@ -1350,6 +1354,6 @@ def change_setting_from_dict(settings, auto_update=True):
     # always enable all channels, we don't get any data otherwise... bug in pixie16?
     for m in modules:
         for c in range(16):
-            current[m] = _change_CSRA_bit_locally(current[m], True, c, 2)
+            current = _change_CSRA_bit_locally(current, True, c, m, 2)
 
     write_settings(current)
