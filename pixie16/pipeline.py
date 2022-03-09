@@ -195,6 +195,13 @@ class Pipeline:
         for t in self._tasks:
             t.join()
 
+    def close(self):
+        """Release all resources, needed for pixie16.control."""
+        for t in self._tasks:
+            t.close()
+        for q in self.queues.values():
+            q.close()
+
     def stop(self):
         """Stop all workers in the pipeline."""
         self.stop_event.set()
