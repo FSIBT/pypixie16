@@ -680,7 +680,9 @@ def read_settings() -> Dict:
     f = tempfile.NamedTemporaryFile(suffix=".json", delete=False)
     filename = Path(f.name)
     SDK.save_dsp_parameters_as_json(filename)
-    data = read_settings_from_json(filename)
+    f.seek(0)
+    data = json.load(f)
+    f.close()
     filename.unlink()
     return data
 
