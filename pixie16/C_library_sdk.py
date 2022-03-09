@@ -163,10 +163,6 @@ except:
     SDK = MagicMock(name="Mock of XIA's C-library")
 
 
-# some globals
-init_done = False
-boot_done = False
-
 valid_module_parameter_names = [
     "MODULE_NUMBER",
     "MODULE_CSRA",
@@ -342,7 +338,7 @@ def boot_module(
     ModNum: int,
     BootPattern: int = 0x7F,
     verbose: bool = False,
-) -> bool:
+) -> None:
     """Boot the module(s).
 
     See page 13 of the programming manual.
@@ -374,12 +370,6 @@ def boot_module(
     bool
        return True on success and False on error
     """
-    global boot_done
-
-    if boot_done:
-        log.warning("boot already done")
-        return boot_done
-
     for f in [ComFPGAConfigFile, SPFPGAConfigFile, DSPCodeFile, DSPVarFile]:
         if not f.is_file():
             print(f"Error: cannot open firmware file {f}")
@@ -420,9 +410,8 @@ def boot_module(
     check_return_code(ret, "boot_module")
     if ret == 0:
         log.debug("Boot Success!")
-        boot_done = True
 
-    return boot_done
+    return
 
 
 def check_external_FIFO_status(module: int) -> int:
@@ -569,9 +558,6 @@ def exit_system(module: int) -> None:
     module
        module number
     """
-    global init_done
-    global boot_done
-
     CModNum = ctypes.c_ushort(module)
 
     ret = SDK.Pixie16ExitSystem(CModNum)
@@ -579,15 +565,13 @@ def exit_system(module: int) -> None:
 
     if ret == 0:
         log.debug("Exit system Success!")
-        boot_done = False
-        init_done = False
 
 
 def init_system(
     modules: Optional[List[int]] = None,
     offline_mode: bool = False,
     verbose: bool = True,
-) -> bool:
+) -> None:
     """Initialize the system.
 
     Parameters
@@ -604,12 +588,6 @@ def init_system(
     bool
        returns True if system initialized or False otherwise
     """
-    global init_done
-
-    if init_done:
-        log.warning("Init already done")
-        return init_done
-
     if modules is None:
         modules = [2]
 
@@ -627,9 +605,8 @@ def init_system(
 
     if ret == 0:
         log.debug("Initialize Success!")
-        init_done = True
 
-    return init_done
+    return
 
 
 def load_dsp_parameters_from_file(filename: Path) -> None:
