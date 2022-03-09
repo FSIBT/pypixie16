@@ -268,7 +268,8 @@ def start_histogram_run() -> None:
 
     Uses the module list defined during `init`.
     """
-    SDK.start_histogram_run(len(module_list))
+    for m, _ in enumerate(module_list):
+        SDK.start_histogram_run(m)
 
 
 def start_list_mode_run() -> None:
@@ -276,7 +277,8 @@ def start_list_mode_run() -> None:
 
     Uses the module list defined during `init`.
     """
-    SDK.start_list_mode_run(len(module_list))
+    for m, _ in enumerate(module_list):
+        SDK.start_list_mode_run(m)
 
 
 def check_run_status() -> bool:
