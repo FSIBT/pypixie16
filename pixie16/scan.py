@@ -12,7 +12,7 @@ from typing import Optional
 
 from matplotlib import pyplot as plt
 import numpy as np
-from tqdm import tqdm
+from rich.progress import Progress
 
 from . import control
 
@@ -98,9 +98,10 @@ def parameter_scan_1d(
     Y = []
     fig, ax = plt.subplots()
 
-    with tqdm(total=len(myrange)) as pbar:
+    with Progress() as progress:
+        task = progress.add_task(total=len(myrange))
         for x in myrange:
-            pbar.set_description(f"Value: {x:.1f} ->")
+            progress.update(task, description=f"Value: {x:.1f} ->")
             value = control.set_channel_parameter(
                 parameter.name, x * 1e-3, parameter.module, parameter.channel
             )
@@ -127,7 +128,7 @@ def parameter_scan_1d(
             ax.set_ylabel("counts")
             fig.canvas.draw()
             plt.pause(0.001)
-            pbar.update()
+            progress.advance(task)
 
     if savefile:
         plt.savefig(savefile)
@@ -169,13 +170,14 @@ def parameter_scan_2d(
 
     fig, ax = plt.subplots()
 
-    with tqdm(total=len(myrangeA) * len(myrangeB)) as pbar:
+    with Progress() as progress:
+        task = progress.add_task(total=len(myrangeA) * len(myrangeB))
         for i, x in enumerate(myrangeA):
             Xvalue = control.set_channel_parameter(
                 parameterA.name, x * 1e-3, parameterA.module, parameterA.channel
             )
             for j, y in enumerate(myrangeB):
-                pbar.set_description(f"X={x:.1f} Y={y:.1f} ->")
+                progress.update(description=f"X={x:.1f} Y={y:.1f} ->")
                 Yvalue = control.set_channel_parameter(
                     parameterB.name, y * 1e-3, parameterB.module, parameterB.channel
                 )
@@ -209,7 +211,7 @@ def parameter_scan_2d(
                 )
                 fig.canvas.draw()
                 plt.pause(0.001)
-                pbar.update()
+                progress.advance(task)
 
     if savefile:
         plt.savefig(savefile)

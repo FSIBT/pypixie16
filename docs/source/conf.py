@@ -40,7 +40,7 @@ autodoc_mock_imports = [
     "pandas",
     "pint",
     "matplotlib",
-    "tqdm",
+    "rich",
     "PyQt5",
 ]
 # -- Project information -----------------------------------------------------

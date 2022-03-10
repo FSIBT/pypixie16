@@ -38,7 +38,7 @@ import time
 import traceback
 
 from more_itertools import pairwise
-import tqdm
+from rich.progress import Progress
 
 
 class Task(multiprocessing.Process):
@@ -235,19 +235,16 @@ class Pipeline:
         The run can be interruptted using Ctrl-C.
         """
         try:
-            with tqdm.tqdm(total=total) as pbar:
+            with Progress() as progress:
+                task = progress.add_task("[green] Run", total=total)
                 while self.is_alive():
                     time.sleep(0.1)
                     self.update_status()
                     # no need to also show runtime in postfix
                     postfix = self.status.copy()
                     postfix.pop("runtime", None)
-                    pbar.set_postfix(postfix)
-                    if self.runtime < total:
-                        pbar.n = self.runtime
-                    else:
-                        pbar.n = total
-                    pbar.update(0)
+                    text = ",".join(f"{k}: {v}" for k, v in self.status.items())
+                    progress.update(task, completed=self.runtime, description=text)
         except KeyboardInterrupt:
             print("[INFO] got keyboard interrupt... closing")
             self.stop()

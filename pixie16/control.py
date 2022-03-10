@@ -43,7 +43,7 @@ import time
 from typing import Iterable, List, Tuple, Dict, Union, Optional, ByteString
 
 import numpy as np
-import tqdm
+from rich.progress import Progress
 
 from . import config
 from . import C_library_sdk as SDK
@@ -565,9 +565,9 @@ def take_MCA_spectra(
 
     start = time.time()
     keep_running = True
-    with tqdm.tqdm(
-        total=duration, desc="MCA", unit="s", unit_scale=True, position=position
-    ) as pbar_mca:
+    with Progress() as progress:
+        task = progress.add_task("[red] MCA", total=duration)
+
         while keep_running and (time.time() - start < duration):
             keep_running = False
             for m, _ in enumerate(modules):
@@ -576,9 +576,9 @@ def take_MCA_spectra(
                 if r == 1:
                     keep_running = True
             time.sleep(1)
-            dt = round(time.time() - start, 2)
-            pbar_mca.update(dt - pbar_mca.n)
-        pbar_mca.update(duration - pbar_mca.n)
+            dt = time.time() - start
+            progress.update(task, advance=dt)
+        progress.update(task, completed=duration)
     print()
     end_run()
 
@@ -587,7 +587,6 @@ def take_MCA_spectra(
 
 def take_list_mode_data(
     duration: float,
-    newline: bool = True,
     modules: Optional[Iterable[int]] = None,
 ) -> Dict[int, ByteString]:
     """Take list mode data for a certain time.
@@ -600,8 +599,6 @@ def take_list_mode_data(
     ----------
     duration
        Length in seconds of how long data is acquired for
-    newline
-       add a new line to the screen at the end of the run (to finish the progress bar)
     modules
        List of modules, use the ones defined during `init` if None.
 
@@ -622,22 +619,18 @@ def take_list_mode_data(
     start = time.time()
     raw_data_length = 0
 
-    with tqdm.tqdm(
-        total=duration, desc="Traces", unit="s", unit_scale=True
-    ) as pbar_traces:
+    with Progress() as progress:
+        task = progress.add_task("[red] Traces", total=duration)
+
         while (time.time() - start < duration) and (raw_data_length < 1e9):
             data = read_list_mode_fifo(threshold=32 * 1024)
             for i, d in enumerate(data):
                 if d is not None:
                     raw_data[i] += d.tobytes()
                     raw_data_length += len(d)
-            dt = round(time.time() - start, 2)
-            pbar_traces.update(dt - pbar_traces.n)
-        pbar_traces.update(duration - pbar_traces.n)
-    pbar_traces.close()
-
-    if newline:
-        print(flush=True)
+            dt = time.time() - start
+            progress.update(task, advance=dt)
+        progress.update(task, completed=duration)
 
     end_run()
     time.sleep(0.5)
