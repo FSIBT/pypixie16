@@ -23,22 +23,26 @@ status bar. An example use of 3 different tasks is:
 
     pipeline = Pipeline(tasks)
 
-    pipeline.start()
+    pipeline.start()  # starts all tasks
 
-    pipeline.wait_with_progress(total=14.0)
+    pipeline.wait_with_progress(total=14.0)  # reports progress with a bar
 
-    pipeline.join()
+    pipeline.join()  # waits for all tasks to finish
+    pipeline.close()  # releases recsources
 
 """
 
+from contextlib import redirect_stdout
+import io
 import multiprocessing
 import queue
 import sys
 import time
 import traceback
+from typing import List
 
 from more_itertools import pairwise
-from rich.progress import Progress
+from rich.progress import Progress, BarColumn, TimeRemainingColumn, TimeElapsedColumn
 
 
 class Task(multiprocessing.Process):
@@ -48,10 +52,26 @@ class Task(multiprocessing.Process):
     provide functions that should be overwritten when customizing
     a Task:
 
-    do_calc(value): gets called continously in a while loop without an input queue
+    do_work(value): gets called continously in a while loop without an input queue
     or gets called whenever a value arrives in the input queue.
-    If the tasks is done, do_calc should set self.done to True.
-    cleanup(): option to close any files, etc.
+    If the tasks is done, do_work should set self.done to True.
+
+    cleanup(): Will be called at the end of a tasks, option to close any files, etc.
+
+    If you start a data acquisition in the pixie, make sure that you call
+    `init_and_boot` inside the do_work function. Since the, for example, the `__init__`
+    of a Task will still be executed in the main thread.
+
+    For example of Tasks, see `task.py`
+
+    Since Tasks are meant to be daisychained together, each has an `input_queue` and
+    an `output_queue`. Furthermore, there can be a `status_queue` that is used to talk
+    to the main thread and print information to the screen.
+
+    Any `print` output that is generated in the do_work function will be captured and
+    send as a message to the main pipeline (using the `status_queue`) thread where it
+    will be printed using rich.
+
     """
 
     def __init__(self, event=None):
@@ -62,6 +82,7 @@ class Task(multiprocessing.Process):
         self.status_queue = None
         self.start_time = None
         self.stop_time = None
+        self.messages = []  # messages to be send to the main pipeline
         self.name = "general task"
         self.done = False
         self.last_update = time.time()
@@ -76,11 +97,22 @@ class Task(multiprocessing.Process):
         Status updates are only send at least 0.5 seconds apart so
         that they don't spam the status queue.
 
+        Since sending of the `value_dict` is not garantueed, do not rely on
+        this feature and only send information for information purposes.
+
+        Currently, there are two keys in the `value_dict` that have special meaning:
+        - runtime: should be the elappsed time during data acquisition
+        - message: Any message that should be printed to the screen (we use this, so
+                   that the progress bar works well)
+
         """
         current_time = time.time()
         if self.status_queue and (current_time - self.last_update > 0.5):
             self.status_queue.put(value_dict)
             self.last_update = current_time
+            for m in self.messages:
+                self.status_queue.put({"message": m})
+            self.messages = []
 
     def do_work(self, value):
         """Needs to be overwritten to do the work.
@@ -97,6 +129,14 @@ class Task(multiprocessing.Process):
         """Stop all workers and wait until they are done."""
         self.stop()
         super().join(*args, **kwargs)
+
+    def handle_print(self, stringIO: io.StringIO):
+        """Handle print statements that got captured"""
+        msg = stringIO.getvalue()
+        if msg:
+            msg = msg.split("\n")
+            self.messages += msg
+        self.send_status({})
 
     def run(self):
         try:
@@ -115,8 +155,10 @@ class Task(multiprocessing.Process):
                 # save the time we do the first work unit
                 if self.start_time is None:
                     self.start_time = time.time()
-                # do the work
-                out = self.do_work(value)
+                # do the work and capture any print statements
+                with redirect_stdout(io.StringIO()) as f:
+                    out = self.do_work(value)
+                    self.handle_print(f)
 
                 # send result to next stage if available
                 if self.output_queue and out is not None:
@@ -132,7 +174,9 @@ class Task(multiprocessing.Process):
             sys.stderr.flush()
             self.stop_event.set()
         finally:
-            self.cleanup()
+            with redirect_stdout(io.StringIO()) as f:
+                self.cleanup()
+                self.handle_print(f)
 
         # if we are done, indicate that the queue should end
         if self.output_queue:
@@ -151,14 +195,16 @@ class Pipeline:
 
     """
 
-    def __init__(self, tasks, verbose=False):
+    def __init__(self, tasks: List[Task], name: str = "Run", verbose: bool = False):
         self._tasks = tasks
         self.verbose = verbose
         self.status = {}
+        self.messages = []
         self.i = 0
         self.start_time = 0
-        self.runtime = 0
+        self.runtime = None
         self.queues = {}
+        self.name = name
 
         # we'll use a single event for all tasks
         self.stop_event = multiprocessing.Event()
@@ -221,13 +267,14 @@ class Pipeline:
         try:
             while True:
                 value = self.status_queue.get(block=False)
+                if "runtime" in value:
+                    self.runtime = value.pop("runtime")
+                if "message" in value:
+                    self.messages.append(value.pop("message"))
+
                 self.status.update(value)
         except queue.Empty:
             pass
-        if "runtime" in self.status:
-            self.runtime = self.status["runtime"]
-        else:
-            self.runtime = round(time.time() - self.start_time, 2)
 
     def wait_with_progress(self, total):
         """Create a progress bar while the pipeline is running and show the status updates.
@@ -235,16 +282,36 @@ class Pipeline:
         The run can be interruptted using Ctrl-C.
         """
         try:
-            with Progress() as progress:
+            with Progress(
+                f"[green]{self.name}",
+                BarColumn(),
+                TimeElapsedColumn(),
+                TimeRemainingColumn(),
+                "{task.description}",
+                refresh_per_second=4,
+            ) as progress:
                 task = progress.add_task("[green] Run", total=total)
                 while self.is_alive():
                     time.sleep(0.1)
                     self.update_status()
-                    # no need to also show runtime in postfix
-                    postfix = self.status.copy()
-                    postfix.pop("runtime", None)
+                    for m in self.messages:
+                        progress.console.print(m)
+                    self.messages = []
                     text = ",".join(f"{k}: {v}" for k, v in self.status.items())
-                    progress.update(task, completed=self.runtime, description=text)
+                    runtime = self.runtime or round(time.time() - self.start_time, 2)
+                    progress.update(task, completed=runtime, description=text)
         except KeyboardInterrupt:
-            print("[INFO] got keyboard interrupt... closing")
+            print("[yellow]INFO[/]] got keyboard interrupt... closing")
+            self.stop()
+
+    def wait(self):
+        """Wait for the pipeline to finish.
+
+        The run can be interruptted using Ctrl-C.
+        """
+        try:
+            while self.is_alive():
+                time.sleep(0.1)
+        except KeyboardInterrupt:
+            print("[yellow]INFO[/]] got keyboard interrupt... closing")
             self.stop()
