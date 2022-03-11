@@ -253,7 +253,7 @@ def MCA(
         fig, ax = plt.subplots()
     data = data.reshape(-1, rebin).sum(axis=1)
     ax.plot(data, label=label)
-    if log:
+    if log and np.any(data > 0):
         ax.set_yscale("log")
     ax.set_xlabel("Channel")
     ax.set_ylabel("Counts")
