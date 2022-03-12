@@ -148,6 +148,21 @@ def init_and_boot(
     boot(section_name, boot_pattern=boot_pattern, verbose=verbose)
 
 
+def adjust_offsets(modules: Optional[Iterable[int]] = None) -> None:
+    """Adjust offsets for all channels in the list of module".
+
+    Parameters
+    ----------
+    modules
+        Iterable of slots with modules (e.g. [2, 3]), uses modules defined in init call otherwise
+    """
+    if modules is None:
+        modules = module_list
+
+    for m, _ in enumerate(modules):
+        SDK.adjust_offsets(m)
+
+
 def set_sync_mode(modules: Optional[Iterable[int]] = None) -> None:
     """Turn on sync mode for every module.
 
