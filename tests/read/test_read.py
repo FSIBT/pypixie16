@@ -29,8 +29,8 @@ def split_list_mode_binary_files():
 @pytest.fixture(scope="module")
 def list_mode_data_events():
     path = Path(__file__).parent
-    events_file = path / "pixie16-events.hdf"
-    data = pd.read_hdf(events_file)
+    events_file = path / "pixie16-events.parquet"
+    data = pd.read_parquet(events_file)
     # fix some data types
     for column in ["pileup", "trace_flag"]:
         data[column] = data[column].astype(bool)

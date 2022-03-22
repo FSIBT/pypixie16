@@ -5,31 +5,40 @@ import pytest
 import pixie16
 
 
-@pytest.fixture(scope="module")
-def settings_file():
-    return Path(__file__).parent / "pixie16-settings.set"
+@pytest.fixture
+def setting():
+    return pixie16.read.Settings.from_file(Path(__file__).parent / "settings_file.json")
 
 
-class TestReadSettingsData:
-    def test_read_settings(self, settings_file):
-        s = pixie16.read.load_settings(settings_file)
+@pytest.fixture
+def stats():
+    return pixie16.read.Stats.from_file(Path(__file__).parent / "stats_file.json")
 
-        livetime = s.get("LiveTime", channel=3, as_pint=True)
-        cfd_delay = s.get("CFDDelay", channel=9, as_pint=True)
-        trace_delay = s.get("TraceDelay", channel=3, as_pint=True)
-        trace_length = s.get("TraceLength", channel=0, as_pint=True)
-        ext_delay_length = s.get("ExternDelayLen", channel=0, as_pint=True)
 
-        assert round(livetime.to("seconds").magnitude, 2) == 599.82
-        assert s["LiveTime"][9] == 59981879462
-        assert s.FastGap[3] == 10
-        assert s.Log2Ebin[3] == 4294967295
-        assert s["CFDThresh"][0] == 120
-        assert cfd_delay.to("seconds").magnitude == 8e-8
-        assert s["BLcut"][0] == 222
-        assert s["BaselinePercent"][0] == 10
-        assert trace_delay.to("seconds").magnitude == 2e-7
-        assert s["TraceLength"][0] == 5000
-        assert trace_length.to("seconds").magnitude == 1e-5
-        assert s["ExternDelayLen"][0] == 100
-        assert ext_delay_length.to("seconds").magnitude == 1e-6
+class TestSettings:
+    def test_standard_access(self, setting):
+        assert setting["channel"]["input"]["BLcut"][0] == 223
+        assert setting["channel"]["input"]["BLcut"][1] == 242
+
+    def test_flat_access(self, setting):
+        assert setting.get_by_name("BLcut")[0] == 223
+        assert setting.get_by_name("BLcut")[1] == 242
+
+    def test_setting_value(self, setting):
+        setting["channel"]["input"]["BLcut"][0] = 2
+        assert setting["channel"]["input"]["BLcut"][0] == 2
+
+    def test_setting_by_flat_access(self, setting):
+        setting.set_by_name("BLcut", list(range(16)))
+        assert setting["channel"]["input"]["BLcut"][0] == 0
+        assert setting["channel"]["input"]["BLcut"][4] == 4
+
+
+class TestStats:
+    def test_standard_access(self, stats):
+        assert stats["real_time"][0] == 1.0
+        assert stats["real_time"][1] == 2.0
+
+    def test_flat_access(self, stats):
+        assert stats.get_by_name("real_time")[0] == 1.0
+        assert stats.get_by_name("real_time")[1] == 2.0
