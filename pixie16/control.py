@@ -753,7 +753,7 @@ def _change_setting_locally(
     """Changes a single setting inside an object returned by read_settings.
 
     This function does not talk to the pixie16 and only changes the value
-    inside a dict that then late can be written to the pixie16. This way
+    inside a dict that then later can be written to the pixie16. This way
     multiple changes can be made and data only needs to be transfered once
     to the pixie16.
 
@@ -814,7 +814,7 @@ def _change_setting_locally(
     else:
         current = setting[module]["channel"]["input"][name]
         if isinstance(value, (int, float)):
-            setting[module]["channel"]["input"][name] = 16 * [value]
+            setting[module]["channel"]["input"][name][channel] == value
         else:
             if len(current) != len(value):
                 raise ValueError(
@@ -1346,11 +1346,13 @@ def change_setting_from_dict(settings, auto_update=True):
                 if len(settings[name]) == len(channels):
                     for value, channel in zip(settings[name], channels):
                         mod, ch = channel
-                        _change_setting_locally(current, name, value, ch, mod)
+                        current = _change_setting_locally(current, name, value, ch, mod)
                 elif len(settings[name]) == len(modules):
                     for value, mod in zip(settings[name], modules):
                         for ch in range(16):
-                            _change_setting_locally(current, name, value, ch, mod)
+                            current = _change_setting_locally(
+                                current, name, value, ch, mod
+                            )
                 else:
                     raise TypeError(
                         f"Wrong type (or length) for channel parameter {name}"
@@ -1360,7 +1362,7 @@ def change_setting_from_dict(settings, auto_update=True):
                 value = settings[name]
                 for mod in modules:
                     for ch in range(16):
-                        _change_setting_locally(current, name, value, ch, mod)
+                        current = _change_setting_locally(current, name, value, ch, mod)
             else:
                 raise TypeError(
                     "Wrong type (or length) for channel parameter"
@@ -1369,10 +1371,12 @@ def change_setting_from_dict(settings, auto_update=True):
         elif name in SETTINGS_NAME_MODULE:
             if isinstance(settings[name], int):
                 for mod in modules:
-                    _change_setting_locally(current, name, settings[name], None, mod)
+                    current = _change_setting_locally(
+                        current, name, settings[name], None, mod
+                    )
             elif isinstance(settings[name], (list, tuple)):
                 for mod, value in zip(modules, settings[name]):
-                    _change_setting_locally(current, name, value, None, mod)
+                    current = _change_setting_locally(current, name, value, None, mod)
         else:
             log.error(f"Change settings dict: unkown settings name {name}")
 

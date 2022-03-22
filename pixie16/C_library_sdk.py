@@ -372,7 +372,7 @@ def boot_module(
     """
     for f in [ComFPGAConfigFile, SPFPGAConfigFile, DSPCodeFile, DSPVarFile]:
         if not f.is_file():
-            print(f"Error: cannot open firmware file {f}")
+            print(f"[Error] cannot open firmware file {f}")
             sys.exit(1)
 
     # config option is not used anymore, just pass an empty string
