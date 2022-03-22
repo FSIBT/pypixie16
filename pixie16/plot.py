@@ -314,10 +314,12 @@ def CFD(
         return
     channel = list(channels)[0]
 
-    CFDth = setting.CFDThresh[channel]
-    Lf = int(setting.FastLength[channel])
-    Gf = int(setting.FastGap[channel])
-    FFth = setting.FastThresh[channel]  # TODO: check scaling, perhaps x/L*5
+    CFDth = setting.get_by_name("CFDThresh")[channel]
+    Lf = int(setting.get_by_name("FastLength")[channel])
+    Gf = int(setting.get_by_name("FastGap")[channel])
+    FFth = setting.get_by_name("FastThresh")[
+        channel
+    ]  # TODO: check scaling, perhaps x/L*5
 
     # parameters needed for CFD calculation
     w = [w]
@@ -425,15 +427,25 @@ def energy_sums(
     # align data
     Ls, Gs, ch, trace, trailsum, gapsum, leadsum = [], [], [], [], [], [], []
 
-    slow_filter_range = setting.SlowFilterRange
+    slow_filter_range = setting.get_by_name("SlowFilterRange")
     for e in events:
         if e.CFD_error == 0:
             # convert Ls and Gs into number of data points
             Ls.append(
-                int(setting.SlowLength[e.channel] * (2 ** slow_filter_range) * 10 / 2)
+                int(
+                    setting.get_by_name("SlowLength")[e.channel]
+                    * (2 ** slow_filter_range)
+                    * 10
+                    / 2
+                )
             )
             Gs.append(
-                int(setting.SlowGap[e.channel] * (2 ** slow_filter_range) * 10 / 2)
+                int(
+                    setting.get_by_name("SlowGap")[e.channel]
+                    * (2 ** slow_filter_range)
+                    * 10
+                    / 2
+                )
             )
             ch.append(e.channel)
             trace.append(e.trace)
@@ -493,8 +505,7 @@ def energy_sums(
         )
         ch = list(channels)[0]
         ax.set_title(
-            f"channel: {ch}; number of traces: {len(trace)};"
-            f" live time: {setting.get('LiveTime', channel=ch, as_pint=True)}"
+            f"channel: {ch}; number of traces: {len(trace)};" f" live time: <TODO>"
         )
     else:
         print(
