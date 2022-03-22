@@ -8,12 +8,17 @@ and this project tries to adhere to [Semantic Versioning](https://semver.org/spe
 
 ### Changed
 - Renamed 'master' branch to 'main'
+- the library does not keep track of the boot or init status anymore
+- swapped out tqdm for rich for better terminal support
 
 ### Added
-- Support for new SDK from XIA (version 3.3a2). In the process we made some function names more pythonic and clearer and added better documentation. One big change is the way settings files are saved now (two instead of one and the format changed from binary to json)
+- Support for new SDK from XIA (>= 3.3). In the process we made some
+  function names more pythonic and clearer and added better
+  documentation. One big change is the way settings files are saved
+  now (two instead of one and the format changed from binary to json)
 
 ### Removed
-- Support for old XIA library (Some low leve functions got removed)
+- Support for old XIA library (Some low level functions got removed)
 
 ### Fixed
 - Building of docs
