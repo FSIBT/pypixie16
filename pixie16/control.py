@@ -800,27 +800,27 @@ def _change_setting_locally(
             )
 
     if channel is None:
-        current = setting[module]["module"]["input"][name]
+        current_value = setting[module]["module"]["input"][name]
         if isinstance(value, (int, float)):
             setting[module]["channel"]["input"][name] = value
         else:
-            if len(current) != len(value):
+            if len(current_value) != len(value):
                 raise ValueError(
                     f"change_setting: wrong number of arguments"
                     f" for setting {name}.",
-                    f" Need {len(current)}, got {len(value)}",
+                    f" Need {len(current_value)}, got {len(value)}",
                 )
             setting[module]["module"]["input"][name] = value
     else:
-        current = setting[module]["channel"]["input"][name]
+        current_value = setting[module]["channel"]["input"][name]
         if isinstance(value, (int, float)):
-            setting[module]["channel"]["input"][name][channel] == value
+            setting[module]["channel"]["input"][name][channel] = value
         else:
-            if len(current) != len(value):
+            if len(current_value) != len(value):
                 raise ValueError(
                     f"change_setting: wrong number of arguments"
                     f" for setting {name}.",
-                    f" Need {len(current)}, got {len(value)}",
+                    f" Need {len(current_value)}, got {len(value)}",
                 )
             setting[module]["channel"]["input"][name] = value
     return setting
