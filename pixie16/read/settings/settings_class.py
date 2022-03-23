@@ -89,10 +89,10 @@ class SettingsBase(UserDict):
         return setting
 
     @classmethod
-    def from_dict(cls, data: dict, module: int = 0):
+    def from_dict(cls, data: Dict):
         """Creates a Settings object from a file."""
         setting = cls()
-        setting.data = data[module]
+        setting.data = data
         setting.create_index()
         return setting
 

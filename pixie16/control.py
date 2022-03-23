@@ -323,12 +323,14 @@ def save_stats_to_json(filename: Path) -> None:
         name to save the settings to
     """
     stats = get_stats()
+    # convert to something that can be saved as json (our Stats class doesn't work)
+    out = [dict(x) for x in stats]
     if filename.is_file():
         log.error(f"Filename {filename} exists. Not overwriting!!")
         return
 
     with filename.open("w") as f:
-        json.dump(stats, f)
+        json.dump(out, f)
 
 
 def end_run() -> None:
@@ -678,7 +680,7 @@ def read_settings_from_json(filename: Path):
     return data
 
 
-def read_settings() -> Settings:
+def read_settings() -> List[Settings]:
     """Read the current setting into memory.
 
     Reads the setting into a temporary json file using XIA's library and then parse that file.
@@ -696,7 +698,7 @@ def read_settings() -> Settings:
     data = json.load(f)
     f.close()
     filename.unlink()
-    return Settings.from_dict(data)
+    return [Settings.from_dict(x) for x in data]
 
 
 def write_settings_from_file(filename: Path) -> None:
@@ -711,7 +713,7 @@ def write_settings_from_file(filename: Path) -> None:
     SDK.load_dsp_parameters_from_file(filename)
 
 
-def write_settings(data: Settings) -> None:
+def write_settings(data: List[Settings]) -> None:
     """Writes a setting object to the pixie16.
 
     Parameters
@@ -724,7 +726,7 @@ def write_settings(data: Settings) -> None:
     f = tempfile.NamedTemporaryFile(suffix=".json", delete=False)
     filename = Path(f.name)
     with filename.open("w") as f:
-        json.dump(dict(data), f)
+        json.dump([dict(x) for x in data], f)
     SDK.load_dsp_parameters_from_file(filename)
     filename.unlink()
 
@@ -748,8 +750,12 @@ def temporary_settings() -> None:
 
 
 def _change_setting_locally(
-    setting: Settings, name: str, value, channel: Optional[int] = None, module: int = 0
-) -> Settings:
+    setting: List[Settings],
+    name: str,
+    value,
+    channel: Optional[int] = None,
+    module: int = 0,
+) -> List[Settings]:
     """Changes a single setting inside an object returned by read_settings.
 
     This function does not talk to the pixie16 and only changes the value
@@ -855,8 +861,13 @@ def change_setting(
 
 
 def _change_channel_register_bit_locally(
-    setting: Settings, name: str, value: bool, bit: int, channel: int, module: int = 0
-):
+    setting: List[Settings],
+    name: str,
+    value: bool,
+    bit: int,
+    channel: int,
+    module: int = 0,
+) -> List[Settings]:
     """Update a bit in a channel register.
 
     Parameters
@@ -888,8 +899,8 @@ def _change_channel_register_bit_locally(
 
 
 def _change_module_register_bit_locally(
-    setting: Settings, name: str, value: bool, bit: int, module: int = 0
-) -> Settings:
+    setting: List[Settings], name: str, value: bool, bit: int, module: int = 0
+) -> List[Settings]:
     """Update a bit in module register.
 
     Parameters
@@ -919,22 +930,22 @@ def _change_module_register_bit_locally(
 
 
 def _change_CSRA_bit_locally(
-    setting: Settings, value: bool, channel: int, module: int, bit: int
-) -> Settings:
+    setting: List[Settings], value: bool, channel: int, module: int, bit: int
+) -> List[Settings]:
     return _change_channel_register_bit_locally(
         setting, "ChanCSRa", value, bit, channel, module
     )
 
 
 def _change_CSRB_bit_locally(
-    setting: Settings, value: bool, module: int, bit: int
-) -> Settings:
+    setting: List[Settings], value: bool, module: int, bit: int
+) -> List[Settings]:
     return _change_module_register_bit_locally(setting, "ModCSRB", value, bit, module)
 
 
 def _change_CSRA_locally(
-    setting: Settings, name: str, value, channel: int, module: int
-) -> Settings:
+    setting: List[Settings], name: str, value, channel: int, module: int
+) -> List[Settings]:
     """Update bits by name for channel CSRa
 
     Parameters
@@ -1036,8 +1047,8 @@ def _change_CSRA_locally(
 
 
 def _change_CSRB_locally(
-    setting: Settings, name: str, value: float, module: int
-) -> Settings:
+    setting: List[Settings], name: str, value: float, module: int
+) -> List[Settings]:
     """Update bits by name for the module CSRb.
 
     Parameters
@@ -1084,9 +1095,10 @@ def _change_CSRB_locally(
 
 def _get_setting_value(
     name: str,
-    settings_dict: Settings,
+    settings_dict: Dict,
     channels: List[Tuple[int, int]],
-    current_settings,
+    current_settings: List[Settings],
+    module: int = 0,
 ) -> List[Union[int, float]]:
     """Returns name from setting dictionary or from memory.
 
@@ -1118,14 +1130,14 @@ def _get_setting_value(
         if isinstance(temp, (int, float)):
             temp = [temp] * len(channels)
     else:
-        if name in current_settings[0]["module"]["input"].keys():
+        if name in current_settings[module]["module"]["input"]:
             temp = []
             for mod, c in channels:
-                temp.append(current_settings[mod]["module"]["input"][name])
-        elif name in current_settings[0]["channel"]["input"].keys():
+                temp.append(current_settings[module]["module"]["input"][name])
+        elif name in current_settings[module]["channel"]["input"]:
             temp = []
             for mod, c in channels:
-                temp.append(current_settings[mod]["channel"]["input"][name][c])
+                temp.append(current_settings[module]["channel"]["input"][name][c])
         else:
             print(f"[ERROR] get_setting_value cannot get value for {name}")
 
