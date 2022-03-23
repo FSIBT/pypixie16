@@ -232,3 +232,8 @@ class SettingsOld(Entity):
 def load_settings(file, module=0):
     """Takes the name of a settings file and the index of the module of interest. Returns a Settings object."""
     return Settings.from_file(file, module)
+
+
+def load_stats(file, module=0):
+    """Takes the name of a settings file and the index of the module of interest. Returns a Settings object."""
+    return Stats.from_file(file, module)
