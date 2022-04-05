@@ -195,7 +195,7 @@ def find_sums(
             s1 = np.sum(t[i : i + Ls])
             s2 = np.sum(t[i + Ls : i + Ls + Gs])
             s3 = np.sum(t[i + Ls + Gs : i + Ls + Gs + Ls])
-            # print([s1, s2, s3], [Esum1, Esum2, Esum3])
+            # t([s1, s2, s3], [Tsum, Gsum, Lsum], flush=True)
             if [s1, s2, s3] == [Tsum, Gsum, Lsum]:
                 sumIDX.append(i)
                 Esums.append([s1, s2, s3])

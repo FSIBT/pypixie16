@@ -48,7 +48,7 @@ from rich.progress import Progress
 from . import config
 from . import C_library_sdk as SDK
 from . import variables
-from .read import Settings, Stats
+from .read import Settings, Stats, CrateSettings
 
 # set up logging
 log = logging.getLogger(__name__)
@@ -58,6 +58,47 @@ module_list: List[int] = [2]  # default setting, overwritten by init_and_boot
 SETTINGS = variables.settings
 SETTINGS_NAME_CHANNEL = []
 SETTINGS_NAME_MODULE = []
+
+BIT_PARAMETERS = {
+    "FastTrigSelect": "CHANNEL_CSRA",
+    "ModValSignal": "CHANNEL_CSRA",
+    "GoodChannel": "CHANNEL_CSRA",
+    "ChanValSignal": "CHANNEL_CSRA",
+    "RejectIfFull": "CHANNEL_CSRA",
+    "Polarity": "CHANNEL_CSRA",
+    "EnableVeto": "CHANNEL_CSRA",
+    "CaptureHistogram": "CHANNEL_CSRA",
+    "CaptureTrace": "CHANNEL_CSRA",
+    "EnableQDC": "CHANNEL_CSRA",
+    "EnableCFD": "CHANNEL_CSRA",
+    "EnableModVal": "CHANNEL_CSRA",
+    "CaptureSums": "CHANNEL_CSRA",
+    "EnableChannelVal": "CHANNEL_CSRA",
+    "Gain": "CHANNEL_CSRA",
+    "RejectPileup": "CHANNEL_CSRA",
+    "SkipLargePulses": "CHANNEL_CSRA",
+    "GroupTrigSignal": "CHANNEL_CSRA",
+    "ChannelVetoSignal": "CHANNEL_CSRA",
+    "ModVetoSignal": "CHANNEL_CSRA",
+    "ExtTimestamps": "CHANNEL_CSRA",
+    "BackplanePullup": "MODULE_CSRB",
+    "Director": "MODULE_CSRB",
+    "ChassisMaster": "MODULE_CSRB",
+    "GlobalFastTrigger": "MODULE_CSRB",
+    "ExternalTrigger": "MODULE_CSRB",
+    "ExternalInhibit": "MODULE_CSRB",
+    "DistributeClocks": "MODULE_CSRB",
+    "SortEvents": "MODULE_CSRB",
+    "ConnectFastTriggerBP": "MODULE_CSRB",
+}
+CHANNEL_PARAMETERS = SDK.valid_channel_parameter_names + [
+    x for x in BIT_PARAMETERS if BIT_PARAMETERS[x] == "CHANNEL_CSRA"
+]
+MODULE_PARAMETERS = SDK.valid_module_parameter_names + [
+    x for x in BIT_PARAMETERS if BIT_PARAMETERS[x] == "MODULE_CSRB"
+]
+
+
 for setting_name, (startpos, length) in SETTINGS.items():
     if length == 16:
         SETTINGS_NAME_CHANNEL.append(setting_name)
@@ -680,7 +721,7 @@ def read_settings_from_json(filename: Path):
     return data
 
 
-def read_settings() -> List[Settings]:
+def read_settings() -> CrateSettings:
     """Read the current setting into memory.
 
     Reads the setting into a temporary json file using XIA's library and then parse that file.
@@ -698,7 +739,7 @@ def read_settings() -> List[Settings]:
     data = json.load(f)
     f.close()
     filename.unlink()
-    return [Settings.from_dict(x) for x in data]
+    return CrateSettings([Settings.from_dict(x) for x in data])
 
 
 def write_settings_from_file(filename: Path) -> None:
@@ -713,7 +754,7 @@ def write_settings_from_file(filename: Path) -> None:
     SDK.load_dsp_parameters_from_file(filename)
 
 
-def write_settings(data: List[Settings]) -> None:
+def write_settings(data: CrateSettings) -> None:
     """Writes a setting object to the pixie16.
 
     Parameters
@@ -749,402 +790,7 @@ def temporary_settings() -> None:
         write_settings(current_settings)
 
 
-def _change_setting_locally(
-    setting: List[Settings],
-    name: str,
-    value,
-    channel: Optional[int] = None,
-    module: int = 0,
-) -> List[Settings]:
-    """Changes a single setting inside an object returned by read_settings.
-
-    This function does not talk to the pixie16 and only changes the value
-    inside a dict that then later can be written to the pixie16. This way
-    multiple changes can be made and data only needs to be transfered once
-    to the pixie16.
-
-    Users of pypixie16 should use `change_setting_from_dict` to modify settings
-    or if they only want to change a single setting we provide `change_setting`.
-
-    Parameters
-    ----------
-    setting
-        Object returned by `read_settings`
-    name
-        Name of value to change
-    value
-        New value. This normally needs to match the shape of the existing value.
-        For channel values, it is also allowed to provide just a single float or int
-        which will then be used for all channels.
-    channel
-        Optional channel number
-    module
-        Module number
-    """
-
-    # ensure correct sign for
-    if name in ["Log2Ebin", "Log2Bweight"]:
-        value = -abs(value)
-
-    # error checking
-    if name in ["Log2Bweight", "Log2Ebin"]:
-        if abs(value) > 16:
-            raise ValueError(
-                f"Error: {name} cannot be larger than 16! "
-                f"value {value} channel {channel} module {module}"
-            )
-        if value == 0 and name == "Log2Ebin":
-            raise ValueError(
-                f"Error: {name} cannot be 0! "
-                f"value {value} channel {channel} module {module}"
-            )
-    elif name == "FastThresh":
-        if value > 65534:
-            raise ValueError(
-                f"Error: {name} must be smaller than 65535!"
-                f" value {value} channel {channel} module {module}"
-            )
-
-    if channel is None:
-        current_value = setting[module]["module"]["input"][name]
-        if isinstance(value, (int, float)):
-            setting[module]["channel"]["input"][name] = value
-        else:
-            if len(current_value) != len(value):
-                raise ValueError(
-                    f"change_setting: wrong number of arguments"
-                    f" for setting {name}.",
-                    f" Need {len(current_value)}, got {len(value)}",
-                )
-            setting[module]["module"]["input"][name] = value
-    else:
-        current_value = setting[module]["channel"]["input"][name]
-        if isinstance(value, (int, float)):
-            setting[module]["channel"]["input"][name][channel] = value
-        else:
-            if len(current_value) != len(value):
-                raise ValueError(
-                    f"change_setting: wrong number of arguments"
-                    f" for setting {name}.",
-                    f" Need {len(current_value)}, got {len(value)}",
-                )
-            setting[module]["channel"]["input"][name] = value
-    return setting
-
-
-def change_setting(
-    name: str, value, channel: Optional[int] = None, module: int = 0
-) -> None:
-    """Changes the value of a single setting on the pixie16.
-
-    First reads all values, changes one and then sends the new setting
-    back to the pixie.
-
-    Module parameter can be set by setting channel to None.
-
-    Parameters
-    ----------
-    name
-        setting name
-    value
-        new value
-    channel
-        channel name (if None, we assume a module paramter)
-    module
-        the module number (starting at 0)
-    """
-    setting = read_settings()
-
-    new = _change_setting_locally(setting, name, value, channel, module)
-
-    write_settings(new)
-
-
-def _change_channel_register_bit_locally(
-    setting: List[Settings],
-    name: str,
-    value: bool,
-    bit: int,
-    channel: int,
-    module: int = 0,
-) -> List[Settings]:
-    """Update a bit in a channel register.
-
-    Parameters
-    ----------
-    setting
-        from read_setting
-    name
-        name of the register
-    value
-        new value: True or False
-    bit
-        the bit that should be changed
-    channel
-        the channel number
-    module
-        the module number (starting at 0)
-    """
-    current = setting[module]["channel"]["input"][name][channel]
-    new = 1 << bit
-    if value:
-        # set the bit
-        new = current | new
-    else:
-        # unset the bit
-        new = current & ~new
-    setting[module]["channel"]["input"][name][channel] = new
-
-    return setting
-
-
-def _change_module_register_bit_locally(
-    setting: List[Settings], name: str, value: bool, bit: int, module: int = 0
-) -> List[Settings]:
-    """Update a bit in module register.
-
-    Parameters
-    ----------
-    setting
-        from read_setting
-    name
-        name of the register
-    value
-        new value: True or False
-    bit
-        the bit that should be changed
-    module
-        the module number (starting at 0)
-    """
-    current = setting[module]["module"]["input"][name]
-    new = 1 << bit
-    if value:
-        # set the bit
-        new = current | new
-    else:
-        # unset the bit
-        new = current & ~new
-    setting[module]["module"]["input"][name] = new
-
-    return setting
-
-
-def _change_CSRA_bit_locally(
-    setting: List[Settings], value: bool, channel: int, module: int, bit: int
-) -> List[Settings]:
-    return _change_channel_register_bit_locally(
-        setting, "ChanCSRa", value, bit, channel, module
-    )
-
-
-def _change_CSRB_bit_locally(
-    setting: List[Settings], value: bool, module: int, bit: int
-) -> List[Settings]:
-    return _change_module_register_bit_locally(setting, "ModCSRB", value, bit, module)
-
-
-def _change_CSRA_locally(
-    setting: List[Settings], name: str, value, channel: int, module: int
-) -> List[Settings]:
-    """Update bits by name for channel CSRa
-
-    Parameters
-    ----------
-    setting
-        from read_setting
-    name
-        name of the setting (defined here)
-    value
-        either True/False or custom strings (see below)
-    channel
-        channel number to update
-    module
-        the module number (starting at 0)
-    """
-    if name == "FastTrigSelect":
-        # value: 'external' or 'group'
-        return _change_CSRA_bit_locally(
-            setting, value == "external", channel, module, 0
-        )
-    if name == "ModValSignal":
-        # value: 'modgate' or 'global'
-        return _change_CSRA_bit_locally(setting, value == "modgate", channel, module, 1)
-    if name == "GoodChannel":
-        # value: True = enable channel
-        return _change_CSRA_bit_locally(setting, value, channel, module, 2)
-    if name == "ChanValSignal":
-        # value: 'channelgate' or 'channelvalidation'
-        return _change_CSRA_bit_locally(
-            setting, value == "channelgate", channel, module, 3
-        )
-    if name == "RejectIfFull":
-        # value: True = reject data if buffer is full
-        return _change_CSRA_bit_locally(setting, value, channel, module, 4)
-    if name == "Polarity":
-        # value: True=positive slope, False=negative slope
-        return _change_CSRA_bit_locally(
-            setting, value == "positive", channel, module, 5
-        )
-    if name == "EnableVeto":
-        # value: True = enable veto
-        return _change_CSRA_bit_locally(setting, value, channel, module, 6)
-    if name == "CaptureHistogram":
-        # value: True = enable capture of MCA histograms
-        return _change_CSRA_bit_locally(setting, value, channel, module, 7)
-    if name == "CaptureTrace":
-        # value: True = enable capture trace
-        return _change_CSRA_bit_locally(setting, value, channel, module, 8)
-    if name == "EnableQDC":
-        # value: True = enable capture QDC sums
-        return _change_CSRA_bit_locally(setting, value, channel, module, 9)
-    if name == "EnableCFD":
-        # value: True = enable CFD
-        return _change_CSRA_bit_locally(setting, value, channel, module, 10)
-    if name == "EnableModVal":
-        # value: True = enable module validation
-        return _change_CSRA_bit_locally(setting, value, channel, module, 11)
-    if name == "CaptureSums":
-        # value: True = enable capture raw energy susms
-        return _change_CSRA_bit_locally(setting, value, channel, module, 12)
-    if name == "EnableChannelVal":
-        # value: True = enable channel validation
-        return _change_CSRA_bit_locally(setting, value, channel, module, 13)
-    if name == "Gain":
-        # value: 0.625 or 2.5
-        return _change_CSRA_bit_locally(setting, value == 2.5, channel, module, 14)
-    if name == "RejectPileup":
-        # value: 'all' (no energies for pileup events),
-        #        'single' (reject pileup),
-        #        'pileup' (trace, timestamp for pileup, no trace for single)
-        #        'pileup-only' (only record trace, timestamp, etc for pileup
-        #                       events, no single events)
-        bit0 = (value == "single") or (value == "pileup-only")
-        bit1 = (value == "pileup") or (value == "pileup-only")
-        setting = _change_CSRA_bit_locally(setting, bit0, channel, module, 15)
-        setting = _change_CSRA_bit_locally(setting, bit1, channel, module, 16)
-        return setting
-    if name == "SkipLargePulses":
-        # value: True = don't record traces for large pulses
-        return _change_CSRA_bit_locally(setting, value, channel, module, 17)
-    if name == "GroupTrigSignal":
-        # value: 'external' or 'local'
-        return _change_CSRA_bit_locally(
-            setting, value == "external", channel, module, 18
-        )
-    if name == "ChannelVetoSignal":
-        # value: 'channel' or 'front'
-        return _change_CSRA_bit_locally(
-            setting, value == "channel", channel, module, 19
-        )
-    if name == "ModVetoSignal":
-        # value: 'module' or 'front'
-        return _change_CSRA_bit_locally(setting, value == "module", channel, module, 20)
-    if name == "ExtTimestamps":
-        # value: True = include external timestamps in header
-        return _change_CSRA_bit_locally(setting, value, channel, module, 21)
-
-    raise KeyError(f"Error: unknown key for ChannelCSRa {name}")
-
-
-def _change_CSRB_locally(
-    setting: List[Settings], name: str, value: float, module: int
-) -> List[Settings]:
-    """Update bits by name for the module CSRb.
-
-    Parameters
-    ----------
-    setting
-        from read_setting
-    name
-        name of the setting (defined here)
-    value
-        either True/False or custom strings (see below)
-    module
-        the module number (starting at 0)
-    """
-    if name == "BackplanePullup":
-        # value: True = connect backplane to pullup resistor
-        return _change_CSRB_bit_locally(setting, value, module, 0)
-    if name == "Director":
-        # value: True = set to director
-        return _change_CSRB_bit_locally(setting, value, module, 4)
-    if name == "ChassisMaster":
-        # value: True = set to chassis master
-        return _change_CSRB_bit_locally(setting, value, module, 6)
-    if name == "GlobalFastTrigger":
-        # value: True = select global fast trigger source
-        return _change_CSRB_bit_locally(setting, value, module, 7)
-    if name == "ExternalTrigger":
-        # value: True = select external trigger source
-        return _change_CSRB_bit_locally(setting, value, module, 8)
-    if name == "ExternalInhibit":
-        # value: True = use inhibit
-        return _change_CSRB_bit_locally(setting, value, module, 10)
-    if name == "DistributeClocks":
-        # value: True = multiple crates
-        return _change_CSRB_bit_locally(setting, value, module, 11)
-    if name == "SortEvents":
-        # value: True = sort events based on timestamp
-        return _change_CSRB_bit_locally(setting, value, module, 12)
-    if name == "ConnectFastTriggerBP":
-        # value: True = Connect the fast trigger to the backplane
-        return _change_CSRB_bit_locally(setting, value, module, 13)
-
-    raise KeyError(f"Error: unknown key for ModuleCSRb {name}")
-
-
-def _get_setting_value(
-    name: str,
-    settings_dict: Dict,
-    channels: List[Tuple[int, int]],
-    current_settings: List[Settings],
-    module: int = 0,
-) -> List[Union[int, float]]:
-    """Returns name from setting dictionary or from memory.
-
-    This is a helper function for `change_settings_from_dict` that is used
-    in `autoupdate` mode for settings that depend on other settings. The functions
-    returns values needed to re-calculate autoupdate values.
-
-    Parameters
-    ----------
-    name
-        Setting name
-    settings_dict
-        dictionary with new values to be set
-    channels
-        List of (module, channels) pairs
-    current_settings
-        Object returned by `read_settings`
-
-
-    Returns
-    -------
-    List
-        A list of the same length as channels with the values for each channel.
-        Similar to the values that need to be used in `change_settings_from_dict`.
-    """
-
-    if name in settings_dict:
-        temp = settings_dict[name]
-        if isinstance(temp, (int, float)):
-            temp = [temp] * len(channels)
-    else:
-        if name in current_settings[module]["module"]["input"]:
-            temp = []
-            for mod, c in channels:
-                temp.append(current_settings[module]["module"]["input"][name])
-        elif name in current_settings[module]["channel"]["input"]:
-            temp = []
-            for mod, c in channels:
-                temp.append(current_settings[module]["channel"]["input"][name][c])
-        else:
-            print(f"[ERROR] get_setting_value cannot get value for {name}")
-
-    return temp
-
-
-def change_setting_from_dict(settings, auto_update=True):
+def change_setting_from_dict(settings, call_pixie: Optional[bool] = True):
     """Takes a dictionary with setting names as keys and setting values
 
     The dictionary must also contain an entry called 'channels' that
@@ -1186,215 +832,273 @@ def change_setting_from_dict(settings, auto_update=True):
 
     modules = {x[0] for x in channels}
 
+    out = []
+    for name, value in settings.items():
+        if name in CHANNEL_PARAMETERS:
+            if isinstance(value, (int, float, str)):
+                value_lst = [value] * len(channels)
+            else:
+                value_lst = value
+            for (module, channel), ch_value in zip(channels, value_lst):
+                if name in BIT_PARAMETERS:
+                    pixie_param_name = BIT_PARAMETERS[name]
+                    bit_param_val = SDK.read_single_channel_parameter(
+                        pixie_param_name, module, channel, convert_bit_pattern=True
+                    )
+                    ch_value_out = _change_bit_parameter(name, ch_value, bit_param_val)
+                    name_out = pixie_param_name
+                else:
+                    ch_value_out = ch_value
+                    name_out = name
+                if call_pixie:
+                    SDK.write_single_channel_parameter(
+                        name_out, ch_value_out, module, channel
+                    )
+                out.append(["channel", name_out, ch_value, module, channel])
+        elif name in MODULE_PARAMETERS:
+            for module in modules:
+                if name in BIT_PARAMETERS:
+                    pixie_param_name = BIT_PARAMETERS[name]
+                    bit_param_val = SDK.read_single_module_parameter(
+                        pixie_param_name, module, convert_bit_pattern=True
+                    )
+                    value = _change_bit_parameter(name, value, bit_param_val)
+                    name = pixie_param_name
+                if call_pixie:
+                    SDK.write_single_module_parameter(name, value, module)
+                out.append(["module", name, value, module])
+
+        else:
+            print(f"[Error] {name} not a valid Pixie16 parameter name.")
+    return out
+
+
+def _change_bit_parameter(
+    name: str, value: Union[bool, int, str], bit_list: List[bool]
+) -> List[bool]:
+
+    # Module parameters (currently onlChanValSignaly MODULE_CSRB)
+    if name == "BackplanePullup":
+        # value: True = connect backplane to pullup resistor
+        assert isinstance(
+            value, bool
+        ), "BackplanePullup needs to be either True or False"
+        bit_list[31 - 0] = value
+    elif name == "Director":
+        # value: True = set to director
+        assert isinstance(value, bool), "Director needs to be either True or False"
+        bit_list[31 - 4] = value
+    elif name == "ChassisMaster":
+        # value: True = set to chassis master
+        assert isinstance(value, bool), "ChassisMaster needs to be either True or False"
+        bit_list[31 - 6] = value
+    elif name == "GlobalFastTrigger":
+        # value: True = select global fast trigger source
+        assert isinstance(
+            value, bool
+        ), "GlobalFastTrigger needs to be either True or False"
+        bit_list[31 - 7] = value
+    elif name == "ExternalTrigger":
+        # value: True = select external trigger source
+        assert isinstance(
+            value, bool
+        ), "ExternalTrigger needs to be either True or False"
+        bit_list[31 - 8] = value
+    elif name == "ExternalInhibit":
+        # value: True = use inhibit
+        assert isinstance(
+            value, bool
+        ), "ExternalInhibit needs to be either True or False"
+        bit_list[31 - 10] = value
+    elif name == "DistributeClocks":
+        # value: True = multiple crates
+        assert isinstance(
+            value, bool
+        ), "DistributeClocks needs to be either True or False"
+        bit_list[31 - 11] = value
+    elif name == "SortEvents":
+        # value: True = sort events based on timestamp
+        assert isinstance(value, bool), "SortEvents needs to be either True or False"
+        bit_list[31 - 12] = value
+    elif name == "ConnectFastTriggerBP":
+        # value: True = Connect the fast trigger to the backplane
+        assert isinstance(
+            value, bool
+        ), "ConnectFastTriggerBP needs to be either True or False"
+        bit_list[31 - 13] = value
+
+    # Channel parameters  (currently CHAN_CSRA)
+    elif name == "FastTrigSelect":
+        # value: 'external' or 'group'
+        assert value in [
+            "external",
+            "group",
+        ], "FastTrigSelect needs to be either 'external' or 'group'"
+        bit = value == "external"
+        bit_list[31 - 0] = bit
+    elif name == "ModValSignal":
+        # value: 'modgate' or 'global'
+        assert value in [
+            "modgate",
+            "global",
+        ], "ModValSignal needs to be either 'modgate' or 'global'"
+        bit = value == "modgate"
+        bit_list[31 - 1] = bit
+    elif name == "GoodChannel":
+        # value: True = enable channel
+        assert isinstance(value, bool), "GoodChannel needs to be either True or False"
+        bit_list[31 - 2] = value
+    elif name == "ChanValSignal":
+        # value: 'channelgate' or 'channelvalidation'
+        assert value in [
+            "channelgate",
+            "channelvalidation",
+        ], "ChanValSignal needs to be either 'channelgate' or 'channelvalidation'"
+        bit = value == "channelgate"
+        bit_list[31 - 3] = bit
+    elif name == "RejectIfFull":
+        # value: True = reject data if buffer is full
+        assert isinstance(value, bool), "RejectIfFull needs to be either True or False"
+        bit_list[31 - 4] = value
+    elif name == "Polarity":
+        # value: True=positive slope, False=negative slope
+        assert value in [
+            "positive",
+            "negative",
+        ], "Polarity needs to be either 'positive' or 'negative'"
+        bit = value == "positive"
+        bit_list[31 - 5] = bit
+    elif name == "EnableVeto":
+        # value: True = enable veto
+        assert isinstance(value, bool), "EnableVeto needs to be either True or False"
+        bit_list[31 - 6] = value
+    elif name == "CaptureHistogram":
+        # value: True = enable capture of MCA histograms
+        assert isinstance(
+            value, bool
+        ), "CaptureHistogram needs to be either True or False"
+        bit_list[31 - 7] = value
+    elif name == "CaptureTrace":
+        # value: True = enable capture trace
+        assert isinstance(value, bool), "CaptureTrace needs to be either True or False"
+        bit_list[31 - 8] = value
+    elif name == "EnableQDC":
+        # value: True = enable capture QDC sums
+        assert isinstance(value, bool), "EnableQDC needs to be either True or False"
+        bit_list[31 - 9] = value
+    elif name == "EnableCFD":
+        # value: True = enable CFD
+        assert isinstance(value, bool), "EnableCFD needs to be either True or False"
+        bit_list[31 - 10] = value
+    elif name == "EnableModVal":
+        # value: True = enable module validation
+        assert isinstance(value, bool), "EnableModVal needs to be either True or False"
+        bit_list[31 - 11] = value
+    elif name == "CaptureSums":
+        # value: True = enable capture raw energy susms
+        assert isinstance(value, bool), "CaptureSums needs to be either True or False"
+        bit_list[31 - 12] = value
+    elif name == "EnableChannelVal":
+        # value: True = enable channel validation
+        assert isinstance(
+            value, bool
+        ), "EnableChannelVal needs to be either True or False"
+        bit_list[31 - 13] = value
+    elif name == "Gain":
+        # value: 2.5 (True) or 0.625 (False)
+        assert value in [2.5, 0.625], "Gain needs to be either 0.625 or 2.5"
+        bit = value == 2.5
+        bit_list[31 - 14] = bit
+    elif name == "RejectPileup":
+        # value: 'all' (no energies for pileup events),
+        #        'single' (reject pileup),
+        #        'pileup' (trace, timestamp for pileup, no trace for single)
+        #        'pileup-only' (only record trace, timestamp, etc for pileup
+        #                       events, no single events)
+        assert value in [
+            "single",
+            "pileup-only",
+            "pileup",
+            "all",
+        ], "RejectPileup needs to be either 'all', 'single', 'pileup', 'pileup-only'"
+        bit0 = (value == "single") or (value == "pileup-only")
+        bit1 = (value == "pileup") or (value == "pileup-only")
+        bit_list[31 - 15] = bit0
+        bit_list[31 - 16] = bit1
+    elif name == "SkipLargePulses":
+        # value: True = don't record traces for large pulses
+        assert isinstance(
+            value, bool
+        ), "SkipLargePulses needs to be either True or False"
+        bit_list[31 - 17] = value
+    elif name == "GroupTrigSignal":
+        # value: 'external' or 'local'
+        assert value in [
+            "external",
+            "local",
+        ], "GroupTrigSignal needs to be either 'external' or 'local'"
+        bit = value == "external"
+        bit_list[31 - 18] = bit
+    elif name == "ChannelVetoSignal":
+        # value: 'channel' or 'front'
+        assert value in [
+            "channel",
+            "front",
+        ], "ChannelVetoSignal needs to be either 'channel' or 'front'"
+        bit = value == "channel"
+        bit_list[31 - 19] = bit
+    elif name == "ModVetoSignal":
+        # value: 'module' or 'front'
+        assert value in [
+            "module",
+            "front",
+        ], "ModVetoSignal needs to be either 'module' or 'front'"
+        bit = value == "module"
+        bit_list[31 - 20] = bit
+    elif name == "ExtTimestamps":
+        # value: True = include external timestamps in header
+        assert isinstance(value, bool), "ExtTimestamps needs to be either True or False"
+        bit_list[31 - 21] = value
+    return bit_list
+
+
+def change_raw_setting_from_dict(settings, call_pixie: Optional[bool] = True):
+    assert (
+        "channels" in settings
+    ), "The settings dictionary needs an entry listing called 'channels' the channels"
+    channels = settings.pop("channels")
+
+    for c in channels:
+        assert isinstance(
+            c, (list, tuple)
+        ), "Setting dictionary: each channel must be a list or tuple"
+        assert (
+            len(c) == 2
+        ), "Setting dictionary: each channel must have two entries (modules, channel)"
+
+    modules = {x[0] for x in channels}
+
     # get all the settings data from the pixie
     current = read_settings()
 
-    # update depend values
-    if "SlowLength" in settings or "SlowGap" in settings:
-        SL = _get_setting_value("SlowLength", settings, channels, current)
-        SG = _get_setting_value("SlowGap", settings, channels, current)
-        for i, (sl, sg) in enumerate(zip(SL, SG)):
-            if sl + sg > 127:
-                print(f"Warning: SlowLength + SlowGap > 127. SL {SL} SG {SG}")
-                sl = 127 - sg
-            if sl < 2:
-                print(f"Warning: SlowLength < 2. SL {SL}.")
-                sl = 2
-                if sl + sg > 127:
-                    sg = 127 - sl
-            if sg < 3:
-                print(f"Warning: SlowGap < 3. SG {SG}.")
-                sg = 3
-                if sl + sg > 127:
-                    sl = 127 - sg
-            SL[i] = sl
-            SG[i] = sg
-        settings["SlowLength"] = SL
-        settings["SlowGap"] = SG
-
-    if auto_update and ("PeakSample" not in settings):
-        filter_range = _get_setting_value(
-            "SlowFilterRange", settings, channels, current
-        )
-        SL = _get_setting_value("SlowLength", settings, channels, current)
-        SG = _get_setting_value("SlowGap", settings, channels, current)
-        PeakSample = []
-        for sl, sg, f in zip(SL, SG, filter_range):
-            if f > 6:
-                PeakSample.append(sl + sg - 2)
-            elif f > 2:
-                PeakSample.append(sl + sg - 5 + f)
-            else:
-                PeakSample.append(sl + sg - 4 + f)
-        settings["PeakSample"] = PeakSample
-
-    if auto_update and ("PeakSep" not in settings):
-        SL = _get_setting_value("SlowLength", settings, channels, current)
-        SG = _get_setting_value("SlowGap", settings, channels, current)
-        PeakSep = [sl + sg for sl, sg in zip(SL, SG)]
-        settings["PeakSep"] = PeakSep
-
-    if auto_update and ("TriggerDelay" not in settings):
-        filter_range = _get_setting_value(
-            "SlowFilterRange", settings, channels, current
-        )
-        PeakSep = _get_setting_value("PeakSep", settings, channels, current)
-        settings["TriggerDelay"] = [
-            (p - 1) * 2 ** f for f, p in zip(filter_range, PeakSep)
-        ]
-    if auto_update and ("PAFlength" in settings) and ("TraceDelay" in settings):
-        print("Warning: PAFlength and TraceDelay set. TraceDelay will be ignored.")
-        settings.pop("TraceDelay")
-    if auto_update and ("PAFlength" not in settings) and ("TraceDelay" in settings):
-        TriggerDelay = _get_setting_value("TriggerDelay", settings, channels, current)
-        FastFilterRange = _get_setting_value(
-            "FastFilterRange", settings, channels, current
-        )
-        TraceDelay = _get_setting_value("TraceDelay", settings, channels, current)
-        FIFOLength = _get_setting_value("FIFOLength", settings, channels, current)
-        settings.pop("TraceDelay")
-
-        PAFlength = [
-            t / (2 ** f) + d / 5
-            for t, f, d in zip(TriggerDelay, FastFilterRange, TraceDelay)
-        ]
-
-        settings["PAFlength"] = PAFlength
-    if auto_update and ("PAFlength" in settings):
-        PAFlength = _get_setting_value("PAFlength", settings, channels, current)
-        FIFOLength = _get_setting_value("FIFOLength", settings, channels, current)
-        FastFilterRange = _get_setting_value(
-            "FastFilterRange", settings, channels, current
-        )
-        if "TraceDelay" in settings:
-            TraceDelay = _get_setting_value("TraceDelay", settings, channels, current)
-            TraceDelay = [
-                x / 5 for x in TraceDelay
-            ]  # convert from data points to FPGA cycles
-        else:
-            TriggerDelay = _get_setting_value(
-                "TriggerDelay", settings, channels, current
-            )
-            TraceDelay = [
-                pl - td / (2 ** f)
-                for pl, td, f in zip(PAFlength, TriggerDelay, FastFilterRange)
-            ]
-        PAFlength = [min(pl, fl - 1) for pl, fl in zip(PAFlength, FIFOLength)]
-        TriggerDelay = [
-            (pf - td) * 2 ** f
-            for pf, td, f in zip(PAFlength, TraceDelay, FastFilterRange)
-        ]
-
-        settings["PAFlength"] = PAFlength
-        settings["TriggerDelay"] = TriggerDelay
-    if "PreampTau" in settings:
-        name = "PreampTau"
-        if isinstance(settings[name], int):
-            settings[name] = SDK.converter_IEEE754_to_ulong(settings[name]).value
-        else:
-            settings[name] = [
-                SDK.converter_IEEE754_to_ulong(x).value for x in settings[name]
-            ]
-
     # update all settings
-    for name, values in settings.items():
-        # single bit settings CSRB
-        if name in [
-            "BackplanePullup",
-            "Director",
-            "ChassisMaster",
-            "GlobalFastTrigger",
-            "ExternalTrigger",
-            "ExternalInhibit",
-            "DistributeClocks",
-            "SortEvents",
-            "ConnectFastTriggerBP",
-        ]:
-            if isinstance(values, int):
-                for mod in modules:
-                    current = _change_CSRB_locally(current, name, values, mod)
-            else:
-                raise NotImplementedError("Need to add CSRB for non-int values")
-        # single bit settings CSRA
-        elif name in [
-            "FastTrigSelect",
-            "ModValSignal",
-            "GoodChannel",
-            "ChanValSignal",
-            "RejectIfFull",
-            "Polarity",
-            "EnableVeto",
-            "CaptureHistogram",
-            "CaptureTrace",
-            "EnableQDC",
-            "EnableCFD",
-            "EnableModVal",
-            "CaptureSums",
-            "EnableChannelVal",
-            "Gain",
-            "RejectPileup",
-            "SkipLargePulses",
-            "GroupTrigSignal",
-            "ChannelVetoSignal",
-            "ModVetoSignal",
-            "ExtTimestamps",
-        ]:
-            if isinstance(values, (list, tuple)):
-                if len(values) == len(channels):
-                    for value, channel in zip(values, channels):
-                        mod, ch = channel
-                        current = _change_CSRA_locally(current, name, value, ch, mod)
-                else:
-                    raise TypeError(
-                        f"Wrong type (or length) for channel parameter {name}"
-                        f" in change_settings_dict, values: {settings[name]}"
-                    )
-            else:
-                for channel in channels:
-                    mod, ch = channel
-                    current = _change_CSRA_locally(current, name, values, ch, mod)
-        elif name in SETTINGS_NAME_CHANNEL:
-            if isinstance(settings[name], (list, tuple)):
-                if len(settings[name]) == len(channels):
-                    for value, channel in zip(settings[name], channels):
-                        mod, ch = channel
-                        current = _change_setting_locally(current, name, value, ch, mod)
-                elif len(settings[name]) == len(modules):
-                    for value, mod in zip(settings[name], modules):
-                        for ch in range(16):
-                            current = _change_setting_locally(
-                                current, name, value, ch, mod
-                            )
-                else:
-                    raise TypeError(
-                        f"Wrong type (or length) for channel parameter {name}"
-                        f" in change_settings_dict, values: {settings[name]}"
-                    )
-            elif isinstance(settings[name], int):
-                value = settings[name]
-                for mod in modules:
-                    for ch in range(16):
-                        current = _change_setting_locally(current, name, value, ch, mod)
-            else:
-                raise TypeError(
-                    "Wrong type (or length) for channel parameter"
-                    " in change_settings_dict"
-                )
-        elif name in SETTINGS_NAME_MODULE:
-            if isinstance(settings[name], int):
-                for mod in modules:
-                    current = _change_setting_locally(
-                        current, name, settings[name], None, mod
-                    )
-            elif isinstance(settings[name], (list, tuple)):
-                for mod, value in zip(modules, settings[name]):
-                    current = _change_setting_locally(current, name, value, None, mod)
-        else:
-            log.error(f"Change settings dict: unkown settings name {name}")
+    for name, value in settings.items():
+        assert name in current[0]["channel"]["input"], "Parameter name is not valid"
 
-    # always enable all channels, we don't get any data otherwise... bug in pixie16?
-    for m in modules:
-        for c in range(16):
-            current = _change_CSRA_bit_locally(current, True, c, m, 2)
+        for i, (module, channel) in enumerate(channels):
+            current_value = current[module].get_by_name(name)
 
-    write_settings(current)
+            if isinstance(current_value, (bool, int, float)):
+                assert isinstance(value, (bool, int, float))
+                current[module].set_by_name(name, value)
+            if isinstance(current_value, (list, tuple)):
+                if isinstance(value, (bool, int, float)):
+                    value_list = [value] * len(channels)
+                else:
+                    value_list = list(value)
+                current_value[channel] = value_list[i]
+                current[module].set_by_name(name, current_value)
+
+    if call_pixie:
+        write_settings(current)
+    return current

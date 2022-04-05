@@ -1,6 +1,6 @@
 """The main implementation of the Settings class."""
 
-from collections import UserDict
+from collections import UserDict, UserList
 import json
 from pathlib import Path
 import struct
@@ -135,6 +135,18 @@ class Settings(SettingsBase):
 
 class Stats(SettingsBase):
     pass
+
+
+class CrateSettings(UserList):
+    def __init__(self, input=None):
+        if input is None:
+            self.data = []
+        else:
+            self.data = list(input)
+            for x in self.data:
+                assert isinstance(
+                    x, Settings
+                ), "Can only put Seetings in CrateSettings."
 
 
 # TODO: old setting code: remove for next release and move to convertion tool

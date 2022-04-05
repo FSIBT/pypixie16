@@ -164,7 +164,6 @@ except:
 
 
 valid_module_parameter_names = [
-    "MODULE_NUMBER",
     "MODULE_CSRA",
     "MODULE_CSRB",
     "MODULE_FORMAT",
@@ -177,7 +176,10 @@ valid_module_parameter_names = [
     "CrateID",
     "SlotID",
     "ModID",
-    "TrigConfig",
+    "TrigConfig0",
+    "TrigConfig1",
+    "TrigConfig2",
+    "TrigConfig3",
     "HOST_RT_PRESET",
 ]
 
@@ -195,12 +197,15 @@ valid_channel_parameter_names = [
     "BASELINE_PERCENT",
     "EMIN",
     "BINFACTOR",
+    "BASELINE_AVERAGE",
     "CHANNEL_CSRA",
     "CHANNEL_CSRB",
     "BLCUT",
+    "INTEGRATOR",
     "FASTTRIGBACKLEN",
     "CFDDelay",
     "CFDScale",
+    "CFDThresh",
     "QDCLen0",
     "QDCLen1",
     "QDCLen2",
@@ -210,12 +215,12 @@ valid_channel_parameter_names = [
     "QDCLen6",
     "QDCLen7",
     "ExtTrigStretch",
-    "ChanTrigStretch",
+    "VetoStretch",
     "MultiplicityMaskL",
     "MultiplicityMaskH",
     "ExternDelayLen",
     "FtrigoutDelay",
-    "VetoStretch",
+    "ChanTrigStretch",
 ]
 
 
@@ -829,8 +834,8 @@ def read_single_channel_parameter(
 
 
 def read_single_module_parameter(
-    module_parameter_name: str, module: int
-) -> Union[int, float]:
+    module_parameter_name: str, module: int, convert_bit_pattern: Optional[bool] = False
+) -> Union[int, float, List[bool]]:
     """Read a parameter in one module.
 
     See pg. 53 of the programmers manual for a list of parameters available.
@@ -851,6 +856,18 @@ def read_single_module_parameter(
         module_parameter_name in valid_module_parameter_names
     ), "Wrong  parameter name"
 
+    # only convert certain settings to an array of bits (if requested)
+    if convert_bit_pattern and module_parameter_name not in [
+        "MODULE_CSRA",
+        "MODULE_CSRB",
+        "FastTrigBackplaneEna",
+        "TrigConfig0",
+        "TrigConfig1",
+        "TrigConfig2",
+        "TrigConfig3",
+    ]:
+        convert_bit_pattern = False
+
     # which parameters do we need to convert to float?
     parameter_list_convert_to_IEEE = ["HOST_RT_PRESET"]
 
@@ -861,6 +878,12 @@ def read_single_module_parameter(
 
     ret = SDK.Pixie16ReadSglModPar(CModParName, ctypes.byref(CModParData), Cmodule)
     check_return_code(ret, "read_single_module_parameter")
+
+    if convert_bit_pattern:
+        value = np.ctypeslib.as_array(CModParData)
+        value = f"{int(value):032b}"
+        value = [bool(int(x)) for x in value]
+        return value
 
     if module_parameter_name in parameter_list_convert_to_IEEE:
         return np.ctypeslib.as_array(converter_ulong_to_IEEE754(CModParData))
@@ -1052,7 +1075,7 @@ def write_single_channel_parameter(
     """
     assert (
         channel_parameter_name in valid_channel_parameter_names
-    ), "Not a valid channel parameter name"
+    ), f"Not a valid channel parameter name. Given value {channel_parameter_name}"
 
     if channel_parameter_name in [
         "CHANNEL_CSRA",
@@ -1060,7 +1083,7 @@ def write_single_channel_parameter(
         "MultiplicityMaskL",
         "MultiplicityMaskH",
     ]:
-        if isinstance(channel_parameter_data, Iterable):
+        if isinstance(channel_parameter_data, (list, tuple)):
             data = [str(int(x)) for x in channel_parameter_data]
             channel_parameter_data = int("".join(data), 2)
 
@@ -1075,7 +1098,9 @@ def write_single_channel_parameter(
 
 
 def write_single_module_parameter(
-    module_parameter_name: str, module_parameter_data: Union[int, float], module: int
+    module_parameter_name: str,
+    module_parameter_data: Union[int, float, List[bool]],
+    module: int,
 ) -> None:
     """Change a parameter in one module.
 
@@ -1090,12 +1115,23 @@ def write_single_module_parameter(
     module
         module number
     """
+
     assert (
         module_parameter_name in valid_module_parameter_names
-    ), "Wrong module parameter name"
-
+    ), f"Module parameter name is invalid. Given module parameter name: {module_parameter_name}"
+    assert isinstance(module_parameter_data, (int, float)) or all(
+        isinstance(x, bool) for x in module_parameter_data
+    ), f"Module parameter '{module_parameter_name}' not an integer or float. Given value is {module_parameter_data}"
     # which parameters do we need to convert from float?
     parameter_list_convert_from_IEEE = ["HOST_RT_PRESET"]
+
+    if module_parameter_name in [
+        "MODULE_CSRA",
+        "MODULE_CSRB",
+    ]:
+        if isinstance(module_parameter_data, Iterable):
+            data = [str(int(x)) for x in module_parameter_data]
+            module_parameter_data = int("".join(data), 2)
 
     # convert to ctypes for library call
     CModParName = ctypes.c_char_p(bytes(module_parameter_name, "utf8"))
