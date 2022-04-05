@@ -790,32 +790,18 @@ def temporary_settings() -> None:
         write_settings(current_settings)
 
 
-def change_setting_from_dict(settings, call_pixie: Optional[bool] = True):
-    """Takes a dictionary with setting names as keys and setting values
+def change_setting_from_dict(settings: dict, call_pixie: Optional[bool] = True):
+    """Update settings in the pixie16.
+
+    Takes a dictionary with setting names as keys and setting values
 
     The dictionary must also contain an entry called 'channels' that
     list all channels that should be set. Channels should be pairs in
     the form (module, channel).
 
-    This function will also set variabels that depend on other
-    variables (e.g. PeakSample depends on SlowLength).  However, if
-    PeakSample is given, those values will be used.
-
-    The values in the dictonary depends on the type of variable:
-        a) Channel parameter
-           The value needs to be either a list of the same name as the
-           number of channels or smaller lists are checked to see if
-           they match the list of modules, in which case each number
-           will be used to set all channels in the module, or a single
-           number in which case this number will be used for all
-           channels in all modules
-        b) module parameter
-           The value needs to be either a single number in case a
-           single module is used or a list of numbers that has the
-           same length as the number of modules used.  For some
-           parameters, e.g. TrigConfig the value needs to be a list
-           (number of modules) of lists (4 entries for TrigConfig)
-
+    The values in the dictionary can either be a single value, in which case the value
+    will be used for all channels or a list of the same length as `channels` in which case
+    each (module, channel) combination will get its own value.
     """
     assert (
         "channels" in settings
@@ -876,7 +862,142 @@ def change_setting_from_dict(settings, call_pixie: Optional[bool] = True):
 def _change_bit_parameter(
     name: str, value: Union[bool, int, str], bit_list: List[bool]
 ) -> List[bool]:
+    """Internal function to adjust single bits in MODULE_CSRB and CHANNEL_CSRA.
 
+    This sets the correct bits for certain settings, so that the user doesn't have to
+    figure out which bits to set in an integer. To make this easier, we invented new
+    settings names listed below that correspond to certain bits. The table below will
+    list the valid parameters.
+
+    .. list-table:: Functions
+       :widths: 25 25
+       :header-rows: 1
+
+       * - Setting Name
+         - Parameter
+         - bit
+         - possible values
+       * - BackplanePullup
+         - MODULE_CSRB
+         - 0
+         - True/False
+       * - Director
+         - MODULE_CSRB
+         - 4
+         - True/False
+       * - ChassisMaster
+         - MODULE_CSRB
+         - 6
+         - True/False
+       * - GlobalFastTrigger
+         - MODULE_CSRB
+         - 7
+         - True/False
+       * - ExternalTrigger
+         - MODULE_CSRB
+         - 8
+         - True/False
+       * - ExternalInhibit
+         - MODULE_CSRB
+         - 10
+         - True/False
+       * - DistributeClocks
+         - MODULE_CSRB
+         - 11
+         - True/False
+       * - SortEvents
+         - MODULE_CSRB
+         - 12
+         - True/False
+       * - ConnectFastTriggerBP
+         - MODULE_CSRB
+         - 13
+         - True/False
+       * - FastTrigSelect
+         - CHANNEL_CSRA
+         - 0
+         - external(=True)/group(=False)
+       * - ModValSignal
+         - CHANNEL_CSRA
+         - 1
+         - modgate(=True)/global(=False)
+       * - GoodChannel
+         - CHANNEL_CSRA
+         - 2
+         - True/False
+       * - ChanValSignal
+         - CHANNEL_CSRA
+         - 3
+         - channelgate(=True)/channelvalidation(=False)
+       * - RejectIfFull
+         - CHANNEL_CSRA
+         - 4
+         - True/False
+       * - Polarity
+         - CHANNEL_CSRA
+         - 5
+         - positive(=True)/negative(=False)
+       * - EnableVeto
+         - CHANNEL_CSRA
+         - 6
+         - True/False
+       * - CaptureHistogram
+         - CHANNEL_CSRA
+         - 7
+         - True/False
+       * - CaptureTrace
+         - CHANNEL_CSRA
+         - 8
+         - True/False
+       * - EnableQDC
+         - CHANNEL_CSRA
+         - 9
+         - True/False
+       * - EnableCFD
+         - CHANNEL_CSRA
+         - 10
+         - True/False
+       * - EnableModVal
+         - CHANNEL_CSRA
+         - 11
+         - True/False
+       * - CaptureSums
+         - CHANNEL_CSRA
+         - 12
+         - True/False
+       * - EnableChannelVal
+         - CHANNEL_CSRA
+         - 13
+         - True/False
+       * - Gain
+         - CHANNEL_CSRA
+         - 14
+         - 2.5(=True)/0.625(=False)
+       * - RejectPileup
+         - CHANNEL_CSRA
+         - 15, 16
+         - single(b15=1, b16=0)/pileup-only(b15=1, b16=1)/pileup(b15=0, b16=1)/all(b15=0, b16=0)
+       * - SkipLargePulses
+         - CHANNEL_CSRA
+         - 17
+         - True/False
+       * - GroupTrigSignal
+         - CHANNEL_CSRA
+         - 18
+         - external(=True)/local(=False)
+       * - ChannelVetoSignal
+         - CHANNEL_CSRA
+         - 19
+         - channel(=True)/front(=False)
+       * - ModVetoSignal
+         - CHANNEL_CSRA
+         - 20
+         - channel(=True)/front(=False)
+       * - ExtTimestamps
+         - CHANNEL_CSRA
+         - 21
+         - True/False
+    """
     # Module parameters (currently onlChanValSignaly MODULE_CSRB)
     if name == "BackplanePullup":
         # value: True = connect backplane to pullup resistor
@@ -1062,7 +1183,22 @@ def _change_bit_parameter(
     return bit_list
 
 
-def change_raw_setting_from_dict(settings, call_pixie: Optional[bool] = True):
+def change_raw_setting_from_dict(settings: Dict, call_pixie: Optional[bool] = True):
+    """Modify the raw settings on the pixie.
+
+    Note: this bypasses any checks that are normally done in XIA's C-libary. This can be
+    used to, for example, modify `Peaksample` if needed. However, if you set parameters
+    to invalid numbers, there will be no error and the binary stream can be invalid.
+
+    Parameters
+    ----------
+    settings
+        A dictionary with the settings names as key and the values for each channel
+        (or a single value that will be applied to all channels). One key must be called
+        `channels` and must be a list of (module, channel) tuples.
+    call_pixie
+        Can be set to False, in which case the pixie16 is not actually called (used for tests)
+    """
     assert (
         "channels" in settings
     ), "The settings dictionary needs an entry listing called 'channels' the channels"
@@ -1102,3 +1238,83 @@ def change_raw_setting_from_dict(settings, call_pixie: Optional[bool] = True):
     if call_pixie:
         write_settings(current)
     return current
+
+
+def set_defaults_for_module(module: int, call_pixie: Optional[bool] = True):
+    """Sets defaults for all used module and channel parameters in a module.
+
+    Parameters
+    ----------
+    module
+        The module number (0, 1, ...)
+    call_pixie
+        Can be set to False, in which case the pixie16 is not actually called (used for tests)
+
+    """
+    channels = [(module, x) for x in range(16)]
+    settings = {
+        "channels": channels,
+        "BASELINE_AVERAGE": 3,
+        "BASELINE_PERCENT": 10,
+        "BINFACTOR": 1,
+        "BLCUT": 200,
+        "CaptureHistogram": False,
+        "CaptureSums": False,
+        "CaptureTrace": False,
+        "CFDDelay": 8,
+        "CFDScale": 1,
+        "CFDThresh": 100,
+        "CHANNEL_CSRA": 0,
+        "ChanTrigStretch": 0.01,
+        "ChanValSignal": "channelvalidation",
+        "ChannelVetoSignal": "front",
+        "ModVetoSignal": "front",
+        "ExtTimestamps": False,
+        "EMIN": 100,
+        "EnableCFD": False,
+        "EnableChannelVal": False,
+        "ENERGY_FLATTOP": 0.04,  # as above
+        "ENERGY_RISETIME": 0.020,  # times 2**SLOW_FILTER_RANGE
+        "ExternDelayLen": 0.01,
+        "ExtTrigStretch": 0.01,
+        "FAST_FILTER_RANGE": 0,
+        "FASTTRIGBACKLEN": 0.01,
+        "FastTrigBackplaneEna": 0,
+        "FastTrigSelect": "group",
+        "FtrigoutDelay": 0.01,
+        "Gain": 0.625,
+        "GoodChannel": True,
+        "GroupTrigSignal": "local",
+        "IN_SYNCH": 0,
+        "MODULE_CSRB": 0,
+        "MultiplicityMaskH": 0,
+        "MultiplicityMaskL": 0,
+        "Polarity": "negative",
+        "QDCLen0": 0.06,
+        "QDCLen1": 0.06,
+        "QDCLen2": 0.06,
+        "QDCLen3": 0.06,
+        "QDCLen4": 0.06,
+        "QDCLen5": 0.06,
+        "QDCLen6": 0.06,
+        "QDCLen7": 0.06,
+        "RejectIfFull": True,
+        "RejectPileup": "all",
+        "SkipLargePulses": False,
+        "SLOW_FILTER_RANGE": 1,
+        "SYNCH_WAIT": 0,
+        "TAU": 0.03,
+        "TRACE_DELAY": 0.4,
+        "TRACE_LENGTH": 1.0,
+        "TrigConfig0": 0,
+        "TrigConfig1": 0,
+        "TrigConfig2": 0,
+        "TrigConfig3": 0,
+        "TRIGGER_FLATTOP": 0.02,
+        "TRIGGER_RISETIME": 0.02,
+        "TRIGGER_THRESHOLD": 1_000,
+        "VetoStretch": 0.30,
+        "VOFFSET": 0.0,
+        "XDT": 0.1,
+    }
+    return change_setting_from_dict(settings, call_pixie=call_pixie)

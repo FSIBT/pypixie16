@@ -1143,3 +1143,7 @@ def write_single_module_parameter(
 
     ret = SDK.Pixie16WriteSglModPar(CModParName, CModParData, Cmodule)
     check_return_code(ret, "write_single_module_parameter")
+    if ret != 0:
+        print(
+            f" write_single_module_parameter error for {module_parameter_name=} {module_parameter_data=} {module=}"
+        )

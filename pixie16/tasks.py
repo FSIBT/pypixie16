@@ -8,6 +8,7 @@ from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
 import time
+from typing import List
 
 import numpy as np
 
@@ -76,6 +77,21 @@ class TakeData(Task):
 
     def cleanup(self):
         print("save settings")
+
+
+class SetDefaults(Task):
+    """Set defaults for parameters in the pixie."""
+
+    def __init__(self, modules: List):
+        super().__init__()
+        self.name = "Set defaults"
+        self.modules = modules
+
+    def do_work(self, value):
+        self.done = True
+        control.init_and_boot(modules=self.modules)
+        for m, _ in enumerate(self.modules):
+            control.set_defaults_for_module(m)
 
 
 class GatherData(Task):
