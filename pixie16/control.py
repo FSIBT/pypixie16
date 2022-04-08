@@ -565,7 +565,7 @@ def enable_trace_settings(
     change_setting_from_dict(settings)
 
     if disable_CFD:
-        print("[INFO] traces: turned CFD off")
+        print("[yellow]INFO[/] traces: turned CFD off")
         settings = OrderedDict({"channels": channels, "EnableCFD": False})
         change_setting_from_dict(settings)
 
@@ -622,7 +622,7 @@ def take_MCA_spectra(
 
     # take MCA spectra
     if verbose:
-        print("[INFO] Taking MCA spectrum", end="", flush=True)
+        print("[yellow]INFO[/] Taking MCA spectrum", end="", flush=True)
 
     start_histogram_run()
     sys.stdout.flush()
@@ -890,7 +890,7 @@ def change_setting_from_dict(settings: dict, call_pixie: Optional[bool] = True):
                 out.append(["module", name, value, module])
 
         else:
-            print(f"[Error] {name} not a valid Pixie16 parameter name.")
+            print(f"[red]Error[/] {name} not a valid Pixie16 parameter name.")
     return out
 
 

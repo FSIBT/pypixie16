@@ -43,6 +43,7 @@ from typing import List
 
 from more_itertools import pairwise
 from rich.progress import Progress, BarColumn, TimeRemainingColumn, TimeElapsedColumn
+from rich import print
 
 
 class Task(multiprocessing.Process):
@@ -301,7 +302,7 @@ class Pipeline:
                     runtime = self.runtime or round(time.time() - self.start_time, 2)
                     progress.update(task, completed=runtime, description=text)
         except KeyboardInterrupt:
-            print("[yellow]INFO[/]] got keyboard interrupt... closing")
+            print("[yellow]INFO[/] got keyboard interrupt... closing")
             self.stop()
 
     def wait(self):
