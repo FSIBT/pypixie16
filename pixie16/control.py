@@ -387,7 +387,7 @@ def exit_system() -> None:
 
 
 def read_list_mode_fifo(
-    check: bool = True, threshold: int = 1024, modules: Optional[Iterable[int]] = None
+    check: bool = True, threshold: int = 64, modules: Optional[Iterable[int]] = None
 ) -> List[np.ndarray]:
     """Reads data from pixies FIFO across all modules defined in pixie16.control.modules
 
