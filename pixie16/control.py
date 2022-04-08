@@ -518,7 +518,10 @@ def reset_coincidence_setting(channels: Iterable[Tuple[int, int]]) -> None:
             "channels": channels,
             "MultiplicityMaskL": 0,
             "MultiplicityMaskH": 0,
-            "TrigConfig": [[0, 0, 0, 0]],
+            "TrigConfig0": 0,
+            "TrigConfig1": 0,
+            "TrigConfig2": 0,
+            "TrigConfig3": 0,
             "CaptureTrace": False,
             "CaptureHistogram": True,
             "CaptureSums": False,
@@ -526,11 +529,11 @@ def reset_coincidence_setting(channels: Iterable[Tuple[int, int]]) -> None:
             "EnableModVal": False,
             "EnableChannelVal": False,
             "GroupTrigSignal": "local",
-            "RejectPileup": False,
+            "RejectPileup": "pileup",
             "RejectIfFull": False,
         }
     )
-    change_setting_from_dict(settings, auto_update=False)
+    change_setting_from_dict(settings)
 
 
 def enable_trace_settings(
@@ -559,12 +562,12 @@ def enable_trace_settings(
             "CaptureSums": True,
         }
     )
-    change_setting_from_dict(settings, auto_update=False)
+    change_setting_from_dict(settings)
 
     if disable_CFD:
         print("[INFO] traces: turned CFD off")
         settings = OrderedDict({"channels": channels, "EnableCFD": False})
-        change_setting_from_dict(settings, auto_update=False)
+        change_setting_from_dict(settings)
 
 
 def read_histograms(module_channels: Iterable[Tuple[int, int]]) -> List[np.ndarray]:
@@ -610,10 +613,10 @@ def take_MCA_spectra(
     settings = OrderedDict(
         {
             "channels": channels,
-            "HostRunTimePreset": SDK.converter_IEEE754_to_ulong(duration).value,
+            "HOST_RT_PRESET": duration,
         }
     )
-    change_setting_from_dict(settings, auto_update=False)
+    change_setting_from_dict(settings)
 
     modules = list({x for x, y in channels})  # unique list of modules
 
@@ -697,14 +700,14 @@ def take_list_mode_data(
     end_run()
     time.sleep(0.5)
 
-    # read remainig data in queue
+    # read remainig data from pixie
     tmp = read_list_mode_fifo(check=False)
     if not tmp:
         return raw_data
 
-    for i, _ in enumerate(modules):
-        if tmp[i] is not None:
-            raw_data[i] += tmp[i].tobytes()
+    for i, d in enumerate(tmp):
+        if d is not None:
+            raw_data[i] += d.tobytes()
 
     return raw_data
 
@@ -739,6 +742,24 @@ def read_settings() -> CrateSettings:
     data = json.load(f)
     f.close()
     filename.unlink()
+    if data is None:
+        print("[red]Error[/] Cannot read settings from pixie")
+        return CrateSettings([])
+    return CrateSettings([Settings.from_dict(x) for x in data])
+
+
+def read_dummy_settings(modules) -> CrateSettings:
+    """Read the current setting into memory.
+
+    Reads settings from a given file to be used as dummy data.
+    Needed, for example, for tests.
+
+    Returns
+    -------
+       A dictonary of setting data
+    """
+    with open(r"C:\Users\Neutrons\pypixie16\pixie16\new_setting.json") as f:
+        data = json.load(f)
     return CrateSettings([Settings.from_dict(x) for x in data])
 
 
@@ -818,19 +839,26 @@ def change_setting_from_dict(settings: dict, call_pixie: Optional[bool] = True):
 
     modules = {x[0] for x in channels}
 
-    out = []
+    out = []  # this list is mainly for testing
     for name, value in settings.items():
         if name in CHANNEL_PARAMETERS:
+            # convert single values to lists that matches the number of channels
             if isinstance(value, (int, float, str)):
                 value_lst = [value] * len(channels)
             else:
                 value_lst = value
+            # set each value in the list
             for (module, channel), ch_value in zip(channels, value_lst):
+                # if the parameter is one that we defined for a bit value, we need to
+                # read the current value, change the single bit before we write it
                 if name in BIT_PARAMETERS:
                     pixie_param_name = BIT_PARAMETERS[name]
-                    bit_param_val = SDK.read_single_channel_parameter(
-                        pixie_param_name, module, channel, convert_bit_pattern=True
-                    )
+                    if call_pixie:
+                        bit_param_val = SDK.read_single_channel_parameter(
+                            pixie_param_name, module, channel, convert_bit_pattern=True
+                        )
+                    else:
+                        bit_param_val = [False] * 32
                     ch_value_out = _change_bit_parameter(name, ch_value, bit_param_val)
                     name_out = pixie_param_name
                 else:
@@ -842,12 +870,19 @@ def change_setting_from_dict(settings: dict, call_pixie: Optional[bool] = True):
                     )
                 out.append(["channel", name_out, ch_value, module, channel])
         elif name in MODULE_PARAMETERS:
+            # for a module parameter things are a bit simpler, since we don't
+            # have to scale things from a single value
             for module in modules:
+                # we still need to handle some parameters that have bit values
+                # for which we defined our own names
                 if name in BIT_PARAMETERS:
                     pixie_param_name = BIT_PARAMETERS[name]
-                    bit_param_val = SDK.read_single_module_parameter(
-                        pixie_param_name, module, convert_bit_pattern=True
-                    )
+                    if call_pixie:
+                        bit_param_val = SDK.read_single_module_parameter(
+                            pixie_param_name, module, convert_bit_pattern=True
+                        )
+                    else:
+                        bit_param_val = [False] * 32
                     value = _change_bit_parameter(name, value, bit_param_val)
                     name = pixie_param_name
                 if call_pixie:
@@ -1212,15 +1247,16 @@ def change_raw_setting_from_dict(settings: Dict, call_pixie: Optional[bool] = Tr
             len(c) == 2
         ), "Setting dictionary: each channel must have two entries (modules, channel)"
 
-    modules = {x[0] for x in channels}
-
     # get all the settings data from the pixie
-    current = read_settings()
+    if call_pixie:
+        current = read_settings()
+    else:
+        current = read_dummy_settings(
+            list({mod for (mod, ch) in channels})
+        )  # mostly used for testing
 
     # update all settings
     for name, value in settings.items():
-        assert name in current[0]["channel"]["input"], "Parameter name is not valid"
-
         for i, (module, channel) in enumerate(channels):
             current_value = current[module].get_by_name(name)
 
