@@ -15,6 +15,7 @@ from .field_classes import (
     OffsetVoltageField,
     TraceDelayField,
 )
+from .old_settings_class import convert_old_settings
 
 
 class SettingsBase(UserDict):
@@ -74,11 +75,10 @@ class SettingsBase(UserDict):
 
         if file.suffix != ".json":
             if file.suffix == ".set":
-                print(
-                    "[Error]: please use pixie16-set2json to convert to the new type settings file"
-                )
+                print("[INFO]: Converting settings file from .set to .json")
+                file = convert_old_settings(file, [0])
             else:
-                print("[Error]: Unkonwn file type for setting file (shoudl be .json)")
+                print("[ERROR]: Unkonwn file type for setting file (shoudl be .json)")
             return
 
         with file.open("r") as fp:
@@ -135,6 +135,7 @@ class Settings(SettingsBase):
 
 class Stats(SettingsBase):
     pass
+<<<<<<< HEAD
 
 
 class CrateSettings(UserList):
@@ -249,3 +250,5 @@ def load_settings(file, module=0):
 def load_stats(file, module=0):
     """Takes the name of a settings file and the index of the module of interest. Returns a Settings object."""
     return Stats.from_file(file, module)
+=======
+>>>>>>> 46f0477 (Moved old settings class into a new file; added convert_old_settings function that converts old .set files into .json files)
