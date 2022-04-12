@@ -2,7 +2,7 @@ import numpy as np
 import struct
 import json
 from pathlib import Path
-from typing import Union, List
+from typing import Union, List, Optional
 
 from .units import SETTINGS_UNITS_TBL
 from .file_format import SETTINGS_FILE_FORMAT
@@ -13,7 +13,6 @@ from .field_classes import (
     OffsetVoltageField,
     TraceDelayField,
 )
-from pixie16.C_library_sdk import read_statistics_from_module
 
 
 def combine_hi_lo_registers(hi, lo):
@@ -124,8 +123,18 @@ class OldSettings(Entity):
         return settings_dict
 
 
-def convert_old_settings(settings_filename: Union[str, Path], modules: List = [0]):
-    """Convert an old .set file to a .json file."""
+def convert_old_settings(
+    settings_filename: Union[str, Path],
+    modules: List = [0],
+    metadata_filename: Optional[Union[str, Path]] = None,
+):
+    """Convert an old .set file to a .json file.
+
+    .set files do not include the metadata (mostly hardware) information included
+    in the .json settings file. If one provides a path (via the optional
+    metadata_filename argument) to a new .json settings file that already has
+    metadata, the metadata will be added to the .json converted from the .set file."""
+
     channel_input_params = [
         "BLcut",
         "BaselinePercent",
@@ -234,8 +243,20 @@ def convert_old_settings(settings_filename: Union[str, Path], modules: List = [0
     for module in modules:
         # Load settings and prepare to rewrite settings and stats to dictionaries
         old_settings_dict = OldSettings._from_file(settings_filename, module)
-        new_settings_dict = {"channel": {"input": {}}, "module": {"input": {}}}
+        new_settings_dict = {
+            "channel": {"input": {}},
+            "metadata": "None",
+            "module": {"input": {}},
+        }
         new_stats_dict = {"module": module}
+        if metadata_filename:
+            if not metadata_filename.endswith(".json"):
+                print("[ERROR] Settings file with metadata must be a .set file.")
+                print("Not writing metadata to settings file.")
+            else:
+                with open(metadata_filename) as file:
+                    metadata = json.load(file)[0]["metadata"]
+                new_settings_dict["metadata"] = metadata
 
         # Organize settings from old file into dictionaries in the new settings/stats format
         for key, value in sorted(old_settings_dict.items()):
