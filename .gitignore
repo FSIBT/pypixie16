@@ -21,3 +21,6 @@ pixie16/_version.py
 *~
 .vs
 .idea
+
+# Mac-generated files
+*.DS_*
