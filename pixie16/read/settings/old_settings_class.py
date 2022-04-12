@@ -251,7 +251,7 @@ def convert_old_settings(
         new_stats_dict = {"module": module}
         if metadata_filename:
             if not metadata_filename.endswith(".json"):
-                print("[ERROR] Settings file with metadata must be a .set file.")
+                print("[ERROR] Settings file with metadata must be a .json file.")
                 print("Not writing metadata to settings file.")
             else:
                 with open(metadata_filename) as file:
