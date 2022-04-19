@@ -337,6 +337,9 @@ class ListModeDataReader:
                 yield self.pop()
             except (EmptyError, LeftoverBytesError):
                 return
+            except TypeError as e:
+                print(f"TypeError: {e}", flush=True)
+                return
 
     def pop_all(self):
         return tuple(self.iterevents())
