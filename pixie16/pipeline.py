@@ -165,7 +165,7 @@ class Task(multiprocessing.Process):
                 if self.output_queue and out is not None:
                     self.output_queue.put(out)
         except KeyboardInterrupt:
-            pass
+            self.stop_event.set()
         except Exception as e:
             print(f"[DEBUG] ----- exception in {self.name} ----")
             print(e)
