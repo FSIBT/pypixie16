@@ -21,6 +21,7 @@ Event = namedtuple(
         "crate",
         "slot",
         "timestamp",
+        "chunk_timestamp",
         "CFD_fraction",
         "energy",
         "trace",
@@ -41,7 +42,7 @@ Event = namedtuple(
         "QDCSum7",
         "ext_timestamp",
     ],
-    defaults=(-1, -1, -1, -1.0, -1, -1, -1, -1, -1, -1, -1, -1, -1.0),
+    defaults=(-1, -1, -1, -1.0, -1.0, -1, -1, -1, -1, -1, -1, -1, -1, -1.0),
 )
 
 
@@ -326,6 +327,7 @@ class ListModeDataReader:
                 "CFD_fraction": CFD_fraction,
                 "trace": trace,
                 "CFD_error": CFD_error,
+                "chunk_timestamp": -1.0,
             }
         )
 

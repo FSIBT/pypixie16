@@ -221,16 +221,16 @@ class SortEvents(Task):
         current_time = time.time()
         new_events_lst = []
         for event in events_lst:
-            new_event = namedtuple("Event", event._fields + ("chunk_timestamp",))
-            new_event.chunk_timestamp = current_time + 1e-9 * (
-                event.timestamp - events_lst[0].timestamp
+            new_event = event._replace(
+                chunk_timestamp=current_time
+                + 1e-9 * (event.timestamp - events_lst[0].timestamp)
             )
             new_events_lst.append(new_event)
 
         out = []
         self.data.extend(new_events_lst)
         while len(self.data) > self.maxsize:
-            self.data.sort(key=lambda x: x.timestamp)
+            self.data.sort(key=lambda x: x.chunk_timestamp)
             out = self.data[: self.N_to_sort]
             self.data = self.data[self.N_to_sort :]
             if out and self.output_queue:
@@ -239,7 +239,7 @@ class SortEvents(Task):
         self.send_status({"sorted blocks": self.nr_sorted})
 
     def cleanup(self):
-        self.data.sort(key=lambda x: x.timestamp)
+        self.data.sort(key=lambda x: x.chunk_timestamp)
         if self.output_queue:
             self.output_queue.put(self.data)
         self.data = []
