@@ -13,7 +13,8 @@ import numpy as np
 
 WORD_SIZE = 4
 
-
+# chunk_timestamp is a field that doesn't come from the pixie
+# it can be edited in the SortEvents task
 Event = namedtuple(
     "Event",
     [

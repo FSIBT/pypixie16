@@ -218,6 +218,8 @@ class SortEvents(Task):
         self.nr_sorted = 0
 
     def do_work(self, events_lst):
+        # Convert ns timestamp into an approximate UNIX time
+        # This needs to be done because the ns timestamps are reset after each MCA run
         current_time = time.time()
         new_events_lst = []
         for event in events_lst:
@@ -227,6 +229,7 @@ class SortEvents(Task):
             )
             new_events_lst.append(new_event)
 
+        # Sort events according to UNIX timestamp
         out = []
         self.data.extend(new_events_lst)
         while len(self.data) > self.maxsize:
