@@ -4,7 +4,7 @@ These tasks can also easily by sub-classed to create custom ones or
 used as an example on how to write your own.
 
 """
-from collections import defaultdict
+from collections import defaultdict, namedtuple
 from datetime import datetime
 from pathlib import Path
 import time
@@ -217,9 +217,18 @@ class SortEvents(Task):
         self.name = "Sort events"
         self.nr_sorted = 0
 
-    def do_work(self, value):
+    def do_work(self, events_lst):
+        current_time = time.time()
+        new_events_lst = []
+        for event in events_lst:
+            new_event = namedtuple("Event", event._fields + ("chunk_timestamp",))
+            new_event.chunk_timestamp = current_time + 1e-9 * (
+                event.timestamp - events_lst[0].timestamp
+            )
+            new_events_lst.append(new_event)
+
         out = []
-        self.data.extend(value)
+        self.data.extend(new_events_lst)
         while len(self.data) > self.maxsize:
             self.data.sort(key=lambda x: x.timestamp)
             out = self.data[: self.N_to_sort]
