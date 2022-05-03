@@ -14,7 +14,8 @@ import numpy as np
 WORD_SIZE = 4
 
 # chunk_timestamp is a field that doesn't come from the pixie
-# it can be edited in the SortEvents task
+# it can be used to for example store a unix time stamp when the data was converted
+# tasks/SortEvents uses it for example this way.
 Event = namedtuple(
     "Event",
     [
@@ -22,7 +23,6 @@ Event = namedtuple(
         "crate",
         "slot",
         "timestamp",
-        "chunk_timestamp",
         "CFD_fraction",
         "energy",
         "trace",
@@ -42,8 +42,10 @@ Event = namedtuple(
         "QDCSum6",
         "QDCSum7",
         "ext_timestamp",
+        "chunk_timestamp",  # not a pixie16 field
     ],
-    defaults=(-1, -1, -1, -1.0, -1.0, -1, -1, -1, -1, -1, -1, -1, -1, -1.0),
+    # note that defaults are aligned to the end and value without defaults are mandatory
+    defaults=(-1, -1, -1, -1.0, -1, -1, -1, -1, -1, -1, -1, -1, -1.0, -1.0),
 )
 
 
@@ -328,7 +330,6 @@ class ListModeDataReader:
                 "CFD_fraction": CFD_fraction,
                 "trace": trace,
                 "CFD_error": CFD_error,
-                "chunk_timestamp": -1.0,
             }
         )
 
