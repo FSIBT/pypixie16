@@ -42,7 +42,7 @@ located. We store this information in a `config.ini` file in the
 appropiate directory depending on the operating system. If it doesn't
 exist, the module will let you know the path and content for the file.
 
-As an example, the following will set
+As an example, the following config file sets all the required variables:
 ```
 [Libraries]
 sdk = c:\Users\experiment\pixie16-software\PixieAppDll.dll
@@ -60,7 +60,7 @@ SettingFile = c:\Users\experiment\default-setting-file.json
 
 Apart from the path to the library, the config file also includes the
 path to the firmware that should be used (here multiple configuration
-can be saved by using "Firmware.<name>" as additional header and the
+can be saved by using "Firmware.\<name\>" as additional header and the
 path to where the data should be stored.
 
 ## Using the module

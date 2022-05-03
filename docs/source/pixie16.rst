@@ -1,7 +1,20 @@
 pixie16 package
 ===============
 
-The package consists of several modules and subpackages.
+The package consists of several modules and subpackages, as well as, as a few executables.
+
+Executables
+-----------
+
+The following programs are included in pypixie16:
+
+.. toctree::
+   :maxdepth: 2
+
+   pixie16-binary-browser
+   pixie16-parameter-scan
+   pixie16-coincidence
+
 
 Subpackages
 -----------
