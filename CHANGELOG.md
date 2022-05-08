@@ -16,9 +16,10 @@ and this project tries to adhere to [Semantic Versioning](https://semver.org/spe
   function names more pythonic and clearer and added better
   documentation. One big change is the way settings files are saved
   now (two instead of one and the format changed from binary to json)
+- Quick way to run a whole pipline (by calling .execute())
 
 ### Removed
-- Support for old XIA library (Some low level functions got removed)
+- Support for old XIA library (Some low level functions also got removed)
 
 ### Fixed
 - Building of docs

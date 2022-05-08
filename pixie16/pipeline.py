@@ -39,7 +39,7 @@ import queue
 import sys
 import time
 import traceback
-from typing import List
+from typing import List, Union
 
 from more_itertools import pairwise
 from rich.progress import Progress, BarColumn, TimeRemainingColumn, TimeElapsedColumn
@@ -259,6 +259,24 @@ class Pipeline:
             if t.is_alive():
                 return True
         return False
+
+    def execute(self, progress_bar_time: Union[float, int] = 0):
+        """Runs the whole pipeline.
+
+        Parameters
+        ----------
+        progress_bar_time
+           if > 0 run with a progress bar with this number as the total time it should
+           take. Otherwise, run without progressbar.
+
+        """
+        self.start()
+        if progress_bar_time:
+            self.wait_with_progress(total=progress_bar_time)
+        else:
+            self.wait()
+        self.join()
+        self.close()
 
     def update_status(self):
         """Look at the status queue and update the pipeline status.
