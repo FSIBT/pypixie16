@@ -1,8 +1,9 @@
 """implementation of queues for parsing list mode data from the pixie16"""
 
 
-from collections import namedtuple
+from collections import namedtuple, deque
 from itertools import islice
+from pathlib import Path
 from typing import Union
 
 import pandas as pd
@@ -76,6 +77,7 @@ class WordsIO:
     def __init__(self, binary_data: Union[bytes, bytearray] = b""):
         """Initialize queue"""
         self.binary_data = bytearray(binary_data)
+        self.last_data = deque(maxlen=5)  # used for debugging
 
     def __len__(self):
         """Number of bytes in queue"""
@@ -93,6 +95,7 @@ class WordsIO:
         """Pop the top size words from queue"""
         res = self.peek(size, raw=raw)
         del self.binary_data[: size * WORD_SIZE]
+        self.last_data.append(res)
         return res
 
     def peek(self, size, raw=False):
@@ -295,7 +298,26 @@ class ListModeDataReader:
             raise LeftoverBytesError("Partial event left at the end of queue")
 
         # unpack words/trace into their field values
-        event_values = unpack_header_word(header_words, header_length)
+        try:
+            event_values = unpack_header_word(header_words, header_length)
+        except KeyError:
+            print("Something went wrong with the binary data.")
+            print("Debug information:")
+            print(f"   Current event header: {event_length}")
+            print(
+                f"   Number of bytes remaining in IO buffer:  {len(self.words_stream)}"
+            )
+            if len(self.words_stream):
+                filename = Path(".") / "pixie_binary_rest_debug.bin"
+                with filename.open("wb") as f:
+                    f.write(self.words_stream.binary_data)
+                print(f"   Saved IO buffer to:  {filename.absolute()}")
+            for i, data in enumerate(self.words_stream.last_data):
+                filename = Path(".") / f"pixie_binary_last_{i}_debug.bin"
+                with filename.open("wb") as f:
+                    f.write(data)
+                print(f"   Saved IO last elements to:  {filename.absolute()}")
+            raise
 
         if trace_data:
             trace = np.frombuffer(trace_data, f"({trace_length},2)<u2", count=1)[
