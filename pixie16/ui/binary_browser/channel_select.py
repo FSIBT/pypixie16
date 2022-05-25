@@ -53,6 +53,7 @@ class ChannelSelect(QHBoxLayout):
     def update_button_status(self):
         for w, channel in zip(self.channels, self.main.channels):
             if not w.isChecked() and channel in self.main.selected_channels:
+                self.main.dataview.clearSelection()
                 w.toggle()
             if w.isChecked() and channel not in self.main.selected_channels:
                 w.toggle()
