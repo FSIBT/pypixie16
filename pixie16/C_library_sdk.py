@@ -1087,6 +1087,14 @@ def write_single_channel_parameter(
             data = [str(int(x)) for x in channel_parameter_data]
             channel_parameter_data = int("".join(data), 2)
 
+    # We encountered a bug when setting coincidence windows to 10ns, so we check here and print a warning
+    if channel_parameter_name == "FASTTRIGBACKLEN":
+        if channel_parameter_data == 0.01:
+            print(
+                f"[red]CRITICAL[/] :boom: :boom: :boom:The coincidence window for mod={module}:ch={channel} was set to 10 ns. "
+                f"This could lead to data loss. :boom: :boom: :boom:"
+            )
+
     # convert to ctypes for library call
     CChanParName = ctypes.c_char_p(bytes(channel_parameter_name, "utf8"))
     CChanParData = ctypes.c_double(channel_parameter_data)
