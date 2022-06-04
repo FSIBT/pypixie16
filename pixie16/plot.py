@@ -9,6 +9,7 @@ import matplotlib
 from matplotlib import pyplot as plt
 from matplotlib.colors import LogNorm
 from matplotlib.backends.backend_pdf import PdfPages
+from rich import print
 
 from .analyze import calculate_CFD_using_FF
 from .read import Event, Settings
@@ -33,7 +34,7 @@ def filter_events(
         return events[:N]
 
     print(
-        f"[Warning] plotting: got less events than requested for plotting {N_events} < {N}"
+        f"[orange3]WARNING[/] plotting: got less events than requested for plotting {N_events} < {N}"
     )
     return events
 
@@ -108,7 +109,7 @@ def create_persistent_plot(
     """
     N = len(traces)
     if not N:
-        print("[Warning] no traces in persistince plot", flush=True)
+        print("[orange3]WARNING[/] no traces in persistince plot", flush=True)
     mytime = np.linspace(0, 2 * (traces.shape[1] - 1), traces.shape[1])  # in ns
 
     if x_range is None:
@@ -202,9 +203,9 @@ def find_sums(
                 # print(f'found it at {sumIDX}')
                 break
         else:
-            print("[ERROR] Could not find sums!")
+            print("[red]ERROR[/] Could not find sums!")
             print(
-                "[ERROR] Try increasing trace length and/or trace delay and run again"
+                "[red]ERROR[/] Try increasing trace length and/or trace delay and run again"
             )
             print(
                 "Ideal settings for offline computation: trace length > 2*Ls+Gs"
@@ -309,7 +310,7 @@ def CFD(
     channels = {e.channel for e in events}
     if len(channels) != 1:
         print(
-            "[ERROR] Can only plot CFD for events from a single channel at the moment"
+            "[red]ERROR[/] Can only plot CFD for events from a single channel at the moment"
         )
         return
     channel = list(channels)[0]
@@ -330,7 +331,7 @@ def CFD(
     traces = [e.trace for e in events]
     for t in traces:
         if t is None:
-            print("[ERROR] Missing trace...skip plotting")
+            print("[red]ERROR[/] Missing trace...skip plotting")
             return
     traces = np.asarray(traces)
 
@@ -460,7 +461,7 @@ def energy_sums(
         return
     IDX = np.arange(0, trace.shape[0], 1)
     if len(trailsum) == 0:
-        print("[ERROR] Raw energy sums must be anabled in the PIXIE-16")
+        print("[red]ERROR[/] Raw energy sums must be anabled in the PIXIE-16")
         return
 
     try:
@@ -509,7 +510,7 @@ def energy_sums(
         )
     else:
         print(
-            "[Warning] plot.energy_sums: more than one channel given, not drawing positions of sums"
+            "[orange3]WARNING[/] plot.energy_sums: more than one channel given, not drawing positions of sums"
         )
     ax.legend()
     ax.set_ylim(bottom=0)
