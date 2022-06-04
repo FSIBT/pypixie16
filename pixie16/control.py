@@ -371,7 +371,7 @@ def save_stats_to_json(filename: Path) -> None:
         return
 
     with filename.open("w") as f:
-        json.dump(out, f)
+        json.dump(out, f, indent=2)
 
 
 def end_run() -> None:
@@ -788,7 +788,7 @@ def write_settings(data: CrateSettings) -> None:
     f = tempfile.NamedTemporaryFile(suffix=".json", delete=False)
     filename = Path(f.name)
     with filename.open("w") as f:
-        json.dump([dict(x) for x in data], f)
+        json.dump([dict(x) for x in data], f, indent=2)
     SDK.load_dsp_parameters_from_file(filename)
     filename.unlink()
 
