@@ -1103,6 +1103,10 @@ def write_single_channel_parameter(
 
     ret = SDK.Pixie16WriteSglChanPar(CChanParName, CChanParData, Cmodule, Cchannel)
     check_return_code(ret, "write_single_channel_parameter")
+    if ret < 0:
+        print(
+            f"   Problem in mod={module} ch={channel} name={channel_parameter_name} value={channel_parameter_data}"
+        )
 
 
 def write_single_module_parameter(
