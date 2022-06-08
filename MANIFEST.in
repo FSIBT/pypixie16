@@ -1,7 +1,13 @@
 include README.md
 include COPYRIGHT.txt
 include LICENSE.txt
-exclude .gitignore
 include pixie16/_version.py
-recursive-include docs *
+include pixie16/data/*json
+recursive-include docs *rst *md
+#
 prune docs/build
+prune scratch
+exclude .gitignore
+exclude .gitattributes
+exclude .readthedocs.yaml
+exclude .pre-commit-config.yaml

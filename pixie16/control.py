@@ -42,6 +42,7 @@ import tempfile
 import time
 from typing import Iterable, List, Tuple, Dict, Union, Optional, ByteString
 
+from importlib.resources import files
 import numpy as np
 from rich.progress import Progress
 
@@ -758,7 +759,7 @@ def read_dummy_settings(modules) -> CrateSettings:
     -------
        A dictonary of setting data
     """
-    with open(r"C:\Users\Neutrons\pypixie16\pixie16\new_setting.json") as f:
+    with files("pixie16.data").joinpath("default.json").open("r") as f:
         data = json.load(f)
     return CrateSettings([Settings.from_dict(x) for x in data])
 
