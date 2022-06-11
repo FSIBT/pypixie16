@@ -4,7 +4,7 @@ import configparser
 import os
 from pathlib import Path
 import sys
-from typing import List
+from typing import List, Union
 
 import appdirs
 
@@ -16,7 +16,9 @@ config = configparser.ConfigParser()
 config.read(inifile)
 
 
-def config_get_parameters(section, name):
+def config_get_parameters(
+    section: str, name: str, verbose: bool = True
+) -> Union[None, Path]:
     """Get the setting out of the config dir.
 
     Provide better error message if init file does not exist.
@@ -28,25 +30,25 @@ def config_get_parameters(section, name):
         path = Path(path)
     except (configparser.NoOptionError, configparser.NoSectionError):
         path = None
-        print()
-        print(f"No {name} found in {section}, please add it to {inifile}")
-        print("   The file should contain something like:")
-        print(f"       [{section}]")
-        print(f"       {name} = <setting for {name}>")
-        print()
-        print("The file should contain the following sections and keys:")
-        print("   [Libraries]")
-        print("   sdk = <path to Pixie16Api.dll>")
-        print("   [Data]")
-        print("   datadir = <path where the data files should live>")
-        print("   [Firmware.default]")
-        print("   ComFPGAConfigFile = <path to syspixie16 firmware>")
-        print("   SPFPGAConfigFile = <path to fippixie16 firmware>")
-        print("   DSPCodeFile = <path to Pixie16DSP*.ldr>")
-        print("   DSPVarFile = <path to Pixie16DSP*.var>")
-        print("   SettingFile = <path to default setting file>")
-        print()
-        # sys.exit()
+        if verbose:
+            print()
+            print(f"No {name} found in {section}, please add it to {inifile}")
+            print("   The file should contain something like:")
+            print(f"       [{section}]")
+            print(f"       {name} = <setting for {name}>")
+            print()
+            print("The file should contain the following sections and keys:")
+            print("   [Libraries]")
+            print("   sdk = <path to Pixie16Api.dll>")
+            print("   [Data]")
+            print("   datadir = <path where the data files should live>")
+            print("   [Firmware.default]")
+            print("   ComFPGAConfigFile = <path to syspixie16 firmware>")
+            print("   SPFPGAConfigFile = <path to fippixie16 firmware>")
+            print("   DSPCodeFile = <path to Pixie16DSP*.ldr>")
+            print("   DSPVarFile = <path to Pixie16DSP*.var>")
+            print("   SettingFile = <path to default setting file>")
+            print()
     return path
 
 
@@ -94,7 +96,6 @@ def list_firmware() -> None:
 
 
 sdk = config_get_parameters("Libraries", "sdk")
-data_dir = config_get_parameters("Data", "datadir")
 
 # make sure the library directory in the path, so that we can find
 # dependencies, otherwise we get a "[WinError 126] The specified

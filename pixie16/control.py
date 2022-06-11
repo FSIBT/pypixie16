@@ -45,6 +45,7 @@ from typing import Iterable, List, Tuple, Dict, Union, Optional, ByteString
 from importlib.resources import files
 import numpy as np
 from rich.progress import Progress
+from rich import print
 
 from . import config
 from . import C_library_sdk as SDK
@@ -475,7 +476,14 @@ def run_list_mode(filename: Optional[str] = None, runtime: int = 5) -> None:
     if not filename.startswith(YYYYMMDD):
         filename = f"{YYYYMMDD}-{filename}"
     # add correct directory
-    filename = config.data_dir / YYYYMMDD / filename
+    datadir = config.config_get_parameters("Data", "datadir", verbose=False)
+    if datadir is None:
+        datadir = Path(".")
+        print(
+            f"[orange3]WARNING[/] Could not find datadir in Data section in ini-file {config.inifile}."
+        )
+        print(f"[orange3]WARNING[/] Using {datadir.absolute()} to save data.")
+    filename = datadir / YYYYMMDD / filename
     # make sure directory exists
     filename.parent.mkdir(parents=True, exist_ok=True)
 
