@@ -124,6 +124,11 @@ def init(modules: List[int], offline_mode: bool = False, verbose: bool = False) 
     """
     global module_list
     module_list = modules
+    if not SDK.load_library():
+        print(
+            "[orange3]WARNING[/] Mocking the pixie library (useful for testing when the library is not installed)"
+        )
+
     SDK.init_system(module_list, offline_mode, verbose)
 
 
@@ -188,6 +193,8 @@ def init_and_boot(
     verbose
         Print some extra information if True
     """
+    if modules is None:
+        modules = [2]
     init(modules, offline_mode, verbose)
     boot(section_name, boot_pattern=boot_pattern, verbose=verbose)
 

@@ -25,9 +25,9 @@ def config_get_parameters(
 
     """
     try:
-        path = config.get(section, name).replace('"', "")
-        path = path.replace("'", "")
-        path = Path(path)
+        path_str = config.get(section, name).replace('"', "")
+        path_str = path_str.replace("'", "")
+        path = Path(path_str)
     except (configparser.NoOptionError, configparser.NoSectionError):
         path = None
         if verbose:
@@ -95,10 +95,13 @@ def list_firmware() -> None:
     )
 
 
-sdk = config_get_parameters("Libraries", "sdk")
+def get_sdk():
+    sdk = config_get_parameters("Libraries", "sdk")
 
-# make sure the library directory in the path, so that we can find
-# dependencies, otherwise we get a "[WinError 126] The specified
-# module could not be found" error
-if sdk:
-    os.environ["PATH"] = str(sdk.parent) + ";" + os.environ["PATH"]
+    # make sure the library directory in the path, so that we can find
+    # dependencies, otherwise we get a "[WinError 126] The specified
+    # module could not be found" error
+    if sdk:
+        os.environ["PATH"] = str(sdk.parent) + ";" + os.environ["PATH"]
+
+    return str(sdk)

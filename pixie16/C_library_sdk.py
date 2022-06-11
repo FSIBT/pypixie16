@@ -137,30 +137,38 @@ from unittest.mock import MagicMock
 
 import numpy as np
 
-from .config import sdk
+from . import config
 
 # set up logging
 log = logging.getLogger(__name__)
 
-try:
-    SDK = ctypes.cdll.LoadLibrary(str(sdk))
+SDK = None
 
-    for func in [
-        SDK.Pixie16ComputeRealTime,
-        SDK.Pixie16ComputeInputCountRate,
-        SDK.Pixie16ComputeLiveTime,
-        SDK.Pixie16ComputeOutputCountRate,
-        SDK.Pixie16ComputeProcessedEvents,
-        SDK.Pixie16ComputeRawInputCount,
-        SDK.Pixie16ComputeRawOutputCount,
-    ]:
-        func.restype = ctypes.c_double
 
-except:
-    print(
-        "Mocking the pixie library (useful for testing when the library is not installed)"
-    )
-    SDK = MagicMock(name="Mock of XIA's C-library")
+def load_library() -> bool:
+    """Loads the C-library or a MagidMock in case the library is not available.
+
+    Returns True on success, else False.
+    """
+    global SDK
+    try:
+        SDK = ctypes.cdll.LoadLibrary(config.get_sdk())
+
+        for func in [
+            SDK.Pixie16ComputeRealTime,
+            SDK.Pixie16ComputeInputCountRate,
+            SDK.Pixie16ComputeLiveTime,
+            SDK.Pixie16ComputeOutputCountRate,
+            SDK.Pixie16ComputeProcessedEvents,
+            SDK.Pixie16ComputeRawInputCount,
+            SDK.Pixie16ComputeRawOutputCount,
+        ]:
+            func.restype = ctypes.c_double
+        return True
+
+    except:
+        SDK = MagicMock(name="Mock of XIA's C-library")
+        return False
 
 
 valid_module_parameter_names = [
@@ -252,6 +260,9 @@ def check_return_code(return_code: int, function: str) -> None:
     function
         Name of the function that produced the error code
     """
+
+    if isinstance(return_code, MagicMock):
+        return
     if return_code < 0:
         msg = ctypes.create_string_buffer(1024, 1024)
         SDK.PixieGetReturnCodeText(return_code, msg, 1024)
