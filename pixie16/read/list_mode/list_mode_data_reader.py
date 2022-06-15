@@ -6,11 +6,10 @@ from itertools import islice
 from pathlib import Path
 from typing import Union
 
-import pandas as pd
-
 import cbitstruct as bitstruct
 import numpy as np
-
+import pandas as pd
+from rich import print
 
 WORD_SIZE = 4
 
@@ -420,7 +419,7 @@ def events_from_files_generator(files, buffer_size=int(1e9)):
         reader.put(bytes_stream.pop(buffer_size))
         yield from reader.iterevents()
     if not reader.is_empty():
-        raise LeftoverBytesError()
+        print("[orange3]WARNING[/] Left over bytes in binary data stream.")
 
 
 def to_list(obj):
