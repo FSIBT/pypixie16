@@ -1,5 +1,7 @@
 import numpy as np
 from matplotlib import cm
+from rich import print
+
 from PyQt5.QtWidgets import (
     QComboBox,
     QGridLayout,
@@ -145,7 +147,7 @@ class FastTrigger(QWidget):
             d for d in self.main.data if d.channel == channel and len(d.trace) > 0
         ]
         if not len(events):
-            print(f"[Info]: no events for channel {channel} that have traces")
+            print(f"[yellow]INFO[/] no events for channel {channel} that have traces")
             return
         events.sort(key=lambda x: x.energy)
 
@@ -208,7 +210,7 @@ class FastTrigger(QWidget):
             first_trigger_offset = int(min(t[0] for t in self.triggers) - 10)
         except (ValueError, IndexError):
             print(
-                "[Warning]: No trigger found, using the first 20% of the trace to estimate baseline",
+                "[orange3]WARNING[/] No trigger found, using the first 20% of the trace to estimate baseline",
                 flush=True,
             )
             first_trigger_offset = int(length * 0.2)
@@ -265,7 +267,7 @@ class FastTrigger(QWidget):
 
         if length - 2 * L - G + 1 <= 0:
             print(
-                "[Warning]: L, G for energy filter are too large for the supplied trace length and slowfilter range. Padding data",
+                "[orange3]WARNING[/] L, G for energy filter are too large for the supplied trace length and slowfilter range. Padding data",
                 flush=True,
             )
             pad_data = True
@@ -273,7 +275,7 @@ class FastTrigger(QWidget):
             length += 2 * pad_length
         elif length - 2 * L - G + 1 <= 20:
             print(
-                "[Warning]: L, G for energy filter are large for the supplied trace length and slowfilter range. Padding data",
+                "[orange3]WARNING[/] L, G for energy filter are large for the supplied trace length and slowfilter range. Padding data",
                 flush=True,
             )
             pad_data = True
@@ -328,7 +330,7 @@ class FastTrigger(QWidget):
                 if len(self.triggers[i]):
                     if k - 2 * L - G + 1 == trigger_pos:
                         print(
-                            f"[INFO] found peaksample position {i}: ",
+                            f"[yellow]INFO[/] found peaksample position {i}: ",
                             S1,
                             S2,
                             S3,
