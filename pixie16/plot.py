@@ -12,7 +12,7 @@ from matplotlib.backends.backend_pdf import PdfPages
 from rich import print
 
 from .analyze import calculate_CFD_using_FF
-from .read import Event, Settings
+from .read import Event, Settings, Stats
 
 
 DATA_POINTS_PER_FPGA_CYCLE = 5
@@ -381,6 +381,7 @@ def CFD(
 def energy_sums(
     events: Iterable[Event],
     setting: Settings,
+    stats: Stats,
     N: Optional[int] = None,
     randomize: bool = False,
     persistent: bool = True,
@@ -505,8 +506,10 @@ def energy_sums(
             label="Raw energy sums",
         )
         ch = list(channels)[0]
+        live_time = stats["live_time"][ch]
         ax.set_title(
-            f"channel: {ch}; number of traces: {len(trace)};" f" live time: <TODO>"
+            f"channel: {ch}; number of traces: {len(trace)};"
+            f" live time: {live_time:.2f} s"
         )
     else:
         print(
