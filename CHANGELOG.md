@@ -10,6 +10,11 @@ and this project tries to adhere to [Semantic Versioning](https://semver.org/spe
 - Renamed 'master' branch to 'main'
 - the library does not keep track of the boot or init status anymore
 - swapped out tqdm for rich for better terminal support
+- only load C-library when needed (useful if, e.g., looking at binary
+  data on a different computer without the C-library installed)
+- `change_setting_from_dict` now calls `write_single_parameter` and therefore
+  also does checks and other side effects (e.g. set Peaksample). If you want
+  to overwrite these values and avoid checks/side-effects, use `change_raw_setting_from_dict`
 
 ### Added
 - Support for new SDK from XIA (>= 3.3). In the process we made some
