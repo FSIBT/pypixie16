@@ -178,21 +178,25 @@ EVENTS_PARTS = {
 # show up in list mode data We also add a "0" option to just read the
 # first row, since this row contains the header length we need to read
 HEADER_FORMATS = {
-    0: (EVENTS_PARTS["first row"][0], EVENTS_PARTS["first row"][1]),
-    4: (EVENTS_PARTS["header"][0], EVENTS_PARTS["header"][1]),
-    6: (
+    0: bitstruct.CompiledFormatDict(
+        EVENTS_PARTS["first row"][0], EVENTS_PARTS["first row"][1]
+    ),
+    4: bitstruct.CompiledFormatDict(
+        EVENTS_PARTS["header"][0], EVENTS_PARTS["header"][1]
+    ),
+    6: bitstruct.CompiledFormatDict(
         EVENTS_PARTS["header"][0] + EVENTS_PARTS["Ext Time"][0],
         EVENTS_PARTS["header"][1] + EVENTS_PARTS["Ext Time"][1],
     ),
-    8: (
+    8: bitstruct.CompiledFormatDict(
         EVENTS_PARTS["header"][0] + EVENTS_PARTS["energy"][0],
         EVENTS_PARTS["header"][1] + EVENTS_PARTS["energy"][1],
     ),
-    12: (
+    12: bitstruct.CompiledFormatDict(
         EVENTS_PARTS["header"][0] + EVENTS_PARTS["Qsums"][0],
         EVENTS_PARTS["header"][1] + EVENTS_PARTS["Qsums"][1],
     ),
-    16: (
+    16: bitstruct.CompiledFormatDict(
         EVENTS_PARTS["header"][0]
         + EVENTS_PARTS["energy"][0]
         + EVENTS_PARTS["Qsums"][0],
@@ -200,7 +204,7 @@ HEADER_FORMATS = {
         + EVENTS_PARTS["energy"][1]
         + EVENTS_PARTS["Qsums"][1],
     ),
-    10: (
+    10: bitstruct.CompiledFormatDict(
         EVENTS_PARTS["header"][0]
         + EVENTS_PARTS["energy"][0]
         + EVENTS_PARTS["Ext Time"][0],
@@ -208,7 +212,7 @@ HEADER_FORMATS = {
         + EVENTS_PARTS["energy"][1]
         + EVENTS_PARTS["Ext Time"][1],
     ),
-    14: (
+    14: bitstruct.CompiledFormatDict(
         EVENTS_PARTS["header"][0]
         + EVENTS_PARTS["Qsums"][0]
         + EVENTS_PARTS["Ext Time"][0],
@@ -216,7 +220,7 @@ HEADER_FORMATS = {
         + EVENTS_PARTS["Qsums"][1]
         + EVENTS_PARTS["Ext Time"][1],
     ),
-    18: (
+    18: bitstruct.CompiledFormatDict(
         EVENTS_PARTS["header"][0]
         + EVENTS_PARTS["energy"][0]
         + EVENTS_PARTS["Qsums"][0]
@@ -227,11 +231,6 @@ HEADER_FORMATS = {
         + EVENTS_PARTS["Ext Time"][1],
     ),
 }
-
-
-def unpack_header_word(word_data: Union[bytes, bytearray], word_number):
-    fmt, field_names = HEADER_FORMATS[word_number]
-    return bitstruct.unpack_dict(fmt, field_names, word_data)
 
 
 def calc_cfd_error(cfd_trigger_source_bits):
@@ -284,7 +283,7 @@ class ListModeDataReader:
         # try to get all the words for the next event
         # if the complete next event isn't in queue an exception is thrown but no data is discarded
         try:
-            event_header = unpack_header_word(self.words_stream.peek(1), 0)
+            event_header = HEADER_FORMATS[0].unpack(self.words_stream.peek(1))
             header_length = event_header["Header Length"]
             event_length = event_header["Event Length"]
             header_words = self.words_stream.pop(header_length)
@@ -298,7 +297,7 @@ class ListModeDataReader:
 
         # unpack words/trace into their field values
         try:
-            event_values = unpack_header_word(header_words, header_length)
+            event_values = HEADER_FORMATS[header_length].unpack(header_words)
         except KeyError:
             print("Something went wrong with the binary data.")
             print("Debug information:")
