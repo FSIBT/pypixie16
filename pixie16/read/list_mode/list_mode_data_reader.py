@@ -244,14 +244,6 @@ def calc_cfd_fraction(cfd_trigger_source_bits, cfd_fractional_time):
         return ((cfd_trigger_source_bits - 1) + cfd_fractional_time / 8192) * 2
 
 
-def calc_eventtime(evttime_lo, evvtime_hi):
-    return (evttime_lo + evvtime_hi * 2 ** 32) * 10
-
-
-def calc_external_timestamp(ext_ts_lo, ext_ts_hi):
-    return ext_ts_lo + ext_ts_hi * 2 ** 32
-
-
 class ListModeDataReader:
     """A binary data FIFO queue/transformer.
 
@@ -331,13 +323,15 @@ class ListModeDataReader:
         CFD_fraction = calc_cfd_fraction(
             CFD_bits, event_values.pop("CFD Fractional Time")
         )
-        timestamp = calc_eventtime(
-            event_values.pop("EVTTIME_LO"), event_values.pop("EVTTIME_HI")
-        )
+        timestamp = (
+            event_values.pop("EVTTIME_LO") + event_values.pop("EVTTIME_HI") * 2 ** 32
+        ) * 10
+
         if "Ext_TS_Lo" in event_values:
-            ext_timestamp = calc_external_timestamp(
-                event_values.pop("Ext_TS_Lo"), event_values.pop("Ext_TS_Hi")
+            ext_timestamp = (
+                event_values.pop("Ext_TS_Lo") + event_values.pop("Ext_TS_Hi") * 2 ** 32
             )
+
             event_values.update({"ext_timestamp": ext_timestamp})
 
         for key in ["Event Length", "Header Length", "Trace Length"]:
