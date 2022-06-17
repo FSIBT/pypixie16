@@ -310,6 +310,7 @@ class Pipeline:
                 refresh_per_second=4,
             ) as progress:
                 task = progress.add_task("[green] Run", total=total)
+                self.set_console_title("ROOTS-daq running")
                 while self.is_alive():
                     time.sleep(0.1)
                     self.update_status()
@@ -322,6 +323,11 @@ class Pipeline:
         except KeyboardInterrupt:
             print("[yellow]INFO[/] got keyboard interrupt... closing")
             self.stop()
+        self.set_console_title("ROOTS-daq done")
+
+    def set_console_title(self, text: str) -> None:
+        """Sets the console title in windows."""
+        print(f"\033]2;{text}\007")
 
     def wait(self):
         """Wait for the pipeline to finish.
