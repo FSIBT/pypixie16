@@ -8,9 +8,9 @@ and this project tries to adhere to [Semantic Versioning](https://semver.org/spe
 
 ### Changed
 - Renamed 'master' branch to 'main'
-- the library does not keep track of the boot or init status anymore
-- swapped out tqdm for rich for better terminal support
-- only load C-library when needed (useful if, e.g., looking at binary
+- The library does not keep track of the boot or init status anymore
+- Swapped out tqdm for rich for better terminal support
+- Only load C-library when needed (useful if, e.g., looking at binary
   data on a different computer without the C-library installed)
 - `change_setting_from_dict` now calls `write_single_parameter` and therefore
   also does checks and other side effects (e.g. set Peaksample). If you want
@@ -28,6 +28,7 @@ and this project tries to adhere to [Semantic Versioning](https://semver.org/spe
 
 ### Fixed
 - Building of docs
+- Reading of binary data when traces are enabled.
 
 ## [0.7] - 2022-01-29
 ### Added
