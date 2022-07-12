@@ -35,6 +35,7 @@ status bar. An example use of 3 different tasks is:
 from contextlib import redirect_stdout
 import io
 import multiprocessing
+import platform
 import queue
 import sys
 import time
@@ -326,8 +327,12 @@ class Pipeline:
         self.set_console_title("ROOTS-daq done")
 
     def set_console_title(self, text: str) -> None:
-        """Sets the console title in windows."""
-        print(f"\033]2;{text}\007")
+        """Sets the console title.
+
+        Currenlty we only do this on Windows.
+        """
+        if platform.system() == "Windows":
+            print(f"\033]2;{text}\007")
 
     def wait(self):
         """Wait for the pipeline to finish.
