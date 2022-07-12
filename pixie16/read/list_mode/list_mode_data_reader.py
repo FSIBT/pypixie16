@@ -90,14 +90,21 @@ class WordsIO:
         """Put more bytes into queue"""
         self.binary_data.extend(additional_binary_data)
 
-    def pop(self, size, raw=False):
+    def pop(self, size: int, raw=False):
         """Pop the top size words from queue"""
         res = self.peek(size, raw=raw)
         del self.binary_data[: size * WORD_SIZE]
         self.last_data.append(res)
         return res
 
-    def peek(self, size, raw=False):
+    def assert_data_is_available(self, size: int):
+        """Make sure `size` words are available."""
+        if size * WORD_SIZE > len(self):
+            raise LeftoverBytesError(
+                f"Requested {size} words, only {len(self)//WORD_SIZE} words in object"
+            )
+
+    def peek(self, size: int, raw=False):
         """Get the top size words from queue without removing them.
 
         Return either tuple of WORD-sized, byte-swapped data (raw==False)
@@ -106,10 +113,7 @@ class WordsIO:
         if self.is_empty():
             raise EmptyError()
 
-        if size * WORD_SIZE > len(self):
-            raise LeftoverBytesError(
-                f"Requested {size} words, only {len(self)} words in object"
-            )
+        self.assert_data_is_available(size)
 
         if raw:
             return self.binary_data[: size * WORD_SIZE]
@@ -278,6 +282,16 @@ class ListModeDataReader:
             event_header = HEADER_FORMATS[0].unpack(self.words_stream.peek(1))
             header_length = event_header["Header Length"]
             event_length = event_header["Event Length"]
+
+            # ensure we have enough data, this is needed, since we
+            # have two separate pop-calls (header, trace) and we need
+            # to make sure that both work. Otherwise we might get
+            # enough data for a header but not for the trace, in which
+            # case we would add more data an try again to read a
+            # header although trace data is next in the input queue
+            self.words_stream.assert_data_is_available(event_length)
+
+            # it's now save to read both header and trace
             header_words = self.words_stream.pop(header_length)
             trace_length = event_length - header_length
             if trace_length:
