@@ -35,7 +35,6 @@ status bar. An example use of 3 different tasks is:
 from contextlib import redirect_stdout
 import io
 import multiprocessing
-import platform
 import queue
 import sys
 import time
@@ -304,14 +303,18 @@ class Pipeline:
         try:
             with Progress(
                 f"[green]{self.name}",
-                BarColumn(),
+                BarColumn(
+                    style="grey35 on black",
+                    complete_style="green on black",
+                    finished_style="red on black",
+                    pulse_style="white on purple",
+                ),
                 TimeElapsedColumn(),
                 TimeRemainingColumn(),
                 "{task.description}",
                 refresh_per_second=4,
             ) as progress:
                 task = progress.add_task("[green] Run", total=total)
-                self.set_console_title("ROOTS-daq running")
                 while self.is_alive():
                     time.sleep(0.1)
                     self.update_status()
@@ -319,20 +322,17 @@ class Pipeline:
                         progress.console.print(m)
                     self.messages = []
                     text = ",".join(f"{k}: {v}" for k, v in self.status.items())
-                    runtime = self.runtime or round(time.time() - self.start_time, 2)
+                    if self.runtime is None:
+                        text = "Setting up process pipeline " + text
+                        runtime = round(time.time() - self.start_time, 2)
+                    else:
+                        runtime = self.runtime
                     progress.update(task, completed=runtime, description=text)
+                # finish progress bar
+                progress.update(task, completed=total, description=text)
         except KeyboardInterrupt:
             print("[yellow]INFO[/] got keyboard interrupt... closing")
             self.stop()
-        self.set_console_title("ROOTS-daq done")
-
-    def set_console_title(self, text: str) -> None:
-        """Sets the console title.
-
-        Currenlty we only do this on Windows.
-        """
-        if platform.system() == "Windows":
-            print(f"\033]2;{text}\007")
 
     def wait(self):
         """Wait for the pipeline to finish.
