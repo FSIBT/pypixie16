@@ -12,4 +12,6 @@ from . import scan
 from . import pipeline
 from . import tasks
 
-__all__ = ["analyze", "plot", "ui", "scan", "control", "pipeline", "tasks"]
+from . import cli
+
+__all__ = ["analyze", "plot", "ui", "scan", "control", "pipeline", "tasks", "cli"]

@@ -15,6 +15,7 @@ and this project tries to adhere to [Semantic Versioning](https://semver.org/spe
 - `change_setting_from_dict` now calls `write_single_parameter` and therefore
   also does checks and other side effects (e.g. set Peaksample). If you want
   to overwrite these values and avoid checks/side-effects, use `change_raw_setting_from_dict`
+- Moved command line scripts into pixie16/cli and use entry points for installation
 
 ### Added
 - Support for new SDK from XIA (>= 3.3). In the process we made some
