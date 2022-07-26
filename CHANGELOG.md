@@ -6,6 +6,7 @@ and this project tries to adhere to [Semantic Versioning](https://semver.org/spe
 
 ## [Unreleased]
 
+## [1.0.0] - 2022-07-26
 ### Changed
 - Renamed 'master' branch to 'main'
 - The library does not keep track of the boot or init status anymore
