@@ -6,6 +6,13 @@ and this project tries to adhere to [Semantic Versioning](https://semver.org/spe
 
 ## [Unreleased]
 
+### Fixed
+- When sorting raw events in a data pipeline, fix handling of event
+  timestamps (e.g. set timestamp to the approximately correct time in
+  unix-time). Ability to handle data that got taken from several runs,
+  e.g. list mode runs that get interrupted by MCA runs where the FPGA
+  counter for the time gets reset
+
 ## [1.0.0] - 2022-07-26
 ### Changed
 - Renamed 'master' branch to 'main'

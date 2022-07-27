@@ -194,7 +194,7 @@ class PickSingleModule(Task):
     for a single module.
     """
 
-    def __init__(self, module=0):
+    def __init__(self, module: int = 0):
         super().__init__()
         self.module = module
         self.name = f"Reduce to module {module}"
@@ -206,7 +206,13 @@ class PickSingleModule(Task):
 class SortEvents(Task):
     """Task to sort events by timestamp."""
 
-    def __init__(self, maxsize=10_000, number_to_sort=8_000):
+    def __init__(
+        self,
+        start_time: float,
+        maxsize: int = 10_000,
+        number_to_sort: int = 8_000,
+        time_offset_between_runs: float = 0.0,
+    ):
         super().__init__()
         self.data = []
         assert (
@@ -216,18 +222,35 @@ class SortEvents(Task):
         self.N_to_sort = number_to_sort
         self.name = "Sort events"
         self.nr_sorted = 0
+        # unix time of start of data acqusition
+        self.start_time = start_time
+        # timestamp of first and current event in binary data in s
+        self.first_event_timestamp = None
+        self.last_event_timestamp = 0
+        # ability to add extra time when a reset in the timestamp on
+        # the pixie is detected. For example, when you take MCA
+        # spectra between your list mode data runs this can be set to
+        # the MCA time
+        self.time_offset_between_runs = time_offset_between_runs
 
     def do_work(self, events_lst):
         # Convert ns timestamp into an approximate UNIX time
         # This needs to be done because the ns timestamps are reset after each MCA run
-        current_time = time.time()
         new_events_lst = []
+        if self.first_event_timestamp is None:
+            self.first_event_timestamp = events_lst[0].timestamp * 1e-9
         for event in events_lst:
+            ts = event.timestamp * 1e-9  # in s
+            if ts + 60 < self.last_event_timestamp:
+                self.start_time += (
+                    self.last_event_timestamp - self.first_event_timestamp
+                ) + self.time_offset_between_runs
+                self.first_event_timestamp = ts
             new_event = event._replace(
-                chunk_timestamp=current_time
-                + 1e-9 * (event.timestamp - events_lst[0].timestamp)
+                chunk_timestamp=self.start_time + ts - self.first_event_timestamp
             )
             new_events_lst.append(new_event)
+            self.last_event_timestamp = ts
 
         # Sort events according to UNIX timestamp
         out = []
@@ -306,8 +329,13 @@ class LoadFiles(Task):
             if events and self.output_queue:
                 self.output_queue.put(events)
                 self.nr_of_events += len(events)
+                events = []
         except StopIteration:
             self.done = True
+            if events and self.output_queue:
+                self.output_queue.put(events)
+                self.nr_of_events += len(events)
+                events = []
 
         self.send_status(
             {
