@@ -237,7 +237,7 @@ class SortEvents(Task):
         # Convert ns timestamp into an approximate UNIX time
         # This needs to be done because the ns timestamps are reset after each MCA run
         new_events_lst = []
-        if self.first_event_timestamp is None:
+        if self.first_event_timestamp is None and events_lst:
             self.first_event_timestamp = events_lst[0].timestamp * 1e-9
         for event in events_lst:
             ts = event.timestamp * 1e-9  # in s
