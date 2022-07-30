@@ -1,6 +1,10 @@
 # PyPixie16
 
 [![Docs](https://readthedocs.org/projects/pypixie16/badge/?version=latest&style=plastic)](https://readthedocs.org/projects/pypixie16)
+[![PyPI version](https://badge.fury.io/py/pypixie16.svg)](https://badge.fury.io/py/pypixie16)
+[![pre-commit](https://img.shields.io/badge/pre--commit-enabled-brightgreen?logo=pre-commit&logoColor=white)](https://github.com/pre-commit/pre-commit)
+[![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
+
 
 This module can be used to control, read, and analyze data from
 Pixie16 modules from XIA [https://www.xia.com/DGF_Pixie-16.html] using python. To achieve this we provide
