@@ -6,6 +6,9 @@ and this project tries to adhere to [Semantic Versioning](https://semver.org/spe
 
 ## [Unreleased]
 
+### Added
+- Added py.typed marker file for better type hint support
+
 ### Fixed
 - When sorting raw events in a data pipeline, fix handling of event
   timestamps (e.g. set timestamp to the approximately correct time in
