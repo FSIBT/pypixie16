@@ -8,7 +8,7 @@ from collections import defaultdict, namedtuple
 from datetime import datetime
 from pathlib import Path
 import time
-from typing import List
+from typing import List, Optional
 
 import numpy as np
 
@@ -211,7 +211,7 @@ class SortEvents(Task):
         start_time: float,
         maxsize: int = 10_000,
         number_to_sort: int = 8_000,
-        time_offset_between_runs: float = 0.0,
+        all_start_times: Optional[List[float]] = None,
     ):
         super().__init__()
         self.data = []
@@ -222,7 +222,7 @@ class SortEvents(Task):
         self.N_to_sort = number_to_sort
         self.name = "Sort events"
         self.nr_sorted = 0
-        # unix time of start of data acqusition
+        # unix time of start of the current list mode run
         self.start_time = start_time
         # timestamp of first and current event in binary data in s
         self.first_event_timestamp = None
@@ -231,9 +231,31 @@ class SortEvents(Task):
         # the pixie is detected. For example, when you take MCA
         # spectra between your list mode data runs this can be set to
         # the MCA time
-        self.time_offset_between_runs = time_offset_between_runs
+        self.all_start_times = all_start_times
+        # keep track how many resets we have detected
+        self.number_of_resets = 0
 
     def do_work(self, events_lst):
+        """Does the sorting
+
+        Whenever we reach `self.maxsize` events, sort them by time and
+        pass the first `self.N_to_sort` events to the next `Task`. We keep
+        the a few events behind, since they might need to be sorted with
+        the next incoming batch.
+
+        Furthermore, we populate the `event.chunk_timestamp`. This is roughly the
+        Unix time of the event. The user passes the timestamp when the list-mode run
+        got started to this task and then we add the difference in the pixie16
+        timestamp from the current event to the first event (converted to seconds)
+        to the initial start time. This works well, but gets complicated in case the user
+        starts and stops the list mode run, since the pixie16 will reset the internal clock
+        in this case. To fix this, the user needs to pass a list of timestamps with the
+        Unix time stamp of each list mode start. We detect these re-starts by looking for
+        a change larger than 20 s in the event timestamps.
+
+        In case the start times are not available when the pipeline is set up, e.g. in the
+        original case when we take the data, we call time.time() locally when we detect the jump.
+        """
         # Convert ns timestamp into an approximate UNIX time
         # This needs to be done because the ns timestamps are reset after each MCA run
         new_events_lst = []
@@ -241,10 +263,21 @@ class SortEvents(Task):
             self.first_event_timestamp = events_lst[0].timestamp * 1e-9
         for event in events_lst:
             ts = event.timestamp * 1e-9  # in s
-            if ts + 60 < self.last_event_timestamp:
-                self.start_time += (
-                    self.last_event_timestamp - self.first_event_timestamp
-                ) + self.time_offset_between_runs
+            if ts + 20 < self.last_event_timestamp:
+                # detected a reset of the FPGA counter on the pixie16
+                self.number_of_resets += 1
+                if self.all_start_times is None:
+                    self.start_time = time.time()
+                else:
+                    if self.number_of_resets >= len(self.all_start_times):
+                        print(
+                            "ERROR  SortEventTask: detected more list mode starts than given timestamps. Estimating time offset"
+                        )
+                        self.start_time += (
+                            self.last_event_timestamp - self.first_event_timestamp
+                        )
+                    else:
+                        self.start_time = self.all_start_times[self.number_of_resets]
                 self.first_event_timestamp = ts
             new_event = event._replace(
                 chunk_timestamp=self.start_time + ts - self.first_event_timestamp
