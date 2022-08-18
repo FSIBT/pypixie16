@@ -8,7 +8,7 @@ from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
 import time
-from typing import List, Optional
+from typing import List, Optional, Union
 
 import numpy as np
 from rich import print
@@ -238,14 +238,67 @@ class PickSingleModule(Task):
 
 
 class SortEvents(Task):
-    """Task to sort events by timestamp."""
+    """Task to sort events by timestamp.
+
+    This task, takes as input list of events that have already been
+    converted from the binary format to namedtuples. It then populates
+    an additionl column `chunk time` in the namedtuple which will
+    roughly be the unix time stamp of the event. For a run that wasn't
+    paused, the `chunk timestamp` will just be the normal time stamp
+    plus the unix timestamp from the beginning of the run.
+
+    The task will add incoming events to an internal list and once a
+    certain number, M, of events has been reached, it will sort the
+    events and send the first N off. Normally N<M, so that some events
+    are held back since they might need to be sorted together with new
+    events that will come in next.
+
+    In case the event input stream comes from a run that has been
+    paused and restarted, the timestamps in the event stream might
+    have reset to start counting again at zero. However, we want the
+    chunk time to be roughly the real time, so we have to add special
+    code to handle this.
+
+    For this to work, we detect whenever the timestamps go back to
+    zero (our proxy for this is to test if the current event's timestamp
+    is more than 20s before the last event, which should only happen
+    if the counter did reset).
+
+    We supply several options through the init variable
+    `all_start_times` to handle the chunk time:
+
+    a) all_start_times is None
+     ` In this case, we just use the system time.time() for this event
+       and calculate the following events `chunk time` by adding the
+       delta t calculated from the pixie timestamp.
+       This mode should be used during data acquisition.
+       If one starts/stops the data acquisition, one should also write
+       down all the start time, so that one can rerun the binary convertion
+       later by using the next mode.
+
+    b) all_start_times is a list of unix time stamps
+       In this case, we use a value from the list whenever we notice a
+       reset in the timestamps and otherwise handle delta t's as above.
+       This mode can be used when binary data as to be converted again and
+       the original time stamps should be recreated.
+
+    c) all_start_times is a float > 0
+       This mode can be used to estimate times when binary data needs to be
+       converted again, but start times for b) are not available.
+       In this case, we just ignore the negative dt at the point of
+       the reset and keep adding positive dt to the `chunk time` and also
+       add the value of `all_start_times` at the time of the reset. The value
+       should be an estimate of how long it took between stopping and re-starting
+       the data acquisition.
+
+    """
 
     def __init__(
         self,
         start_time: float,
         maxsize: int = 10_000,
         number_to_sort: int = 8_000,
-        all_start_times: Optional[List[float]] = None,
+        all_start_times: Optional[Union[List[float], float]] = None,
     ):
         super().__init__()
         self.data = []
@@ -256,42 +309,33 @@ class SortEvents(Task):
         self.N_to_sort = number_to_sort
         self.name = "Sort events"
         self.nr_sorted = 0
-        # unix time of start of the current list mode run
+        # unix time of start of the current list mode run. Either the
+        # timestamp of the first events or the time stamp of the last
+        # detected reset
         self.start_time = start_time
         # timestamp of first and current event in binary data in s
         self.first_event_timestamp = None
         self.last_event_timestamp = 0
-        # ability to add extra time when a reset in the timestamp on
-        # the pixie is detected. For example, when you take MCA
-        # spectra between your list mode data runs this can be set to
-        # the MCA time
+        # in case the the aqcuisition was stopped and restarted this
+        # should either be a list of all start times or a float
+        # estimating the average time of the break in acquisitioin
         self.all_start_times = all_start_times
+        # if all_start_times are not known, we estimate them and report them back
+        # if a special queue was put in place
+        self.report_times = [start_time]
+        self.report_time_queue = None
         # keep track how many resets we have detected
         self.number_of_resets = 0
 
     def do_work(self, events_lst):
-        """Does the sorting
+        """Does the sorting, time reset recognition and handling.
 
         Whenever we reach `self.maxsize` events, sort them by time and
         pass the first `self.N_to_sort` events to the next `Task`. We keep
         the a few events behind, since they might need to be sorted with
         the next incoming batch.
 
-        Furthermore, we populate the `event.chunk_timestamp`. This is roughly the
-        Unix time of the event. The user passes the timestamp when the list-mode run
-        got started to this task and then we add the difference in the pixie16
-        timestamp from the current event to the first event (converted to seconds)
-        to the initial start time. This works well, but gets complicated in case the user
-        starts and stops the list mode run, since the pixie16 will reset the internal clock
-        in this case. To fix this, the user needs to pass a list of timestamps with the
-        Unix time stamp of each list mode start. We detect these re-starts by looking for
-        a change larger than 20 s in the event timestamps.
-
-        In case the start times are not available when the pipeline is set up, e.g. in the
-        original case when we take the data, we call time.time() locally when we detect the jump.
         """
-        # Convert ns timestamp into an approximate UNIX time
-        # This needs to be done because the ns timestamps are reset after each MCA run
         new_events_lst = []
         if self.first_event_timestamp is None and events_lst:
             self.first_event_timestamp = events_lst[0].timestamp * 1e-9
@@ -302,16 +346,25 @@ class SortEvents(Task):
                 self.number_of_resets += 1
                 if self.all_start_times is None:
                     self.start_time = time.time()
-                else:
+                elif isinstance(self.all_start_times, (list, tuple)):
                     if self.number_of_resets >= len(self.all_start_times):
                         print(
                             "[red]ERROR[/] SortEventTask: detected more list mode starts than given timestamps. Estimating time offset"
                         )
                         self.start_time += (
                             self.last_event_timestamp - self.first_event_timestamp
-                        )
+                        ) + 35  # estimate of time of break
                     else:
                         self.start_time = self.all_start_times[self.number_of_resets]
+                elif isinstance(self.all_start_times, (int, float)):
+                    self.start_time += (
+                        self.last_event_timestamp - self.first_event_timestamp
+                    ) + self.all_start_times
+                    self.report_times.append(self.start_time)
+                else:
+                    print(
+                        "[red]ERROR[/] unknown type for all_start_times in SortEvents... cannot continue!!! "
+                    )
                 self.first_event_timestamp = ts
             new_event = event._replace(
                 chunk_timestamp=self.start_time + ts - self.first_event_timestamp
@@ -335,6 +388,8 @@ class SortEvents(Task):
         self.data.sort(key=lambda x: x.chunk_timestamp)
         if self.output_queue:
             self.output_queue.put(self.data)
+        if self.report_time_queue:
+            self.report_time_queue.put(self.report_times)
         self.data = []
 
 
