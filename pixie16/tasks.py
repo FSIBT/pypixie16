@@ -4,13 +4,14 @@ These tasks can also easily by sub-classed to create custom ones or
 used as an example on how to write your own.
 
 """
-from collections import defaultdict, namedtuple
+from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
 import time
 from typing import List, Optional
 
 import numpy as np
+from rich import print
 
 from .pipeline import Task
 from . import control
@@ -39,7 +40,7 @@ class DummyData(Task):
         self.chunk_size = 20_000
         self.pos = 0
         if self.chunk_size > self.length:
-            print("[ERROR] chunk_size too big")
+            print("[red]ERROR[/] chunk_size too big")
         self.modules = [2]
         self.mycounter = 0
 
@@ -304,7 +305,7 @@ class SortEvents(Task):
                 else:
                     if self.number_of_resets >= len(self.all_start_times):
                         print(
-                            "ERROR  SortEventTask: detected more list mode starts than given timestamps. Estimating time offset"
+                            "[red]ERROR[/] SortEventTask: detected more list mode starts than given timestamps. Estimating time offset"
                         )
                         self.start_time += (
                             self.last_event_timestamp - self.first_event_timestamp
