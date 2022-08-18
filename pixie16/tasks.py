@@ -59,24 +59,57 @@ class DummyData(Task):
 
 
 class TakeData(Task):
-    """Task to aquire data, each binary blob from the FPGA will be put in the queue.
+    """Example Task to aquire data, each binary blob from the FPGA will be put in the queue.
 
-    Note: this does not work as is. The Task must also call InitSys
-    and BootModule to be able to talk to the pixie16.
+    A second task can then convert the binary blob to events and from
+    there perhaps another task can convert to pandas.
+
+    One tricky part is that we also need to initialize and boot the
+    pixie, since this will run in another process. However, we cannot
+    do this in the init, since the init will still be executed in the
+    main thread, so this has to happen in `do_work`.
+
+    We also check the runtime in `do_work` and then stop the process
+    and end the run during the cleanup phase. We also read out the
+    remaining events from the buffer and send them on during cleanup.
+
     """
 
-    def __init__(self):
+    def __init__(self, runtime):
         super().__init__()
-        print("save settings")
         self.name = "Take Data"
-
-        control.start_list_mode_run()
+        # keep track if we called init
+        self.start_acquisition = False
+        self.start_time = None
+        self.runtime = runtime
 
     def do_work(self, value):
+        if not self.started_acuisition:
+            control.init_and_boot(modules=[2], verbose=False, boot_pattern=0x7F)
+            control.adjust_offsets()
+            control.set_sync_mode()
+            control.empty_all_fifos()
+            # this would be a good spot to save the initial settings
+            self.start_time = time.time()
+            control.start_list_mode_run()
+
+            self.started_acuisition = True
+
+        now = time.time()
+        if now - self.start_time > self.runtime:
+            self.done = True
         return control.read_list_mode_fifo(threshold=64 * 1024)
 
     def cleanup(self):
-        print("save settings")
+        control.end_run()
+        time.sleep(0.5)
+
+        # read remainig data in queue
+        tmp = control.read_list_mode_fifo(check=False)
+        if tmp and self.output_queue:
+            self.output_queue.put(tmp)
+
+        # should save the settings and stats here
 
 
 class SetDefaults(Task):
