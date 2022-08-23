@@ -92,11 +92,11 @@ class Task(multiprocessing.Process):
         """Can be overwritten to close any open files, etc"""
         pass
 
-    def send_status(self, value_dict):
+    def send_status(self, value_dict, force=False):
         """Send a status update to the main pipeline.
 
         Status updates are only send at least 0.5 seconds apart so
-        that they don't spam the status queue.
+        that they don't spam the status queue (unless `force` is given).
 
         Since sending of the `value_dict` is not garantueed, do not rely on
         this feature and only send information for information purposes.
@@ -108,7 +108,8 @@ class Task(multiprocessing.Process):
 
         """
         current_time = time.time()
-        if self.status_queue and (current_time - self.last_update > 0.5):
+        do_send = force or (current_time - self.last_update > 0.5)
+        if self.status_queue and do_send:
             self.status_queue.put(value_dict)
             self.last_update = current_time
             for m in self.messages:
@@ -131,13 +132,13 @@ class Task(multiprocessing.Process):
         self.stop()
         super().join(*args, **kwargs)
 
-    def handle_print(self, stringIO: io.StringIO):
+    def handle_print(self, stringIO: io.StringIO, force=False):
         """Handle print statements that got captured"""
         msg = stringIO.getvalue()
         if msg:
             msg = msg.split("\n")
             self.messages += msg
-        self.send_status({})
+        self.send_status({}, force=force)
 
     def run(self):
         try:
@@ -177,7 +178,7 @@ class Task(multiprocessing.Process):
         finally:
             with redirect_stdout(io.StringIO()) as f:
                 self.cleanup()
-                self.handle_print(f)
+                self.handle_print(f, force=True)
 
         # if we are done, indicate that the queue should end
         if self.output_queue:
@@ -328,8 +329,12 @@ class Pipeline:
                     else:
                         runtime = self.runtime
                     progress.update(task, completed=runtime, description=text)
-                # finish progress bar
+                # finish progress bar and print remaining messages
+                self.update_status()
+                for m in self.messages:
+                    print(m)
                 progress.update(task, completed=total, description=text)
+
         except KeyboardInterrupt:
             print("[yellow]INFO[/] got keyboard interrupt... closing")
             self.stop()
@@ -342,6 +347,15 @@ class Pipeline:
         try:
             while self.is_alive():
                 time.sleep(0.1)
+                self.update_status()
+                for m in self.messages:
+                    print(m)
+                self.messages = []
         except KeyboardInterrupt:
             print("[yellow]INFO[/]] got keyboard interrupt... closing")
             self.stop()
+        # print any remaining messages
+        time.sleep(0.1)
+        self.update_status()
+        for m in self.messages:
+            print(m)
