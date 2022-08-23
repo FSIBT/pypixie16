@@ -774,7 +774,11 @@ def read_dummy_settings(modules) -> CrateSettings:
     -------
        A dictonary of setting data
     """
-    with files("pixie16.data").joinpath("default.json").open("r") as f:
+    data_path = files("pixie16.data")
+    if data_path is None:
+        print("[red]Error[/] Cannot load default pixie settings. Re-run pip install?")
+        sys.exit(5)
+    with data_path.joinpath("default.json").open("r") as f:
         data = json.load(f)
     return CrateSettings([Settings.from_dict(x) for x in data])
 
