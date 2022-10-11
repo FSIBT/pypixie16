@@ -1,7 +1,7 @@
 """implementation of queues for parsing list mode data from the pixie16"""
 
 
-from collections import namedtuple, deque
+from collections import namedtuple, deque, defaultdict
 from itertools import islice
 from pathlib import Path
 from typing import Union
@@ -338,12 +338,12 @@ class ListModeDataReader:
             CFD_bits, event_values.pop("CFD Fractional Time")
         )
         timestamp = (
-            event_values.pop("EVTTIME_LO") + event_values.pop("EVTTIME_HI") * 2 ** 32
+            event_values.pop("EVTTIME_LO") + event_values.pop("EVTTIME_HI") * 2**32
         ) * 10
 
         if "Ext_TS_Lo" in event_values:
             ext_timestamp = (
-                event_values.pop("Ext_TS_Lo") + event_values.pop("Ext_TS_Hi") * 2 ** 32
+                event_values.pop("Ext_TS_Lo") + event_values.pop("Ext_TS_Hi") * 2**32
             )
 
             event_values.update({"ext_timestamp": ext_timestamp})
@@ -453,3 +453,32 @@ def read_list_mode_data_as_events(files, buffer_size=int(1e9), max_size=None):
     files = to_list(files)
     gen = events_from_files_generator(files, buffer_size)
     return list(islice(gen, max_size))
+
+
+def sort_events_by_channel(events, channel_list=None):
+    """Sort events by channel.
+
+    Takes the output of `read_list_mode_data_as_events` and sorts them
+    into a dictionary that has the channel number as key and as value
+    a list of events (still including the channel number).
+
+    Parameters
+    ----------
+    events
+        List of events as returned by `read_list_mode_data_as_events`
+    channel_list
+        Optional list of channels to include. This can help to reduce
+        the amount of data.
+
+    """
+
+    out = defaultdict(list)
+
+    for e in events:
+        ch = e.channel
+        if channel_list is not None and ch in channel_list:
+            out[ch].append(e)
+        else:
+            out[ch].append(e)
+
+    return out
