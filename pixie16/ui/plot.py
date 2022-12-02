@@ -2,7 +2,7 @@ import matplotlib
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.backends.backend_qt5agg import NavigationToolbar2QT as NavigationToolbar
-from PyQt5.QtWidgets import (
+from PyQt6.QtWidgets import (
     QMainWindow,
     QSizePolicy,
     QVBoxLayout,
@@ -35,13 +35,15 @@ class Plot(QWidget):
         self.fig = plt.figure()
         self.axes = self.fig.subplots()
         self.canvas = FigureCanvas(self.fig)
-        self.canvas.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.canvas.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
+        )
 
         self.vbox = QVBoxLayout()
 
         if with_navbar:
             self.nav = MyNavigationToolbar(self.canvas, self, coordinates=False)
-            self.nav.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+            self.nav.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
             self.vbox.addWidget(self.nav)
 
         self.vbox.addWidget(self.canvas)

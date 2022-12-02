@@ -41,7 +41,7 @@ autodoc_mock_imports = [
     "pint",
     "matplotlib",
     "rich",
-    "PyQt5",
+    "PyQt6",
 ]
 # -- Project information -----------------------------------------------------
 

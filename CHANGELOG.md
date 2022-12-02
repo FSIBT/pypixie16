@@ -6,6 +6,9 @@ and this project tries to adhere to [Semantic Versioning](https://semver.org/spe
 
 ## [Unreleased]
 
+### Changed
+- Updated to PyQt6
+
 ### Added
 - Added py.typed marker file for better type hint support
 

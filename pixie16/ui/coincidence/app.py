@@ -1,7 +1,7 @@
 from pathlib import Path
 
-from PyQt5.QtGui import QIcon
-from PyQt5.QtWidgets import QAction, QFileDialog, QVBoxLayout, QWidget
+from PyQt6.QtGui import QIcon, QAction
+from PyQt6.QtWidgets import QFileDialog, QVBoxLayout, QWidget
 
 import pixie16
 

@@ -2,10 +2,9 @@ from pathlib import Path
 import sys
 from typing import List
 
-from PyQt5.QtCore import Qt
-from PyQt5.QtGui import QIcon, QIntValidator
-from PyQt5.QtWidgets import (
-    QAction,
+from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QIcon, QIntValidator, QAction
+from PyQt6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
@@ -122,7 +121,9 @@ class BaseApp(QMainWindow):
         self.help_menu.addAction(aboutButton)
 
         self.info_bar = QLabel()
-        self.info_bar.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        self.info_bar.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextSelectableByMouse
+        )
 
     def about(self):
         """Print some help that is useful for debugging"""

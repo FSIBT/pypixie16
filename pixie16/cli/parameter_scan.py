@@ -111,3 +111,7 @@ def main():
 
     pxcontrol.end_run()
     pxcontrol.exit_system()
+
+
+if __name__ == "__main__":
+    main()

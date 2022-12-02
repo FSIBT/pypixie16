@@ -2,14 +2,14 @@
 
 from contextlib import contextmanager
 
-from PyQt5.QtCore import Qt
-from PyQt5.QtGui import QCursor
+from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QCursor
 
 
 @contextmanager
 def busy_cursor(app):
     """Swap out the cursor for a spinning wheel or similar."""
-    app.setOverrideCursor(QCursor(Qt.WaitCursor))
+    app.setOverrideCursor(QCursor(Qt.CursorShape.WaitCursor))
     try:
         yield
     finally:

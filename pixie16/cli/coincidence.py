@@ -26,4 +26,8 @@ def main():
     ex = CoincidenceApp(app)
     if filename:
         ex.open_file(filename)
-    sys.exit(app.exec_())
+    sys.exit(app.exec())
+
+
+if __name__ == "__main__":
+    main()

@@ -3,9 +3,8 @@ from pathlib import Path
 
 from fast_histogram import histogram1d
 import numpy as np
-from PyQt5.QtGui import QIcon
-from PyQt5.QtWidgets import (
-    QAction,
+from PyQt6.QtGui import QIcon, QAction
+from PyQt6.QtWidgets import (
     QFileDialog,
     QTabWidget,
     QTableView,
@@ -60,7 +59,7 @@ class BinaryApp(BaseApp):
 
         self.dataview = QTableView()
         self.dataview.setSortingEnabled(True)
-        self.dataview.setSelectionBehavior(QTableView.SelectRows)
+        self.dataview.setSelectionBehavior(QTableView.SelectionBehavior.SelectRows)
 
         self.datatab_layout.addLayout(self.channel_select)
         self.datatab_layout.addWidget(self.dataview)

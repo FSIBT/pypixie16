@@ -9,6 +9,6 @@ more_itertools
 numpy
 pandas
 pint
-PyQt5
+PyQt6
 sphinx
 sphinxcontrib-napoleon

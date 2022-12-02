@@ -16,7 +16,7 @@ max-line-length="88"
 disable = "bad-continuation, logging-fstring-interpolation, line-too-long"
 
 [tool.pylint.MASTER]
-extension-pkg-whitelist="PyQt5"
+extension-pkg-whitelist="PyQt6"
 jobs=4
 
 [tool.pylint.TYPECHECK]

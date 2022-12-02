@@ -1,5 +1,5 @@
-from PyQt5.QtCore import QAbstractTableModel, Qt
-from PyQt5.QtWidgets import QCommonStyle, QStyle
+from PyQt6.QtCore import QAbstractTableModel, Qt
+from PyQt6.QtWidgets import QCommonStyle, QStyle
 
 import pixie16
 

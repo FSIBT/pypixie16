@@ -1,7 +1,7 @@
 import numpy as np
 
-from PyQt5.QtCore import Qt
-from PyQt5.QtWidgets import QApplication, QMainWindow
+from PyQt6.QtCore import Qt
+from PyQt6.QtWidgets import QApplication, QMainWindow
 
 from ..plot import PlotOnly
 
@@ -78,7 +78,7 @@ class PlotCoincidenceTraces(PlotOnly):
 
         if self.in_x_range(x) and self.in_y_range(y):
             if not self.cursor_select:
-                QApplication.setOverrideCursor(Qt.CrossCursor)
+                QApplication.setOverrideCursor(Qt.CursorShape.CrossCursor)
                 self.cursor_select = True
         else:
             if self.cursor_select:

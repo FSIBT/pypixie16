@@ -2,7 +2,7 @@ import numpy as np
 from matplotlib import cm
 from rich import print
 
-from PyQt5.QtWidgets import (
+from PyQt6.QtWidgets import (
     QComboBox,
     QGridLayout,
     QHBoxLayout,
@@ -258,7 +258,7 @@ class FastTrigger(QWidget):
 
         self.energy_plot.axes.clear()
 
-        self.slow_filter_range = 2 ** R
+        self.slow_filter_range = 2**R
         # check how long the trace is, if it is too short, we try to
         # fix it by adding data points at `baseline` value to the
         # trace on the left and right
