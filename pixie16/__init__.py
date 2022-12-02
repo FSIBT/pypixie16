@@ -5,7 +5,7 @@ from . import ui
 from . import analyze
 from . import read
 
-from ._version import version as __version__
+from ._version import __version__
 
 from . import control
 from . import scan
