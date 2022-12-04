@@ -7,10 +7,25 @@ import sys
 from typing import List, Union
 
 import appdirs
+import platformdirs
 
 
-dirs = appdirs.AppDirs("PIXIE16")
-inifile = Path(dirs.user_config_dir) / "config.ini"
+# move from appdirs to platformdirs
+dirs_old = appdirs.AppDirs("PIXIE16")
+inifile_old = Path(dirs_old.user_config_dir) / "config.ini"
+
+dirs = platformdirs.AppDirs("PIXIE16")
+inifile = dirs.user_config_path / "config.ini"
+
+if inifile != inifile_old:
+    if inifile_old.is_file() and not inifile.is_file():
+        print(f"[INFO] moving config file to new location ({inifile}).")
+        dirs.user_config_path.mkdir(parents=True, exist_ok=True)
+        inifile_old.rename(inifile)
+    elif inifile_old.is_file() and inifile.is_file():
+        print(f"[INFO] found new and old inifile. Removing old one at {inifile_old}.")
+        inifile_old.unlink()
+
 
 config = configparser.ConfigParser()
 config.read(inifile)

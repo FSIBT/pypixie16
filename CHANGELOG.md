@@ -8,6 +8,8 @@ and this project tries to adhere to [Semantic Versioning](https://semver.org/spe
 
 ### Changed
 - Updated to PyQt6
+- switch to platformdirs (on mac the user config location changes, so we
+  still keep appdirs around and move files to the new location)
 
 ### Added
 - Added py.typed marker file for better type hint support
