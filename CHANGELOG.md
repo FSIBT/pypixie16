@@ -6,13 +6,20 @@ and this project tries to adhere to [Semantic Versioning](https://semver.org/spe
 
 ## [Unreleased]
 
+## [2.0.0] - 2022-12-14
+
 ### Changed
-- Updated to PyQt6
+- Updated Qt widgets to PyQt6
 - switch to platformdirs (on mac the user config location changes, so we
   still keep appdirs around and move files to the new location)
+- updated versions used by pre-commit
+- use rich more to format output
 
 ### Added
 - Added py.typed marker file for better type hint support
+- error check when loading settings files
+- new functions that takes list of events and returns a dictionary with lists
+  sorted by channel number
 
 ### Fixed
 - When sorting raw events in a data pipeline, fix handling of event
