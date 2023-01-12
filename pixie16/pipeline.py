@@ -103,8 +103,7 @@ class Task(multiprocessing.Process):
 
         Currently, there are two keys in the `value_dict` that have special meaning:
         - runtime: should be the elappsed time during data acquisition
-        - message: Any message that should be printed to the screen (we use this, so
-                   that the progress bar works well)
+        - message: Any message that should be printed to the screen (we use this, so that the progress bar works well)
 
         """
         current_time = time.time()

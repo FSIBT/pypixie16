@@ -23,6 +23,7 @@ class DummyData(Task):
 
     This can be used as a first task in a pipeline during testing and
     when the pixie16 is not online/available.
+
     """
 
     def __init__(self, runtime, filename=None):

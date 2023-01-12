@@ -6,7 +6,7 @@ and this project tries to adhere to [Semantic Versioning](https://semver.org/spe
 
 ## [Unreleased]
 
-## [2.0.0] - 2022-12-14
+## [1.1.0] - 2022-12-14
 
 ### Changed
 - Updated Qt widgets to PyQt6
