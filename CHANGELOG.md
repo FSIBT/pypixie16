@@ -6,7 +6,10 @@ and this project tries to adhere to [Semantic Versioning](https://semver.org/spe
 
 ## [Unreleased]
 
-## [1.1.0] - 2022-12-14
+## [2.0.0] - 2023-02-18
+
+Mostly small changes, the main reason for the 2.0.0 release is the update to
+pyqt6 which can break user interfaces.
 
 ### Changed
 - Updated Qt widgets to PyQt6
@@ -29,6 +32,7 @@ and this project tries to adhere to [Semantic Versioning](https://semver.org/spe
   counter for the time gets reset
 
 ## [1.0.0] - 2022-07-26
+
 ### Changed
 - Renamed 'master' branch to 'main'
 - The library does not keep track of the boot or init status anymore
