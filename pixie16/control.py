@@ -774,7 +774,7 @@ def read_dummy_settings(modules) -> CrateSettings:
     -------
        A dictonary of setting data
     """
-    data_path = files("pixie16.data")
+    data_path = files("pixie16") / "data"
     if data_path is None:
         print("[red]Error[/] Cannot load default pixie settings. Re-run pip install?")
         sys.exit(5)
