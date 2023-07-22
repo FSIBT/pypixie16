@@ -50,11 +50,11 @@ copyright = "2019-2023, The Regents of the University of California through Lawr
 author = "Arun Persaud et al."
 
 # The full version, including alpha/beta/rc tags
-from pkg_resources import get_distribution, DistributionNotFound
+import importlib.metadata
 
 try:
-    release = get_distribution("pixie16").version
-except DistributionNotFound:
+    release = importlib.metadata.version("pypixie16")
+except importlib.metadata.PackageNotFoundError:
     release = "unkown"
 
 # -- General configuration ---------------------------------------------------
