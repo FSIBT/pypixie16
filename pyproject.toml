@@ -12,6 +12,7 @@ authors = [
    { name = "Brian Mak", email = "brianmak@lbl.gov" },
    { name = "Mauricio Ayllon Unzueta", email = "mayllonu@lbl.gov" },
    { name = "Will Larsen", email = "wlarsen@lbl.gov" },
+   { name = "Caroline Egan", email ="cegan@lbl.gov" },
 ]
 readme = "README.md"
 license = {file = "LICENSE.txt"}
