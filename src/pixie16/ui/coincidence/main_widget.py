@@ -52,7 +52,6 @@ class CoincidencePlot(QHBoxLayout):
         self.draw()
 
     def update_channels(self):
-
         while self.vbox.count():
             item = self.vbox.takeAt(0)
             widget = item.widget()

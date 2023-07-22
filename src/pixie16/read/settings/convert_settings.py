@@ -29,4 +29,6 @@ mod_list = docopt_args["MODULE_LIST"]
 mod_list = list(map(int, mod_list))
 metadata_file = docopt_args["--metadata"]
 
-set_filename, stat_filename = convert_old_settings(filename, mod_list, metadata_filename=metadata_file)
+set_filename, stat_filename = convert_old_settings(
+    filename, mod_list, metadata_filename=metadata_file
+)

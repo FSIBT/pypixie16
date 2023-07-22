@@ -86,7 +86,7 @@ def convert_trace_to_FPGA(traces: np.ndarray, filter_range: int = 0):
     if filter_range < 0:
         raise ValueError("The filter_range parameter needs to be >= 0")
 
-    group = 5 * 2 ** filter_range
+    group = 5 * 2**filter_range
 
     if M % group != 0:
         raise ValueError(

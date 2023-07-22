@@ -1,9 +1,84 @@
 [build-system]
-requires = ["setuptools>=42", "wheel", "setuptools_scm[toml]>=3.4"]
+requires = ["setuptools>=61.0", "setuptools_scm[toml]>=6.2"]
 build-backend = "setuptools.build_meta"
 
+[project]
+name = "pypixie16"
+dynamic = ["version"]
+authors = [
+   { name = "Arun Persaud", email = "apersaud@lbl.gov" },
+   { name = "Ariel Amsellem", email = "ajamsellem@lbl.gov" },
+   { name = "Andrew Rosenstrom", email = "arosenstrom@lbl.gov" },
+   { name = "Brian Mak", email = "brianmak@lbl.gov" },
+   { name = "Mauricio Ayllon Unzueta", email = "mayllonu@lbl.gov" },
+   { name = "Will Larsen", email = "wlarsen@lbl.gov" },
+]
+readme = "README.md"
+license = {file = "LICENSE.txt"}
+requires-python = ">=3.8"
+dependencies = [
+    "appdirs",
+    "cbitstruct",
+    "docopt",
+    "fast-histogram",
+    "matplotlib",
+    "more_itertools",
+    "numpy",
+    "pandas",
+    "pint",
+    "platformdirs",
+    "PyQt6",
+    "rich",
+    "setuptools",
+    "setuptools_scm",
+    "tables",
+]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Development Status :: 5 - Production/Stable",
+    "License :: OSI Approved :: BSD License",
+    "Intended Audience :: Science/Research",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Topic :: Scientific/Engineering :: Physics",
+]
+
+[project.optional-dependencies]
+test = ["pytest", "pytest-cov"]
+docs = [
+    "alabaster",
+    "markupsafe",
+    "sphinx",
+    "sphinxcontrib-napoleon",
+    "recommonmark",
+]
+
+[project.urls]
+"Documentation" = "https://pypixie16.readthedocs.io/en/latest/"
+"Source" = "https://bitbucket.org/berkeleylab/pypixie16"
+"Tracker" = "https://bitbucket.org/berkeleylab/pypixie16/issues"
+
+[project.scripts]
+pixie16-parameter-scan = "pixie16.cli.parameter_scan:main"
+pixie16-binary-browser = "pixie16.cli.binary_browser:main"
+pixie16-coincidence = "pixie16.cli.coincidence:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+"pixie16" = ["py.typed", "*.json"]
+
 [tool.setuptools_scm]
-write_to = "pixie16/_version.py"
+write_to = "src/pixie16/_version.py"
+
+[tool.coverage.run]
+branch = true
+source = ["src/pixie16", "tests"]
+
+[tool.coverage.report]
+skip_covered = true
 
 [tool.black]
 line-length = 88

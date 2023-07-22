@@ -94,7 +94,7 @@ class Entity(metaclass=EntityMeta):
 
 
 def combine_hi_lo_registers(hi, lo):
-    return hi * 2 ** 32 + lo
+    return hi * 2**32 + lo
 
 
 class ABField(SettingsFieldBase):

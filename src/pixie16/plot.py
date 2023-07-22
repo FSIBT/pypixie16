@@ -436,7 +436,7 @@ def energy_sums(
             Ls.append(
                 int(
                     setting.get_by_name("SlowLength")[e.channel]
-                    * (2 ** slow_filter_range)
+                    * (2**slow_filter_range)
                     * 10
                     / 2
                 )
@@ -444,7 +444,7 @@ def energy_sums(
             Gs.append(
                 int(
                     setting.get_by_name("SlowGap")[e.channel]
-                    * (2 ** slow_filter_range)
+                    * (2**slow_filter_range)
                     * 10
                     / 2
                 )

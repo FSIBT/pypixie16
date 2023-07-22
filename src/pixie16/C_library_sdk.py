@@ -453,7 +453,6 @@ def check_external_FIFO_status(module: int) -> int:
 
 
 def check_run_status(module: int) -> bool:
-
     """Check the run status of a module.
 
     See page 17 in the manual.

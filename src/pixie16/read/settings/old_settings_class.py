@@ -17,7 +17,7 @@ from .field_classes import (
 
 def combine_hi_lo_registers(hi, lo):
     """Creates a whole parameter that was split into two 32-bit parameters A and B."""
-    return (np.array(hi) * 2 ** 32 + np.array(lo)).astype(float)
+    return (np.array(hi) * 2**32 + np.array(lo)).astype(float)
 
 
 def _create_settings_ureg(fast_filter_range, slow_filter_range):
