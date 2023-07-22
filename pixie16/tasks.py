@@ -268,22 +268,20 @@ class SortEvents(Task):
     We supply several options through the init variable
     `all_start_times` to handle the chunk time:
 
-    a) all_start_times is None
-     ` In this case, we just use the system time.time() for this event
+    1. `all_start_times` is None
+       In this case, we just use the system time.time() for this event
        and calculate the following events `chunk time` by adding the
        delta t calculated from the pixie timestamp.
        This mode should be used during data acquisition.
        If one starts/stops the data acquisition, one should also write
        down all the start time, so that one can rerun the binary convertion
        later by using the next mode.
-
-    b) all_start_times is a list of unix time stamps
+    2. `all_start_times` is a list of unix time stamps
        In this case, we use a value from the list whenever we notice a
        reset in the timestamps and otherwise handle delta t's as above.
        This mode can be used when binary data as to be converted again and
        the original time stamps should be recreated.
-
-    c) all_start_times is a float > 0
+    3. `all_start_times` is a float > 0
        This mode can be used to estimate times when binary data needs to be
        converted again, but start times for b) are not available.
        In this case, we just ignore the negative dt at the point of
