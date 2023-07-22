@@ -6,6 +6,15 @@ and this project tries to adhere to [Semantic Versioning](https://semver.org/spe
 
 ## [Unreleased]
 
+### Changed
+- switched from pk_resources to importlib.metadata
+- switched from setup.cfg to pyproject.toml
+- changed source layout to move package into src/ directory
+- updated copyright year
+
+### Fixed
+- fix loading of default settings
+
 ## [2.0.0] - 2023-02-18
 
 Mostly small changes, the main reason for the 2.0.0 release is the update to
