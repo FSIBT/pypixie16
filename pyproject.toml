@@ -56,9 +56,10 @@ docs = [
 ]
 
 [project.urls]
-"Documentation" = "https://pypixie16.readthedocs.io/en/latest/"
-"Source" = "https://bitbucket.org/berkeleylab/pypixie16"
-"Tracker" = "https://bitbucket.org/berkeleylab/pypixie16/issues"
+documentation = "https://pypixie16.readthedocs.io/en/latest/"
+homepage = "https://bitbucket.org/berkeleylab/pypixie16"
+issues = "https://bitbucket.org/berkeleylab/pypixie16/issues"
+changelog = "https://bitbucket.org/berkeleylab/pypixie16/src/main/CHANGELOG.md"
 
 [project.scripts]
 pixie16-parameter-scan = "pixie16.cli.parameter_scan:main"
