@@ -159,7 +159,6 @@ def load_library() -> bool:
             SDK.Pixie16ComputeInputCountRate,
             SDK.Pixie16ComputeLiveTime,
             SDK.Pixie16ComputeOutputCountRate,
-            SDK.Pixie16ComputeProcessedEvents,
             SDK.Pixie16ComputeRawInputCount,
             SDK.Pixie16ComputeRawOutputCount,
         ]:
