@@ -89,7 +89,7 @@ class TakeData(Task):
         if not self.started_acuisition:
             control.init_and_boot(modules=[2], verbose=False, boot_pattern=0x7F)
             control.adjust_offsets()
-            control.set_sync_mode()
+            control.unset_sync_mode()  # assume only one module
             control.empty_all_fifos()
             # this would be a good spot to save the initial settings
             self.start_time = time.time()

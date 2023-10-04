@@ -230,6 +230,22 @@ def set_sync_mode(modules: Optional[Iterable[int]] = None) -> None:
         SDK.write_single_module_parameter("IN_SYNCH", 0, m)
 
 
+def unset_sync_mode(modules: Optional[Iterable[int]] = None) -> None:
+    """Turn off sync mode for every module.
+
+    Parameters
+    ----------
+    modules
+        Iterable of slots with modules (e.g. [2, 3]), uses modules defined in init call otherwise
+    """
+    if modules is None:
+        modules = module_list
+
+    for m, _ in enumerate(modules):
+        SDK.write_single_module_parameter("SYNCH_WAIT", 0, m)
+        SDK.write_single_module_parameter("IN_SYNCH", 0, m)
+
+
 def set_channel_parameter(name: str, value, module: int, channel: int):
     """Set and read back a parameter for a channel on the pixie16.
 
