@@ -11,6 +11,7 @@ and this project tries to adhere to [Semantic Versioning](https://semver.org/spe
 - switched from setup.cfg to pyproject.toml
 - changed source layout to move package into src/ directory
 - updated copyright year
+- updated minimum requirement to python >= 3.9 and run py-update
 
 ### Fixed
 - fix loading of default settings
