@@ -1,6 +1,5 @@
 from pathlib import Path
 import sys
-from typing import List
 
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QIcon, QIntValidator, QAction
@@ -58,7 +57,7 @@ class VStack(QVBoxLayout):
 
     """
 
-    def __init__(self, widgets: List[LabelAndIntNumber], callback=None):
+    def __init__(self, widgets: list[LabelAndIntNumber], callback=None):
         super().__init__()
         self.widgets = widgets
 

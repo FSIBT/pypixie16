@@ -4,7 +4,7 @@ from collections import UserDict, UserList
 import json
 from pathlib import Path
 import struct
-from typing import List, Dict, Union
+from typing import Union
 
 from .units import SETTINGS_UNITS_TBL
 from .file_format import SETTINGS_FILE_FORMAT
@@ -39,7 +39,7 @@ class SettingsBase(UserDict):
         self.index = {}
         self.duplicate_keys = []
 
-    def create_index(self, d: Dict = None, level: List = None):
+    def create_index(self, d: dict = None, level: list = None):
         """Create an index.
 
         We use the index later to be able to look up
@@ -99,7 +99,7 @@ class SettingsBase(UserDict):
         return setting
 
     @classmethod
-    def from_dict(cls, data: Dict):
+    def from_dict(cls, data: dict):
         """Creates a Settings object from a file."""
         setting = cls()
         setting.data = data

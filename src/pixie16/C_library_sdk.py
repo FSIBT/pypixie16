@@ -131,8 +131,8 @@ import ctypes
 import logging
 from pathlib import Path
 import sys
-from typing import Dict, List, Union, Optional
-from typing import Iterable as Iterable_type
+from typing import Union, Optional
+from collections.abc import Iterable as Iterable_type
 from unittest.mock import MagicMock
 
 import numpy as np
@@ -270,7 +270,7 @@ def check_return_code(return_code: int, function: str) -> None:
         log.error(f"{function} failed with Error Code {return_code} : {msg}.")
 
 
-def acquire_adc_trace(module: int) -> List[np.ndarray]:
+def acquire_adc_trace(module: int) -> list[np.ndarray]:
     """Collects ADC traces for all 16 channels in a specific module.
 
     Parameters
@@ -483,7 +483,7 @@ def copy_DSP_parameters(
     bitmask: int,
     source_module: int,
     source_channel: int,
-    destination_mask: List[List[bool]],
+    destination_mask: list[list[bool]],
 ) -> None:
     """Copy DSP parameters from one module to other modules.
 
@@ -582,7 +582,7 @@ def exit_system(module: int) -> None:
 
 
 def init_system(
-    modules: Optional[List[int]] = None,
+    modules: Optional[list[int]] = None,
     offline_mode: bool = False,
     verbose: bool = True,
 ) -> None:
@@ -697,7 +697,7 @@ def read_histogram_from_module(module: int, channel: int, N: int = 32768) -> np.
     return np.ctypeslib.as_array(result)
 
 
-def read_module_info(module: int) -> Dict:
+def read_module_info(module: int) -> dict:
     """Read the module information.
 
     Parameters
@@ -738,7 +738,7 @@ def read_module_info(module: int) -> Dict:
     }
 
 
-def read_baselines(module: int) -> List[List[np.ndarray]]:
+def read_baselines(module: int) -> list[list[np.ndarray]]:
     """Acquire and read back baselines for all channels in a module.
 
     Parameters
@@ -789,7 +789,7 @@ def read_single_channel_parameter(
     module: int,
     channel: int,
     convert_bit_pattern: bool = True,
-) -> Union[List[bool], float]:
+) -> Union[list[bool], float]:
     """Read a parameter in one channel in a module.
 
     See pg. 51 of the programmers manual for a list of parameters available.
@@ -844,7 +844,7 @@ def read_single_channel_parameter(
 
 def read_single_module_parameter(
     module_parameter_name: str, module: int, convert_bit_pattern: Optional[bool] = False
-) -> Union[int, float, List[bool]]:
+) -> Union[int, float, list[bool]]:
     """Read a parameter in one module.
 
     See pg. 53 of the programmers manual for a list of parameters available.
@@ -900,7 +900,7 @@ def read_single_module_parameter(
     return np.ctypeslib.as_array(CModParData)
 
 
-def read_statistics_from_module(module: int) -> Dict:
+def read_statistics_from_module(module: int) -> dict:
     """Read statistics from a module.
 
     Parameters
@@ -1120,7 +1120,7 @@ def write_single_channel_parameter(
 
 def write_single_module_parameter(
     module_parameter_name: str,
-    module_parameter_data: Union[int, float, List[bool]],
+    module_parameter_data: Union[int, float, list[bool]],
     module: int,
 ) -> None:
     """Change a parameter in one module.

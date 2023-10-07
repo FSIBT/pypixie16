@@ -40,7 +40,8 @@ from pathlib import Path
 import sys
 import tempfile
 import time
-from typing import Iterable, List, Tuple, Dict, Union, Optional, ByteString
+from typing import Union, Optional
+from collections.abc import Iterable, ByteString
 
 from importlib.resources import files
 import numpy as np
@@ -55,7 +56,7 @@ from .read import Settings, Stats, CrateSettings
 # set up logging
 log = logging.getLogger(__name__)
 
-module_list: List[int] = [2]  # default setting, overwritten by init_and_boot
+module_list: list[int] = [2]  # default setting, overwritten by init_and_boot
 
 SETTINGS = variables.settings
 SETTINGS_NAME_CHANNEL = []
@@ -108,7 +109,7 @@ for setting_name, (startpos, length) in SETTINGS.items():
         SETTINGS_NAME_MODULE.append(setting_name)
 
 
-def init(modules: List[int], offline_mode: bool = False, verbose: bool = False) -> None:
+def init(modules: list[int], offline_mode: bool = False, verbose: bool = False) -> None:
     """Initialize the system.
 
     Calls init_system in the XIA library and saves the list of modules, so that we can use it as a default in later XIA library calls.
@@ -134,7 +135,7 @@ def init(modules: List[int], offline_mode: bool = False, verbose: bool = False) 
 
 def boot(
     section_name: Optional[str] = "default",
-    modules: Optional[List[int]] = None,
+    modules: Optional[list[int]] = None,
     boot_pattern: int = 0x7F,
     verbose: bool = False,
 ) -> None:
@@ -174,7 +175,7 @@ def boot(
 def init_and_boot(
     offline_mode: bool = False,
     section_name: Optional[str] = "default",
-    modules: Optional[List[int]] = None,
+    modules: Optional[list[int]] = None,
     boot_pattern: int = 0x7F,
     verbose: bool = False,
 ) -> None:
@@ -372,7 +373,7 @@ def check_run_status() -> bool:
     return status
 
 
-def get_stats() -> List[Stats]:
+def get_stats() -> list[Stats]:
     """Get statistics for all modules."""
     return [
         Stats.from_dict(SDK.read_statistics_from_module(m))
@@ -413,7 +414,7 @@ def exit_system() -> None:
 
 def read_list_mode_fifo(
     check: bool = True, threshold: int = 64, modules: Optional[Iterable[int]] = None
-) -> List[np.ndarray]:
+) -> list[np.ndarray]:
     """Reads data from pixies FIFO across all modules defined in pixie16.control.modules
 
     Parameters
@@ -533,7 +534,7 @@ def run_list_mode(filename: Optional[str] = None, runtime: int = 5) -> None:
             d.newbyteorder("S").tofile(outfile)
 
 
-def reset_coincidence_setting(channels: Iterable[Tuple[int, int]]) -> None:
+def reset_coincidence_setting(channels: Iterable[tuple[int, int]]) -> None:
     """Reset all setting in regards to coincedence mode.
 
     Also, unsets capturing traces, etc.
@@ -569,7 +570,7 @@ def reset_coincidence_setting(channels: Iterable[Tuple[int, int]]) -> None:
 
 
 def enable_trace_settings(
-    channels: Iterable[Tuple[int, int]], disable_CFD: bool = True
+    channels: Iterable[tuple[int, int]], disable_CFD: bool = True
 ) -> None:
     """Enable traces, histograms, and sums.
 
@@ -602,7 +603,7 @@ def enable_trace_settings(
         change_setting_from_dict(settings)
 
 
-def read_histograms(module_channels: Iterable[Tuple[int, int]]) -> List[np.ndarray]:
+def read_histograms(module_channels: Iterable[tuple[int, int]]) -> list[np.ndarray]:
     """Read histograms from several channels.
 
     Uses (module, channel) tuples, e.g. [(0, 8), (0, 3)] to read histograms.
@@ -621,11 +622,11 @@ def read_histograms(module_channels: Iterable[Tuple[int, int]]) -> List[np.ndarr
 
 
 def take_MCA_spectra(
-    channels: Iterable[Tuple[int, int]],
+    channels: Iterable[tuple[int, int]],
     duration: float,
     verbose: bool = True,
     position: int = 0,
-) -> List[np.ndarray]:
+) -> list[np.ndarray]:
     """Takes MCA spectra for a certain time on the specified channels.
 
     This does the data acquisition and returns the data.
@@ -685,7 +686,7 @@ def take_MCA_spectra(
 def take_list_mode_data(
     duration: float,
     modules: Optional[Iterable[int]] = None,
-) -> Dict[int, ByteString]:
+) -> dict[int, ByteString]:
     """Take list mode data for a certain time.
 
     It also stops at 1 Gb of raw data to avoid too much memory use.
@@ -931,8 +932,8 @@ def change_setting_from_dict(settings: dict, call_pixie: Optional[bool] = True):
 
 
 def _change_bit_parameter(
-    name: str, value: Union[bool, int, str], bit_list: List[bool]
-) -> List[bool]:
+    name: str, value: Union[bool, int, str], bit_list: list[bool]
+) -> list[bool]:
     """Internal function to adjust single bits in MODULE_CSRB and CHANNEL_CSRA.
 
     This sets the correct bits for certain settings, so that the user doesn't have to
@@ -1254,7 +1255,7 @@ def _change_bit_parameter(
     return bit_list
 
 
-def change_raw_setting_from_dict(settings: Dict, call_pixie: Optional[bool] = True):
+def change_raw_setting_from_dict(settings: dict, call_pixie: Optional[bool] = True):
     """Modify the raw settings on the pixie.
 
     Note: this bypasses any checks that are normally done in XIA's C-libary. This can be

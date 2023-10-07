@@ -4,7 +4,6 @@ These contain helper functions to, for example, combine the HI and LO values of 
 """
 
 import abc
-from typing import Tuple
 
 
 class NotImplementedAttr:
@@ -27,7 +26,7 @@ class SettingsFieldBase(abc.ABC):
     )
 
     @property
-    def storage_names(self) -> Tuple[str]:
+    def storage_names(self) -> tuple[str]:
         """Name of the raw settings file field(s) used to store the value of this derived field. Default is set to the
         name of this field."""
         return (self.name,)
@@ -102,7 +101,7 @@ class ABField(SettingsFieldBase):
     because such fields are named 'FastPeaksA' and 'FastPeaksB' for example."""
 
     @property
-    def storage_names(self) -> Tuple[str]:
+    def storage_names(self) -> tuple[str]:
         return self.name + "A", self.name + "B"
 
     def derive_field_value(self, instance, *storage_values):

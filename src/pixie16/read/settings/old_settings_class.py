@@ -2,7 +2,7 @@ import numpy as np
 import struct
 import json
 from pathlib import Path
-from typing import Union, List, Optional
+from typing import Union, Optional
 
 from .units import SETTINGS_UNITS_TBL
 from .file_format import SETTINGS_FILE_FORMAT
@@ -125,7 +125,7 @@ class OldSettings(Entity):
 
 def convert_old_settings(
     settings_filename: Union[str, Path],
-    modules: List = [0],
+    modules: list = [0],
     metadata_filename: Optional[Union[str, Path]] = None,
 ):
     """Convert an old .set file to a .json file.

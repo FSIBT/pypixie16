@@ -39,7 +39,7 @@ import queue
 import sys
 import time
 import traceback
-from typing import List, Union
+from typing import Union
 
 from more_itertools import pairwise
 from rich.progress import Progress, BarColumn, TimeRemainingColumn, TimeElapsedColumn
@@ -196,7 +196,7 @@ class Pipeline:
 
     """
 
-    def __init__(self, tasks: List[Task], name: str = "Run", verbose: bool = False):
+    def __init__(self, tasks: list[Task], name: str = "Run", verbose: bool = False):
         self._tasks = tasks
         self.verbose = verbose
         self.status = {}

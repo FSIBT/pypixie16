@@ -1,6 +1,7 @@
 from functools import wraps
 import random
-from typing import Union, List, Tuple, Optional, Sequence, Iterable
+from typing import Union, Optional
+from collections.abc import Sequence, Iterable
 import warnings
 
 from fast_histogram import histogram2d
@@ -40,7 +41,7 @@ def filter_events(
 
 
 def create_title_page(
-    title: Union[str, List[str]], pdf: Optional[PdfPages] = None
+    title: Union[str, list[str]], pdf: Optional[PdfPages] = None
 ) -> None:
     """Helper function to create a title page
 
@@ -156,7 +157,7 @@ def find_sums(
     trailsum: Iterable[int],
     gapsum: Iterable[int],
     leadsum: Iterable[int],
-) -> Tuple[np.ndarray, np.ndarray]:
+) -> tuple[np.ndarray, np.ndarray]:
     """Find the location of the 3 reported sums in a trace that are used to calculate the energy.
 
     For this to work, bit 12 of register A (CaptureSums) needs to be set for the channel.

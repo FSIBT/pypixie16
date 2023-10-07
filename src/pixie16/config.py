@@ -4,7 +4,7 @@ import configparser
 import os
 from pathlib import Path
 import sys
-from typing import List, Union
+from typing import Union
 
 import appdirs
 import platformdirs
@@ -67,7 +67,7 @@ def config_get_parameters(
     return path
 
 
-def load_config(section_name: str) -> List[Path]:
+def load_config(section_name: str) -> list[Path]:
     """Load firmware, etc setting that are defined in a section of the config file.
 
     Sections are defined with 'Firmware.<sectionname>'.

@@ -8,7 +8,7 @@ from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
 import time
-from typing import List, Optional, Union
+from typing import Optional, Union
 
 import numpy as np
 from rich import print
@@ -117,7 +117,7 @@ class TakeData(Task):
 class SetDefaults(Task):
     """Set defaults for parameters in the pixie."""
 
-    def __init__(self, modules: List):
+    def __init__(self, modules: list):
         super().__init__()
         self.name = "Set defaults"
         self.modules = modules
@@ -297,7 +297,7 @@ class SortEvents(Task):
         start_time: float,
         maxsize: int = 10_000,
         number_to_sort: int = 8_000,
-        all_start_times: Optional[Union[List[float], float]] = None,
+        all_start_times: Optional[Union[list[float], float]] = None,
     ):
         super().__init__()
         self.data = []
