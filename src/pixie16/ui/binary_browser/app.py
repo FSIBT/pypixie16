@@ -93,7 +93,9 @@ class BinaryApp(BaseApp):
 
         self.filename = Path(self.filename)
         with busy_cursor(self.app):
-            self.data = list(pixie16.read.read_list_mode_data_as_events(self.filename))
+            self.data = list(
+                pixie16.read.read_list_mode_data_as_events([self.filename])
+            )
             self.parse_data()
             self.set_data_model()
             self.update_gui()
