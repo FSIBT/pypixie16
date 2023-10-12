@@ -15,8 +15,12 @@ class BinaryDataModel(QAbstractTableModel):
         super().__init__()
         self._data = data
         self.header = pixie16.read.Event._fields
-        self.icon_true = QCommonStyle().standardIcon(QStyle.SP_DialogApplyButton)
-        self.icon_false = QCommonStyle().standardIcon(QStyle.SP_DialogCancelButton)
+        self.icon_true = QCommonStyle().standardIcon(
+            QStyle.StandardPixmap.SP_DialogApplyButton
+        )
+        self.icon_false = QCommonStyle().standardIcon(
+            QStyle.StandardPixmap.SP_DialogCancelButton
+        )
 
     def icon_return(self, value):
         if value:
@@ -34,7 +38,7 @@ class BinaryDataModel(QAbstractTableModel):
         column = index.column()
         row = index.row()
 
-        if role == Qt.DisplayRole:
+        if role == Qt.ItemDataRole.DisplayRole:
             if self.header[column] in [
                 "trace",
                 "CFD_error",
@@ -43,7 +47,7 @@ class BinaryDataModel(QAbstractTableModel):
             ]:
                 return None
             return str(self._data[row][column])
-        if role == Qt.DecorationRole:
+        if role == Qt.ItemDataRole.DecorationRole:
             if self.header[index.column()] == "trace":
                 return self.icon_return(len(self._data[row][column]))
             if self.header[index.column()] in ["CFD_error", "pileup", "trace_flag"]:
@@ -56,6 +60,6 @@ class BinaryDataModel(QAbstractTableModel):
         return len(self.header)
 
     def headerData(self, section, orientation, role):
-        if role == Qt.DisplayRole:
-            if orientation == Qt.Horizontal:
+        if role == Qt.ItemDataRole.DisplayRole:
+            if orientation == Qt.Orientation.Horizontal:
                 return self.header[section].title()
