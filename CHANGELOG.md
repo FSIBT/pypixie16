@@ -15,6 +15,8 @@ and this project tries to adhere to [Semantic Versioning](https://semver.org/spe
 
 ### Fixed
 - fix loading of default settings
+- fix binary-browser: qt5->qt6 transition
+- fix binary-browser: loading list mode data
 
 ## [2.0.0] - 2023-02-18
 
