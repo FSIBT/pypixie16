@@ -96,6 +96,7 @@ class SettingsBase(UserDict):
         setting = cls()
         setting.data = data[module]
         setting.create_index()
+        setting.filename = file
         return setting
 
     @classmethod

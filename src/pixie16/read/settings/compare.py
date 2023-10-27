@@ -1,76 +1,126 @@
-def compare_module_setting(
-    A, B, quiet=False, writeable_only=True, units=True, channels=None
-):
-    """Compare the settings of two modules
+import itertools
+
+import numpy as np
+from rich import print
+
+
+from .settings_class import Settings
+
+
+def compare_dict(A, B, key_string):
+    """Deep ompare two dictionarys.
+
+    Return a list of key and values that are different, e.g.
+    [...,
+     ["a/b/c/", valueA, valueB],
+     ...
+    ]
+
+    """
+    all_keys = set(A.keys()) | set(B.keys())
+
+    output = []
+
+    for key in all_keys:
+        new_key_string = f"{key_string}/{key}"
+        valueA = A.get(key)
+        valueB = B.get(key)
+        if isinstance(valueA, dict) and isinstance(valueB, dict):
+            output += compare_dict(A[key], B[key], new_key_string)
+        elif isinstance(valueA, list) and isinstance(valueB, list):
+            output += compare_list(A[key], B[key], new_key_string)
+        elif isinstance(valueA, (str, int, float)) and isinstance(
+            valueB, (str, int, float)
+        ):
+            if valueA == valueB:
+                pass
+            else:
+                output.append([new_key_string, valueA, valueB])
+        else:
+            print(
+                f"[orange3]Warning[/] Unkown data types {type(valueA)} {type(valueB)}"
+            )
+    return output
+
+
+def compare_list(A, B, key_string):
+    """Deep ompare two lists.
+
+    Return a list of key and values that are different, e.g.
+    [...,
+     ["a/b/c/", valueA, valueB],
+     ...
+    ]
+
+    """
+
+    output = []
+
+    for i, (valueA, valueB) in enumerate(itertools.zip_longest(A, B)):
+        new_key_string = f"{key_string}[{i}]"
+        if isinstance(valueA, dict) and isinstance(valueB, dict):
+            output += compare_dict(valueA, valueB, new_key_string)
+        elif isinstance(valueA, list) and isinstance(valueB, list):
+            output += compare_list(valueA, valueB, new_key_string)
+        elif isinstance(valueA, (str, int, float)) and isinstance(
+            valueB, (str, int, float)
+        ):
+            if valueA == valueB:
+                pass
+            else:
+                output.append([new_key_string, valueA, valueB])
+        else:
+            print(
+                f"[orange3]Warning[/] Unkown data types {type(valueA)} {type(valueB)}"
+            )
+    return output
+
+
+def compare_module_setting(A, B, quiet=False, channels=None):
+    """Compare the settings of two modules (for the new json based settings)
 
     Print the difference.
 
-    If quiet is True, then just return True/False
+    If quiet is True, then just return True/False depending if they differ or not.
 
     The functions assumes that both settings have the same structure.
     """
 
-    if type(A) != type(B):
-        print(f"compare_module_setting: both items need to have the same type")
+    if not isinstance(A, Settings):
+        print(
+            "[red]ERROR[/] compare_module_setting: The first Setting is not a Settings object."
+        )
         return None
 
-    if type(A) != Settings:
-        print(f"compare_module_setting: both items need to be Setting classes")
+    if not isinstance(B, Settings):
+        print(
+            "[red]ERROR[/] compare_module_setting: The second Setting is not a Settings object."
+        )
         return None
+
+    output = compare_dict(A, B, "")
+
+    if channels is None:
+        channels = list(range(16))
 
     if not quiet:
         print("Comparing settings:")
-        print(f"  a: {A.filename}")
-        print(f"  b: {B.filename}")
+        print(f"  a: {A.filename.name}")
+        print(f"  b: {B.filename.name}")
         print("")
-
-        if writeable_only:
-            keys = [k for k in settings.keys() if settings[k][0] < 832]
+        if output:
+            keylen = max(len(k[0]) for k in output)
+            print(f"{'settting':<{keylen}} {'a':>10} {'b':>10}")
+            for a, b, c in output:
+                skip = True
+                for c in channels:
+                    if f"[{c}]" in a:
+                        skip = False
+                        break
+                if not skip:
+                    print(f"{a:<{keylen}} {b:>10} {c:>10}")
         else:
-            keys = list(settings.keys())
+            print("Settings are identical")
 
-        if units:
-            keys = keys + Settings.derived_keys
-            keys = [k for k in keys if k not in Settings.derived_from_keys]
-
-        for k in keys:
-            if units:
-                valueA = A.units[k]
-                valueB = B.units[k]
-            else:
-                valueA = A[k]
-                valueB = B[k]
-            if isinstance(valueA, (int, str, float)):
-                if valueA != valueB:
-                    print(f"{k} differs:\n     a: {valueA}\n     b: {valueB}")
-            elif isinstance(valueA, (list, tuple)):
-                first = True
-                for i, (a, b) in enumerate(zip(valueA, valueB)):
-                    if channels:
-                        if i not in channels:
-                            continue
-                    if a != b:
-                        if first:
-                            print(f"{k} differs:")
-                            first = False
-                        # if these are bit values, only show bits that are different
-                        if isinstance(a, str) and "-" in a:
-                            aa = a.split("-")
-                            bb = b.split("-")
-                            for x, y in zip(aa, bb):
-                                if x != y:
-                                    print(f"  ch:{i}\n     a: {x}\n     b: {y}")
-                        else:
-                            print(f"  ch:{i}\n     a: {a}\n     b: {b}")
-            else:
-                print("This shouldn't happen. type value A", type(valueA))
-
-    # convert to a sorted json string to make deep comparison possible
-    if writeable_only:
-        return json.dumps(A.rawdata[:832], sort_keys=True) == json.dumps(
-            B.rawdata[:832], sort_keys=True
-        )
     else:
-        return json.dumps(A.rawdata, sort_keys=True) == json.dumps(
-            B.rawdata, sort_keys=True
-        )
+        return len(output) > 0
