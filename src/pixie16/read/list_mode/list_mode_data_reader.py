@@ -351,7 +351,7 @@ class StreamReader:
     def read_raw(self, size: int) -> bytes:
         if size < len(self.buffer):
             out = self.buffer[:size]
-            self.buffer = self.buffer[size:]
+            del self.buffer[:size]
             return out
         raise EmptyError
 
@@ -367,6 +367,9 @@ class StreamReader:
     def peek(self, size: int) -> bytes:
         out = self.peek_raw(size)
         return byteswap_data(out)
+
+    def __len__(self):
+        return len(self.buffer)
 
 
 class ListModeDataReader:
