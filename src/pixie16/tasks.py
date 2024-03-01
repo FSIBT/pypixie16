@@ -4,8 +4,10 @@ These tasks can also easily by sub-classed to create custom ones or
 used as an example on how to write your own.
 
 """
+
 from collections import defaultdict
 from datetime import datetime
+from importlib.resources import files
 from pathlib import Path
 import time
 from typing import Optional, Union
@@ -33,7 +35,7 @@ class DummyData(Task):
 
         self.name = "Data generator"
         if filename is None:
-            file = Path(__file__).parent.parent / "tests/pixie16-data-01.bin"
+            file = files("pixie16") / "data" / "pixie16-data-01.bin"
         else:
             file = Path(filename)
         self.data = np.fromfile(file, dtype=np.uint8)
@@ -81,12 +83,12 @@ class TakeData(Task):
         super().__init__()
         self.name = "Take Data"
         # keep track if we called init
-        self.start_acquisition = False
+        self.started_acquisition = False
         self.start_time = None
         self.runtime = runtime
 
     def do_work(self, value):
-        if not self.started_acuisition:
+        if not self.started_acquisition:
             control.init_and_boot(modules=[2], verbose=False, boot_pattern=0x7F)
             control.adjust_offsets()
             control.unset_sync_mode()  # assume only one module
@@ -95,7 +97,7 @@ class TakeData(Task):
             self.start_time = time.time()
             control.start_list_mode_run()
 
-            self.started_acuisition = True
+            self.started_acquisition = True
 
         now = time.time()
         if now - self.start_time > self.runtime:
