@@ -217,8 +217,9 @@ class ConvertToEvents(Task):
     def do_work(self, value_dict):
         for i, v in value_dict.items():
             if i not in self.list_mode_readers:
-                self.list_mode_readers[i] = read.ListModeDataReader()
-            self.list_mode_readers[i].put(v.tobytes())
+                reader = read.StreamReader()
+                self.list_mode_readers[i] = read.ListModeDataReader(reader)
+            self.list_mode_readers[i].reader.put(v.tobytes())
         return {mod: reader.pop_all() for mod, reader in self.list_mode_readers.items()}
 
 
@@ -426,9 +427,9 @@ class LoadFiles(Task):
     def __init__(self, file_list, batch_size=1_000):
         super().__init__()
         self.files = file_list
-        self.byte_stream = read.FilesIO(self.files)
+        self.byte_stream = read.FileReader(self.files)
         self.buffer_size = 1_000_000
-        self.reader = read.ListModeDataReader()
+        self.reader = read.ListModeDataReader(self.byte_stream)
         self.number_of_events_to_read = batch_size
         self.nr_of_events = 0
         self.name = "Loading binary data from files"
@@ -440,10 +441,7 @@ class LoadFiles(Task):
                 event = None
                 try:
                     event = self.reader.pop()
-                except (read.LeftoverBytesError, read.EmptyError):
-                    if not self.byte_stream.is_empty():
-                        self.reader.put(self.byte_stream.pop(self.buffer_size))
-                        continue
+                except read.EmptyError:
                     self.done = True
                     break
                 events.append(event)
