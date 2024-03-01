@@ -14,6 +14,7 @@ and this project tries to adhere to [Semantic Versioning](https://semver.org/spe
 - updated minimum requirement to python >= 3.9 and run py-update
   (mostly because of numpy)
 - Support pixie16 SDK 4.0.0
+- removed setup.py
 
 ### Fixed
 - fix loading of default settings
@@ -21,6 +22,7 @@ and this project tries to adhere to [Semantic Versioning](https://semver.org/spe
 - fix binary-browser: loading list mode data
 - fix pyproject.toml urls to work better with PyPi
 - fix list mode reader
+- fix streaming dummy data
 
 ## [2.0.0] - 2023-02-18
 
