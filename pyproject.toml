@@ -19,7 +19,7 @@ license = {file = "LICENSE.txt"}
 requires-python = ">=3.9"
 dependencies = [
     "appdirs",
-    "cbitstruct",
+    "bitstruct",
     "docopt",
     "fast-histogram",
     "matplotlib",
@@ -47,6 +47,7 @@ classifiers = [
 ]
 
 [project.optional-dependencies]
+fast = ["cbitstruct"]
 test = ["pytest", "pytest-cov"]
 docs = [
     "alabaster",

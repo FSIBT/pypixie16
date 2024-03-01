@@ -20,19 +20,31 @@ prompt you with instructions on how to create one.
 
 See Licence.txt and Copyright.txt for more information.
 
-# Content
+# Installation
 
-read.py: functions to read output file from the pixie using example program.
-         Especially .bin files and .set files
+You can install the package using
 
-analyze.py: calculate fast trigger and CFD from traces
+   pip install pypixie16
 
-control.py: control the pixie using python. This needs to be imported
-            separately, e.g. "import pixie16.control" and it needs a
-            32bit python, since all libraries are 32 bit.
+or after you cloned the repository and are inside the repo,
 
-variables.py: list of the variables in a settings file, including file position and number of values
-              This can be recreated if needed from the included script create_variable_list.py.
+   pip install .
+
+or
+
+   pip install -e .
+
+If you want to run tests, you should specify
+
+   pip install .[test]
+
+If you want to build the documentation
+
+   pip install .[docs]
+
+If you want to speed up binary parsing, you should install the `cbitstruct` library or use
+
+   pip install .[fast]
 
 # Documentation
 
@@ -51,7 +63,11 @@ might also influence some of the analysis code (e.g. FastFilterRange).
 
 We should have a lot more of them ;)
 
-Use 'python -m pytest' to run tests.
+Use
+
+   python -m pytest
+
+to run tests.
 
 # Contribution
 
@@ -59,11 +75,11 @@ Pull requests are welcome.
 
 We use black to format the code. Once you cloned the repo, please run
 
-pip install pre-commit
+   pip install pre-commit
 
 and
 
-pre-commit install
+   pre-commit install
 
 # Other libraries to control the pixie16 (non-python)
 

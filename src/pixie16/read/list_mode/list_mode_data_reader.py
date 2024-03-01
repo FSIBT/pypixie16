@@ -14,7 +14,10 @@ from pathlib import Path
 
 import numpy as np
 
-import cbitstruct as bitstruct
+try:
+    import cbitstruct as bitstruct
+except ModuleNotFoundError:
+    import bitstruct
 
 from collections import namedtuple, defaultdict
 from collections.abc import Iterable
