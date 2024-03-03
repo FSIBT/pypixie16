@@ -316,7 +316,7 @@ class FileReader:
             self.done = True
             return tmp
 
-        rest = self.read(to_read)
+        rest = self.read_raw(to_read)
         return tmp + rest
 
     def read(self, size: int) -> bytes:
@@ -382,6 +382,7 @@ class ListModeDataReader:
         # try to get all the words for the next event
         # if the complete next event isn't in queue an exception is thrown but no data is discarded
         event_header = HEADER_FORMATS[0].unpack(self.reader.peek(1 * WORD_SIZE))
+
         header_length = event_header["Header Length"]
         event_length = event_header["Event Length"]
 
