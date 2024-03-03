@@ -45,8 +45,9 @@ class TestReadListModeData:
     ):
         read_events = pixie16.read.read_list_mode_data([full_list_mode_binary_file])
 
+        # drop QDC columns and others
         to_drop = list(set(read_events.columns) - set(list_mode_data_events.columns))
-        read_events.drop(to_drop, axis=1, inplace=True)
+        read_events = read_events.drop(to_drop, axis=1)
 
         assert_frame_equal(read_events, list_mode_data_events)
 
@@ -55,7 +56,9 @@ class TestReadListModeData:
     ):
         read_events = pixie16.read.read_list_mode_data(split_list_mode_binary_files)
 
+        # drop QDC columns and others
         to_drop = list(set(read_events.columns) - set(list_mode_data_events.columns))
-        read_events.drop(to_drop, axis=1, inplace=True)
+
+        read_events = read_events.drop(to_drop, axis=1)
 
         assert_frame_equal(read_events, list_mode_data_events)
