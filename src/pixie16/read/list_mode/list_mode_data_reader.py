@@ -64,10 +64,6 @@ Event = namedtuple(
 WORD_SIZE = 4
 
 EVENTS_PARTS = {
-    "first row": (
-        "b1u14u5u4u4u4",
-        ("pileup", "Event Length", "Header Length", "crate", "slot", "channel"),
-    ),
     "header": (
         "b1u14u5u4u4u4u32u3u13u16b1u15u16",
         (
@@ -120,56 +116,39 @@ EVENTS_PARTS = {
 # We now build all possible combinations out of these parts that can
 # show up in list mode data We also add a "0" option to just read the
 # first row, since this row contains the header length we need to read
-HEADER_FORMATS = {
-    0: bitstruct.CompiledFormatDict(
-        EVENTS_PARTS["first row"][0], EVENTS_PARTS["first row"][1]
+HEADER_FORMATS = bitstruct.CompiledFormatDict(
+    EVENTS_PARTS["header"][0], EVENTS_PARTS["header"][1]
+)
+EXTRA_HEADER_FORMATS = {
+    2: bitstruct.CompiledFormatDict(
+        EVENTS_PARTS["Ext Time"][0],
+        EVENTS_PARTS["Ext Time"][1],
     ),
     4: bitstruct.CompiledFormatDict(
-        EVENTS_PARTS["header"][0], EVENTS_PARTS["header"][1]
-    ),
-    6: bitstruct.CompiledFormatDict(
-        EVENTS_PARTS["header"][0] + EVENTS_PARTS["Ext Time"][0],
-        EVENTS_PARTS["header"][1] + EVENTS_PARTS["Ext Time"][1],
+        EVENTS_PARTS["energy"][0],
+        EVENTS_PARTS["energy"][1],
     ),
     8: bitstruct.CompiledFormatDict(
-        EVENTS_PARTS["header"][0] + EVENTS_PARTS["energy"][0],
-        EVENTS_PARTS["header"][1] + EVENTS_PARTS["energy"][1],
+        EVENTS_PARTS["Qsums"][0],
+        EVENTS_PARTS["Qsums"][1],
     ),
     12: bitstruct.CompiledFormatDict(
-        EVENTS_PARTS["header"][0] + EVENTS_PARTS["Qsums"][0],
-        EVENTS_PARTS["header"][1] + EVENTS_PARTS["Qsums"][1],
+        EVENTS_PARTS["energy"][0] + EVENTS_PARTS["Qsums"][0],
+        EVENTS_PARTS["energy"][1] + EVENTS_PARTS["Qsums"][1],
     ),
-    16: bitstruct.CompiledFormatDict(
-        EVENTS_PARTS["header"][0]
-        + EVENTS_PARTS["energy"][0]
-        + EVENTS_PARTS["Qsums"][0],
-        EVENTS_PARTS["header"][1]
-        + EVENTS_PARTS["energy"][1]
-        + EVENTS_PARTS["Qsums"][1],
+    6: bitstruct.CompiledFormatDict(
+        EVENTS_PARTS["energy"][0] + EVENTS_PARTS["Ext Time"][0],
+        EVENTS_PARTS["energy"][1] + EVENTS_PARTS["Ext Time"][1],
     ),
     10: bitstruct.CompiledFormatDict(
-        EVENTS_PARTS["header"][0]
-        + EVENTS_PARTS["energy"][0]
-        + EVENTS_PARTS["Ext Time"][0],
-        EVENTS_PARTS["header"][1]
-        + EVENTS_PARTS["energy"][1]
-        + EVENTS_PARTS["Ext Time"][1],
+        EVENTS_PARTS["Qsums"][0] + EVENTS_PARTS["Ext Time"][0],
+        EVENTS_PARTS["Qsums"][1] + EVENTS_PARTS["Ext Time"][1],
     ),
     14: bitstruct.CompiledFormatDict(
-        EVENTS_PARTS["header"][0]
+        EVENTS_PARTS["energy"][0]
         + EVENTS_PARTS["Qsums"][0]
         + EVENTS_PARTS["Ext Time"][0],
-        EVENTS_PARTS["header"][1]
-        + EVENTS_PARTS["Qsums"][1]
-        + EVENTS_PARTS["Ext Time"][1],
-    ),
-    18: bitstruct.CompiledFormatDict(
-        EVENTS_PARTS["header"][0]
-        + EVENTS_PARTS["energy"][0]
-        + EVENTS_PARTS["Qsums"][0]
-        + EVENTS_PARTS["Ext Time"][0],
-        EVENTS_PARTS["header"][1]
-        + EVENTS_PARTS["energy"][1]
+        EVENTS_PARTS["energy"][1]
         + EVENTS_PARTS["Qsums"][1]
         + EVENTS_PARTS["Ext Time"][1],
     ),
@@ -188,7 +167,7 @@ class EmptyError(Exception):
 
 
 class LeftoverBytesError(Exception):
-    """To be raised if a queue with a partial word/event left is popped or peeked"""
+    """To be raised if a partial event is left in the byte stream/file."""
 
 
 class FileReader:
@@ -213,8 +192,7 @@ class FileReader:
         self.mmap = []
         self.done = False  # have we reached the end of the last file?
 
-    def __enter__(self):
-        """Opens all files, check their sizes and open a mmap read_only connection."""
+    def open_files(self):
         for f in self.files:
             if not isinstance(f, Path):
                 f = Path(f)
@@ -224,64 +202,24 @@ class FileReader:
         for fn in self.file_objects:
             self.mmap.append(mmap.mmap(fn.fileno(), length=0, access=mmap.ACCESS_READ))
 
-        return self
-
-    def __exit__(self, exc_type, exc_value, traceback):
-        """Closes all file descriptors and mmaps at the end of the context manager."""
+    def close_files(self):
         for m in self.mmap:
             m.close()
         for f in self.file_objects:
             f.close()
+        self.file_size = []
+        self.file_objects = []
+        self.mmap = []
+        self.current_file = 0
 
-    def peek_raw(self, size: int, file_number: Optional[int] = None) -> bytes:
-        """Retrieve the next `size` bytes from the files.
+    def __enter__(self):
+        """Opens all files, check their sizes and open a mmap read_only connection."""
+        self.open_files()
+        return self
 
-        Parameters
-        ----------
-        size
-            How many bytes should be looked up
-        file_number
-            If `None` look in the current file, otherwise look in the
-            specified file (only makes sense to give the next file here)
-
-        Raises
-        ------
-        EmptyError
-            When data of the requested size is not available in the data stream.
-
-        """
-        if file_number is None:
-            file_number = self.current_file
-            position = self.position  # remove one attribute lookup
-        else:
-            position = 0  # new file, need to look at the beginning
-
-        end = size + position
-        if end <= self.file_size[file_number]:
-            out = self.mmap[file_number][position:end]
-            return out
-
-        tmp = self.mmap[file_number][position:]
-        to_read = size - len(tmp)
-
-        file_number += 1
-        if file_number >= len(self.files):
-            raise EmptyError()
-
-        rest = self.peek_raw(to_read, file_number=file_number)
-        return tmp + rest
-
-    def peek(self, size: int) -> bytes:
-        """Retrieve the next `size` bytes from the files in byteswapped order.
-
-        Parameters
-        ----------
-        size
-            How many bytes should be looked up
-
-        """
-        data = self.peek_raw(size)
-        return byteswap_data(data)
+    def __exit__(self, exc_type, exc_value, traceback):
+        """Closes all file descriptors and mmaps at the end of the context manager."""
+        self.close_files()
 
     def read_raw(self, size: int) -> bytes:
         """Retrieve the next `size` bytes from the files and advance the file position.
@@ -314,7 +252,9 @@ class FileReader:
 
         if self.current_file == len(self.files):
             self.done = True
-            return tmp
+            if len(tmp) == 0:
+                raise EmptyError
+            raise LeftoverBytesError
 
         rest = self.read_raw(to_read)
         return tmp + rest
@@ -359,15 +299,6 @@ class StreamReader:
         out = self.read_raw(size)
         return byteswap_data(out)
 
-    def peek_raw(self, size: int) -> bytes:
-        if size < len(self.buffer):
-            return self.buffer[:size]
-        raise EmptyError
-
-    def peek(self, size: int) -> bytes:
-        out = self.peek_raw(size)
-        return byteswap_data(out)
-
     def __len__(self):
         return len(self.buffer)
 
@@ -376,64 +307,66 @@ class ListModeDataReader:
     def __init__(self, reader: Union[FileReader, StreamReader]):
         self.reader = reader
 
+    # @profile
     def pop(self) -> Event:
         """Pop the top event from queue"""
 
         # try to get all the words for the next event
         # if the complete next event isn't in queue an exception is thrown but no data is discarded
-        event_header = HEADER_FORMATS[0].unpack(self.reader.peek(1 * WORD_SIZE))
-
+        event_header = HEADER_FORMATS.unpack(self.reader.read(4 * WORD_SIZE))
         header_length = event_header["Header Length"]
+        extra_header_length = header_length - 4
         event_length = event_header["Event Length"]
 
         # it's now save to read both header and trace
-        header_words = self.reader.read(header_length * WORD_SIZE)
+        if extra_header_length > 0:
+            header_words = self.reader.read(extra_header_length * WORD_SIZE)
+            # unpack words/trace into their field values
+            try:
+                event_values = EXTRA_HEADER_FORMATS[extra_header_length].unpack(
+                    header_words
+                )
+                event_header.update(**event_values)
+            except KeyError:
+                print("Something went wrong with the binary data.")
+                raise
+
         trace_length = event_length - header_length
         if trace_length:
             trace_data = self.reader.read_raw(trace_length * WORD_SIZE)
-        else:
-            trace_data = None
-
-        # unpack words/trace into their field values
-        try:
-            event_values = HEADER_FORMATS[header_length].unpack(header_words)
-        except KeyError:
-            print("Something went wrong with the binary data.")
-            raise
-
-        if trace_data:
             trace = np.frombuffer(trace_data, f"({trace_length},2)<u2", count=1)[
                 0, :, :
             ]
             trace = trace.flatten()
         else:
+            trace_data = None
             trace = ()
 
         # calculate event values that need to be derived from field values
-        CFD_bits = event_values.pop("CFD trigger source bits")
+        CFD_bits = event_header.pop("CFD trigger source bits")
         CFD_error = CFD_bits == 7
-        CFD_fractional_time = event_values.pop("CFD Fractional Time")
+        CFD_fractional_time = event_header.pop("CFD Fractional Time")
         if CFD_bits == 7:
             CFD_fraction = 0
         else:
             CFD_fraction = ((CFD_bits - 1) + CFD_fractional_time / 8192) * 2
 
         timestamp = (
-            event_values.pop("EVTTIME_LO") + event_values.pop("EVTTIME_HI") * 2**32
+            event_header.pop("EVTTIME_LO") + event_header.pop("EVTTIME_HI") * 2**32
         ) * 10
 
-        if "Ext_TS_Lo" in event_values:
+        if "Ext_TS_Lo" in event_header:
             ext_timestamp = (
-                event_values.pop("Ext_TS_Lo") + event_values.pop("Ext_TS_Hi") * 2**32
+                event_header.pop("Ext_TS_Lo") + event_header.pop("Ext_TS_Hi") * 2**32
             )
 
-            event_values.update({"ext_timestamp": ext_timestamp})
+            event_header.update({"ext_timestamp": ext_timestamp})
 
         for key in ["Event Length", "Header Length", "Trace Length"]:
-            if key in event_values:
-                del event_values[key]
+            if key in event_header:
+                del event_header[key]
 
-        event_values.update(
+        event_header.update(
             {
                 "timestamp": timestamp,
                 "CFD_fraction": CFD_fraction,
@@ -442,7 +375,7 @@ class ListModeDataReader:
             }
         )
 
-        return Event(**event_values)
+        return Event(**event_header)
 
     def iterevents(self):
         while True:
@@ -453,7 +386,7 @@ class ListModeDataReader:
         try:
             while True:
                 out.append(self.iterevents())
-        except EmptyError:
+        except (EmptyError, LeftoverBytesError):
             return out
 
 
@@ -464,7 +397,7 @@ def events_from_files_generator(files):
             reader = ListModeDataReader(r)
             while not reader.reader.done:
                 yield from reader.iterevents()
-    except EmptyError:
+    except (EmptyError, LeftoverBytesError):
         return
 
 
