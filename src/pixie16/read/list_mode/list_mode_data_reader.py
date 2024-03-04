@@ -469,8 +469,8 @@ def events_from_files_generator(files):
 
 
 def to_tuple(obj):
-    if isinstance(obj, str):
-        obj = obj
+    if isinstance(obj, (str, Path)):
+        obj = [obj]
     else:
         try:
             obj = tuple(obj)
