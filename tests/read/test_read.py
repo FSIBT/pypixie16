@@ -61,4 +61,5 @@ class TestReadListModeData:
 
         read_events = read_events.drop(to_drop, axis=1)
 
+        assert len(read_events) > 0
         assert_frame_equal(read_events, list_mode_data_events)

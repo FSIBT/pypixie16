@@ -268,60 +268,77 @@ class StreamReader:
     Internally we store the data in a np.array of np.uint32.
 
     We make the array large enough to hold the data and have the
-    buffer grow and shrink if needed.
+    buffer grow and shrink as needed.
 
-    This is similar to a ring buffer, but we just allocate 2* (buffer
-    size) memory and then keep track of the left and right position in
+    This is similar to a ring buffer, but we just allocate twice the buffer
+    size memory and then keep track of the left and right position in
     the buffer and shift the data to the far left every now and then.
 
     """
 
-    def __init__(self) -> None:
-        self.buffer_size = 25_000_000
+    def __init__(self, initial_buffer_size=25_000_000) -> None:
+        self.buffer_size = initial_buffer_size
         self.buffer_size_orig = self.buffer_size
         self.buffer = np.empty(2 * self.buffer_size, dtype=np.uint32)
         self.left = 0
         self.right = 0
 
     def put(self, input: np.ndarray) -> None:
+        """Add data to the buffer.
+
+        Also increase/decrease the buffer size as needed.
+        """
+
         L = input.size
         current = self.right - self.left
-        # check if we need to shift the buffer
-        if self.left > self.buffer_size:
-            self.shift_buffer()
-        # check if we need to increase the buffer
-        # either too much already in the buffer or no space left
-        if self.right + L >= self.buffer_size:
+
+        buffer_size_change = False
+        # adjust buffer so that it will be large enough for the new data
+        while current + L >= self.buffer_size:
             self.buffer_size *= 2
-            self.shift_buffer()
-        # check if we need to shrinkg the buffer
-        if (self.buffer_size > self.buffer_size_orig) and (
-            current < self.buffer_size // 8
+            buffer_size_change = True
+
+        # Can we shrink the buffer?
+        while (self.buffer_size > self.buffer_size_orig) and (
+            current + L < self.buffer_size // 2
         ):
             self.buffer_size = self.buffer_size // 2
+            buffer_size_change = True
+
+        # check if we need to shift the buffer
+        if self.left > self.buffer_size or buffer_size_change:
+            self.adjust_and_shift_buffer()
 
         # add input
         self.buffer[self.right : self.right + L] = input
         self.right += L
 
-    def shift_buffer(self) -> None:
-        if self.left == 0:
+    def adjust_and_shift_buffer(self) -> None:
+        """Create a new buffer and copy the old buffer to beginning.
+
+        This also takes care of changing the size of the buffer
+        """
+        if (self.left == 0) and (self.buffer.size == self.buffer_size):
             return
+
+        current = self.right - self.left
         tmp = np.empty(2 * self.buffer_size, dtype=np.uint32)
-        tmp[:current] = self.buffer[left:right]
+        tmp[:current] = self.buffer[self.left : self.right]
         self.buffer = tmp
         self.left = 0
         self.right = current
 
     def read(self, size: int) -> np.ndarray:
+        """Return `size` 32-bit words from the buffer as a numpy array."""
         current = self.right - self.left
-        if size < current:
+        if size <= current:
             out = self.buffer[self.left : self.left + size]
             self.left += size
             return out
         raise EmptyError
 
     def __len__(self):
+        """Return the amount of data in the buffer."""
         return self.right - self.left
 
 
