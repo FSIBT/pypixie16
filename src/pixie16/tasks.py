@@ -221,7 +221,7 @@ class ConvertToEvents(Task):
             if i not in self.list_mode_readers:
                 reader = read.StreamReader()
                 self.list_mode_readers[i] = read.ListModeDataReader(reader)
-            self.list_mode_readers[i].reader.put(v.tobytes())
+            self.list_mode_readers[i].reader.put(v)
         return {mod: reader.pop_all() for mod, reader in self.list_mode_readers.items()}
 
 
