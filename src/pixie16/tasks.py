@@ -368,10 +368,8 @@ class SortEvents(Task):
                         "[red]ERROR[/] unknown type for all_start_times in SortEvents... cannot continue!!! "
                     )
                 self.first_event_timestamp = ts
-            new_event = event._replace(
-                chunk_timestamp=self.start_time + ts - self.first_event_timestamp
-            )
-            new_events_lst.append(new_event)
+            event.chunk_timestamp = self.start_time + ts - self.first_event_timestamp
+            new_events_lst.append(event)
             self.last_event_timestamp = ts
 
         # Sort events according to UNIX timestamp

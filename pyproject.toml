@@ -23,6 +23,7 @@ dependencies = [
     "docopt",
     "fast-histogram",
     "matplotlib",
+    "msgspec",
     "more_itertools",
     "numpy",
     "pandas",

@@ -6,63 +6,67 @@ The input can either come from a data stream or from one or several
 binary files (in case a large binary data set is split across multiple
 files).
 
+We keep all the data in numpy arrays, whic are either memmaped or
+pre-allocated, to make data access fast.
+
 """
 
 
-import mmap
+from collections import namedtuple, defaultdict
+from collections.abc import Iterable
+from itertools import islice
 from pathlib import Path
+from typing import Union, Optional
 
 import numpy as np
+import pandas as pd
 
 try:
     import cbitstruct as bitstruct
 except ModuleNotFoundError:
     import bitstruct
 
-from collections import namedtuple, defaultdict
-from collections.abc import Iterable
-from itertools import islice
-from typing import Union, Optional
+import msgspec
 
-import pandas as pd
-from rich import print
+# from rich import print
 
 
-Event = namedtuple(
-    "Event",
-    (
-        "channel",
-        "crate",
-        "slot",
-        "timestamp",
-        "CFD_fraction",
-        "energy",
-        "trace",
-        "CFD_error",
-        "pileup",
-        "trace_flag",
-        "Esum_trailing",
-        "Esum_leading",
-        "Esum_gap",
-        "baseline",
-        "QDCSum0",
-        "QDCSum1",
-        "QDCSum2",
-        "QDCSum3",
-        "QDCSum4",
-        "QDCSum5",
-        "QDCSum6",
-        "QDCSum7",
-        "ext_timestamp",
-        "chunk_timestamp",  # not a pixie16 field
-    ),
-    # note that defaults are aligned to the end and value without defaults are mandatory
-    defaults=(-1, -1, -1, -1.0, -1, -1, -1, -1, -1, -1, -1, -1, -1.0, -1.0),
-)
+class Event(msgspec.Struct):
+    """Data storage for a single even that has attribute access.
+
+    This is similar to a namedtuple, but the msgspec implemenation is faster.
+    """
+
+    channel: int = -1
+    crate: int = -1
+    slot: int = -1
+    timestamp: float = -1.0
+    CFD_fraction: int = -1
+    energy: int = -1
+    trace: int = -1
+    CFD_error: int = -1
+    pileup: int = -1
+    trace_flag: int = -1
+    Esum_trailing: int = -1
+    Esum_leading: int = -1
+    Esum_gap: int = -1
+    baseline: float = -1.0
+    QDCSum0: int = -1
+    QDCSum1: int = -1
+    QDCSum2: int = -1
+    QDCSum3: int = -1
+    QDCSum4: int = -1
+    QDCSum5: int = -1
+    QDCSum6: int = -1
+    QDCSum7: int = -1
+    ext_timestamp: float = -1.0
+    chunk_timestamp: float = -1  # not a pixie16 field
+
+    def to_list(self):
+        return (getattr(self, f) for f in self.__struct_fields__)
 
 
-WORD_SIZE = 4
-
+# The bit structure to unpack the pixie binary format
 EVENTS_PARTS = {
     "header": (
         "b1u14u5u4u4u4u32u3u13u16b1u15u16",
@@ -119,6 +123,10 @@ EVENTS_PARTS = {
 HEADER_FORMATS = bitstruct.CompiledFormatDict(
     EVENTS_PARTS["header"][0], EVENTS_PARTS["header"][1]
 )
+
+# when more information is in the header, we look it up using the
+# following data structure. The key into this dictionary is how many
+# 32-bit words we still need to read
 EXTRA_HEADER_FORMATS = {
     2: bitstruct.CompiledFormatDict(
         EVENTS_PARTS["Ext Time"][0],
@@ -155,13 +163,6 @@ EXTRA_HEADER_FORMATS = {
 }
 
 
-def byteswap_data(bytes_data):
-    """returns bytes correctly byteswapped and in word sizes"""
-    n_words = len(bytes_data) // WORD_SIZE
-    data = bitstruct.byteswap(str(WORD_SIZE) * n_words, bytes_data)
-    return data
-
-
 class EmptyError(Exception):
     """We reached the end of the last file."""
 
@@ -181,12 +182,14 @@ class FileReader:
     >>> with FileReader(files) as r:
     >>>     r.read(100)
 
+    or one needs to call self.open_files() and self.close_files()
+    manually.
+
     """
 
     def __init__(self, files: Iterable[Path]):
         self.current_file = 0  # which file do we need to read from
         self.files = files  # list of all files
-        self.file_objects = []  # list of opened files
         self.file_size = []
         self.position = 0  # relative to the current file
         self.mmap = []
@@ -194,19 +197,10 @@ class FileReader:
 
     def open_files(self):
         for f in self.files:
-            if not isinstance(f, Path):
-                f = Path(f)
-            self.file_objects.append(f.open("rb"))
-            self.file_size.append(f.stat().st_size)
-
-        for fn in self.file_objects:
-            self.mmap.append(mmap.mmap(fn.fileno(), length=0, access=mmap.ACCESS_READ))
+            self.mmap.append(np.memmap(f, dtype=np.uint32, mode="r"))
+            self.file_size.append(len(self.mmap[-1]))
 
     def close_files(self):
-        for m in self.mmap:
-            m.close()
-        for f in self.file_objects:
-            f.close()
         self.file_size = []
         self.file_objects = []
         self.mmap = []
@@ -221,7 +215,7 @@ class FileReader:
         """Closes all file descriptors and mmaps at the end of the context manager."""
         self.close_files()
 
-    def read_raw(self, size: int) -> bytes:
+    def read(self, size: int) -> bytes:
         """Retrieve the next `size` bytes from the files and advance the file position.
 
         Parameters
@@ -235,6 +229,7 @@ class FileReader:
             When data of the requested size is not available in the data stream.
 
         """
+
         if self.done:
             raise EmptyError()
 
@@ -256,21 +251,11 @@ class FileReader:
                 raise EmptyError
             raise LeftoverBytesError
 
-        rest = self.read_raw(to_read)
-        return tmp + rest
-
-    def read(self, size: int) -> bytes:
-        """Retrieve the next `size` bytes from the files in byteswapped order.
-
-        Parameters
-        ----------
-        size
-            How many bytes should be returned.
-
-        """
-
-        out = self.read_raw(size)
-        return byteswap_data(out)
+        rest = self.read(to_read)
+        if tmp.size > 0:
+            return np.concatenate((tmp, rest))
+        else:
+            return rest
 
 
 class StreamReader:
@@ -280,47 +265,83 @@ class StreamReader:
 
     New data can be added using the `put` method.
 
+    Internally we store the data in a np.array of np.uint32.
+
+    We make the array large enough to hold the data and have the
+    buffer grow and shrink if needed.
+
+    This is similar to a ring buffer, but we just allocate 2* (buffer
+    size) memory and then keep track of the left and right position in
+    the buffer and shift the data to the far left every now and then.
+
     """
 
     def __init__(self) -> None:
-        self.buffer = bytearray()
+        self.buffer_size = 25_000_000
+        self.buffer_size_orig = self.buffer_size
+        self.buffer = np.empty(2 * self.buffer_size, dtype=np.uint32)
+        self.left = 0
+        self.right = 0
 
-    def put(self, input: bytes) -> None:
-        self.buffer.extend(input)
+    def put(self, input: np.ndarray) -> None:
+        L = input.size
+        current = self.right - self.left
+        # check if we need to shift the buffer
+        if self.left > self.buffer_size:
+            self.shift_buffer()
+        # check if we need to increase the buffer
+        # either too much already in the buffer or no space left
+        if self.right + L >= self.buffer_size:
+            self.buffer_size *= 2
+            self.shift_buffer()
+        # check if we need to shrinkg the buffer
+        if (self.buffer_size > self.buffer_size_orig) and (
+            current < self.buffer_size // 8
+        ):
+            self.buffer_size = self.buffer_size // 2
 
-    def read_raw(self, size: int) -> bytes:
-        if size < len(self.buffer):
-            out = self.buffer[:size]
-            del self.buffer[:size]
+        # add input
+        self.buffer[self.right : self.right + L] = input
+        self.right += L
+
+    def shift_buffer(self) -> None:
+        if self.left == 0:
+            return
+        tmp = np.empty(2 * self.buffer_size, dtype=np.uint32)
+        tmp[:current] = self.buffer[left:right]
+        self.buffer = tmp
+        self.left = 0
+        self.right = current
+
+    def read(self, size: int) -> np.ndarray:
+        current = self.right - self.left
+        if size < current:
+            out = self.buffer[self.left : self.left + size]
+            self.left += size
             return out
         raise EmptyError
 
-    def read(self, size: int) -> bytes:
-        out = self.read_raw(size)
-        return byteswap_data(out)
-
     def __len__(self):
-        return len(self.buffer)
+        return self.right - self.left
 
 
 class ListModeDataReader:
     def __init__(self, reader: Union[FileReader, StreamReader]):
         self.reader = reader
 
-    # @profile
     def pop(self) -> Event:
         """Pop the top event from queue"""
 
         # try to get all the words for the next event
         # if the complete next event isn't in queue an exception is thrown but no data is discarded
-        event_header = HEADER_FORMATS.unpack(self.reader.read(4 * WORD_SIZE))
+        event_header = HEADER_FORMATS.unpack(self.reader.read(4).byteswap().tobytes())
         header_length = event_header["Header Length"]
         extra_header_length = header_length - 4
         event_length = event_header["Event Length"]
 
         # it's now save to read both header and trace
         if extra_header_length > 0:
-            header_words = self.reader.read(extra_header_length * WORD_SIZE)
+            header_words = self.reader.read(extra_header_length).byteswap().tobytes()
             # unpack words/trace into their field values
             try:
                 event_values = EXTRA_HEADER_FORMATS[extra_header_length].unpack(
@@ -333,7 +354,7 @@ class ListModeDataReader:
 
         trace_length = event_length - header_length
         if trace_length:
-            trace_data = self.reader.read_raw(trace_length * WORD_SIZE)
+            trace_data = self.reader.read(trace_length).tobytes()
             trace = np.frombuffer(trace_data, f"({trace_length},2)<u2", count=1)[
                 0, :, :
             ]
@@ -415,8 +436,8 @@ def to_tuple(obj):
 def read_list_mode_data(files, buffer_size=int(1e9)):
     """Loads a list of binary files into a pandas DataFrame"""
     files = to_tuple(files)
-    events = tuple(events_from_files_generator(files))
-    return pd.DataFrame.from_records(events, columns=Event._fields)
+    events = (e.to_list() for e in events_from_files_generator(files))
+    return pd.DataFrame.from_records(events, columns=Event.__struct_fields__)
 
 
 def read_list_mode_data_as_events(files, buffer_size=int(1e9), max_size=None):
