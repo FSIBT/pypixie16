@@ -416,16 +416,19 @@ class ListModeDataReader:
         return Event(**event_header)
 
     def iterevents(self):
+        """Will raise an exception to exit loop."""
         while True:
             yield self.pop()
 
     def pop_all(self):
         out = []
-        try:
-            while True:
-                out.append(self.iterevents())
-        except (EmptyError, LeftoverBytesError):
-            return out
+        while True:
+            try:
+                event = self.pop()
+            except (EmptyError, LeftoverBytesError):
+                break
+            out.append(event)
+        return out
 
 
 def events_from_files_generator(files):
