@@ -166,7 +166,8 @@ class Task(multiprocessing.Process):
 
                 # send result to next stage if available
                 if self.output_queue and out is not None:
-                    self.output_queue.put(out)
+                    if out:
+                        self.output_queue.put(out)
         except KeyboardInterrupt:
             self.stop_event.set()
         except Exception as e:
