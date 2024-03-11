@@ -87,6 +87,7 @@ class Task(multiprocessing.Process):
         self.name = "general task"
         self.done = False
         self.last_update = time.time()
+        self.work_counter = 0
 
     def cleanup(self):
         """Can be overwritten to close any open files, etc"""
@@ -156,9 +157,11 @@ class Task(multiprocessing.Process):
                 # save the time we do the first work unit
                 if self.start_time is None:
                     self.start_time = time.time()
+
                 # do the work and capture any print statements
                 with redirect_stdout(io.StringIO()) as f:
                     out = self.do_work(value)
+                    self.work_counter += 1
                     self.handle_print(f)
 
                 # send result to next stage if available
