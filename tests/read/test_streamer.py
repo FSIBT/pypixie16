@@ -1,5 +1,6 @@
 import numpy as np
 from numpy.testing import assert_array_equal
+import pytest
 
 import pixie16
 
@@ -12,7 +13,26 @@ class TestStreamer:
 
         S.put(x)
 
-        assert_array_equal(S.read(4), np.array([0, 1, 2, 3], dtype=np.uint32))
+        data = S.read(4)
+        assert_array_equal(data, np.array([0, 1, 2, 3], dtype=np.uint32))
+
+        data = S.read(4)
+        assert_array_equal(data, np.array([4, 5, 6, 7], dtype=np.uint32))
+
+        data = S.read(8)
+        assert_array_equal(
+            data, np.array([8, 9, 10, 11, 12, 13, 14, 15], dtype=np.uint32)
+        )
+
+    def test_read_more_than_available(self):
+        S = pixie16.read.StreamReader()
+
+        x = np.arange(20, dtype=np.uint32)
+
+        S.put(x)
+
+        with pytest.raises(pixie16.read.EmptyError):
+            S.read(30)
 
     def test_add_and_read_twice(self):
         S = pixie16.read.StreamReader()
