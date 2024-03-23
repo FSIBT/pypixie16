@@ -4,24 +4,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project tries to adhere to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [3.0.0] - 2024-03-06
+## [3.0.0] - 2024-03-23
+
+The main change it a new and improved list mode data reader.
 
 ### Changed
 - switched from pk_resources to importlib.metadata
 - switched from setup.cfg to pyproject.toml
+- removed setup.py
 - changed source layout to move package into src/ directory
 - updated copyright year
 - updated minimum requirement to python >= 3.9 and run py-update
   (mostly because of numpy)
 - Support pixie16 SDK 4.0.0
-- removed setup.py
+- Improved list mode data reader (faster and code refactoring)
 
 ### Fixed
 - fix loading of default settings
 - fix binary-browser: qt5->qt6 transition
 - fix binary-browser: loading list mode data
 - fix pyproject.toml urls to work better with PyPi
-- fix list mode reader
 - fix streaming dummy data
 
 ## [2.0.0] - 2023-02-18
