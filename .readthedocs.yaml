@@ -16,7 +16,7 @@ build:
   apt_packages:
     - qmake6
   tools:
-    python: "3.8"
+    python: "3.11"
 
 python:
   install:
