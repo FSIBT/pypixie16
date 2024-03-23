@@ -1,0 +1,51 @@
+pipelines:
+  default:
+    - parallel:
+      - step:
+          name: Test_3.9
+          image: python:3.9
+          caches:
+            - pip
+          script:
+            - apt-get update -y
+            - apt-get install -y python3-pyqt6 mesa-common-dev libglu1-mesa-dev
+            - pip install -U pip
+            - pip install fastparquet
+            - pip install .[test]
+            - pytest -v tests/ --junitxml=test-reports/report.xml
+      - step:
+          name: Test_3.10
+          image: python:3.10
+          caches:
+            - pip
+          script:
+            - apt-get update -y
+            - apt-get install -y python3-pyqt6 mesa-common-dev libglu1-mesa-dev
+            - pip install -U pip
+            - pip install fastparquet
+            - pip install .[test]
+            - pytest -v tests/ --junitxml=test-reports/report.xml
+      - step:
+          name: Test_3.11
+          image: python:3.11
+          caches:
+            - pip
+          script:
+            - apt-get update -y
+            - apt-get install -y python3-pyqt6 mesa-common-dev libglu1-mesa-dev
+            - pip install -U pip
+            - pip install fastparquet
+            - pip install .[test]
+            - pytest -v tests/ --junitxml=test-reports/report.xml
+      - step:
+          name: Test_3.12
+          image: python:3.12
+          caches:
+            - pip
+          script:
+            - apt-get update -y
+            - apt-get install -y python3-pyqt6 mesa-common-dev libglu1-mesa-dev
+            - pip install -U pip
+            - pip install fastparquet
+            - pip install .[test]
+            - pytest -v tests/ --junitxml=test-reports/report.xml
