@@ -5,16 +5,26 @@ import pixie16
 
 
 class BinaryDataModel(QAbstractTableModel):
-    """Maps to a list of pixie16.read.Event data.
+    """Map list mode data to single values that are shown in a row/colum in the UI.
 
-    E.g. data from a list mode run of the pixie16.
+    Data is stored in a list of pypixie.read.Events.
+
+    This class is needed to map entries from the already parsed binary
+    data to cells in a QT table.
+
+    This can also be used to highlight or otherwise format the table
+    cells as a function of the content.
 
     """
 
     def __init__(self, data):
         super().__init__()
         self._data = data
-        self.header = pixie16.read.Event._fields
+        self.header = pixie16.read.Event.__struct_fields__
+
+        # use some iconds for certain boolean data we also use these
+        # to indicate if trace data exist, sine we don't want to
+        # show the whole trace in the table
         self.icon_true = QCommonStyle().standardIcon(
             QStyle.StandardPixmap.SP_DialogApplyButton
         )
@@ -23,6 +33,7 @@ class BinaryDataModel(QAbstractTableModel):
         )
 
     def icon_return(self, value):
+        """Return a nice icon for True or False"""
         if value:
             return self.icon_true
         return self.icon_false
@@ -38,6 +49,8 @@ class BinaryDataModel(QAbstractTableModel):
         column = index.column()
         row = index.row()
 
+        value = getattr(self._data[row], self.header[column])
+
         if role == Qt.ItemDataRole.DisplayRole:
             if self.header[column] in [
                 "trace",
@@ -46,12 +59,12 @@ class BinaryDataModel(QAbstractTableModel):
                 "trace_flag",
             ]:
                 return None
-            return str(self._data[row][column])
+            return str(value)
         if role == Qt.ItemDataRole.DecorationRole:
             if self.header[index.column()] == "trace":
-                return self.icon_return(len(self._data[row][column]))
+                return self.icon_return(len(value))
             if self.header[index.column()] in ["CFD_error", "pileup", "trace_flag"]:
-                return self.icon_return(not self._data[row][column])
+                return self.icon_return(not value)
 
     def rowCount(self, index):
         return len(self._data)
