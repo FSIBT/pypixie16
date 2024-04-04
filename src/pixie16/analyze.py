@@ -396,7 +396,7 @@ def calculate_filter(traces, L=10, G=10):
 
     # do as much as possible using numpy, one probably can and should
     # get rid of the for-loop here too, just not sure at the moment
-    # how to do it
+    # how to do i
     for k in range(2 * L + G - 1, length):
         result[:, k - 2 * L - G + 1] = traces[:, k - L + 1 : k + 1].sum(
             axis=1
@@ -407,3 +407,45 @@ def calculate_filter(traces, L=10, G=10):
     result = result / L
 
     return result
+
+@ensure_2d_array
+def make_energy_from_traces(traces, baseline, L=10, G=10, tau, ps,thresh):
+  """
+    This function takes a list of n traces and creates an energy spectrum.
+    the output, espec, is an array of length n of corresponding energy values
+    for each trace.
+  """
+    assert(L%5==0) and (G%5==0)
+    traces = traces.astype(np.int64)
+    NR_traces, length = traces.shape
+    """This value is hard coded for the moment but it should be an argument for the function eventually. For our purposes the filter range is 1"""
+    sfilter_range=1
+
+    assert(length%5==0)
+    L =  L//5
+    G = G//5
+    q = np.exp(-2/tau)
+    pad_data=False
+    traces = convert_trace_to_FPGA(traces,filter_range=0)
+    NR_traces, length = traces.shape
+
+    if length - 2*L-G+1 <=0:
+      print("[orange3]WARNING[/] L, G for energy filter are too large for the supplied trace length and slowfilter range. Padding data")
+      pad_length = 2* (L+G)
+      length += 2*pad_length
+      pad_data=True
+    elif length - 2 * L - G + 1 <= 20:
+      print("[orange3]WARNING[/] L, G for energy filter are too large for the supplied trace length and slowfilter range. Padding data")
+      pad_length=L+G
+      length+= 2*pad_length
+      pad_data=True
+
+    result = np.zeros(length-2*L-G+1)
+
+    qL = q ** (5 * L *sfilter_range)
+    c2 = 1 - q
+    c3 = (1 - q) / (1 - qL)
+    c1 = c3 * qL
+
+    for i,trace in enumerate(traces):
+      trigger_pos= np.where(trace>=thresh)
