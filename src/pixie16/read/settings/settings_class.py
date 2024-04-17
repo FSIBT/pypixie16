@@ -6,6 +6,8 @@ from pathlib import Path
 import struct
 from typing import Union
 
+import pandas as pd
+
 from .units import SETTINGS_UNITS_TBL
 from .file_format import SETTINGS_FILE_FORMAT
 from .field_classes import (
@@ -145,7 +147,10 @@ class Settings(SettingsBase):
 
 
 class Stats(SettingsBase):
-    pass
+    def to_pandas(self):
+        df = pd.DataFrame(self)
+        df["channel"] = list(range(15))
+        return df
 
 
 class CrateSettings(UserList):
