@@ -90,7 +90,7 @@ class SettingsBase(UserDict):
                 print("[INFO]: Converting settings file from .set to .json")
                 file = convert_old_settings(file, [0])
             else:
-                print("[ERROR]: Unkonwn file type for setting file (shoudl be .json)")
+                print("[ERROR]: Unkonwn file type for setting file (should be .json)")
             return
 
         with file.open("r") as fp:
