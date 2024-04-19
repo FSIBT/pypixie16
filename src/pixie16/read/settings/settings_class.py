@@ -148,8 +148,8 @@ class Settings(SettingsBase):
 
 class Stats(SettingsBase):
     def to_pandas(self):
-        df = pd.DataFrame(self)
-        df["channel"] = list(range(15))
+        df = pd.DataFrame(self.data)
+        df["channel"] = list(range(16))
         return df
 
 
