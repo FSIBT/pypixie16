@@ -31,6 +31,7 @@ At the moment pypixie16 only supports Windows, but other platforms
 should be easy to add.
 
 """
+
 from contextlib import contextmanager
 from collections import OrderedDict
 import datetime
@@ -686,7 +687,7 @@ def take_MCA_spectra(
 def take_list_mode_data(
     duration: float,
     modules: Optional[Iterable[int]] = None,
-) -> dict[int, ByteString]:
+) -> list[np.ndarray]:
     """Take list mode data for a certain time.
 
     It also stops at 1 Gb of raw data to avoid too much memory use.
@@ -712,7 +713,7 @@ def take_list_mode_data(
     start_list_mode_run()
 
     # initialize output module
-    raw_data = {i: b"" for i, _ in enumerate(modules)}
+    raw_data = {i: [] for i, _ in enumerate(modules)}
 
     start = time.time()
     raw_data_length = 0
@@ -724,7 +725,7 @@ def take_list_mode_data(
             data = read_list_mode_fifo(threshold=32 * 1024)
             for i, d in enumerate(data):
                 if d is not None:
-                    raw_data[i] += d.tobytes()
+                    raw_data[i].append(d)
                     raw_data_length += len(d)
             dt = time.time() - start
             progress.update(task, advance=dt)
@@ -735,14 +736,16 @@ def take_list_mode_data(
 
     # read remainig data from pixie
     tmp = read_list_mode_fifo(check=False)
-    if not tmp:
-        return raw_data
-
     for i, d in enumerate(tmp):
         if d is not None:
-            raw_data[i] += d.tobytes()
+            raw_data[i].append(d)
 
-    return raw_data
+    # convert to single numpy arrays
+    out = {i: np.array([]) for i, _ in enumerate(modules)}
+    for i, v in raw_data.items():
+        out[i] = np.concatenate(v)
+
+    return out
 
 
 def save_settings_to_json(filename: Path):
