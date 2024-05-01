@@ -35,6 +35,7 @@ class MyCmd(cmd.Cmd):
     intro = (
         "Welcome to the pixie16 scope program\n\n"
         "Type 'help' to see the available commands.\n\n"
+        "You need to set channel and especially mca_channel and load a settings file.\n"
     )
 
     prompt = "Pixie16>"
@@ -50,7 +51,7 @@ class MyCmd(cmd.Cmd):
         self.MCA_data = np.zeros(shape=32768)
         self.traces = []
         self.old_data = []
-        self.settings_file = None
+        self.setting_file = None
         self.mca_runtime: float = 2
         self.trace_runtime: float = 2
         self.mca_channel: int = 0
@@ -78,26 +79,31 @@ class MyCmd(cmd.Cmd):
 
     def take_traces(self):
         """Take traces and return a 2d numpy array."""
-        px.control.enable_trace_settings((self.module, self.mca_channel))
-        data = px.control.take_list_mode_data(self.truntime)
+        px.control.enable_trace_settings(
+            [(self.module, self.mca_channel)], disable_CFD=False
+        )
+        data = px.control.take_list_mode_data(self.trace_runtime)[self.module]
         # convert to evenst
         reader = px.read.list_mode.StreamReader()
         parser = px.read.list_mode.ListModeDataReader(reader)
         parser.reader.put(data)
         events = parser.pop_all()
         traces = [e.trace for e in events if e.channel == self.mca_channel]
+        traces = [
+            t for t in traces if len(t)
+        ]  # sort out empty trace, which will just return a ()
         return np.asarray(traces)
 
     def take_MCA_spectrum(self):
         """Take MCA spectrum of the `mca channel`."""
         raw_settings = {
-            "channel": (self.module, self.channel),
-            "CaptureHistogram": [True],
-            "CaptureTrace": [False],
+            "channels": [(self.module, self.channel)],
+            "CaptureHistogram": True,
+            "CaptureTrace": False,
         }
-        px.control.change_raw_setting_from_dict(raw_settings)
+        px.control.change_setting_from_dict(raw_settings)
         data = px.control.take_MCA_spectra(
-            (self.module, self.mca_channel), duration=self.runtime
+            [(self.module, self.mca_channel)], duration=self.mca_runtime
         )
         return data[0]
 
@@ -156,7 +162,7 @@ class MyCmd(cmd.Cmd):
         """Change the channel we are looking at (traces and MCA)."""
         value = validate(args, int, "channel number")
         if value is not None:
-            self.mca_valuechannel = value
+            self.mca_channel = value
             self.reset()
             print(f"[yellow]INFO[/] Will read data from channel {self.mca_channel}.")
 
@@ -167,13 +173,13 @@ class MyCmd(cmd.Cmd):
             px.control.exit_system()
             px.control.init_and_boot(modules=[value])
             print(
-                f"[yellow]INFO[/] Will change settings on module {self.module} from now on."
+                f"[yellow]INFO[/] Will change settings on module {value} from now on."
             )
 
-    def do_normalize(self):
+    def do_normalize(self, args):
         """Toggle normilzation of MCA data."""
-        self.normalize = not self.normalize
-        if self.normalize:
+        self.mca_normalize = not self.mca_normalize
+        if self.mca_normalize:
             print("[yellow]INFO[/] Will now normalize the MCA data.")
         else:
             print("[yellow]INFO[/] Will not normalize the MCA data.")
@@ -254,12 +260,20 @@ class MyCmd(cmd.Cmd):
     def do_runtime(self, args):
         """Set the runtime for each MCA run."""
         runtime = validate(args, float, "MCA run time")
-        self.mca_runtime = runtime
+        if runtime is not None:
+            self.mca_runtime = runtime
+            print(
+                f"[yellow]INFO[/] Using a runtime of {runtime} s for the MCA runs from now on."
+            )
 
     def do_truntime(self, args):
         """Set the runtime for each MCA run."""
         truntime = validate(args, float, "Traces run time")
-        self.trace_runtime = truntime
+        if truntime is not None:
+            self.trace_runtime = truntime
+            print(
+                f"[yellow]INFO[/] Using a runtime of {truntime} s for the traces from now on."
+            )
 
     def do_traces(self, args):
         """Take trace data and display it.
@@ -274,6 +288,10 @@ class MyCmd(cmd.Cmd):
         """
         traces = self.take_traces()
         self.traces.extend(traces)
+
+        if not self.traces:
+            print(f"[red]ERROR[/] No traces for channel {self.channel}.")
+            return
 
         L = len(traces[0])
         x = np.linspace(0, 2 * L, L)
@@ -294,6 +312,7 @@ class MyCmd(cmd.Cmd):
 
         self.ax_traces.set_xlabel("Time [ns]")
         self.ax_traces.set_ylabel("ADC units")
+        self.fig.canvas.draw_idle()
 
     def do_mca(self, args):
         """Take MCA data and display it."""
@@ -303,12 +322,13 @@ class MyCmd(cmd.Cmd):
         tmp = self.rebin(self.MCA_data)
 
         self.ax_mca.clear()
-        if self.normalize:
+        if self.mca_normalize:
             tmp = tmp / tmp.sum()
 
         self.ax_mca.plot(tmp, drawstyle="steps-mid", color="blue")
-        self.ax_mca.set_xscale("Channels")
-        self.ax_mca.set_yscale("Counts/channel")
+        self.ax_mca.set_xlabel("Channels")
+        self.ax_mca.set_ylabel("Counts/channel")
+        self.fig.canvas.draw_idle()
 
     def do_rebin(self, args):
         """Change the MCA rebin factor. This is given in 2^N with a default of 0."""
