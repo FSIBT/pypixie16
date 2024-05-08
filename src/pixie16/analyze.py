@@ -264,7 +264,7 @@ def calculate_CFD_using_FF(
             low += 1
 
         # all zero crossings from poitive to negative
-        zero_crossings = np.where(np.diff(np.signbit(CFDtrace).astype(np.int)) > 0)[0]
+        zero_crossings = np.where(np.diff(np.signbit(CFDtrace).astype(int)) > 0)[0]
         if zero_crossings.size == 0:
             CFDerror += 1
             cfdtime.append(None)
@@ -275,7 +275,7 @@ def calculate_CFD_using_FF(
         try:
             FF_trigger_index = np.where(FFtrace >= FF_threshold)[0][0]
             CFD_trigger_index = (
-                np.where(np.diff(CFDtrace >= CFD_threshold).astype(np.int) > 0)[0] + 1
+                np.where(np.diff(CFDtrace >= CFD_threshold).astype(int) > 0)[0] + 1
             )
             CFD_trigger_index = CFD_trigger_index[CFD_trigger_index > FF_trigger_index][
                 0
