@@ -277,6 +277,7 @@ def CFD(
     title: Optional[str] = None,
     ax: Optional[matplotlib.axes.Axes] = None,
     pdf: Optional[PdfPages] = None,
+    plot_options: Optional[str] = None,
 ) -> None:
     """Plot CFD and FastFilter several traces
 
@@ -303,8 +304,12 @@ def CFD(
         and show it at the end.
     pdf
        if present, we save the plot in the pdf
+    plot_options
+        only plot some type of traces. Example: "CFD,trace,FF" will plot all 3
 
     """
+    if plot_options is None:
+        plot_options = "trace,FF,CFD"
 
     events = filter_events(events, N, randomize)
 
@@ -363,13 +368,16 @@ def CFD(
     if ax_orig is None:
         fig, ax = plt.subplots()
     for t, c, ct, f in zip(traces, CFD, cfdtime, FF):
-        ax.plot(T, t, label="Trace", lw=0.2)
-        ax.plot(Tcfd, c, label="CFD", lw=0.2)
-        ax.plot(Tff, f, label="Fast Filter", lw=0.2)
-        ax.plot([T[0], T[-1]], [CFDth, CFDth], label="CFD Threshold", lw=0.2)
-        ax.plot([T[0], T[-1]], [FFth, FFth], label="FF Threshold", lw=0.2)
-        ax.plot(ct, 0, ".", ms=1, color="k")
-    ax.legend(loc="upper right", fancybox=True, shadow=True, prop={"size": 4})
+        if "trace" in plot_options:
+            ax.plot(T, t, label="Trace", lw=0.2)
+        if "CFD" in plot_options:
+            ax.plot(Tcfd, c, label="CFD", lw=0.2)
+            ax.plot([T[0], T[-1]], [CFDth, CFDth], label="CFD Threshold", lw=0.2)
+            ax.plot(ct, 0, ".", ms=1, color="k")
+        if "FF" in plot_options:
+            ax.plot(Tff, f, label="Fast Filter", lw=0.2)
+            ax.plot([T[0], T[-1]], [FFth, FFth], label="FF Threshold", lw=0.2)
+        ax.legend(loc="upper right", fancybox=True, shadow=True, prop={"size": 4})
 
     if title:
         ax.set_title(title)
