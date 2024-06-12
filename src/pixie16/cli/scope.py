@@ -13,6 +13,7 @@ TODO:
 """
 
 import cmd
+from collections import OrderedDict
 from pathlib import Path
 
 import numpy as np
@@ -232,7 +233,7 @@ class MyCmd(cmd.Cmd):
             self.reset()
 
     def do_EPeak(self, args):
-        """Set the threshold for the fast trigger filter [in ADC units]."""
+        """Set the location where the pulse height is at a maximum."""
         value = validate(args, int, "energy peaksample")
         if value is not None:
             raw_settings = {
@@ -244,7 +245,7 @@ class MyCmd(cmd.Cmd):
 
     # CFD variables
     def do_CFD(self, args):
-        """Set G for the fast trigger filter [in us]."""
+        """Sets the CFD threshold for fast triggers."""
         value = validate(args, int, "CFD threshold")
         if value is not None:
             px.control.set_channel_parameter(
@@ -329,6 +330,55 @@ class MyCmd(cmd.Cmd):
         self.ax_mca.set_xlabel("Channels")
         self.ax_mca.set_ylabel("Counts/channel")
         self.fig.canvas.draw_idle()
+
+    def do_scope(self, args):
+        """View traces calculated from the channel trigger of 'mca_channel'."""
+        # We need to change run settings to trigger on mca channel
+        # We need to check which channels are valid for the pixie16
+        # We need to plot traces only for channels with traces
+        with px.control.temporary_settings():
+            channels = [(self.module, i) for i in range(16) if i != self.mca_channel]
+            ch_trig = OrderedDict(
+                {
+                    "channels": channels,
+                    "TrigConfig0": 0x0000_0040,  # source signal is channel 9 and use FTIN_or
+                    "TrigConfig1": 0,
+                    "TrigConfig2": self.mca_channel << 28,
+                    "TrigConfig3": 0,
+                    "FastTrigSelect": "external",
+                    "EnableChannelVal": False,
+                }
+            )
+
+            px.control.change_setting_from_dict(ch_trig)
+            custom_mask = OrderedDict(
+                {
+                    "channels": self.mca_channel,
+                    "MultiplicityMaskL": 1 << self.mca_channel,
+                    "MultiplicityMaskH": 0x0040_0000,
+                }
+            )
+            px.control.change_setting_from_dict(custom_mask)
+            px.control.enable_trace_settings(
+                [(self.module, i) for i in range(16)], disable_CFD=False
+            )
+            data = px.control.take_list_mode_data(self.trace_runtime)[self.module]
+            # convert to events
+            reader = px.read.list_mode.StreamReader()
+            parser = px.read.list_mode.ListModeDataReader(reader)
+            parser.reader.put(data)
+            events = parser.pop_all()
+            tr = [e.trace for e in events]
+            select = np.linspace(0, len(tr), 20)
+            traces = tr[select]
+            self.ax_traces.clear()
+
+            for t in traces:
+                self.ax_traces.plot(x, t)
+
+            self.ax_traces.set_xlabel("Time [ns]")
+            self.ax_traces.set_ylabel("ADC units")
+            self.fig.canvas.draw_idle()
 
     def do_rebin(self, args):
         """Change the MCA rebin factor. This is given in 2^N with a default of 0."""
