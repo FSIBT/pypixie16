@@ -13,7 +13,6 @@ import time
 from typing import Optional, Union
 
 import numpy as np
-from rich import print
 
 from .pipeline import Task
 from . import control
