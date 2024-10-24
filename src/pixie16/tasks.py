@@ -8,6 +8,7 @@ used as an example on how to write your own.
 from collections import defaultdict
 from datetime import datetime
 from importlib.resources import files
+import multiprocessing
 from pathlib import Path
 import time
 from typing import Optional, Union
@@ -17,6 +18,10 @@ import numpy as np
 from .pipeline import Task
 from . import control
 from . import read
+
+
+if multiprocessing.current_process().name == "MainProcess":
+    from rich import print
 
 
 class DummyData(Task):

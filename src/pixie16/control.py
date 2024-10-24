@@ -37,6 +37,7 @@ from collections import OrderedDict
 import datetime
 import json
 import logging
+import multiprocessing
 from pathlib import Path
 import sys
 import tempfile
@@ -47,7 +48,9 @@ from collections.abc import Iterable, ByteString
 from importlib.resources import files
 import numpy as np
 from rich.progress import Progress
-from rich import print
+
+if multiprocessing.current_process().name == "MainProcess":
+    from rich import print
 
 from . import config
 from . import C_library_sdk as SDK
@@ -665,7 +668,7 @@ def take_MCA_spectra(
     start = time.time()
     keep_running = True
     with Progress() as progress:
-        task = progress.add_task("[red] MCA", total=duration)
+        task = progress.add_task("MCA", total=duration)
 
         while keep_running and (time.time() - start < duration):
             keep_running = False
@@ -719,7 +722,7 @@ def take_list_mode_data(
     raw_data_length = 0
 
     with Progress() as progress:
-        task = progress.add_task("[red] Traces", total=duration)
+        task = progress.add_task("Traces", total=duration)
 
         while (time.time() - start < duration) and (raw_data_length < 1e9):
             data = read_list_mode_fifo(threshold=32 * 1024)
