@@ -16,7 +16,7 @@ from ..plot import Plot
 from ..widgets import LabelAndIntNumber, VStack
 from ...analyze import (
     convert_trace_to_FPGA,
-    calculate_fast_filter,
+    get_traces,
     get_fast_trigger_index,
 )
 
@@ -189,7 +189,7 @@ class FastTrigger(QWidget):
 
         length = len(self.data_FPGA[0])
 
-        self.fast_triggers = calculate_fast_filter(self.raw_data, L=L, G=G)
+        self.fast_triggers = get_traces(self.raw_data, L=L, G=G)
 
         self.triggers = get_fast_trigger_index(self.fast_triggers, T)
 

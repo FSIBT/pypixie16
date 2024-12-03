@@ -32,7 +32,7 @@ import msgspec
 
 
 class Event(msgspec.Struct):
-    """Data storage for a single even that has attribute access.
+    """Data storage for a single event that has attribute access.
 
     This is similar to a namedtuple, but the msgspec implemenation is faster.
     """
