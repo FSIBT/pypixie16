@@ -217,7 +217,7 @@ def calculate_CFD_using_FF(
 
 
 @ensure_2d_array
-def get_traces(
+def calculate_fast_filter(
     traces: np.ndarray, L: int = 1, G: int = 1, filter_range: int = 0
 ) -> np.ndarray:
     """Calculate the fast filter response.

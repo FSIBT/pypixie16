@@ -16,7 +16,7 @@ from ..plot import Plot
 from ..widgets import LabelAndIntNumber, VStack
 from ...analyze import (
     convert_trace_to_FPGA,
-    get_traces,
+    calculate_fast_filter,
     get_fast_trigger_index,
 )
 
@@ -72,14 +72,20 @@ class FastTrigger(QWidget):
 
         self.ft = VStack(
             [
-                LabelAndIntNumber("G"),
-                LabelAndIntNumber("L"),
+                LabelAndIntNumber("G (FPGA units)"),
+                LabelAndIntNumber("L (FPGA units)"),
                 LabelAndIntNumber("Threshold", value=100),
             ],
             callback=self.update_fasttrigger,
         )
 
-        self.cfd = VStack([LabelAndIntNumber("Threshold", value=100)])
+        self.cfd = VStack(
+            [
+                LabelAndIntNumber("CFD Threshold", value=100),
+                LabelAndIntNumber("L (FPGA units)"),
+                LabelAndIntNumber("G (FPGA units)"),
+            ],
+        )
 
         self.energy = VStack(
             [
@@ -169,7 +175,7 @@ class FastTrigger(QWidget):
 
         We also try to give a good estimmate for the trigger
         threshold, but this is only based on the 10 traces.  For this
-        we calcualte the standard derivation and maximum value from
+        we calcualte the standard deviation and maximum value from
         all traces up to 20 ns before the first calculated trigger.
 
         Those values will also be used to estimate the baseline for the energy calculation.
@@ -177,8 +183,8 @@ class FastTrigger(QWidget):
 
         """
 
-        L = self.ft.value["L"]
-        G = self.ft.value["G"]
+        L = self.ft.value["L (FPGA units)"]
+        G = self.ft.value["G (FPGA units)"]
         T = self.ft.value["Threshold"]
 
         self.triggers *= 0
@@ -189,7 +195,7 @@ class FastTrigger(QWidget):
 
         length = len(self.data_FPGA[0])
 
-        self.fast_triggers = get_traces(self.raw_data, L=L, G=G)
+        self.fast_triggers = calculate_fast_filter(self.raw_data, L=L, G=G)
 
         self.triggers = get_fast_trigger_index(self.fast_triggers, T)
 
@@ -235,6 +241,128 @@ class FastTrigger(QWidget):
         self.fast_plot.canvas.draw()
 
         self.update_energies()
+        
+        
+##################Draco mods space BEGIN ##################################
+    def update_CFD(self):
+        """Calcuate CFD.
+        The vakues of B, D, L, w are FIXED in the Pixie, parameters which go into CFD calculation
+        CFD time depends on FF (fast filter), a trapezoidal filter with adjustable rise time and threshold), FFthresh, CFD thresh and CFD delay
+        Fail to clear CFDthresh? May still trigger on FFthresh (energy could be useful, even though timing would not be accurate)
+        
+        The energy calculation here is based on 20 ns time steps so
+        currently only SlowFilterRange=1 works.
+
+        Note: the pixie16 multiplies all energies by a factor of 4
+
+        """
+        R = self.energy.value["R"]
+        L = self.energy.value["L"]
+        G = self.energy.value["G"]
+        P = self.energy.value["peaksample"]
+        q = self.energy.value["decay"]
+        q = np.exp(-2 / q)
+
+        self.energy_values *= 0
+
+        self.cfd_plot.axes.clear()
+
+        self.slow_filter_range = 2**R
+        # check how long the trace is, if it is too short, we try to
+        # fix it by adding data points at `baseline` value to the
+        # trace on the left and right
+        length = len(self.data_FPGA[0]) // self.slow_filter_range
+        pad_data = False
+
+        if length - 2 * L - G + 1 <= 0:
+            print(
+                "[orange3]WARNING[/] L, G for energy filter are too large for the supplied trace length and slowfilter range. Padding data",
+                flush=True,
+            )
+            pad_data = True
+            pad_length = 2 * (L + G)
+            length += 2 * pad_length
+        elif length - 2 * L - G + 1 <= 20:
+            print(
+                "[orange3]WARNING[/] L, G for energy filter are large for the supplied trace length and slowfilter range. Padding data",
+                flush=True,
+            )
+            pad_data = True
+            pad_length = L + G
+            length += 2 * pad_length
+
+        result = np.zeros(length - 2 * L - G + 1)
+
+        qL = q ** (5 * L * self.slow_filter_range)
+        c2 = 1 - q
+        c3 = (1 - q) / (1 - qL)
+        c1 = c3 * qL
+
+        # self.data is already in FPGA cycles
+        baseline = [t[: self.baseline_index].mean() for t in self.data_FPGA]
+        # convert to energy cycles
+        baseline_pad = np.asarray(baseline).mean() * self.slow_filter_range
+        baseline = baseline_pad * (L + G) * 4 * c2
+
+        for i, trace in enumerate(self.data_FPGA):
+            # need to convert to avoid overflows in the sums
+            trace = trace.astype(np.int64)
+
+            # for the energy calculation groups of 10 ns * 2**slowfilterrange
+            # the traces are already in 10ns groups, so we now handle the slowfilterrange
+            N = (trace.shape[0] // self.slow_filter_range) * self.slow_filter_range
+            trace = trace[:N].reshape(
+                trace.shape[0] // self.slow_filter_range, self.slow_filter_range
+            )
+            trace = trace.sum(axis=1)
+
+            if pad_data:
+                pad = np.ones(pad_length) * int(baseline_pad)
+                trace = np.concatenate([pad, trace, pad])
+
+            if len(self.triggers[i]):
+                # calculate trigger position in new time units
+                trigger_pos = (
+                    int(self.triggers[i][0]) // self.slow_filter_range - 2 * L - G + P
+                )
+                if pad_data:
+                    trigger_pos += pad_length
+
+            for k in range(2 * L + G - 1, length):
+                S1 = trace[k - 2 * L - G + 1 : k - L - G + 1].sum()
+                S2 = trace[k - L - G + 1 : k - L + 1].sum()
+                S3 = trace[k - L + 1 : k + 1].sum()
+
+                result[k - 2 * L - G + 1] = (
+                    4 * (-c1 * S1 + c2 * S2 + c3 * S3) - baseline
+                )
+                if len(self.triggers[i]):
+                    if k - 2 * L - G + 1 == trigger_pos:
+                        print(
+                            f"[yellow]INFO[/] found peaksample position {i}: ",
+                            S1,
+                            S2,
+                            S3,
+                            baseline,
+                        )
+                        self.energy_values[i] = result[k - 2 * L - G + 1]
+
+            self.cfd_plot.axes.plot(
+                result, color=self.colors[i], drawstyle="steps-mid"
+            )
+            if len(self.triggers[i]):
+                if 0 < trigger_pos < len(result):
+                    self.cfd_plot.axes.plot(
+                        trigger_pos, result[trigger_pos], "o", color=self.colors[i]
+                    )
+            self.cfd_plot.axes.set_xlabel(f"{self.slow_filter_range*10} ns cycles")
+            self.cfd_plot.axes.set_ylabel("Energy")
+            self.cfd_plot.axes.set_title(f"Energy baseline {baseline:.1f}")
+        self.cfd_plot.canvas.draw()    
+
+##################Draco mods space END ##################################
+
+
 
     def update_energies(self):
         """Calcuate energy distribution as described in Mauricio's thesis.
