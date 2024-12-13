@@ -103,8 +103,8 @@ def calculate_CFD(
     t=None,
     CFD_threshold=None,
     FF_threshold=None,
-    Lf=10,
-    Gf=10,
+    Lf=0.02,
+    Gf=0.02,
     w=1,
     B=5,
     D=5,
@@ -123,6 +123,9 @@ def calculate_CFD(
     input:
        traces   (N, M) numpy array: N= number of traces, M=number of data points
        t        (M, 1) numpy arrray, the time axes for the traces
+       Lf        integer: length of the integration time, microseconds
+       Gf        integer: gap between the two integration regions, microseconds
+       L, D, B, w    unchangeable parameters of FPGA!! *** check specs
 
     output:
        CFD  (N, M-B-D-L+1)  numpy array
@@ -164,6 +167,8 @@ def calculate_CFD(
     CFDerror = 0
     IDXerr = []
     cfdtimeIDX = []
+    
+# Lf and Gf go into fast_filter, we now want them in microseconds!
     fast_filter = calculate_filter(traces, Lf, Gf)
     for i, (CFDtrace, FFtrace) in enumerate(zip(CFD, fast_filter)):
         FFtrace = FFtrace[FF_delay:]
@@ -238,8 +243,8 @@ def calculate_filter(traces, L=0.02, G=0.02, filter_range = 0):
 
     input:
        traces   (N, M) numpy array. N traces with a length of M
-       L        integer: length of the integration time
-       G        integer: gap between the two integration regions
+       L        integer: length of the integration time, microseconds
+       G        integer: gap between the two integration regions, microseconds
 
     output:
        result   (N, M-2L-G+1)
@@ -248,6 +253,7 @@ def calculate_filter(traces, L=0.02, G=0.02, filter_range = 0):
     #import traces, structure into 2D array
     traces = traces.astype(np.int64)
     NR_traces, length = traces.shape
+    assert length % 5 == 0, "Filter trace length needs to be a multiple of 5"
     
     #convert microseconds to FPGA clock cycles:
         # dimensional analysis: Xmicrosec x 1000ns/1microsecond x 1FPGAclockcycle/10ns
