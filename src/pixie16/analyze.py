@@ -217,53 +217,6 @@ def calculate_CFD(
 
 
 @ensure_2d_array
-def calculate_fast_filter(
-    traces: np.ndarray, L: int = 1, G: int = 1, filter_range: int = 0
-) -> np.ndarray:
-    """Calculate the fast filter response.
-
-    Parameters
-    ----------
-    traces
-       1D or 2D array of 1 or N traces of lengths M.
-    L
-       in FPGA units, 1 = 10 ns
-    G
-       in FPGA units, 1 = 10 ns
-    filter_range
-       number of FPGA steps in 2^filter_range that are summed up
-
-    Returns
-    -------
-    np.ndarray
-       The calculated fast filter response of the whole trace.
-
-    """
-    assert isinstance(L, int)
-    assert L > 0
-    assert isinstance(G, int)
-    assert G > 0
-
-    traces = traces.astype(np.int64)
-
-    traces = convert_trace_to_FPGA(traces, filter_range=filter_range)
-    NR_traces, length = traces.shape
-
-    # create an empty array of the correct length
-    result = np.zeros((NR_traces, length - 2 * L - G + 1))
-
-    # do as much as possible using numpy, one probably can and should
-    # get rid of the for-loop here too, just not sure at the moment
-    # how to do it
-    for k in range(2 * L + G - 1, length):
-        result[:, k - 2 * L - G + 1] = traces[:, k - L + 1 : k + 1].sum(
-            axis=1
-        ) - traces[:, k - 2 * L - G + 1 : k - L - G + 1].sum(axis=1)
-
-    return result
-
-
-@ensure_2d_array
 def get_fast_trigger_index(traces, threshold):
     """Return the indices where the trace value is >= threshold."""
 
@@ -275,7 +228,7 @@ def get_fast_trigger_index(traces, threshold):
 
 
 @ensure_2d_array
-def calculate_filter(traces, L=10, G=10):
+def calculate_filter(traces, L=0.02, G=0.02, filter_range = 0):
     """Calculate the fast and slow filter response from the PIXIE
 
     This implements the filter response as discribted on page 81 in
@@ -286,24 +239,35 @@ def calculate_filter(traces, L=10, G=10):
     input:
        traces   (N, M) numpy array. N traces with a length of M
        L        integer: length of the integration time
-       G        integer: gap between the two integration region
+       G        integer: gap between the two integration regions
 
     output:
        result   (N, M-2L-G+1)
     """
-    assert (L % 5 == 0) and (
-        G % 5 == 0
-    ), "Filter settings needs to be multiple of 5 (FPGA clock cycles)"
-
+    
+    #import traces, structure into 2D array
     traces = traces.astype(np.int64)
     NR_traces, length = traces.shape
+    
+    #convert microseconds to FPGA clock cycles:
+        # dimensional analysis: Xmicrosec x 1000ns/1microsecond x 1FPGAclockcycle/10ns
+        #Note 2ns/datapoint, if microsec--> datapoints: L*=500, G*=500
+    L*=100
+    G*=100
+    
+    #Ensure a length of integration: L,G>0
+    assert L>0 and G >0
+    
+    #L,G must be integers 
+        #such that they can be used in setting lengths, and divided by
+    L, G = int(L), int(G)
 
-    assert length % 5 == 0, "Filter trace length needs to be a multiple of 5"
+    #Ensure traces are in appropriate configuration for FPGA cycles too
+    filter_range = int(filter_range)
+    traces = convert_trace_to_FPGA(traces, filter_range)
 
-    # scale to 10 ns FPGA clock cycles, e.g. 5 time steps per cycle
-    L = L // 5
-    G = G // 5
-    traces = convert_trace_to_FPGA(traces, filter_range=0)
+    
+    #Reassert shape here until I verify that convert_trace_to_FPGA doesn't change it
     NR_traces, length = traces.shape
 
     # create an empty array of the correct length
@@ -317,7 +281,7 @@ def calculate_filter(traces, L=10, G=10):
             axis=1
         ) - traces[:, k - 2 * L - G + 1 : k - L - G + 1].sum(axis=1)
 
-    # scale back to 2 ns timesteps
+    # scale to 2 ns timesteps
     result = np.repeat(result, 5, axis=1)
     result = result / L
 
