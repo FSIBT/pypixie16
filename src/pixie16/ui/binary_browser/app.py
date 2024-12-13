@@ -18,7 +18,7 @@ from ..widgets import BaseApp
 from ..helper import busy_cursor
 from ..plot import Plot
 from .channel_select import ChannelSelect
-from .fast_trigger import FastTrigger
+from .trace_analysis import FastTrigger
 from .data_model import BinaryDataModel
 
 
