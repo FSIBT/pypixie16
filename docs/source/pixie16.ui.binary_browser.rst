@@ -25,10 +25,10 @@ pixie16.ui.binary\_browser.data\_model module
    :undoc-members:
    :show-inheritance:
 
-pixie16.ui.binary\_browser.fast\_trigger module
+pixie16.ui.binary\_browser.trace\_analysis module
 -----------------------------------------------
 
-.. automodule:: pixie16.ui.binary_browser.fast_trigger
+.. automodule:: pixie16.ui.binary_browser.trace_analysis
    :members:
    :undoc-members:
    :show-inheritance:
