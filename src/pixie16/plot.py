@@ -12,7 +12,7 @@ from matplotlib.colors import LogNorm
 from matplotlib.backends.backend_pdf import PdfPages
 from rich import print
 
-from .analyze import calculate_CFD_using_FF
+from .analyze import calculate_CFD
 from .read import Event, Settings, Stats
 
 
@@ -343,7 +343,7 @@ def CFD(
 
     T = np.linspace(0, 2 * (traces.shape[1] - 1), traces.shape[1])  # in ns
 
-    CFD, cfdtime, FF, IDXerr = calculate_CFD_using_FF(
+    CFD, cfdtime, FF, IDXerr = calculate_CFD(
         traces,
         t=T,
         CFD_threshold=CFDth,

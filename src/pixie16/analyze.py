@@ -98,7 +98,7 @@ def convert_trace_to_FPGA(traces: np.ndarray, filter_range: int = 0):
 
 
 @ensure_2d_array
-def calculate_CFD_using_FF(
+def calculate_CFD(
     traces,
     t=None,
     CFD_threshold=None,
