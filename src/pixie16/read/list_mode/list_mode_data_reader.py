@@ -11,12 +11,11 @@ pre-allocated, to make data access fast.
 
 """
 
-
-from collections import namedtuple, defaultdict
+from collections import defaultdict
 from collections.abc import Iterable
 from itertools import islice
 from pathlib import Path
-from typing import Union, Optional
+from typing import Union
 
 import numpy as np
 import pandas as pd
@@ -401,8 +400,7 @@ class ListModeDataReader:
             event_header.update({"ext_timestamp": ext_timestamp})
 
         for key in ["Event Length", "Header Length", "Trace Length"]:
-            if key in event_header:
-                del event_header[key]
+            event_header.pop(key, None)
 
         event_header.update(
             {
