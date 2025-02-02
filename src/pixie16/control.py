@@ -43,7 +43,7 @@ import sys
 import tempfile
 import time
 from typing import Union, Optional
-from collections.abc import Iterable, ByteString
+from collections.abc import Iterable
 
 from importlib.resources import files
 import numpy as np
@@ -706,9 +706,7 @@ def take_list_mode_data(
 
     Returns
     -------
-    dict[int, ByteString]
-       Dictionary with the raw binary data in it. Each module gets is a key
-       in the dictionary and the values are the bytestring.
+    List of numpy arrays
     """
     if modules is None:
         modules = module_list
@@ -854,6 +852,137 @@ def temporary_settings() -> None:
         write_settings(current_settings)
 
 
+def _expand_list(arg, N):
+    if isinstance(arg, list) and all(isinstance(item, int) for item in arg):
+        expanded_list = [arg[:] for _ in range(N)]
+    elif isinstance(arg, list) and len(arg) == 0:
+        expanded_list = [[] for _ in range(N)]
+    elif (
+        isinstance(arg, list)
+        and len(arg) == N
+        and all(isinstance(sublist, list) for sublist in arg)
+    ):
+        expanded_list = arg
+    else:
+        raise ValueError(
+            f"Invalid argument: must be a single list or a list of lists with length N={N}"
+        )
+
+    return expanded_list
+
+
+def _expand_values(value, N):
+    if isinstance(value, (int, float, str)):
+        return [value] * N
+    else:
+        return value
+
+
+def _create_coincidence_masks(list_of_channels, offset=0):
+    """Given a list of channels, create a coincidence mask."""
+    multiplicity_mask = 0
+    for channel in list_of_channels:
+        multiplicity_mask += 1 << channel
+    return multiplicity_mask << offset
+
+
+def _set_bits(value, start_bit, num_bits, bit_value):
+    mask = (1 << num_bits) - 1
+
+    value &= ~(mask << start_bit)
+
+    value |= (bit_value & mask) << start_bit
+
+    return value
+
+
+def _handle_coincidences(settings, N: int):
+    # error checking if we are settings coincidence in two ways
+    need_update = False
+    for name in [
+        "MultiplicityLeft",
+        "MultiplicitySelf",
+        "MultiplicityRight",
+        "NrOfMultiplicities",
+        "NrOfCoincidencesLeft",
+        "NrOfCoincidencesSelf",
+        "NrOfCoincidencesRight",
+        "ChannelValidationSource",
+    ]:
+        if name in settings:
+            need_update = True
+
+    if not need_update:
+        return settings
+
+    if ("MultiplicityMaskL" in settings) or ("MultiplicityMaskH" in settings):
+        print("[orange3]WARNING[/] Multiplicitymask will be overwritten (set twice).")
+
+    # extract data
+    multi_left = settings.pop("MultiplicityLeft", [[]] * N)
+    multi_self = settings.pop("MultiplicitySelf", [[]] * N)
+    multi_right = settings.pop("MultiplicityRight", [[]] * N)
+    nr_of_multiplicities = settings.pop("NrOfMultiplicities", 0)
+    nr_of_coincidences_left = settings.pop("NrOfCoincidencesLeft", 0)
+    nr_of_coincidences_self = settings.pop("NrOfCoincidencesSelf", 0)
+    nr_of_coincidences_right = settings.pop("NrOfCoincidencesRight", 0)
+    channel_validation_source = settings.pop("ChannelValidationSource", "coincidence")
+
+    # expand, so that we always have one value for each channel
+    multi_left = _expand_list(multi_left, N)
+    multi_self = _expand_list(multi_self, N)
+    multi_right = _expand_list(multi_right, N)
+    nr_of_multiplicities = _expand_values(nr_of_multiplicities, N)
+    nr_of_coincidences_left = _expand_values(nr_of_coincidences_left, N)
+    nr_of_coincidences_self = _expand_values(nr_of_coincidences_self, N)
+    nr_of_coincidences_right = _expand_values(nr_of_coincidences_right, N)
+    channel_validation_source = _expand_values(channel_validation_source, N)
+
+    # create low and high masks
+    low = []
+    for left, self in zip(multi_left, multi_self):
+        tmp = _create_coincidence_masks(self)
+        tmp += _create_coincidence_masks(left, offset=16)
+        low.append(tmp)
+    high = []
+    for right, N_multi, N_left, N_self, N_right, validation in zip(
+        multi_right,
+        nr_of_multiplicities,
+        nr_of_coincidences_left,
+        nr_of_coincidences_self,
+        nr_of_coincidences_right,
+        channel_validation_source,
+    ):
+        tmp = _create_coincidence_masks(right)
+        if validation == "multiplicity":
+            multiplicity_or_coincidence = True
+            group_external = False
+        elif validation == "coincidence":
+            multiplicity_or_coincidence = False
+            group_external = False
+        elif validation == "group/external":
+            group_external = True
+            multiplicity_or_coincidence = False
+        else:
+            print(f"[red]ERROR[/] unkonwn value {validation}")
+            group_external = False
+            multiplicity_or_coincidence = False
+
+        tmp = _set_bits(tmp, 16, 1, int(multiplicity_or_coincidence))
+        tmp = _set_bits(tmp, 31, 1, int(group_external))
+        tmp = _set_bits(tmp, 17, 5, N_multi)
+        tmp = _set_bits(tmp, 22, 3, N_self)
+        tmp = _set_bits(tmp, 25, 3, N_right)
+        tmp = _set_bits(tmp, 28, 3, N_left)
+
+        high.append(tmp)
+
+    settings["MultiplicityMaskL"] = low
+    settings["MultiplicityMaskH"] = high
+
+    return settings
+
+
 def change_setting_from_dict(settings: dict, call_pixie: Optional[bool] = True):
     """Update settings in the pixie16.
 
@@ -882,14 +1011,13 @@ def change_setting_from_dict(settings: dict, call_pixie: Optional[bool] = True):
 
     modules = {x[0] for x in channels}
 
+    settings = _handle_coincidences(settings, N=len(channels))
+
     out = []  # this list is mainly for testing
     for name, value in settings.items():
         if name in CHANNEL_PARAMETERS:
             # convert single values to lists that matches the number of channels
-            if isinstance(value, (int, float, str)):
-                value_lst = [value] * len(channels)
-            else:
-                value_lst = value
+            value_lst = _expand_values(value, len(channels))
             # set each value in the list
             for (module, channel), ch_value in zip(channels, value_lst):
                 # if the parameter is one that we defined for a bit value, we need to
