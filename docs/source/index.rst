@@ -28,6 +28,7 @@ and binary data.
 
    getting_started
    pixie16
+   pixie16_package
    contributing
 
 Indices and tables

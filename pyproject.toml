@@ -55,7 +55,7 @@ docs = [
     "markupsafe",
     "sphinx",
     "sphinxcontrib-napoleon",
-    "recommonmark",
+    "myst-parser",
 ]
 
 [project.urls]
