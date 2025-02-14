@@ -96,7 +96,6 @@ def convert_trace_to_FPGA(traces: np.ndarray, filter_range: int = 0):
     return traces.reshape(N, M // group, group).sum(axis=2)
 
 
-
 @ensure_2d_array
 def calculate_CFD(
     traces,
@@ -120,18 +119,20 @@ def calculate_CFD(
 
     The input can be 1d or 2d in which case the output will be also 1d or 2d.
 
-    input:
-       traces   (N, M) numpy array: N= number of traces, M=number of data points
-       t        (M, 1) numpy arrray, the time axes for the traces
-       Lf        integer: length of the integration time, microseconds
-       Gf        integer: gap between the two integration regions, microseconds
-       L, D, B, w    unchangeable parameters of FPGA!! *** check specs
+    Parameters
+    ----------
+       traces        (N, M) numpy array: N= number of traces, M=number of data points
+       t             (M, 1) numpy arrray, the time axes for the traces
+       Lf            integer: length of the integration time, microseconds
+       Gf            integer: gap between the two integration regions, microseconds
+       L, D, B, w    unchangeable parameters of FPGA!!
 
-    output:
-       CFD  (N, M-B-D-L+1)  numpy array
-       cfdtime        (N, 1) numpy array: the time of the zero crossing
-       FF       numpy array: fast filter used for the calculation
-       IDXerr   numpy array: index of CFD errors
+    Result
+    ------
+       CFD        (N, M-B-D-L+1)  numpy array
+       cfdtime    (N, 1) numpy array: the time of the zero crossing
+       FF         numpy array: fast filter used for the calculation
+       IDXerr     numpy array: index of CFD errors
 
     """
 
@@ -167,8 +168,8 @@ def calculate_CFD(
     CFDerror = 0
     IDXerr = []
     cfdtimeIDX = []
-    
-# Lf and Gf go into fast_filter, we now want them in microseconds!
+
+    # Lf and Gf go into fast_filter, we now want them in microseconds!
     fast_filter = calculate_filter(traces, Lf, Gf)
     for i, (CFDtrace, FFtrace) in enumerate(zip(CFD, fast_filter)):
         FFtrace = FFtrace[FF_delay:]
@@ -233,7 +234,7 @@ def get_fast_trigger_index(traces, threshold):
 
 
 @ensure_2d_array
-def calculate_filter(traces, L=0.02, G=0.02, filter_range = 0):
+def calculate_filter(traces, L=0.02, G=0.02, filter_range=0):
     """Calculate the fast and slow filter response from the PIXIE
 
     This implements the filter response as discribted on page 81 in
@@ -249,31 +250,30 @@ def calculate_filter(traces, L=0.02, G=0.02, filter_range = 0):
     output:
        result   (N, M-2L-G+1)
     """
-    
-    #import traces, structure into 2D array
+
+    # import traces, structure into 2D array
     traces = traces.astype(np.int64)
     NR_traces, length = traces.shape
     assert length % 5 == 0, "Filter trace length needs to be a multiple of 5"
-    
-    #convert microseconds to FPGA clock cycles:
-        # dimensional analysis: Xmicrosec x 1000ns/1microsecond x 1FPGAclockcycle/10ns
-        #Note 2ns/datapoint, if microsec--> datapoints: L*=500, G*=500
-    L*=100
-    G*=100
-    
-    #Ensure a length of integration: L,G>0
-    assert L>0 and G >0
-    
-    #L,G must be integers 
-        #such that they can be used in setting lengths, and divided by
+
+    # convert microseconds to FPGA clock cycles:
+    # dimensional analysis: Xmicrosec x 1000ns/1microsecond x 1FPGAclockcycle/10ns
+    # Note 2ns/datapoint, if microsec--> datapoints: L*=500, G*=500
+    L *= 100
+    G *= 100
+
+    # Ensure a length of integration: L,G>0
+    assert L > 0 and G > 0
+
+    # L,G must be integers
+    # such that they can be used in setting lengths, and divided by
     L, G = int(L), int(G)
 
-    #Ensure traces are in appropriate configuration for FPGA cycles too
+    # Ensure traces are in appropriate configuration for FPGA cycles too
     filter_range = int(filter_range)
     traces = convert_trace_to_FPGA(traces, filter_range)
 
-    
-    #Reassert shape here until I verify that convert_trace_to_FPGA doesn't change it
+    # Reassert shape here until I verify that convert_trace_to_FPGA doesn't change it
     NR_traces, length = traces.shape
 
     # create an empty array of the correct length

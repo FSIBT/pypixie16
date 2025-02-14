@@ -26,7 +26,7 @@ pixie16.ui.binary\_browser.data\_model module
    :show-inheritance:
 
 pixie16.ui.binary\_browser.trace\_analysis module
------------------------------------------------
+-------------------------------------------------
 
 .. automodule:: pixie16.ui.binary_browser.trace_analysis
    :members:
