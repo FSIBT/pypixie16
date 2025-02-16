@@ -6,9 +6,12 @@ and this project tries to adhere to [Semantic Versioning](https://semver.org/spe
 
 ## [Unreleased]
 
+## [3.1.0] 2025-02-15
+
 ### Added
 - Added config settings to set up multiplicity and coincidences
   easier, e.g. without binary encoding
+- Added documentation on how to change settings and take data
 
 ## [3.0.0] - 2024-03-23
 
