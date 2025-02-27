@@ -8,6 +8,7 @@ and this project tries to adhere to [Semantic Versioning](https://semver.org/spe
 
 ### Changed
 - switched to using ruff instead of pyupgrade and black
+- minimum python required: 3.10 (to stay in sync with numpy)
 
 ## [3.1.0] 2025-02-15
 
