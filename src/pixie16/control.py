@@ -1021,7 +1021,7 @@ def change_setting_from_dict(settings: dict, call_pixie: bool | None = True):
     assert "channels" in settings, (
         "The settings dictionary needs an entry listing called 'channels' the channels"
     )
-    channels = settings.pop("channels")
+    channels = settings.get("channels")
 
     for c in channels:
         assert isinstance(c, list | tuple), (

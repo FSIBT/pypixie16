@@ -12,6 +12,7 @@ and this project tries to adhere to [Semantic Versioning](https://semver.org/spe
 
 ### Fixed
 - handling of output file numbering in run_list_mode
+- don't remove channels variable when using change_setting_from_dict
 
 ## [3.1.0] 2025-02-15
 
