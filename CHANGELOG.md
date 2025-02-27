@@ -6,6 +6,9 @@ and this project tries to adhere to [Semantic Versioning](https://semver.org/spe
 
 ## [Unreleased]
 
+### Changed
+- switched to using ruff instead of pyupgrade and black
+
 ## [3.1.0] 2025-02-15
 
 ### Added

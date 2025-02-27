@@ -16,7 +16,7 @@ authors = [
 ]
 readme = "README.md"
 license = {file = "LICENSE.txt"}
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 dependencies = [
     "appdirs",
     "bitstruct",
@@ -44,6 +44,7 @@ classifiers = [
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Topic :: Scientific/Engineering :: Physics",
 ]
 
@@ -86,33 +87,16 @@ source = ["src/pixie16", "tests"]
 [tool.coverage.report]
 skip_covered = true
 
-[tool.black]
+[tool.ruff]
 line-length = 88
 
-[tool.pylint.FORMAT]
-max-line-length="88"
+[tool.ruff.lint]
+ignore = ["E741"]
+select = ["UP"]
 
-[tool.pylint."MESSAGES CONTROL"]
-# bad-continuation: Black does the job, no need to check.
-disable = "bad-continuation, logging-fstring-interpolation, line-too-long"
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+docstring-code-format = true
+docstring-code-line-length = 80
 
-[tool.pylint.MASTER]
-extension-pkg-whitelist="PyQt6"
-jobs=4
-
-[tool.pylint.TYPECHECK]
-# zmq.{LINGER,REQ,ROUTER,NOBLOCK} are dynamically generated and so pylint
-# doesn't see them, causing false positives.
-generated-members=[
-        "REQ",
-        "REP",
-        "RCVTIMEO",
-        "PUB",
-        "SUB",
-        "NOBLOCK",
-        "AF_INET",
-        "SOCK_STREAM",
-        "TCP_NODELAY",
-        "SOCK_DGRAM",
-        "IPPROTO_TCP",
-        ]
