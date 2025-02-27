@@ -477,13 +477,27 @@ def run_list_mode(filename: str | None = None, runtime: int = 5) -> None:
     Parameters
     ----------
     filename
-       the filename
+       the complete filename will be YYYYMMDD-{filename}-{n:03d}.bin
     runtime
        The time to take data for in seconds
     """
     YYYYMMDD = datetime.datetime.today().strftime("%Y-%m-%d")
+
+    # create directory for data, if it doesn't exist
+    datadir = config.config_get_parameters("Data", "datadir", verbose=False)
+    if datadir is None:
+        datadir = Path(".")
+        print(
+            f"[orange3]WARNING[/] Could not find datadir in Data section in ini-file {config.inifile}."
+        )
+        print(f"[orange3]WARNING[/] Using {datadir.absolute()} to save data.")
+    datadir = datadir / YYYYMMDD
+    # make sure directory exists
+    datadir.mkdir(parents=True, exist_ok=True)
+
     if filename is None:
         filename = "pixie16-data"
+    old_files = list(datadir.glob(f"*{filename}*"))
 
     # remove .bin, will add it back in a bit
     if filename.endswith(".bin"):
@@ -491,10 +505,28 @@ def run_list_mode(filename: str | None = None, runtime: int = 5) -> None:
     # check if filename has 3 digits at the end
     number = filename[-3:]
     try:
-        number = int(number) + 1
+        number = int(number)
         filename = filename[:-3]
     except ValueError:
         number = 0
+
+    # do the same for the old files and find the largest file number
+    for f in old_files:
+        name = f.name
+        # remove .bin
+        if name.endswith(".bin"):
+            name = name[:-4]
+        # check if filename has 3 digits at the end
+        old_number = name[-3:]
+        try:
+            old_number = int(old_number)
+            number = max(number, old_number)
+        except ValueError:
+            pass
+
+    # increase for new file
+    number += 1
+
     if number > 999:
         print("list-mode-data: filenumber too large. Use a new filename....existing!")
         sys.exit()
@@ -503,17 +535,7 @@ def run_list_mode(filename: str | None = None, runtime: int = 5) -> None:
 
     if not filename.startswith(YYYYMMDD):
         filename = f"{YYYYMMDD}-{filename}"
-    # add correct directory
-    datadir = config.config_get_parameters("Data", "datadir", verbose=False)
-    if datadir is None:
-        datadir = Path(".")
-        print(
-            f"[orange3]WARNING[/] Could not find datadir in Data section in ini-file {config.inifile}."
-        )
-        print(f"[orange3]WARNING[/] Using {datadir.absolute()} to save data.")
-    filename = datadir / YYYYMMDD / filename
-    # make sure directory exists
-    filename.parent.mkdir(parents=True, exist_ok=True)
+    filename = datadir / filename
 
     if filename.exists():
         print(f"filename {filename} already exists...exiting")

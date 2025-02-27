@@ -10,6 +10,9 @@ and this project tries to adhere to [Semantic Versioning](https://semver.org/spe
 - switched to using ruff instead of pyupgrade and black
 - minimum python required: 3.10 (to stay in sync with numpy)
 
+### Fixed
+- handling of output file numbering in run_list_mode
+
 ## [3.1.0] 2025-02-15
 
 ### Added
