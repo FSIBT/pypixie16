@@ -264,7 +264,7 @@ class Pipeline:
                 return True
         return False
 
-    def execute(self, progress_bar_time: Union[float, int] = 0):
+    def execute(self, progress_bar_time: float | int = 0):
         """Runs the whole pipeline.
 
         Parameters

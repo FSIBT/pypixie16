@@ -582,7 +582,7 @@ def exit_system(module: int) -> None:
 
 
 def init_system(
-    modules: Optional[list[int]] = None,
+    modules: list[int] | None = None,
     offline_mode: bool = False,
     verbose: bool = True,
 ) -> None:
@@ -789,7 +789,7 @@ def read_single_channel_parameter(
     module: int,
     channel: int,
     convert_bit_pattern: bool = True,
-) -> Union[list[bool], float]:
+) -> list[bool] | float:
     """Read a parameter in one channel in a module.
 
     See pg. 51 of the programmers manual for a list of parameters available.
@@ -809,9 +809,9 @@ def read_single_channel_parameter(
         Returns the value as floating number or for bitmasks as list of bools
     """
 
-    assert (
-        channel_parameter_name in valid_channel_parameter_names
-    ), "Not a valid channel parameter name"
+    assert channel_parameter_name in valid_channel_parameter_names, (
+        "Not a valid channel parameter name"
+    )
 
     # only convert certain settings to an array of bits (if requested)
     if convert_bit_pattern and channel_parameter_name not in [
@@ -843,8 +843,8 @@ def read_single_channel_parameter(
 
 
 def read_single_module_parameter(
-    module_parameter_name: str, module: int, convert_bit_pattern: Optional[bool] = False
-) -> Union[int, float, list[bool]]:
+    module_parameter_name: str, module: int, convert_bit_pattern: bool | None = False
+) -> int | float | list[bool]:
     """Read a parameter in one module.
 
     See pg. 53 of the programmers manual for a list of parameters available.
@@ -861,9 +861,9 @@ def read_single_module_parameter(
     int or float
         The value of the parameter
     """
-    assert (
-        module_parameter_name in valid_module_parameter_names
-    ), "Wrong  parameter name"
+    assert module_parameter_name in valid_module_parameter_names, (
+        "Wrong  parameter name"
+    )
 
     # only convert certain settings to an array of bits (if requested)
     if convert_bit_pattern and module_parameter_name not in [
@@ -1063,7 +1063,7 @@ def tau_finder(module: int) -> np.ndarray:
 
 def write_single_channel_parameter(
     channel_parameter_name: str,
-    channel_parameter_data: Union[int, float, Iterable_type[bool]],
+    channel_parameter_data: int | float | Iterable_type[bool],
     module: int,
     channel: int,
 ) -> None:
@@ -1082,9 +1082,9 @@ def write_single_channel_parameter(
     channel
         channel number
     """
-    assert (
-        channel_parameter_name in valid_channel_parameter_names
-    ), f"Not a valid channel parameter name. Given value {channel_parameter_name}"
+    assert channel_parameter_name in valid_channel_parameter_names, (
+        f"Not a valid channel parameter name. Given value {channel_parameter_name}"
+    )
 
     if channel_parameter_name in [
         "CHANNEL_CSRA",
@@ -1092,7 +1092,7 @@ def write_single_channel_parameter(
         "MultiplicityMaskL",
         "MultiplicityMaskH",
     ]:
-        if isinstance(channel_parameter_data, (list, tuple)):
+        if isinstance(channel_parameter_data, list | tuple):
             data = [str(int(x)) for x in channel_parameter_data]
             channel_parameter_data = int("".join(data), 2)
 
@@ -1120,7 +1120,7 @@ def write_single_channel_parameter(
 
 def write_single_module_parameter(
     module_parameter_name: str,
-    module_parameter_data: Union[int, float, list[bool]],
+    module_parameter_data: int | float | list[bool],
     module: int,
 ) -> None:
     """Change a parameter in one module.
@@ -1137,12 +1137,14 @@ def write_single_module_parameter(
         module number
     """
 
-    assert (
-        module_parameter_name in valid_module_parameter_names
-    ), f"Module parameter name is invalid. Given module parameter name: {module_parameter_name}"
-    assert isinstance(module_parameter_data, (int, float)) or all(
+    assert module_parameter_name in valid_module_parameter_names, (
+        f"Module parameter name is invalid. Given module parameter name: {module_parameter_name}"
+    )
+    assert isinstance(module_parameter_data, int | float) or all(
         isinstance(x, bool) for x in module_parameter_data
-    ), f"Module parameter '{module_parameter_name}' not an integer or float. Given value is {module_parameter_data}"
+    ), (
+        f"Module parameter '{module_parameter_name}' not an integer or float. Given value is {module_parameter_data}"
+    )
     # which parameters do we need to convert from float?
     parameter_list_convert_from_IEEE = ["HOST_RT_PRESET"]
 

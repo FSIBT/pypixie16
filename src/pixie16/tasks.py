@@ -304,13 +304,13 @@ class SortEvents(Task):
         start_time: float,
         maxsize: int = 10_000,
         number_to_sort: int = 8_000,
-        all_start_times: Optional[Union[list[float], float]] = None,
+        all_start_times: list[float] | float | None = None,
     ):
         super().__init__()
         self.data = []
-        assert (
-            number_to_sort < maxsize
-        ), "The number_to_sort needs to be smaller than maxisze"
+        assert number_to_sort < maxsize, (
+            "The number_to_sort needs to be smaller than maxisze"
+        )
         self.maxsize = maxsize
         self.N_to_sort = number_to_sort
         self.name = "Sort events"
@@ -352,7 +352,7 @@ class SortEvents(Task):
                 self.number_of_resets += 1
                 if self.all_start_times is None:
                     self.start_time = time.time()
-                elif isinstance(self.all_start_times, (list, tuple)):
+                elif isinstance(self.all_start_times, list | tuple):
                     if self.number_of_resets >= len(self.all_start_times):
                         print(
                             "[red]ERROR[/] SortEventTask: detected more list mode starts than given timestamps. Estimating time offset"
@@ -362,7 +362,7 @@ class SortEvents(Task):
                         ) + 35  # estimate of time of break
                     else:
                         self.start_time = self.all_start_times[self.number_of_resets]
-                elif isinstance(self.all_start_times, (int, float)):
+                elif isinstance(self.all_start_times, int | float):
                     self.start_time += (
                         self.last_event_timestamp - self.first_event_timestamp
                     ) + self.all_start_times

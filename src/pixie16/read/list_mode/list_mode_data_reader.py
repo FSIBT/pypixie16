@@ -342,7 +342,7 @@ class StreamReader:
 
 
 class ListModeDataReader:
-    def __init__(self, reader: Union[FileReader, StreamReader]):
+    def __init__(self, reader: FileReader | StreamReader):
         self.reader = reader
 
     def pop(self) -> Event:
@@ -441,7 +441,7 @@ def events_from_files_generator(files):
 
 
 def to_tuple(obj):
-    if isinstance(obj, (str, Path)):
+    if isinstance(obj, str | Path):
         obj = [obj]
     else:
         try:

@@ -29,8 +29,8 @@ def compare_dict(A, B, key_string):
             output += compare_dict(A[key], B[key], new_key_string)
         elif isinstance(valueA, list) and isinstance(valueB, list):
             output += compare_list(A[key], B[key], new_key_string)
-        elif isinstance(valueA, (str, int, float)) and isinstance(
-            valueB, (str, int, float)
+        elif isinstance(valueA, str | int | float) and isinstance(
+            valueB, str | int | float
         ):
             if valueA == valueB:
                 pass
@@ -62,8 +62,8 @@ def compare_list(A, B, key_string):
             output += compare_dict(valueA, valueB, new_key_string)
         elif isinstance(valueA, list) and isinstance(valueB, list):
             output += compare_list(valueA, valueB, new_key_string)
-        elif isinstance(valueA, (str, int, float)) and isinstance(
-            valueB, (str, int, float)
+        elif isinstance(valueA, str | int | float) and isinstance(
+            valueB, str | int | float
         ):
             if valueA == valueB:
                 pass

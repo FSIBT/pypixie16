@@ -132,7 +132,7 @@ class FastTrigger(QWidget):
                 for c in [0, 1]:
                     tmp = self.grid.itemAtPosition(1 + i, c).widget()
                     if tmp is None:
-                        print(f' no items at {i+1} {c} for {name}"')
+                        print(f' no items at {i + 1} {c} for {name}"')
                         continue
                     tmp.setHidden(not tmp.isHidden())
 
@@ -241,15 +241,14 @@ class FastTrigger(QWidget):
         self.fast_plot.canvas.draw()
 
         self.update_energies()
-        
-        
-##################Draco mods space BEGIN ##################################
+
+    ##################Draco mods space BEGIN ##################################
     def update_CFD(self):
         """Calcuate CFD.
         The vakues of B, D, L, w are FIXED in the Pixie, parameters which go into CFD calculation
         CFD time depends on FF (fast filter), a trapezoidal filter with adjustable rise time and threshold), FFthresh, CFD thresh and CFD delay
         Fail to clear CFDthresh? May still trigger on FFthresh (energy could be useful, even though timing would not be accurate)
-        
+
         The energy calculation here is based on 20 ns time steps so
         currently only SlowFilterRange=1 works.
 
@@ -347,22 +346,18 @@ class FastTrigger(QWidget):
                         )
                         self.energy_values[i] = result[k - 2 * L - G + 1]
 
-            self.cfd_plot.axes.plot(
-                result, color=self.colors[i], drawstyle="steps-mid"
-            )
+            self.cfd_plot.axes.plot(result, color=self.colors[i], drawstyle="steps-mid")
             if len(self.triggers[i]):
                 if 0 < trigger_pos < len(result):
                     self.cfd_plot.axes.plot(
                         trigger_pos, result[trigger_pos], "o", color=self.colors[i]
                     )
-            self.cfd_plot.axes.set_xlabel(f"{self.slow_filter_range*10} ns cycles")
+            self.cfd_plot.axes.set_xlabel(f"{self.slow_filter_range * 10} ns cycles")
             self.cfd_plot.axes.set_ylabel("Energy")
             self.cfd_plot.axes.set_title(f"Energy baseline {baseline:.1f}")
-        self.cfd_plot.canvas.draw()    
+        self.cfd_plot.canvas.draw()
 
-##################Draco mods space END ##################################
-
-
+    ##################Draco mods space END ##################################
 
     def update_energies(self):
         """Calcuate energy distribution as described in Mauricio's thesis.
@@ -474,7 +469,7 @@ class FastTrigger(QWidget):
                     self.energy_plot.axes.plot(
                         trigger_pos, result[trigger_pos], "o", color=self.colors[i]
                     )
-            self.energy_plot.axes.set_xlabel(f"{self.slow_filter_range*10} ns cycles")
+            self.energy_plot.axes.set_xlabel(f"{self.slow_filter_range * 10} ns cycles")
             self.energy_plot.axes.set_ylabel("Energy")
             self.energy_plot.axes.set_title(f"Energy baseline {baseline:.1f}")
         self.energy_plot.canvas.draw()

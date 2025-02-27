@@ -75,7 +75,7 @@ def main():
             step=float(commands["<step>"][0]),
         )
 
-        title = f'1d-Scan using {commands["<settingfile>"]}'
+        title = f"1d-Scan using {commands['<settingfile>']}"
         pxscan.parameter_scan_1d(parameter, title=title, savefile=plot_data)
 
     elif N == 2:
@@ -96,7 +96,7 @@ def main():
             step=float(commands["<step>"][1]),
         )
 
-        title = f'2d-Scan using {commands["<settingfile>"]}'
+        title = f"2d-Scan using {commands['<settingfile>']}"
 
         pxscan.parameter_scan_2d(
             parameterA, parameterB, title=title, savefile=plot_data

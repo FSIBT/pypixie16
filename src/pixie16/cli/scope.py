@@ -1,4 +1,4 @@
-""""
+""" "
 Usage:
 pixie16-scope
 

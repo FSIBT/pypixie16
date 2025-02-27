@@ -31,9 +31,7 @@ config = configparser.ConfigParser()
 config.read(inifile)
 
 
-def config_get_parameters(
-    section: str, name: str, verbose: bool = True
-) -> Union[None, Path]:
+def config_get_parameters(section: str, name: str, verbose: bool = True) -> None | Path:
     """Get the setting out of the config dir.
 
     Provide better error message if init file does not exist.
@@ -106,7 +104,7 @@ def list_firmware() -> None:
             print(f"   {key} = {config[section][key]}")
     print(
         f'Use only the name after the "." for the name of'
-        f' the firmware: {", ".join(names)}'
+        f" the firmware: {', '.join(names)}"
     )
 
 

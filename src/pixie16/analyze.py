@@ -45,7 +45,7 @@ def ensure_2d_array(f):
         if one_dim:
             if isinstance(out, np.ndarray):
                 out = out[0]
-            elif isinstance(out, (list, tuple)):
+            elif isinstance(out, list | tuple):
                 out = (o[0] for o in out)
         return out
 

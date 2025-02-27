@@ -82,7 +82,7 @@ elif commands["read"]:
     if nr > 1:
         print(f"Channel, value")
         for i in range(nr):
-            print(f"    {i}  {A[offset+i]}")
+            print(f"    {i}  {A[offset + i]}")
     else:
         print(f"Module setting")
         print(f"      {A[offset]}")

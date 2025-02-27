@@ -79,7 +79,7 @@ class SettingsBase(UserDict):
         return keys
 
     @classmethod
-    def from_file(cls, file: Union[Path, str], module: int = 0):
+    def from_file(cls, file: Path | str, module: int = 0):
         """Creates a Settings object from a file."""
 
         if isinstance(file, str):
@@ -160,6 +160,6 @@ class CrateSettings(UserList):
         else:
             self.data = list(input)
             for x in self.data:
-                assert isinstance(
-                    x, Settings
-                ), "Can only put Seetings in CrateSettings."
+                assert isinstance(x, Settings), (
+                    "Can only put Seetings in CrateSettings."
+                )

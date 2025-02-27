@@ -138,8 +138,8 @@ def init(modules: list[int], offline_mode: bool = False, verbose: bool = False) 
 
 
 def boot(
-    section_name: Optional[str] = "default",
-    modules: Optional[list[int]] = None,
+    section_name: str | None = "default",
+    modules: list[int] | None = None,
     boot_pattern: int = 0x7F,
     verbose: bool = False,
 ) -> None:
@@ -178,8 +178,8 @@ def boot(
 
 def init_and_boot(
     offline_mode: bool = False,
-    section_name: Optional[str] = "default",
-    modules: Optional[list[int]] = None,
+    section_name: str | None = "default",
+    modules: list[int] | None = None,
     boot_pattern: int = 0x7F,
     verbose: bool = False,
 ) -> None:
@@ -204,7 +204,7 @@ def init_and_boot(
     boot(section_name, boot_pattern=boot_pattern, verbose=verbose)
 
 
-def adjust_offsets(modules: Optional[Iterable[int]] = None) -> None:
+def adjust_offsets(modules: Iterable[int] | None = None) -> None:
     """Adjust offsets for all channels in the list of module".
 
     Parameters
@@ -219,7 +219,7 @@ def adjust_offsets(modules: Optional[Iterable[int]] = None) -> None:
         SDK.adjust_offsets(m)
 
 
-def set_sync_mode(modules: Optional[Iterable[int]] = None) -> None:
+def set_sync_mode(modules: Iterable[int] | None = None) -> None:
     """Turn on sync mode for every module.
 
     Parameters
@@ -235,7 +235,7 @@ def set_sync_mode(modules: Optional[Iterable[int]] = None) -> None:
         SDK.write_single_module_parameter("IN_SYNCH", 0, m)
 
 
-def unset_sync_mode(modules: Optional[Iterable[int]] = None) -> None:
+def unset_sync_mode(modules: Iterable[int] | None = None) -> None:
     """Turn off sync mode for every module.
 
     Parameters
@@ -417,7 +417,7 @@ def exit_system() -> None:
 
 
 def read_list_mode_fifo(
-    check: bool = True, threshold: int = 64, modules: Optional[Iterable[int]] = None
+    check: bool = True, threshold: int = 64, modules: Iterable[int] | None = None
 ) -> list[np.ndarray]:
     """Reads data from pixies FIFO across all modules defined in pixie16.control.modules
 
@@ -461,7 +461,7 @@ def read_list_mode_fifo(
     return output
 
 
-def run_list_mode(filename: Optional[str] = None, runtime: int = 5) -> None:
+def run_list_mode(filename: str | None = None, runtime: int = 5) -> None:
     """Run the pixie16 in list mode.
 
     Start and stop a list mode run. The module needs to be
@@ -689,7 +689,7 @@ def take_MCA_spectra(
 
 def take_list_mode_data(
     duration: float,
-    modules: Optional[Iterable[int]] = None,
+    modules: Iterable[int] | None = None,
 ) -> list[np.ndarray]:
     """Take list mode data for a certain time.
 
@@ -872,7 +872,7 @@ def _expand_list(arg, N):
 
 
 def _expand_values(value, N):
-    if isinstance(value, (int, float, str)):
+    if isinstance(value, int | float | str):
         return [value] * N
     else:
         return value
@@ -983,7 +983,7 @@ def _handle_coincidences(settings, N: int):
     return settings
 
 
-def change_setting_from_dict(settings: dict, call_pixie: Optional[bool] = True):
+def change_setting_from_dict(settings: dict, call_pixie: bool | None = True):
     """Update settings in the pixie16.
 
     Takes a dictionary with setting names as keys and setting values
@@ -996,18 +996,18 @@ def change_setting_from_dict(settings: dict, call_pixie: Optional[bool] = True):
     will be used for all channels or a list of the same length as `channels` in which case
     each (module, channel) combination will get its own value.
     """
-    assert (
-        "channels" in settings
-    ), "The settings dictionary needs an entry listing called 'channels' the channels"
+    assert "channels" in settings, (
+        "The settings dictionary needs an entry listing called 'channels' the channels"
+    )
     channels = settings.pop("channels")
 
     for c in channels:
-        assert isinstance(
-            c, (list, tuple)
-        ), "Setting dictionary: each channel must be a list or tuple"
-        assert (
-            len(c) == 2
-        ), "Setting dictionary: each channel must have two entries (modules, channel)"
+        assert isinstance(c, list | tuple), (
+            "Setting dictionary: each channel must be a list or tuple"
+        )
+        assert len(c) == 2, (
+            "Setting dictionary: each channel must have two entries (modules, channel)"
+        )
 
     modules = {x[0] for x in channels}
 
@@ -1066,7 +1066,7 @@ def change_setting_from_dict(settings: dict, call_pixie: Optional[bool] = True):
 
 
 def _change_bit_parameter(
-    name: str, value: Union[bool, int, str], bit_list: list[bool]
+    name: str, value: bool | int | str, bit_list: list[bool]
 ) -> list[bool]:
     """Internal function to adjust single bits in MODULE_CSRB and CHANNEL_CSRA.
 
@@ -1207,9 +1207,9 @@ def _change_bit_parameter(
     # Module parameters (currently onlChanValSignaly MODULE_CSRB)
     if name == "BackplanePullup":
         # value: True = connect backplane to pullup resistor
-        assert isinstance(
-            value, bool
-        ), "BackplanePullup needs to be either True or False"
+        assert isinstance(value, bool), (
+            "BackplanePullup needs to be either True or False"
+        )
         bit_list[31 - 0] = value
     elif name == "Director":
         # value: True = set to director
@@ -1221,27 +1221,27 @@ def _change_bit_parameter(
         bit_list[31 - 6] = value
     elif name == "GlobalFastTrigger":
         # value: True = select global fast trigger source
-        assert isinstance(
-            value, bool
-        ), "GlobalFastTrigger needs to be either True or False"
+        assert isinstance(value, bool), (
+            "GlobalFastTrigger needs to be either True or False"
+        )
         bit_list[31 - 7] = value
     elif name == "ExternalTrigger":
         # value: True = select external trigger source
-        assert isinstance(
-            value, bool
-        ), "ExternalTrigger needs to be either True or False"
+        assert isinstance(value, bool), (
+            "ExternalTrigger needs to be either True or False"
+        )
         bit_list[31 - 8] = value
     elif name == "ExternalInhibit":
         # value: True = use inhibit
-        assert isinstance(
-            value, bool
-        ), "ExternalInhibit needs to be either True or False"
+        assert isinstance(value, bool), (
+            "ExternalInhibit needs to be either True or False"
+        )
         bit_list[31 - 10] = value
     elif name == "DistributeClocks":
         # value: True = multiple crates
-        assert isinstance(
-            value, bool
-        ), "DistributeClocks needs to be either True or False"
+        assert isinstance(value, bool), (
+            "DistributeClocks needs to be either True or False"
+        )
         bit_list[31 - 11] = value
     elif name == "SortEvents":
         # value: True = sort events based on timestamp
@@ -1249,9 +1249,9 @@ def _change_bit_parameter(
         bit_list[31 - 12] = value
     elif name == "ConnectFastTriggerBP":
         # value: True = Connect the fast trigger to the backplane
-        assert isinstance(
-            value, bool
-        ), "ConnectFastTriggerBP needs to be either True or False"
+        assert isinstance(value, bool), (
+            "ConnectFastTriggerBP needs to be either True or False"
+        )
         bit_list[31 - 13] = value
 
     # Channel parameters  (currently CHAN_CSRA)
@@ -1301,9 +1301,9 @@ def _change_bit_parameter(
         bit_list[31 - 6] = value
     elif name == "CaptureHistogram":
         # value: True = enable capture of MCA histograms
-        assert isinstance(
-            value, bool
-        ), "CaptureHistogram needs to be either True or False"
+        assert isinstance(value, bool), (
+            "CaptureHistogram needs to be either True or False"
+        )
         bit_list[31 - 7] = value
     elif name == "CaptureTrace":
         # value: True = enable capture trace
@@ -1327,9 +1327,9 @@ def _change_bit_parameter(
         bit_list[31 - 12] = value
     elif name == "EnableChannelVal":
         # value: True = enable channel validation
-        assert isinstance(
-            value, bool
-        ), "EnableChannelVal needs to be either True or False"
+        assert isinstance(value, bool), (
+            "EnableChannelVal needs to be either True or False"
+        )
         bit_list[31 - 13] = value
     elif name == "Gain":
         # value: 2.5 (True) or 0.625 (False)
@@ -1354,9 +1354,9 @@ def _change_bit_parameter(
         bit_list[31 - 16] = bit1
     elif name == "SkipLargePulses":
         # value: True = don't record traces for large pulses
-        assert isinstance(
-            value, bool
-        ), "SkipLargePulses needs to be either True or False"
+        assert isinstance(value, bool), (
+            "SkipLargePulses needs to be either True or False"
+        )
         bit_list[31 - 17] = value
     elif name == "GroupTrigSignal":
         # value: 'external' or 'local'
@@ -1389,7 +1389,7 @@ def _change_bit_parameter(
     return bit_list
 
 
-def change_raw_setting_from_dict(settings: dict, call_pixie: Optional[bool] = True):
+def change_raw_setting_from_dict(settings: dict, call_pixie: bool | None = True):
     """Modify the raw settings on the pixie.
 
     Note: this bypasses any checks that are normally done in XIA's C-libary. This can be
@@ -1405,18 +1405,18 @@ def change_raw_setting_from_dict(settings: dict, call_pixie: Optional[bool] = Tr
     call_pixie
         Can be set to False, in which case the pixie16 is not actually called (used for tests)
     """
-    assert (
-        "channels" in settings
-    ), "The settings dictionary needs an entry listing called 'channels' the channels"
+    assert "channels" in settings, (
+        "The settings dictionary needs an entry listing called 'channels' the channels"
+    )
     channels = settings.pop("channels")
 
     for c in channels:
-        assert isinstance(
-            c, (list, tuple)
-        ), "Setting dictionary: each channel must be a list or tuple"
-        assert (
-            len(c) == 2
-        ), "Setting dictionary: each channel must have two entries (modules, channel)"
+        assert isinstance(c, list | tuple), (
+            "Setting dictionary: each channel must be a list or tuple"
+        )
+        assert len(c) == 2, (
+            "Setting dictionary: each channel must have two entries (modules, channel)"
+        )
 
     # get all the settings data from the pixie
     if call_pixie:
@@ -1431,11 +1431,11 @@ def change_raw_setting_from_dict(settings: dict, call_pixie: Optional[bool] = Tr
         for i, (module, channel) in enumerate(channels):
             current_value = current[module].get_by_name(name)
 
-            if isinstance(current_value, (bool, int, float)):
-                assert isinstance(value, (bool, int, float))
+            if isinstance(current_value, bool | int | float):
+                assert isinstance(value, bool | int | float)
                 current[module].set_by_name(name, value)
-            if isinstance(current_value, (list, tuple)):
-                if isinstance(value, (bool, int, float)):
+            if isinstance(current_value, list | tuple):
+                if isinstance(value, bool | int | float):
                     value_list = [value] * len(channels)
                 else:
                     value_list = list(value)
@@ -1447,7 +1447,7 @@ def change_raw_setting_from_dict(settings: dict, call_pixie: Optional[bool] = Tr
     return current
 
 
-def set_defaults_for_module(module: int, call_pixie: Optional[bool] = True):
+def set_defaults_for_module(module: int, call_pixie: bool | None = True):
     """Sets defaults for all used module and channel parameters in a module.
 
     Parameters

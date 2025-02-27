@@ -5,6 +5,7 @@ histogram. The histogram is integrated and plotted against the
 parameter.
 
 """
+
 from dataclasses import dataclass
 import sys
 import time
@@ -76,8 +77,8 @@ class ScanParameter:
 def parameter_scan_1d(
     parameter: ScanParameter,
     dwelltime: int = 0,
-    title: Optional[str] = None,
-    savefile: Optional[str] = None,
+    title: str | None = None,
+    savefile: str | None = None,
 ):
     """Do a 1D parameter scan on the pixie16.
 
@@ -142,8 +143,8 @@ def parameter_scan_2d(
     parameterA: ScanParameter,
     parameterB: ScanParameter,
     dwelltime: int = 0,
-    title: Optional[str] = None,
-    savefile: Optional[str] = None,
+    title: str | None = None,
+    savefile: str | None = None,
 ):
     """Do a 2D parameter scan on the pixie16.
 

@@ -39,23 +39,23 @@ class NumpyEncoder(json.JSONEncoder):
         if isinstance(
             obj,
             (
-                np.int_,
-                np.intc,
-                np.intp,
-                np.int8,
-                np.int16,
-                np.int32,
-                np.int64,
-                np.uint8,
-                np.uint16,
-                np.uint32,
-                np.uint64,
+                np.int_
+                | np.intc
+                | np.intp
+                | np.int8
+                | np.int16
+                | np.int32
+                | np.int64
+                | np.uint8
+                | np.uint16
+                | np.uint32
+                | np.uint64
             ),
         ):
             return int(obj)
-        elif isinstance(obj, (np.float_, np.float16, np.float32, np.float64)):
+        elif isinstance(obj, np.float_ | np.float16 | np.float32 | np.float64):
             return float(obj)
-        elif isinstance(obj, (np.ndarray,)):
+        elif isinstance(obj, np.ndarray):
             return obj.tolist()
         return json.JSONEncoder.default(self, obj)
 
@@ -124,9 +124,9 @@ class OldSettings(Entity):
 
 
 def convert_old_settings(
-    settings_filename: Union[str, Path],
+    settings_filename: str | Path,
     modules: list = [0],
-    metadata_filename: Optional[Union[str, Path]] = None,
+    metadata_filename: str | Path | None = None,
 ):
     """Convert an old .set file to a .json file.
 
@@ -269,7 +269,7 @@ def convert_old_settings(
             # Stats Parameters
             elif key in stats_params:
                 # If a parameter has only one value, apply it to all 16 channels
-                if isinstance(value, (int, float)):
+                if isinstance(value, int | float):
                     value = [value] * 16
                 if key.endswith("A"):
                     A_value = value

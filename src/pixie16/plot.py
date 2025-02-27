@@ -20,7 +20,7 @@ DATA_POINTS_PER_FPGA_CYCLE = 5
 
 
 def filter_events(
-    events: Iterable[Event], N: Optional[int] = None, randomize: bool = False
+    events: Iterable[Event], N: int | None = None, randomize: bool = False
 ) -> Iterable[Event]:
     """Pick N (random) events from a list of events"""
 
@@ -40,9 +40,7 @@ def filter_events(
     return events
 
 
-def create_title_page(
-    title: Union[str, list[str]], pdf: Optional[PdfPages] = None
-) -> None:
+def create_title_page(title: str | list[str], pdf: PdfPages | None = None) -> None:
     """Helper function to create a title page
 
     The function will create a title centered in a plot.
@@ -58,7 +56,7 @@ def create_title_page(
        The pdf where the title page should be added to.
 
     """
-    if isinstance(title, (list, tuple)):
+    if isinstance(title, list | tuple):
         title = "\n".join(title)
 
     fig = plt.figure()
@@ -89,8 +87,8 @@ def advindexing_roll(A: np.ndarray, r: np.ndarray) -> np.ndarray:
 
 def create_persistent_plot(
     traces: np.ndarray,
-    x_range: Optional[Sequence[float]] = None,
-    ax: Optional[matplotlib.axes.Axes] = None,
+    x_range: Sequence[float] | None = None,
+    ax: matplotlib.axes.Axes | None = None,
 ) -> None:
     """Create persistence plot
 
@@ -221,11 +219,11 @@ def find_sums(
 
 def MCA(
     data: np.ndarray,
-    ax: Optional[matplotlib.axes.Axes] = None,
+    ax: matplotlib.axes.Axes | None = None,
     rebin: int = 1,
-    title: Optional[str] = None,
-    label: Optional[str] = None,
-    pdf: Optional[PdfPages] = None,
+    title: str | None = None,
+    label: str | None = None,
+    pdf: PdfPages | None = None,
     log: bool = False,
 ) -> None:
     """Plot MCA spectra
@@ -271,13 +269,13 @@ def CFD(
     events: Iterable[Event],
     setting: Settings,
     w: float = 0.3125,
-    N: Optional[int] = None,
+    N: int | None = None,
     randomize: bool = False,
     persistent: bool = False,
-    title: Optional[str] = None,
-    ax: Optional[matplotlib.axes.Axes] = None,
-    pdf: Optional[PdfPages] = None,
-    plot_options: Optional[str] = None,
+    title: str | None = None,
+    ax: matplotlib.axes.Axes | None = None,
+    pdf: PdfPages | None = None,
+    plot_options: str | None = None,
 ) -> None:
     """Plot CFD and FastFilter several traces
 
@@ -391,12 +389,12 @@ def energy_sums(
     events: Iterable[Event],
     setting: Settings,
     stats: Stats,
-    N: Optional[int] = None,
+    N: int | None = None,
     randomize: bool = False,
     persistent: bool = True,
-    title: Optional[str] = None,
-    ax: Optional[matplotlib.axes.Axes] = None,
-    pdf: Optional[PdfPages] = None,
+    title: str | None = None,
+    ax: matplotlib.axes.Axes | None = None,
+    pdf: PdfPages | None = None,
 ) -> None:
     """Plots traces aligned to position of the energy sums.
 

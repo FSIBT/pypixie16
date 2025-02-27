@@ -22,9 +22,9 @@ for child in settings_path.iterdir():
         settings["initial"] = pixie16.read.load_settings(child)
     elif res := parse.parse(settings_filename_fmt, filename):
         datetime_str = res["date_time"]
-        settings[
-            datetime.datetime.strptime(datetime_str, date_time_fmt)
-        ] = pixie16.read.load_settings(child)
+        settings[datetime.datetime.strptime(datetime_str, date_time_fmt)] = (
+            pixie16.read.load_settings(child)
+        )
     else:
         raise ValueError()
 
