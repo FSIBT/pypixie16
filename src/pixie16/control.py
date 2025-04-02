@@ -1037,6 +1037,8 @@ def change_setting_from_dict(settings: dict, call_pixie: bool | None = True):
 
     out = []  # this list is mainly for testing
     for name, value in settings.items():
+        if name == "channels":
+            continue
         if name in CHANNEL_PARAMETERS:
             # convert single values to lists that matches the number of channels
             value_lst = _expand_values(value, len(channels))
