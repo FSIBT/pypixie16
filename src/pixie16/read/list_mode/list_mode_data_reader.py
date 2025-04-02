@@ -214,13 +214,20 @@ class FileReader:
         """Closes all file descriptors and mmaps at the end of the context manager."""
         self.close_files()
 
-    def read(self, size: int) -> bytes:
+    def advance(self, size: int):
+        """Not needed, since all the data is in the files and we can
+        just advance the file position during read()"""
+        pass
+
+    def read(self, size: int, offset: int) -> bytes:
         """Retrieve the next `size` bytes from the files and advance the file position.
 
         Parameters
         ----------
         size
             How many bytes should be returned.
+        offset
+            ignored here (used in Streamreader)
 
         Raises
         ------
@@ -327,14 +334,23 @@ class StreamReader:
         self.left = 0
         self.right = current
 
-    def read(self, size: int) -> np.ndarray:
-        """Return `size` 32-bit words from the buffer as a numpy array."""
-        current = self.right - self.left
+    def read(self, size: int, offset: int) -> np.ndarray:
+        """Return `size` 32-bit words from the buffer as a numpy array.
+
+        In the streamreader, there might be an incomplete event at the end of the buffer.
+        However, we have several read statements to read a single event. We cannot advance
+        self.left directly, unless we read a whole event (up to 3 read()). `offset` is used to
+        read partial data and advance() is used to move self.left once a full event is read.
+        """
+        current = self.right - (self.left + offset)
         if size <= current:
-            out = self.buffer[self.left : self.left + size]
-            self.left += size
+            out = self.buffer[self.left + offset : self.left + offset + size]
             return out
         raise EmptyError
+
+    def advance(self, size: int) -> None:
+        """Advance self.left once a full event is read (possible after multiple read statement)"""
+        self.left += size
 
     def __len__(self):
         """Return the amount of data in the buffer."""
@@ -350,14 +366,16 @@ class ListModeDataReader:
 
         # try to get all the words for the next event
         # if the complete next event isn't in queue an exception is thrown but no data is discarded
-        event_header = HEADER_FORMATS.unpack(self.reader.read(4).byteswap().tobytes())
+        event_header = HEADER_FORMATS.unpack(
+            self.reader.read(4, 0).byteswap().tobytes()
+        )
         header_length = event_header["Header Length"]
         extra_header_length = header_length - 4
         event_length = event_header["Event Length"]
 
         # it's now save to read both header and trace
         if extra_header_length > 0:
-            header_words = self.reader.read(extra_header_length).byteswap().tobytes()
+            header_words = self.reader.read(extra_header_length, 4).byteswap().tobytes()
             # unpack words/trace into their field values
             try:
                 event_values = EXTRA_HEADER_FORMATS[extra_header_length].unpack(
@@ -365,12 +383,12 @@ class ListModeDataReader:
                 )
                 event_header.update(**event_values)
             except KeyError:
-                print("Something went wrong with the binary data.")
+                print("Something went wrong with the binary data.", flush=True)
                 raise
 
         trace_length = event_length - header_length
         if trace_length:
-            trace_data = self.reader.read(trace_length).tobytes()
+            trace_data = self.reader.read(trace_length, header_length).tobytes()
             trace = np.frombuffer(trace_data, f"({trace_length},2)<u2", count=1)[
                 0, :, :
             ]
@@ -378,6 +396,12 @@ class ListModeDataReader:
         else:
             trace_data = None
             trace = ()
+
+        # if reader is a filereader, reader.read() will already advance the positions
+        # in streamreader, we might still be waiting for more data from the pixie
+        # The workaround is to only remove event once all read operation worked and
+        # have read() not advance the buffer location.
+        self.reader.advance(event_length)
 
         # calculate event values that need to be derived from field values
         CFD_bits = event_header.pop("CFD trigger source bits")
