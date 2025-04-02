@@ -16,8 +16,30 @@ class TestStreamer:
         data = S.read(4)
         assert_array_equal(data, np.array([0, 1, 2, 3], dtype=np.uint32))
 
+        data = S.read(4, 4)
+        assert_array_equal(data, np.array([4, 5, 6, 7], dtype=np.uint32))
+
+        data = S.read(8, 8)
+        assert_array_equal(
+            data, np.array([8, 9, 10, 11, 12, 13, 14, 15], dtype=np.uint32)
+        )
+
+    def test_add_and_read_with_advance(self):
+        S = pixie16.read.StreamReader()
+
+        x = np.arange(20, dtype=np.uint32)
+
+        S.put(x)
+
+        data = S.read(4)
+        assert_array_equal(data, np.array([0, 1, 2, 3], dtype=np.uint32))
+
+        S.advance(4)
+
         data = S.read(4)
         assert_array_equal(data, np.array([4, 5, 6, 7], dtype=np.uint32))
+
+        S.advance(4)
 
         data = S.read(8)
         assert_array_equal(
@@ -42,6 +64,7 @@ class TestStreamer:
         S.put(x)
 
         S.read(4)
+        S.advance(4)
         assert_array_equal(S.read(4), np.array([4, 5, 6, 7], dtype=np.uint32))
 
     def test_buffer_size_doubling(self):
@@ -74,6 +97,7 @@ class TestStreamer:
         assert S.buffer_size == 800
 
         S.read(600)
+        S.advance(600)
 
         data = np.arange(10, dtype=np.uint32)
         S.put(data)

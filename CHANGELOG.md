@@ -13,6 +13,9 @@ and this project tries to adhere to [Semantic Versioning](https://semver.org/spe
 ### Fixed
 - handling of output file numbering in run_list_mode
 - don't remove channels variable when using change_setting_from_dict
+- ListModeDataReader in combination with Streamreader could get stuck
+  when only a partial event was in the buffer that was longer than 4
+  words
 
 ## [3.1.0] 2025-02-15
 

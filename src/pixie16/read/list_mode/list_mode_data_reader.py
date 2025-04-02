@@ -219,7 +219,7 @@ class FileReader:
         just advance the file position during read()"""
         pass
 
-    def read(self, size: int, offset: int) -> bytes:
+    def read(self, size: int, offset: int = 0) -> bytes:
         """Retrieve the next `size` bytes from the files and advance the file position.
 
         Parameters
@@ -334,7 +334,7 @@ class StreamReader:
         self.left = 0
         self.right = current
 
-    def read(self, size: int, offset: int) -> np.ndarray:
+    def read(self, size: int, offset: int = 0) -> np.ndarray:
         """Return `size` 32-bit words from the buffer as a numpy array.
 
         In the streamreader, there might be an incomplete event at the end of the buffer.
@@ -366,9 +366,7 @@ class ListModeDataReader:
 
         # try to get all the words for the next event
         # if the complete next event isn't in queue an exception is thrown but no data is discarded
-        event_header = HEADER_FORMATS.unpack(
-            self.reader.read(4, 0).byteswap().tobytes()
-        )
+        event_header = HEADER_FORMATS.unpack(self.reader.read(4).byteswap().tobytes())
         header_length = event_header["Header Length"]
         extra_header_length = header_length - 4
         event_length = event_header["Event Length"]
