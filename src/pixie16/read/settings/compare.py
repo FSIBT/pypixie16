@@ -111,14 +111,14 @@ def compare_module_setting(A, B, quiet=False, channels=None):
         if output:
             keylen = max(len(k[0]) for k in output)
             print(f"{'settting':<{keylen}} {'a':>10} {'b':>10}")
-            for a, b, c in output:
+            for key, val_a, val_b in output:
                 skip = True
                 for c in channels:
-                    if f"[{c}]" in a:
+                    if f"[{c}]" in key:
                         skip = False
                         break
                 if not skip:
-                    print(f"{a:<{keylen}} {b:>10} {c:>10}")
+                    print(f"{key:<{keylen}} {val_a:>10} {val_b:>10}")
         else:
             print("Settings are identical")
 

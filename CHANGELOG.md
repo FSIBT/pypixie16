@@ -16,6 +16,7 @@ and this project tries to adhere to [Semantic Versioning](https://semver.org/spe
 - ListModeDataReader in combination with Streamreader could get stuck
   when only a partial event was in the buffer that was longer than 4
   words
+- Comparing settings did not print second value
 
 ## [3.1.0] 2025-02-15
 
