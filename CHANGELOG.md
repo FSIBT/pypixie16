@@ -6,13 +6,20 @@ and this project tries to adhere to [Semantic Versioning](https://semver.org/spe
 
 ## [Unreleased]
 
+### Added
+- Started: Settings class now stores the original values, but uses the
+  same values as used when settings values using a dict, e.g., units
+  for times are in us, instead of raw FPGA values.
+- When comparing settings, you can now compare either the derived
+  values or the raw values.
+
 ### Changed
-- switched to using ruff instead of pyupgrade and black
-- minimum python required: 3.10 (to stay in sync with numpy)
+- Switched to using ruff instead of pyupgrade and black
+- Minimum python required: 3.10 (to stay in sync with numpy)
 
 ### Fixed
-- handling of output file numbering in run_list_mode
-- don't remove channels variable when using change_setting_from_dict
+- Handling of output file numbering in run_list_mode
+- Don't remove channels variable when using change_setting_from_dict
 - ListModeDataReader in combination with Streamreader could get stuck
   when only a partial event was in the buffer that was longer than 4
   words

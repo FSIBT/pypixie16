@@ -76,7 +76,7 @@ def compare_list(A, B, key_string):
     return output
 
 
-def compare_module_setting(A, B, quiet=False, channels=None):
+def compare_module_setting(A, B, quiet=False, channels=None, raw=False):
     """Compare the settings of two modules (for the new json based settings)
 
     Print the difference.
@@ -98,7 +98,10 @@ def compare_module_setting(A, B, quiet=False, channels=None):
         )
         return None
 
-    output = compare_dict(A, B, "")
+    if raw:
+        output = compare_dict(A.data_raw, B.data_raw, "")
+    else:
+        output = compare_dict(A.data, B.data, "")
 
     if channels is None:
         channels = list(range(16))

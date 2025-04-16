@@ -1,6 +1,7 @@
 """The main implementation of the Settings class."""
 
 from collections import UserDict, UserList
+import copy
 import json
 from pathlib import Path
 import struct
@@ -38,7 +39,9 @@ class SettingsBase(UserDict):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self.data_raw = {}
         self.index = {}
+        self.index_raw = {}
         self.duplicate_keys = []
 
     def create_index(self, d: dict = None, level: list = None):
@@ -78,6 +81,16 @@ class SettingsBase(UserDict):
 
         return keys
 
+    def transform(self, data):
+        """Function that can be used to transform data.
+
+        Used for Settings where the data stores is not in the same
+        format as the data in the settings files, e.g. settings names
+        are different and values are different.  For examples, we have
+        names and values for certain bits.
+        """
+        return data
+
     @classmethod
     def from_file(cls, file: Path | str, module: int = 0):
         """Creates a Settings object from a file."""
@@ -96,7 +109,8 @@ class SettingsBase(UserDict):
         with file.open("r") as fp:
             data = json.load(fp)
         setting = cls()
-        setting.data = data[module]
+        setting.data_raw = copy.deepcopy(data[module])
+        setting.data = setting.transform(data[module])
         setting.create_index()
         setting.filename = file
         return setting
@@ -105,7 +119,8 @@ class SettingsBase(UserDict):
     def from_dict(cls, data: dict):
         """Creates a Settings object from a file."""
         setting = cls()
-        setting.data = data
+        setting.data_raw = copy.deepcopy(data)
+        setting.data = setting.transform(data)
         setting.create_index()
         return setting
 
@@ -143,7 +158,35 @@ class SettingsBase(UserDict):
 
 
 class Settings(SettingsBase):
-    pass
+    """Data from a settings json file.
+
+    We also convert certain values from u32 into readable values, e.g.
+    OffsetDAC into Volts.
+
+    """
+
+    def apply_func(self, data, name, func):
+        """Apply a function to a certain value. Leaves the name untouched."""
+        keys = name.split("/")
+        name = keys[-1]
+        keys = keys[:-1]
+        tmp = data
+        for k in keys:
+            tmp = tmp[k]
+
+        if isinstance(tmp[name], list):
+            tmp[name] = [func(x) for x in tmp[name]]
+        else:
+            tmp[name] = func(tmp[name])
+        return data
+
+    def transform_offset(self, value):
+        """See Prog Manual Version 3.07, page 97."""
+        return 1.5 * ((int(value) - 32768) / 32768)
+
+    def transform(self, data):
+        data = self.apply_func(data, "channel/input/OffsetDAC", self.transform_offset)
+        return data
 
 
 class Stats(SettingsBase):
