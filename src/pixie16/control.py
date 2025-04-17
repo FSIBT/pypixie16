@@ -549,7 +549,7 @@ def run_list_mode(filename: str | None = None, runtime: int = 5) -> None:
         while time.time() < stop:
             data = read_list_mode_fifo()
             for d in data:
-                d.newbyteorder("S").tofile(outfile)
+                d.view(d.dtype.newbyteorder("S")).tofile(outfile)
 
         end_run()
         time.sleep(0.4)
@@ -557,7 +557,7 @@ def run_list_mode(filename: str | None = None, runtime: int = 5) -> None:
         # read final data
         data = read_list_mode_fifo(check=False)
         for d in data:
-            d.newbyteorder("S").tofile(outfile)
+            d.view(d.dtype.newbyteorder("S")).tofile(outfile)
 
 
 def reset_coincidence_setting(channels: Iterable[tuple[int, int]]) -> None:

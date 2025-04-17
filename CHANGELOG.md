@@ -16,6 +16,7 @@ and this project tries to adhere to [Semantic Versioning](https://semver.org/spe
 ### Changed
 - Switched to using ruff instead of pyupgrade and black
 - Minimum python required: 3.10 (to stay in sync with numpy)
+- Update for numpy 2.0: numpy.ndarray no longer uses newbyteorder directly.
 
 ### Fixed
 - Handling of output file numbering in run_list_mode
