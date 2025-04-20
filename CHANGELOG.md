@@ -12,6 +12,9 @@ and this project tries to adhere to [Semantic Versioning](https://semver.org/spe
   for times are in us, instead of raw FPGA values.
 - When comparing settings, you can now compare either the derived
   values or the raw values.
+- Ability to redirect logfile to a directory using an enviromental
+  variable (`PIXIE16_LOG_DIR`) or a "Logging"->"logdir" entry in the
+  config file
 
 ### Changed
 - Switched to using ruff instead of pyupgrade and black
@@ -19,8 +22,8 @@ and this project tries to adhere to [Semantic Versioning](https://semver.org/spe
 - Update for numpy 2.0: numpy.ndarray no longer uses newbyteorder directly.
 
 ### Fixed
-- Handling of output file numbering in run_list_mode
-- Don't remove channels variable when using change_setting_from_dict
+- Handling of output file numbering in `run_list_mode`
+- Don't remove channels variable when using `change_setting_from_dict`
 - ListModeDataReader in combination with Streamreader could get stuck
   when only a partial event was in the buffer that was longer than 4
   words

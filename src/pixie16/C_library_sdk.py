@@ -129,6 +129,7 @@ __all__ = [
 from collections.abc import Iterable
 import ctypes
 import logging
+import os
 from pathlib import Path
 import sys
 from typing import Union, Optional
@@ -614,7 +615,21 @@ def init_system(
     for i, slot in enumerate(modules):
         CPXISlotMap[i] = ctypes.c_ushort(slot)
     COfflineMode = ctypes.c_ushort(offline_mode)
+
+    # check for different log directory, first in the setting file,
+    # then in the environment
+    env_log_path = config.config.get("Logging", "logdir", fallback=None)
+    if env_log_path is None:
+        env_log_path = os.environ.get("PIXIE16_LOG_DIR")
+    if env_log_path:
+        original_dir = os.getcwd()
+        os.chdir(env_log_path)
+
     ret = SDK.Pixie16InitSystem(CNumModules, CPXISlotMap, COfflineMode)
+
+    if env_log_path:
+        os.chdir(original_dir)
+
     check_return_code(ret, "init_system")
 
     if ret == 0:
