@@ -32,38 +32,48 @@ class DummyData(Task):
 
     """
 
-    def __init__(self, runtime, filename=None):
-        super().__init__()
-        self.runtime = runtime
-        self.filename = filename
-
+    def __init__(self, pipeline_address):
+        super().__init__(pipeline_address)
         self.name = "Data generator"
-        if filename is None:
-            file = files("pixie16") / "data" / "pixie16-data-01.bin"
-        else:
-            file = Path(filename)
-        self.data = np.fromfile(file, dtype=np.uint8)
-        self.length = len(self.data)
+
+        self.runtime = 10
+        self.filename = None
+
+        self.data = None
+        self.length = 0
         self.chunk_size = 20_000
+        self.mycounter = 0
+
+    def configure(self):
+        if (filename := self.state.get("filename")) is None:
+            self.filename = files("pixie16") / "data" / "pixie16-data-01.bin"
+        else:
+            self.filename = Path(filename)
+
+        self.data = np.fromfile(self.filename, dtype=np.uint8)
+        self.length = len(self.data)
+        self.chunk_size = self.state.get("chunk_size") or 20_000
         self.pos = 0
         if self.chunk_size > self.length:
             print("[red]ERROR[/] chunk_size too big")
-        self.modules = [2]
-        self.mycounter = 0
+        self.modules = self.state.get("modules") or [2]
+        self.runtime = self.state.get("runtime") or 10
 
     def do_work(self, value):
         if time.time() - self.start_time > self.runtime:
-            self.done = True
+            self.status = "finished"
+            return {"type": "finished"}
+
         time.sleep(0.2)
         self.mycounter += 1
         if self.pos + self.chunk_size < self.length:
             out = self.data[self.pos : self.pos + self.chunk_size]
+            self.pos += self.chunk_size
         else:
             out = self.data[self.pos :]
             self.pos = 0
-        self.pos += self.chunk_size
         ret = [out for m in self.modules]
-        return ret
+        return {"type": "data", "data": ret}
 
 
 class TakeData(Task):
@@ -83,8 +93,9 @@ class TakeData(Task):
 
     """
 
-    def __init__(self, runtime):
-        super().__init__()
+    def __init__(self, pipeline_address):
+        runtime = 10
+        super().__init__(pipeline_address)
         self.name = "Take Data"
         # keep track if we called init
         self.started_acquisition = False
@@ -123,8 +134,9 @@ class TakeData(Task):
 class SetDefaults(Task):
     """Set defaults for parameters in the pixie."""
 
-    def __init__(self, modules: list):
-        super().__init__()
+    def __init__(self, pipeline_address):
+        modules = [0]
+        super().__init__(pipeline_address)
         self.name = "Set defaults"
         self.modules = modules
 
@@ -142,17 +154,30 @@ class GatherData(Task):
     and one for saving data to disk.
     """
 
-    def __init__(self, maxsize=50e6, save_size=None, path=None):
-        super().__init__()
+    def __init__(self, pipeline_address):
+        maxsize = 50e6
+        save_size = None
+        path = None
+
+        super().__init__(pipeline_address)
+        self.name = "Gather Data"
+
         self.data_queue = defaultdict(list)
         self.data_disk = defaultdict(list)
-        self.maxsize = maxsize  # in bytes
-        self.save_size = save_size or maxsize
-        self.save_binary = save_size is not None
-        self.name = "Gather Data"
+        self.maxsize = None
+        self.save_size = None
+        self.save_binary = False
+
+    def configure(self):
+        self.data_queue = defaultdict(list)
+        self.data_disk = defaultdict(list)
+        self.maxsize = self.state.get("maxsize") or 50_000_000
+        self.save_size = self.state.get("save size") or self.maxsize
+        self.save_binary = self.save_size is not None
+        self.maxsize = self.state.get("maxsize") or 50_000_000
+        self.path = Path(self.state.get("path")) or Path(".")
         self.mycounter = 0
         self.file_counter = 0
-        self.path = path or Path(".")
 
     def save_data(self, out):
         timestamp = datetime.today().strftime("%Y-%m-%d-%H-%M-%S")
@@ -172,8 +197,18 @@ class GatherData(Task):
             return max(out)
         return 0
 
+    def user_status(self, d: dict):
+        d["data size queue"] = self.get_size(self.data_queue)
+        d["data size disk"] = self.get_size(self.data_disk)
+        return d
+
     def do_work(self, value):
         self.mycounter += 1
+
+        if value["type"] != "data":
+            return
+
+        value = value["data"]
 
         for i, data in enumerate(value):
             self.data_queue[i].append(data)
@@ -182,7 +217,6 @@ class GatherData(Task):
         # handle data for saving
         data_size = self.get_size(self.data_disk)
         if data_size:
-            self.send_status({"data disk size": data_size})
             if data_size > self.save_size:
                 out = {k: np.concatenate(v) for k, v in self.data_disk.items() if v}
                 if self.save_binary:
@@ -191,7 +225,6 @@ class GatherData(Task):
 
         # handle data for queue
         data_size = self.get_size(self.data_queue)
-        self.send_status({"data queue size": data_size})
 
         if not data_size:
             return
@@ -199,15 +232,15 @@ class GatherData(Task):
         if data_size > self.maxsize:
             out = {k: np.concatenate(v) for k, v in self.data_queue.items() if v}
             self.data_queue = defaultdict(list)
-            return out
+            return {"type": "data", "data": out}
 
     def cleanup(self):
+        """Send data still in buffer."""
         out_queue = {k: np.concatenate(v) for k, v in self.data_queue.items() if v}
         out_disk = {k: np.concatenate(v) for k, v in self.data_disk.items() if v}
-        if out_queue:
-            if self.output_queue:
-                self.output_queue.put(out_queue)
-        if out_disk:
+        if self.output_queue:
+            self.push.send_pyobj({"type": "data", "data": out})
+        if out_disk and not self.is_final_task:
             if self.save_binary:
                 self.save_data(out_disk)
 
@@ -215,10 +248,11 @@ class GatherData(Task):
 class ConvertToEvents(Task):
     """Task to convert data stream to events."""
 
-    def __init__(self):
-        super().__init__()
-        self.list_mode_readers = {}
+    def __init__(self, pipeline_address):
+        super().__init__(pipeline_address)
         self.name = "Convert to events"
+
+        self.list_mode_readers = {}
 
     def do_work(self, value_dict):
         for i, v in value_dict.items():
@@ -236,8 +270,9 @@ class PickSingleModule(Task):
     for a single module.
     """
 
-    def __init__(self, module: int = 0):
-        super().__init__()
+    def __init__(self, pipeline_address):
+        module = 0
+        super().__init__(pipeline_address)
         self.module = module
         self.name = f"Reduce to module {module}"
 
@@ -299,26 +334,24 @@ class SortEvents(Task):
 
     """
 
-    def __init__(
-        self,
-        start_time: float,
-        maxsize: int = 10_000,
-        number_to_sort: int = 8_000,
-        all_start_times: list[float] | float | None = None,
-    ):
-        super().__init__()
+    def __init__(self, pipeline_address):
+        start_time: float = 0
+        maxsize: int = 10_000
+        number_to_sort: int = 8_000
+        all_start_times: list[float] | float | None = None
+
+        self.name = "Sort events"
+
+        super().__init__(pipeline_address)
         self.data = []
         assert number_to_sort < maxsize, (
             "The number_to_sort needs to be smaller than maxisze"
         )
-        self.maxsize = maxsize
-        self.N_to_sort = number_to_sort
-        self.name = "Sort events"
-        self.nr_sorted = 0
-        # unix time of start of the current list mode run. Either the
-        # timestamp of the first events or the time stamp of the last
-        # detected reset
-        self.start_time = start_time
+        self.state = {
+            "maxsize": 10_000,
+            "N_to_sort": 8_000,
+            "nr_sorted": 0,
+        }
         # timestamp of first and current event in binary data in s
         self.first_event_timestamp = None
         self.last_event_timestamp = 0
@@ -400,12 +433,14 @@ class SortEvents(Task):
 class GatherEvents(Task):
     """Gather Events into larger chunks."""
 
-    def __init__(self, size=1_000_000):
-        super().__init__()
+    def __init__(self, pipeline_address):
+        super().__init__(pipeline_address)
         self.data = []
-        self.size = size
-        self.nr = 0
-        self.name = f"Gather events (size={size})"
+        self.state = {
+            "size": 1_000_000,
+            "nr": 0,
+        }
+        self.name = "Gather events"
 
     def do_work(self, value):
         self.data.extend(value)
@@ -428,8 +463,10 @@ class GatherEvents(Task):
 class LoadFiles(Task):
     """Load events from a list of files,"""
 
-    def __init__(self, file_list, batch_size=1_000):
-        super().__init__()
+    def __init__(self, event, pipeline_address):
+        file_list = None
+        batch_size = 1_000
+        super().__init__(event, pipeline_address)
         self.files = file_list
         self.byte_stream = read.FileReader(self.files)
         self.byte_stream.open_files()
