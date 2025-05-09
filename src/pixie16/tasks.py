@@ -56,8 +56,13 @@ class DummyData(Task):
         self.pos = 0
         if self.chunk_size > self.length:
             print("[red]ERROR[/] chunk_size too big")
-        self.modules = self.state.get("modules") or [2]
-        self.runtime = self.state.get("runtime") or 10
+        self.modules = self.state.get("modules", [2])
+        self.runtime = self.state.get("runtime", 10)
+
+    def add_user_status(self, stat):
+        stat["runtime"] = self.runtime
+        stat["filename"] = self.filename
+        return stat
 
     def do_work(self, value):
         if time.time() - self.start_time > self.runtime:

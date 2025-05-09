@@ -1,10 +1,12 @@
 from enum import Enum
 import time
 
+import dateutil
 from PyQt6.QtWidgets import (
     QWidget,
     QLabel,
     QVBoxLayout,
+    QHeaderView,
     QHBoxLayout,
     QPushButton,
     QTableWidget,
@@ -34,6 +36,7 @@ class DataAcquisition(QWidget):
         self.create_layout()
 
         self.on_mode_change(self.settings_modes.currentText())
+        self.run_time_input.editingFinished.connect(self.set_runtime)
 
         # Timer to update table and plot
         self.timer = QtCore.QTimer()
@@ -166,6 +169,29 @@ class DataAcquisition(QWidget):
             case _:
                 print("Should not happen")
 
+    def set_runtime(self):
+        runtime = self.run_time_input.text()
+        try:
+            runtime = int(runtime)
+        except ValueError:
+            try:
+                s = dateutil.parser.parse(runtime) - dateutil.parser.parse("0s")
+                runtime = int(s.total_seconds())
+            except dateutil.parser.ParserError as e:
+                msg = QMessageBox(parent)
+                msg.setIcon(QMessageBox.Icon.Warning)
+                msg.setWindowTitle("Wrong time format")
+                msg.setText("Wrong format, e.g. minutes cannot be larger than 59")
+                msg.setStandardButtons(QMessageBox.StandardButton.Ok)
+                msg.exec()
+                return
+        self.run_time_input.setText(str(runtime))
+        if self.pipeline.current_pipeline:
+            task_id = self.pipeline.current_pipeline[0]
+            conf = {"runtime": runtime}
+            msg = {"type": px.pipeline.MessageType.CONFIGURE, "config": conf}
+            self.pipeline.send_command(task_id, msg)
+
     def update_status(self):
         """Get information from processes."""
 
@@ -175,15 +201,24 @@ class DataAcquisition(QWidget):
         for t, status in self.pipeline.status.items():
             keys.update(status.keys())
 
-        ordered_keys = ["name"]
-        for k in keys:
-            if k not in ordered_keys:
-                ordered_keys.append(k)
+        ordered_keys = [
+            "name",
+            "status",
+            "cpu percent",
+            "memory",
+            "queue length",
+            "activity",
+            "Extra Info",
+        ]
 
         self.task_table.setColumnCount(len(ordered_keys))
         self.task_table.setHorizontalHeaderLabels(ordered_keys)
 
         key_to_pos = {k: i for i, k in enumerate(ordered_keys)}
+        header = self.task_table.horizontalHeader()
+        header.setSectionResizeMode(
+            key_to_pos["Extra Info"], QHeaderView.ResizeMode.Stretch
+        )
 
         for t in self.pipeline._tasks:
             if t in self.taskid_to_row:
@@ -193,11 +228,18 @@ class DataAcquisition(QWidget):
             self.taskid_to_row[t] = row
 
         for t, status in self.pipeline.status.items():
+            extra_info = []
             for key, val in status.items():
                 display_value = self.format_value(key, val)
-                item = QTableWidgetItem(display_value)
-                row = self.taskid_to_row[t]
-                self.task_table.setItem(row, key_to_pos[key], item)
+                if key in ordered_keys:
+                    item = QTableWidgetItem(display_value)
+                    row = self.taskid_to_row[t]
+                    self.task_table.setItem(row, key_to_pos[key], item)
+                else:
+                    extra_info.append(f"{key}={display_value}")
+            item = QTableWidgetItem(" ".join(extra_info))
+            row = self.taskid_to_row[t]
+            self.task_table.setItem(row, key_to_pos["Extra Info"], item)
 
     def format_value(self, key, value):
         if isinstance(value, Enum):
@@ -210,8 +252,14 @@ class DataAcquisition(QWidget):
         if key == "cpu_percent" and isinstance(value, float | int):
             return f"{value:.1f} %"
 
-        if key == "timestamp":
-            return f"{value - time.time():.1f} s"
+        if key == "activity":
+            dt = time.time() - value
+            if dt <= 5:
+                return "🟢"
+            elif dt <= 60:
+                return "🟡"
+            else:
+                return "⚪"
 
         return str(value)
 

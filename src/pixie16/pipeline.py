@@ -238,6 +238,8 @@ class Task(multiprocessing.Process):
                 if value is not None:
                     self.is_final_task = value
 
+            case MessageType.START:
+                self.status = TaskStatus.RUNNING
             case MessageType.CONFIGURE:
                 cfg = cmd.get("config")
                 if isinstance(cfg, dict):
@@ -337,10 +339,10 @@ class Task(multiprocessing.Process):
                     cpu_percent = proc.cpu_percent(interval=None)
                     status = {
                         "type": MessageType.STATUS,
-                        "memory_rss": mem_info.rss,
-                        "cpu_percent": cpu_percent,
+                        "memory": mem_info.rss,
+                        "cpu percent": cpu_percent,
                         "queue length": len(self.queue),
-                        "timestamp": now,
+                        "activity": now,
                         "status": self.status,
                     }
                     status = self.add_user_status(status)
@@ -358,7 +360,7 @@ class Task(multiprocessing.Process):
                         if self.queue:
                             value = self.queue.popleft()
                         if value == {"type": MessageType.FINISHED}:
-                            self.status = MessageType.FINISHED
+                            self.status = TaskStatus.FINISHED
                             with redirect_stdout(io.StringIO()) as f:
                                 self.cleanup()
                                 self.handle_print(f)
@@ -437,6 +439,7 @@ class Pipeline:
         self.start_time = 0
         self.runtime = None
         self.name = name
+        self.current_pipeline = None
 
     def create_task(self, task_name: str):
         if task_name in self._tasks:
@@ -447,16 +450,17 @@ class Pipeline:
             tmp.start()
 
     def create_pipeline(self, tasks: list[str]):
+        self.current_pipeline = tasks
         for t in tasks:
             self.create_task(t)
 
-        print("Waiting for endpoints to be ready")
+        print("[orange3]INFO[/] Waiting for endpoints to be ready")
         now = time.time()
         while len(self._tasks) != len(self._endpoints):
             self.poll_once()
             time.sleep(0.05)
             if time.time() - now > 20:
-                print("error no endpoints received within 20 s")
+                print("[red]ERROR[/] error no endpoints received within 20 s")
                 break
 
         # disconnect any old pipeline
