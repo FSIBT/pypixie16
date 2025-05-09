@@ -260,7 +260,8 @@ class DataAcquisition(QWidget):
     def update_status(self):
         """Get information from processes."""
 
-        self.pipeline.poll_once()
+        for i in range(10):
+            self.pipeline.poll_once()
 
         keys = set()
         for t, status in self.pipeline.status.items():

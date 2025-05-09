@@ -461,7 +461,8 @@ class Pipeline:
         print("[orange3]INFO[/] Waiting for endpoints to be ready")
         now = time.time()
         while len(self._tasks) != len(self._endpoints):
-            self.poll_once()
+            for i in range(5):
+                self.poll_once()
             time.sleep(0.05)
             if time.time() - now > 20:
                 print("[red]ERROR[/] error no endpoints received within 20 s")
