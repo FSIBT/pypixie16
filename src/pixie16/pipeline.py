@@ -181,16 +181,11 @@ class Task(multiprocessing.Process):
         - message: Any message that should be printed to the screen (we use this, so that the progress bar works well)
 
         """
-        print(f"[{self.name}] Sending {value_dict}")
         current_time = time.time()
         if value_dict is not None:
             packed_data = pickle.dumps(value_dict, protocol=pickle.HIGHEST_PROTOCOL)
             self.socket.send(packed_data)
         self.last_update = current_time
-        for m in self.messages:
-            packed_data = pickle.dumps(m, protocol=pickle.HIGHEST_PROTOCOL)
-            self.socket.send({"type": MessageType.MESSAGE, "message": packed_data})
-        self.messages = []
 
     def do_work(self, value):
         """Needs to be overwritten to do the work.
@@ -213,7 +208,10 @@ class Task(multiprocessing.Process):
         if msg:
             msg = msg.split("\n")
             self.messages += msg
-        self.send({"type": "message", "messages": self.messages})
+        for m in self.messages:
+            packed_data = pickle.dumps(m, protocol=pickle.HIGHEST_PROTOCOL)
+            self.send({"type": MessageType.MESSAGE, "messages": self.packed_data})
+        self.messages = []
 
     def handle_command(self, cmd):
         print(f"[{self.name}] Received command: {cmd}")
@@ -368,6 +366,8 @@ class Task(multiprocessing.Process):
                             with redirect_stdout(io.StringIO()) as f:
                                 self.cleanup()
                                 self.handle_print(f)
+                            if not self.is_final_task:
+                                self.push.send_pyobj({"type": MessageType.FINISHED})
                             continue
 
                         with redirect_stdout(io.StringIO()) as f:
@@ -561,7 +561,6 @@ class Pipeline:
                 case MessageType.STATUS:
                     msg_dict["name"] = task_id
                     self.status[task_id] = msg_dict
-                    print(f"[Pipeline] Status from {task_id}: {msg_dict}")
                 case MessageType.MESSAGE:
                     print(f"[Pipeline] Message from {task_id}: {msg_dict}")
                 case MessageType.ENDPOINT:

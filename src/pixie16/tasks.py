@@ -43,6 +43,7 @@ class DummyData(Task):
         self.length = 0
         self.chunk_size = 20_000
         self.mycounter = 0
+        self.pos = 0
 
     def configure(self):
         if (filename := self.state.get("filename")) is None:
@@ -77,7 +78,7 @@ class DummyData(Task):
         else:
             out = self.data[self.pos :]
             self.pos = 0
-        ret = [out for m in self.modules]
+        ret = {m: out for m in self.modules}
         return {"type": MessageType.DATA, "data": ret}
 
 
@@ -260,6 +261,9 @@ class ConvertToEvents(Task):
         self.list_mode_readers = {}
 
     def do_work(self, value_dict):
+        if not value_dict["type"] == MessageType.DATA:
+            return
+        value_dict = value_dict["data"]
         for i, v in value_dict.items():
             if i not in self.list_mode_readers:
                 reader = read.StreamReader()
@@ -277,13 +281,16 @@ class PickSingleModule(Task):
     """
 
     def __init__(self, pipeline_address):
-        module = 0
+        module = 2
         super().__init__(pipeline_address)
         self.module = module
         self.name = f"Reduce to module {module}"
 
-    def do_work(self, value):
-        return value[self.module]
+    def do_work(self, value_dict):
+        if not value_dict["type"] == MessageType.DATA:
+            return
+        data = {k: v for k, v in value_dict.items() if k == self.module}
+        return {"type": MessageType.DATA, "data": data}
 
 
 class SortEvents(Task):

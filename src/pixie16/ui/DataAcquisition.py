@@ -38,6 +38,7 @@ class DataAcquisition(QWidget):
 
         self.create_layout()
 
+        self.start_button.clicked.connect(self.start_run)
         self.on_mode_change(self.settings_modes.currentText())
         self.run_time_input.editingFinished.connect(self.set_runtime)
 
@@ -226,11 +227,16 @@ class DataAcquisition(QWidget):
 
         self.setLayout(self.layout)
 
+    def start_run(self):
+        self.pipeline.start()
+
     def on_mode_change(self, text: str):
         print(f"selected {text}")
         match text:
             case "DummyData":
-                self.pipeline.create_pipeline(["DummyData", "ConvertToEvents"])
+                self.pipeline.create_pipeline(
+                    ["DummyData", "PickSingleModule", "ConvertToEvents"]
+                )
             case _:
                 print("Should not happen")
 
