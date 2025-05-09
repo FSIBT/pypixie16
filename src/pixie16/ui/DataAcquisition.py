@@ -29,11 +29,9 @@ class DataAcquisition(QWidget):
         super().__init__()
 
         self.taskid_to_row = {}
-        self.modes = ["DummyData"]
+        self.pipeline = px.pipeline.Pipeline()
 
         self.create_layout()
-
-        self.pipeline = px.pipeline.Pipeline()
 
         self.on_mode_change(self.settings_modes.currentText())
 
@@ -41,6 +39,10 @@ class DataAcquisition(QWidget):
         self.timer = QtCore.QTimer()
         self.timer.timeout.connect(self.update_status)
         self.timer.start(100)
+
+    @property
+    def modes(self):
+        return ["DummyData"]
 
     def create_layout(self):
         # Main Layout
