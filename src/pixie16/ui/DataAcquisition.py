@@ -1,4 +1,5 @@
 from enum import Enum
+import time
 
 from PyQt6.QtWidgets import (
     QWidget,
@@ -172,10 +173,15 @@ class DataAcquisition(QWidget):
         for t, status in self.pipeline.status.items():
             keys.update(status.keys())
 
-        self.task_table.setColumnCount(len(keys))
-        self.task_table.setHorizontalHeaderLabels(keys)
+        ordered_keys = ["name"]
+        for k in keys:
+            if k not in ordered_keys:
+                ordered_keys.append(k)
 
-        key_to_pos = {k: i for i, k in enumerate(keys)}
+        self.task_table.setColumnCount(len(ordered_keys))
+        self.task_table.setHorizontalHeaderLabels(ordered_keys)
+
+        key_to_pos = {k: i for i, k in enumerate(ordered_keys)}
 
         for t in self.pipeline._tasks:
             if t in self.taskid_to_row:
@@ -192,17 +198,17 @@ class DataAcquisition(QWidget):
                 self.task_table.setItem(row, key_to_pos[key], item)
 
     def format_value(self, key, value):
-        # Pretty-print memory bytes as MB
         if isinstance(value, Enum):
             return str(value.value)
 
-        if key in ["memory_rss", "memory_vms"] and isinstance(value, int | float):
+        if key == "memory_rss" and isinstance(value, float | int):
             mb = float(value) / (1024**2)
             return f"{mb:.1f} MB"
 
-        # Format float numbers like cpu_percent nicely with % sign
         if key == "cpu_percent" and isinstance(value, float | int):
             return f"{value:.1f} %"
 
-        # Default to string representation
+        if key == "timestamp":
+            return f"{value - time.time():.1f} s"
+
         return str(value)

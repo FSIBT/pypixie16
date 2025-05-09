@@ -54,28 +54,28 @@ import zmq
 
 
 class MessageType(Enum):
-    CONNECT = "connect"
-    DISCONNECT = "disconnect"
-    SET_STATUS = "set_status"
-    CONFIGURE = "configure"
-    LIST_CONFIG = "list_config"
-    START = "start"
-    STOP = "stop"
-    PAUSE = "pause"
-    USER = "user"
-    STATUS = "status"
-    MESSAGE = "message"
-    ENDPOINT = "endpoint"
-    ACK = "ack"
-    FINISHED = "finished"
-    DATA = "data"
+    CONNECT = "🔌"
+    DISCONNECT = "⛔"
+    SET_STATUS = "⚙️"
+    CONFIGURE = "🛠️"
+    LIST_CONFIG = "📋"
+    START = "▶️"
+    STOP = "⏹️"
+    PAUSE = "⏸️"
+    USER = "👤"
+    STATUS = "ℹ️"
+    MESSAGE = "✉️"
+    ENDPOINT = "🔗"
+    ACK = "✅"
+    FINISHED = "🏁"
+    DATA = "💾"
 
 
 class TaskStatus(Enum):
-    RUNNING = "running"
-    READY = "ready"
-    PAUSED = "paused"
-    FINISHED = "finished"
+    RUNNING = "▶️"
+    READY = "✅"
+    PAUSED = "⏸️"
+    FINISHED = "🏁"
 
 
 class Task(multiprocessing.Process):
@@ -333,7 +333,6 @@ class Task(multiprocessing.Process):
                     status = {
                         "type": MessageType.STATUS,
                         "memory_rss": mem_info.rss,
-                        "memory_vms": mem_info.vms,
                         "cpu_percent": cpu_percent,
                         "queue length": len(self.queue),
                         "timestamp": now,
@@ -522,7 +521,8 @@ class Pipeline:
             msg_dict = pickle.loads(msg)
             self.task_ack[task_id] = time.time()  # update last seen time
 
-            match msg_dict.get("type"):
+            msg_type = msg_dict.pop("type")
+            match msg_type:
                 case MessageType.ACK:
                     cmd_id = msg_dict.get("cmd_id")
                     if cmd_id in self._pending_acks:
