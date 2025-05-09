@@ -1,3 +1,5 @@
+from enum import Enum
+
 from PyQt6.QtWidgets import (
     QWidget,
     QLabel,
@@ -14,18 +16,32 @@ from PyQt6 import QtCore
 import pyqtgraph as pg
 import psutil
 
+import pixie16 as px
+
 
 class DataAcquisition(QWidget):
-    """
-    App to acquire data using Pixie 16
-    """
+    """App to acquire data using Pixie 16."""
 
     def __init__(
         self,
     ):
         super().__init__()
-        self.setWindowTitle("Data Acquisition")
 
+        self.taskid_to_row = {}
+        self.modes = ["DummyData"]
+
+        self.create_layout()
+
+        self.pipeline = px.pipeline.Pipeline()
+
+        self.on_mode_change(self.settings_modes.currentText())
+
+        # Timer to update table and plot
+        self.timer = QtCore.QTimer()
+        self.timer.timeout.connect(self.update_status)
+        self.timer.start(100)
+
+    def create_layout(self):
         # Main Layout
         self.layout = QVBoxLayout()
 
@@ -48,8 +64,8 @@ class DataAcquisition(QWidget):
         self.settings_text.setFixedWidth(100)
         self.settings_modes = QComboBox(self)
 
-        modes = ["API", "API_TRIGGER_ALL", "ATLAS", "ATLAS_TRIGGER_ALL", "FLAT"]
-        self.settings_modes.addItems(modes)
+        self.settings_modes.addItems(self.modes)
+        self.settings_modes.currentIndexChanged.connect(self.on_mode_change)
 
         self.run_layout.addWidget(self.start_button)
         self.run_layout.addWidget(self.run_time_text)
@@ -94,12 +110,9 @@ class DataAcquisition(QWidget):
         self.layout.addLayout(self.actions_layout)
 
         # Process Table
-        self.process_table = QTableWidget(0, 4)
-        self.process_table.setHorizontalHeaderLabels(
-            ["PID", "CPU %", "Memory MB", "Class Info"]
-        )
-        self.layout.addWidget(QLabel("Process Status"))
-        self.layout.addWidget(self.process_table)
+        self.task_table = QTableWidget(0, 0)
+        self.layout.addWidget(QLabel("Task Status"))
+        self.layout.addWidget(self.task_table)
 
         # Plot Area
         self.plot_widget = pg.PlotWidget()
@@ -142,30 +155,54 @@ class DataAcquisition(QWidget):
 
         self.setLayout(self.layout)
 
-        # Timer to update table and plot
-        self.timer = QtCore.QTimer()
-        self.timer.timeout.connect(self.update_status)
-        self.timer.start(1000)
+    def on_mode_change(self, text: str):
+        print(f"selected {text}")
+        match text:
+            case "DummyData":
+                self.pipeline.create_pipeline(["DummyData", "ConvertToEvents"])
+            case _:
+                print("Should not happen")
 
     def update_status(self):
-        """
-        Get information from processes
-        """
-        self.process_table.setRowCount(0)
-        for proc in psutil.process_iter(["pid", "cpu_percent", "memory_info", "name"]):
-            row = self.process_table.rowCount()
-            self.process_table.insertRow(row)
-            self.process_table.setItem(row, 0, QTableWidgetItem(str(proc.info["pid"])))
-            self.process_table.setItem(
-                row, 1, QTableWidgetItem(str(proc.info["cpu_percent"]))
-            )
-            # mem_mb = proc.info['memory_info'].rss / (1024 * 1024)
-            self.process_table.setItem(row, 2, QTableWidgetItem(f"Test"))
-            # Dummy class info (replace with ZMQ query)
-            self.process_table.setItem(row, 3, QTableWidgetItem(proc.info["name"]))
-            # Simulate plot update
-        cpu_total = psutil.cpu_percent()
-        self.time += 1
-        self.cpu_data.append(cpu_total)
-        self.time_data.append(self.time)
-        self.cpu_plot.setData(self.time_data[-100:], self.cpu_data[-100:])
+        """Get information from processes."""
+
+        self.pipeline.poll_once()
+
+        keys = set()
+        for t, status in self.pipeline.status.items():
+            keys.update(status.keys())
+
+        self.task_table.setColumnCount(len(keys))
+        self.task_table.setHorizontalHeaderLabels(keys)
+
+        key_to_pos = {k: i for i, k in enumerate(keys)}
+
+        for t in self.pipeline._tasks:
+            if t in self.taskid_to_row:
+                continue
+            row = self.task_table.rowCount()
+            self.task_table.insertRow(row)
+            self.taskid_to_row[t] = row
+
+        for t, status in self.pipeline.status.items():
+            for key, val in status.items():
+                display_value = self.format_value(key, val)
+                item = QTableWidgetItem(display_value)
+                row = self.taskid_to_row[t]
+                self.task_table.setItem(row, key_to_pos[key], item)
+
+    def format_value(self, key, value):
+        # Pretty-print memory bytes as MB
+        if isinstance(value, Enum):
+            return str(value.value)
+
+        if key in ["memory_rss", "memory_vms"] and isinstance(value, int | float):
+            mb = float(value) / (1024**2)
+            return f"{mb:.1f} MB"
+
+        # Format float numbers like cpu_percent nicely with % sign
+        if key == "cpu_percent" and isinstance(value, float | int):
+            return f"{value:.1f} %"
+
+        # Default to string representation
+        return str(value)

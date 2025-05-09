@@ -5,17 +5,16 @@ Usage:
 
 """
 
-from docopt import docopt
-
-# force the use of pyqt6 for matplotlib
-import PyQt6.QtCore
-
-commands = docopt(__doc__)
 import sys
+
+from docopt import docopt
 from pixie16.ui import DataAcquisition, QApplication
+import PyQt6.QtCore  # force the use of pyqt6 for matplotlib
 
 
 def main():
+    commands = docopt(__doc__)
+
     app = QApplication(sys.argv)
     window = DataAcquisition()
     window.show()

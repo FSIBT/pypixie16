@@ -15,7 +15,7 @@ from typing import Optional, Union
 
 import numpy as np
 
-from .pipeline import Task
+from .pipeline import Task, TaskStatus, MessageType
 from . import control
 from . import read
 
@@ -61,8 +61,8 @@ class DummyData(Task):
 
     def do_work(self, value):
         if time.time() - self.start_time > self.runtime:
-            self.status = "finished"
-            return {"type": "finished"}
+            self.status = TaskStatus.FINISHED
+            return {"type": MessageType.FINISHED}
 
         time.sleep(0.2)
         self.mycounter += 1
@@ -73,7 +73,7 @@ class DummyData(Task):
             out = self.data[self.pos :]
             self.pos = 0
         ret = [out for m in self.modules]
-        return {"type": "data", "data": ret}
+        return {"type": MessageType.DATA, "data": ret}
 
 
 class TakeData(Task):
@@ -239,7 +239,7 @@ class GatherData(Task):
         out_queue = {k: np.concatenate(v) for k, v in self.data_queue.items() if v}
         out_disk = {k: np.concatenate(v) for k, v in self.data_disk.items() if v}
         if self.output_queue:
-            self.push.send_pyobj({"type": "data", "data": out})
+            self.push.send_pyobj({"type": MessageType.DATA, "data": out})
         if out_disk and not self.is_final_task:
             if self.save_binary:
                 self.save_data(out_disk)
@@ -260,7 +260,8 @@ class ConvertToEvents(Task):
                 reader = read.StreamReader()
                 self.list_mode_readers[i] = read.ListModeDataReader(reader)
             self.list_mode_readers[i].reader.put(v)
-        return {mod: reader.pop_all() for mod, reader in self.list_mode_readers.items()}
+        data = {mod: reader.pop_all() for mod, reader in self.list_mode_readers.items()}
+        return {"type": MessageType.DATA, "data": data}
 
 
 class PickSingleModule(Task):

@@ -35,19 +35,47 @@ status bar. An example use of 3 different tasks is:
 from collections import deque
 from contextlib import redirect_stdout
 import copy
+from enum import Enum
 import io
 import multiprocessing
+import pickle
 import queue
 import sys
 import time
 import traceback
 from typing import Union
 
+
 from more_itertools import pairwise
 import psutil
 from rich.progress import Progress, BarColumn, TimeRemainingColumn, TimeElapsedColumn
 from rich import print
 import zmq
+
+
+class MessageType(Enum):
+    CONNECT = "connect"
+    DISCONNECT = "disconnect"
+    SET_STATUS = "set_status"
+    CONFIGURE = "configure"
+    LIST_CONFIG = "list_config"
+    START = "start"
+    STOP = "stop"
+    PAUSE = "pause"
+    USER = "user"
+    STATUS = "status"
+    MESSAGE = "message"
+    ENDPOINT = "endpoint"
+    ACK = "ack"
+    FINISHED = "finished"
+    DATA = "data"
+
+
+class TaskStatus(Enum):
+    RUNNING = "running"
+    READY = "ready"
+    PAUSED = "paused"
+    FINISHED = "finished"
 
 
 class Task(multiprocessing.Process):
@@ -112,7 +140,7 @@ class Task(multiprocessing.Process):
         #   ready    -  used in a pipeline, but not started yet, but configured
         #   running  -  used in the current pipeline
         #   finished -  queue empty and previous task is finished
-        self.status = "paused"
+        self.status = TaskStatus.PAUSED
         # are there any more tasks in the pipeline?
         self.is_final_task = None
 
@@ -151,12 +179,15 @@ class Task(multiprocessing.Process):
         - message: Any message that should be printed to the screen (we use this, so that the progress bar works well)
 
         """
+        print(f"[{self.name}] Sending {value_dict}")
         current_time = time.time()
         if value_dict is not None:
-            self.socket.send_json(value_dict)
+            packed_data = pickle.dumps(value_dict, protocol=pickle.HIGHEST_PROTOCOL)
+            self.socket.send(packed_data)
         self.last_update = current_time
         for m in self.messages:
-            self.socket.send_json({"type": "message", "message": m})
+            packed_data = pickle.dumps(m, protocol=pickle.HIGHEST_PROTOCOL)
+            self.socket.send({"type": MessageType.MESSAGE, "message": packed_data})
         self.messages = []
 
     def do_work(self, value):
@@ -188,15 +219,15 @@ class Task(multiprocessing.Process):
 
         # Process command here (override in subclass if needed)
         match cmd.get("type"):
-            case "connect":
+            case MessageType.CONNECT:
                 if (endpoint := cmd.get("endpoint")) is not None:
                     self.pull.connect(endpoint)
                     self.pull_address = endpoint
-            case "disconnect":
+            case MessageType.DISCONNECT:
                 if self.pull_address:
                     self.pull.disconnect(self.pull_address)
                 self.pull_address = None
-            case "set_status":
+            case MessageType.SET_STATUS:
                 value = cmd.get("status")
                 if value is not None:
                     self.status = value
@@ -205,21 +236,23 @@ class Task(multiprocessing.Process):
                 if value is not None:
                     self.is_final_task = value
 
-            case "configure":
+            case MessageType.CONFIGURE:
                 cfg = cmd.get("config")
                 if isinstance(cfg, dict):
                     self.state.update(cfg)
                 self.configure()
-            case "list_config":
+            case MessageType.LIST_CONFIG:
                 tmp = copy.deepcopy(self.state)
                 tmp["type"] = "configuration"
                 tmp["name"] = self.name
                 self.send(tmp)
-            case _:
+            case MessageType.USER:
                 self.handle_user_command(cmd)
+            case _:
+                print(f"[red]Error[/] This should not happen: {_}")
 
         # Send ACK back
-        self.send({"type": "ack", "cmd_id": cmd_id})
+        self.send({"type": MessageType.ACK, "cmd_id": cmd_id})
 
     def configure(self):
         """Can be overriden by a subclass to handle self.state variables received."""
@@ -229,7 +262,7 @@ class Task(multiprocessing.Process):
         """Place for the individual task to define more commands."""
         pass
 
-    def user_status(self, d: dict):
+    def add_user_status(self, d: dict):
         """Can be overwritten to add custom elements to the status messages."""
         return d
 
@@ -256,7 +289,7 @@ class Task(multiprocessing.Process):
         self.push_endpoint = f"tcp://127.0.0.1:{port}"
 
         # report this back to the main thread
-        self.send({"type": "endpoint", "value": self.push_endpoint})
+        self.send({"type": MessageType.ENDPOINT, "value": self.push_endpoint})
 
         # the pull socket is used to receive data from previous tasks, we only
         # create it here, but don't connect it to an address yet. The main
@@ -279,7 +312,8 @@ class Task(multiprocessing.Process):
 
                 # check for commands
                 try:
-                    msg = self.socket.recv_json(flags=zmq.NOBLOCK)
+                    msg = self.socket.recv(flags=zmq.NOBLOCK)
+                    msg = pickle.loads(msg)
                     self.handle_command(msg)
                     wait = False
                 except zmq.Again:
@@ -297,7 +331,7 @@ class Task(multiprocessing.Process):
                     mem_info = proc.memory_info()
                     cpu_percent = proc.cpu_percent(interval=None)
                     status = {
-                        "type": "status",
+                        "type": MessageType.STATUS,
                         "memory_rss": mem_info.rss,
                         "memory_vms": mem_info.vms,
                         "cpu_percent": cpu_percent,
@@ -305,7 +339,7 @@ class Task(multiprocessing.Process):
                         "timestamp": now,
                         "status": self.status,
                     }
-                    status = self.user_status(status)
+                    status = self.add_user_status(status)
                     self.send(status)
                     last_status_time = now
                     wait = False
@@ -313,14 +347,14 @@ class Task(multiprocessing.Process):
                 # do the work and capture any print statements
                 out = None
                 value = None
-                if self.status == "running":
+                if self.status == TaskStatus.RUNNING:
                     if (self.pull_address and self.queue) or (
                         self.pull_address is None
                     ):
                         if self.queue:
                             value = self.queue.popleft()
-                        if value == {"type": "finished"}:
-                            self.status = "finished"
+                        if value == {"type": MessageType.FINISHED}:
+                            self.status = MessageType.FINISHED
                             with redirect_stdout(io.StringIO()) as f:
                                 self.cleanup()
                                 self.handle_print(f)
@@ -414,11 +448,7 @@ class Pipeline:
 
         # disconnect any old pipeline
         for t in self._tasks:
-            self.send_command(t, {"type": "disconnect"})
-
-        # set status for each task
-        for t in self._tasks:
-            self.send_command(t, {"type": "set_status", "value": "ready"})
+            self.send_command(t, {"type": MessageType.DISCONNECT})
 
         # connect new queues
         if len(tasks) > 1:
@@ -435,20 +465,23 @@ class Pipeline:
         if A not in self._endpoints:
             print(f"Error {A}'s push endpoint not known")
 
-        self.send_command(B, {"type": "connect", "endpoint": self._endpoints[A]})
+        # connect and mark last task in pipeline as 'final'
+        self.send_command(
+            B, {"type": MessageType.CONNECT, "endpoint": self._endpoints[A]}
+        )
         self.send_command(
             A,
             {
-                "type": "set_status",
-                "status": "ready",
+                "type": MessageType.SET_STATUS,
+                "status": TaskStatus.READY,
                 "final": False,
             },
         )
         self.send_command(
             B,
             {
-                "type": "set_status",
-                "status": "ready",
+                "type": MessageType.SET_STATUS,
+                "status": TaskStatus.READY,
                 "final": True,
             },
         )
@@ -459,15 +492,12 @@ class Pipeline:
     def start(self):
         """Start all tasks."""
         for t in self._tasks:
-            self.send_command(t, {"type": "set_status", "status": "running"})
-
-    def join(self):
-        """Join all tasks, i.e. wait until they are all done."""
-        for t in self._tasks.values():
-            t.join()
+            self.send_command(t, {"type": MessageTyp.START})
 
     def close(self):
         """Release all resources, needed for pixie16.control."""
+        for t in self._tasks.values():
+            t.join()
         for t in self._tasks.values():
             t.close()
         self.socket.close()
@@ -480,105 +510,6 @@ class Pipeline:
                 return True
         return False
 
-    def execute(self, progress_bar_time: float | int = 0):
-        """Runs the whole pipeline.
-
-        Parameters
-        ----------
-        progress_bar_time
-           if > 0 run with a progress bar with this number as the total time it should
-           take. Otherwise, run without progressbar.
-
-        """
-        self.start()
-        if progress_bar_time:
-            self.wait_with_progress(total=progress_bar_time)
-        else:
-            self.wait()
-        self.join()
-        self.close()
-
-    def update_status(self):
-        """Look at the status queue and update the pipeline status.
-
-        We also parse out the runtime of the pixie16 if present.
-        """
-        try:
-            while True:
-                value = self.status_queue.get(block=False)
-                if "runtime" in value:
-                    self.runtime = value.pop("runtime")
-                if "message" in value:
-                    self.messages.append(value.pop("message"))
-
-                self.status.update(value)
-        except queue.Empty:
-            pass
-
-    def wait_with_progress(self, total):
-        """Create a progress bar while the pipeline is running and show the status updates.
-
-        The run can be interruptted using Ctrl-C.
-        """
-        try:
-            with Progress(
-                f"[green]{self.name}",
-                BarColumn(
-                    style="grey35 on black",
-                    complete_style="green on black",
-                    finished_style="red on black",
-                    pulse_style="white on purple",
-                ),
-                TimeElapsedColumn(),
-                TimeRemainingColumn(),
-                "{task.description}",
-                refresh_per_second=4,
-            ) as progress:
-                task = progress.add_task("[green] Run", total=total)
-                while self.is_alive():
-                    time.sleep(0.1)
-                    self.update_status()
-                    for m in self.messages:
-                        progress.console.print(m)
-                    self.messages = []
-                    text = ",".join(f"{k}: {v}" for k, v in self.status.items())
-                    if self.runtime is None:
-                        text = "Setting up process pipeline " + text
-                        runtime = round(time.time() - self.start_time, 2)
-                    else:
-                        runtime = self.runtime
-                    progress.update(task, completed=runtime, description=text)
-                # finish progress bar and print remaining messages
-                self.update_status()
-                for m in self.messages:
-                    print(m)
-                progress.update(task, completed=total, description=text)
-
-        except KeyboardInterrupt:
-            print("[yellow]INFO[/] got keyboard interrupt... closing")
-            self.stop()
-
-    def wait(self):
-        """Wait for the pipeline to finish.
-
-        The run can be interruptted using Ctrl-C.
-        """
-        try:
-            while self.is_alive():
-                time.sleep(0.1)
-                self.update_status()
-                for m in self.messages:
-                    print(m)
-                self.messages = []
-        except KeyboardInterrupt:
-            print("[yellow]INFO[/]] got keyboard interrupt... closing")
-            self.stop()
-        # print any remaining messages
-        time.sleep(0.1)
-        self.update_status()
-        for m in self.messages:
-            print(m)
-
     def poll_once(self):
         """
         Poll the ROUTER socket once, process any incoming messages,
@@ -588,22 +519,24 @@ class Pipeline:
         if socks.get(self.socket) == zmq.POLLIN:
             identity, msg = self.socket.recv_multipart()
             task_id = identity.decode()
-            msg_dict = zmq.utils.jsonapi.loads(msg)
+            msg_dict = pickle.loads(msg)
             self.task_ack[task_id] = time.time()  # update last seen time
 
             match msg_dict.get("type"):
-                case "ack":
+                case MessageType.ACK:
                     cmd_id = msg_dict.get("cmd_id")
                     if cmd_id in self._pending_acks:
                         print(
                             f"[Pipeline] Received ACK for cmd {cmd_id} from {task_id}"
                         )
                         del self._pending_acks[cmd_id]
-                case "status":
+                case MessageType.STATUS:
+                    msg_dict["name"] = task_id
+                    self.status[task_id] = msg_dict
                     print(f"[Pipeline] Status from {task_id}: {msg_dict}")
-                case "message":
+                case MessageType.MESSAGE:
                     print(f"[Pipeline] Message from {task_id}: {msg_dict}")
-                case "endpoint":
+                case MessageType.ENDPOINT:
                     self._endpoints[task_id] = msg_dict.get("value")
                     print(f"[Pipeline] New endpoint from {task_id}: {msg_dict}")
                 case _:
@@ -612,12 +545,13 @@ class Pipeline:
     def send_command(self, task_id, command_dict):
         if task_id not in self._tasks:
             print(f"[Pipeline] Warning: sending to unknown task {task_id}")
+
         self._cmd_id_counter += 1
         cmd_id = self._cmd_id_counter
         command_dict = dict(command_dict)  # copy to avoid side effects
         command_dict["cmd_id"] = cmd_id
         self._pending_acks[cmd_id] = (task_id, command_dict)
         print(f"[Pipeline] Sending command {cmd_id} to {task_id}: {command_dict}")
-        self.socket.send_multipart(
-            [task_id.encode(), zmq.utils.jsonapi.dumps(command_dict)]
-        )
+
+        pickled_command = pickle.dumps(command_dict, protocol=pickle.HIGHEST_PROTOCOL)
+        self.socket.send_multipart([task_id.encode(), pickled_command])
