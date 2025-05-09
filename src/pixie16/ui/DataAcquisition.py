@@ -214,3 +214,10 @@ class DataAcquisition(QWidget):
             return f"{value - time.time():.1f} s"
 
         return str(value)
+
+    def closeEvent(self, event: QtCore.QEvent):
+        """Handle App shutdown."""
+        self.pipeline.end_tasks()
+        self.pipeline.close()
+
+        event.accept()

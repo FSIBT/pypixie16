@@ -69,6 +69,7 @@ class MessageType(Enum):
     ACK = "✅"
     FINISHED = "🏁"
     DATA = "💾"
+    QUIT = "❌"
 
 
 class TaskStatus(Enum):
@@ -248,6 +249,8 @@ class Task(multiprocessing.Process):
                 self.send(tmp)
             case MessageType.USER:
                 self.handle_user_command(cmd)
+            case MessageType.QUIT:
+                self.done = True
             case _:
                 print(f"[red]Error[/] This should not happen: {_}")
 
@@ -383,8 +386,18 @@ class Task(multiprocessing.Process):
 
         self.stop_time = time.time()
 
+        print(f"[{self.name}] finishing run-loop")
+        if self.pull:
+            self.pull.setsockopt(zmq.LINGER, 0)
+            self.pull.close()
+        if self.push:
+            self.push.setsockopt(zmq.LINGER, 0)
+            self.push.close()
+        self.socket.setsockopt(zmq.LINGER, 0)
         self.socket.close()
+
         self.context.term()
+        print(f"[{self.name}] finished run-loop")
 
 
 class Pipeline:
@@ -491,7 +504,12 @@ class Pipeline:
     def start(self):
         """Start all tasks."""
         for t in self._tasks:
-            self.send_command(t, {"type": MessageTyp.START})
+            self.send_command(t, {"type": MessageType.START})
+
+    def end_tasks(self):
+        """Start all tasks."""
+        for t in self._tasks:
+            self.send_command(t, {"type": MessageType.QUIT})
 
     def close(self):
         """Release all resources, needed for pixie16.control."""
