@@ -245,6 +245,7 @@ class Task(multiprocessing.Process):
                 if isinstance(cfg, dict):
                     self.state.update(cfg)
                 self.configure()
+                self.send_status()
             case MessageType.LIST_CONFIG:
                 tmp = copy.deepcopy(self.state)
                 tmp["type"] = "configuration"
@@ -271,6 +272,20 @@ class Task(multiprocessing.Process):
     def add_user_status(self, d: dict):
         """Can be overwritten to add custom elements to the status messages."""
         return d
+
+    def send_status(self):
+        mem_info = self.proc.memory_info()
+        cpu_percent = self.proc.cpu_percent(interval=None)
+        status = {
+            "type": MessageType.STATUS,
+            "memory": mem_info.rss,
+            "cpu percent": cpu_percent,
+            "queue length": len(self.queue),
+            "activity": time.time(),
+            "status": self.status,
+        }
+        status = self.add_user_status(status)
+        self.send(status)
 
     def run(self):
         """Runs the new process.
@@ -303,7 +318,7 @@ class Task(multiprocessing.Process):
         self.pull = self.context.socket(zmq.PULL)
 
         # We use psutil to get CPU and memory usage
-        proc = psutil.Process()
+        self.proc = psutil.Process()
         last_status_time = 0
 
         try:
@@ -335,18 +350,7 @@ class Task(multiprocessing.Process):
 
                 # handle status updates
                 if now - last_status_time >= 5.0:
-                    mem_info = proc.memory_info()
-                    cpu_percent = proc.cpu_percent(interval=None)
-                    status = {
-                        "type": MessageType.STATUS,
-                        "memory": mem_info.rss,
-                        "cpu percent": cpu_percent,
-                        "queue length": len(self.queue),
-                        "activity": now,
-                        "status": self.status,
-                    }
-                    status = self.add_user_status(status)
-                    self.send(status)
+                    self.send_status()
                     last_status_time = now
                     wait = False
 

@@ -16,7 +16,7 @@ def main():
     commands = docopt(__doc__)
 
     app = QApplication(sys.argv)
-    window = DataAcquisition()
+    window = DataAcquisition(app)
     window.show()
     sys.exit(app.exec())
 

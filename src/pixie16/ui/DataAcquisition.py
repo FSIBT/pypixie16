@@ -4,15 +4,19 @@ import time
 import dateutil
 from PyQt6.QtWidgets import (
     QWidget,
+    QCheckBox,
     QLabel,
     QVBoxLayout,
     QHeaderView,
     QHBoxLayout,
+    QGroupBox,
+    QSizePolicy,
     QPushButton,
     QTableWidget,
     QTableWidgetItem,
     QComboBox,
     QLineEdit,
+    QStyle,
     QProgressBar,
 )
 from PyQt6 import QtCore
@@ -25,11 +29,10 @@ import pixie16 as px
 class DataAcquisition(QWidget):
     """App to acquire data using Pixie 16."""
 
-    def __init__(
-        self,
-    ):
+    def __init__(self, app):
         super().__init__()
 
+        self.app = app
         self.taskid_to_row = {}
         self.pipeline = px.pipeline.Pipeline()
 
@@ -48,6 +51,8 @@ class DataAcquisition(QWidget):
         return ["DummyData"]
 
     def create_layout(self):
+        style = self.app.style()
+
         # Main Layout
         self.layout = QVBoxLayout()
 
@@ -56,15 +61,35 @@ class DataAcquisition(QWidget):
 
         # Run Buttons
         self.run_layout = QHBoxLayout()
-        self.start_button = QPushButton("Start")
+
+        play_icon = style.standardIcon(QStyle.StandardPixmap.SP_MediaPlay)
+        self.start_button = QPushButton()
+        self.start_button.setIcon(play_icon)
+        self.start_button.setIconSize(QtCore.QSize(24, 24))
+        self.start_button.setFixedSize(QtCore.QSize(40, 40))
+        self.start_button.setToolTip("Play")
+
         self.run_time_text = QLabel("Run time :")
         self.run_time_text.setFixedWidth(70)
         self.run_time_input = QLineEdit()
         self.run_time_input.setText("60")
         self.run_time_input.setFixedWidth(60)
-        self.pause_button = QPushButton("Pause")
-        self.stop_button = QPushButton("Stop")
-        self.traces_enabled = QPushButton("Enable Traces")
+
+        pause_icon = style.standardIcon(QStyle.StandardPixmap.SP_MediaPause)
+        self.pause_button = QPushButton()
+        self.pause_button.setIcon(pause_icon)
+        self.pause_button.setIconSize(QtCore.QSize(24, 24))
+        self.pause_button.setFixedSize(QtCore.QSize(40, 40))
+        self.pause_button.setToolTip("Pause")
+
+        stop_icon = style.standardIcon(QStyle.StandardPixmap.SP_MediaStop)
+        self.stop_button = QPushButton()
+        self.stop_button.setIcon(stop_icon)
+        self.stop_button.setIconSize(QtCore.QSize(24, 24))
+        self.stop_button.setFixedSize(QtCore.QSize(40, 40))
+        self.stop_button.setToolTip("Stop")
+
+        self.traces_enabled = QCheckBox("Traces")
         # self.help_button = QPushButton("Help")
         self.settings_text = QLabel("Settings Mode:")
         self.settings_text.setFixedWidth(100)
@@ -74,39 +99,79 @@ class DataAcquisition(QWidget):
         self.settings_modes.currentIndexChanged.connect(self.on_mode_change)
 
         self.run_layout.addWidget(self.start_button)
-        self.run_layout.addWidget(self.run_time_text)
-        self.run_layout.addWidget(self.run_time_input)
         self.run_layout.addWidget(self.pause_button)
         self.run_layout.addWidget(self.stop_button)
+        self.run_layout.addWidget(self.run_time_text)
+        self.run_layout.addWidget(self.run_time_input)
         self.run_layout.addWidget(self.traces_enabled)
         self.run_layout.addWidget(self.settings_text)
         self.run_layout.addWidget(self.settings_modes)
 
         # Diagnostics tools
+        self.mca_group_box = QGroupBox("MCA Diagnostics")
+        self.mca_layout = QHBoxLayout()
+        self.mca_group_box.setLayout(self.mca_layout)
+        self.mca_group_box.setSizePolicy(
+            QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Minimum
+        )
+
         self.diagnostics_layout = QHBoxLayout()
-        self.MCA_diagnostics = QPushButton("Diagnostics MCA")
-        self.MCA_set_time_text = QLabel("SetMtime :")
-        self.MCA_set_time_text.setFixedWidth(60)
+        self.MCA_diagnostics = QCheckBox("Enable")
+        self.MCA_set_time_text = QLabel("Time [s]:")
         self.MCA_set_time = QLineEdit()
         self.MCA_set_time.setText("30")
-        self.MCA_set_time.setFixedWidth(60)
 
-        self.traces_diagnostics = QPushButton("Diagnostics Traces")
-        self.traces_set_time_text = QLabel("setTtime :")
-        self.traces_set_time_text.setFixedWidth(60)
+        self.MCA_diagnostics.setSizePolicy(
+            QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Fixed
+        )
+
+        self.MCA_set_time_text.setSizePolicy(
+            QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed
+        )
+
+        self.MCA_set_time.setFixedWidth(60)
+        self.MCA_set_time.setSizePolicy(
+            QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed
+        )
+
+        self.mca_layout.addWidget(self.MCA_diagnostics)
+        self.mca_layout.addWidget(self.MCA_set_time_text)
+        self.mca_layout.addWidget(self.MCA_set_time)
+
+        self.traces_group_box = QGroupBox("Traces Diagnostics")
+        self.traces_layout = QHBoxLayout()
+        self.traces_group_box.setLayout(self.traces_layout)
+        self.traces_group_box.setSizePolicy(
+            QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Minimum
+        )
+
+        self.traces_diagnostics = QCheckBox("Enable")
+        self.traces_set_time_text = QLabel("Time[s]:")
         self.traces_set_time = QLineEdit()
         self.traces_set_time.setText("5")
+
+        self.traces_diagnostics.setSizePolicy(
+            QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Fixed
+        )
+
+        self.traces_set_time_text.setSizePolicy(
+            QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed
+        )
+
         self.traces_set_time.setFixedWidth(60)
+        self.traces_set_time.setSizePolicy(
+            QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed
+        )
+
+        self.traces_layout.addWidget(self.traces_diagnostics)
+        self.traces_layout.addWidget(self.traces_set_time_text)
+        self.traces_layout.addWidget(self.traces_set_time)
 
         self.Pixie_reboot = QPushButton("Reboot Pixie")
         self.Pixie_default = QPushButton("Set Pixie default")
 
-        self.diagnostics_layout.addWidget(self.MCA_diagnostics)
-        self.diagnostics_layout.addWidget(self.MCA_set_time_text)
-        self.diagnostics_layout.addWidget(self.MCA_set_time)
-        self.diagnostics_layout.addWidget(self.traces_diagnostics)
-        self.diagnostics_layout.addWidget(self.traces_set_time_text)
-        self.diagnostics_layout.addWidget(self.traces_set_time)
+        self.diagnostics_layout.addWidget(self.mca_group_box)
+        self.diagnostics_layout.addWidget(self.traces_group_box)
         self.diagnostics_layout.addWidget(self.Pixie_reboot)
         self.diagnostics_layout.addWidget(self.Pixie_default)
 
@@ -245,11 +310,11 @@ class DataAcquisition(QWidget):
         if isinstance(value, Enum):
             return str(value.value)
 
-        if key == "memory_rss" and isinstance(value, float | int):
+        if key == "memory" and isinstance(value, float | int):
             mb = float(value) / (1024**2)
             return f"{mb:.1f} MB"
 
-        if key == "cpu_percent" and isinstance(value, float | int):
+        if key == "cpu percent" and isinstance(value, float | int):
             return f"{value:.1f} %"
 
         if key == "activity":
