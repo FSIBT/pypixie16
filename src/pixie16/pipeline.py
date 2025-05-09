@@ -70,6 +70,7 @@ class MessageType(Enum):
     FINISHED = "🏁"
     DATA = "💾"
     QUIT = "❌"
+    ERROR = "⚠️"
 
 
 class TaskStatus(Enum):
@@ -313,7 +314,7 @@ class Task(multiprocessing.Process):
                 # if nothing happens, we call time.sleep later()
                 wait = True
 
-                # check for commands
+                # check for commands from the main pipeline process
                 try:
                     msg = self.socket.recv(flags=zmq.NOBLOCK)
                     msg = pickle.loads(msg)
@@ -330,6 +331,7 @@ class Task(multiprocessing.Process):
                 except zmq.Again:
                     pass
 
+                # handle status updates
                 if now - last_status_time >= 5.0:
                     mem_info = proc.memory_info()
                     cpu_percent = proc.cpu_percent(interval=None)
@@ -376,7 +378,7 @@ class Task(multiprocessing.Process):
                     time.sleep(0.1)
 
         except Exception as e:
-            self.send({"type": "error", "name": self.name})
+            self.send({"type": MessageType.ERROR, "name": self.name})
             print(f"[DEBUG] ----- exception in {self.name} ----")
             print(e)
             print(sys.exc_info())
@@ -386,7 +388,7 @@ class Task(multiprocessing.Process):
 
         self.stop_time = time.time()
 
-        print(f"[{self.name}] finishing run-loop")
+        # closing all ZMQ sockets
         if self.pull:
             self.pull.setsockopt(zmq.LINGER, 0)
             self.pull.close()
@@ -397,7 +399,6 @@ class Task(multiprocessing.Process):
         self.socket.close()
 
         self.context.term()
-        print(f"[{self.name}] finished run-loop")
 
 
 class Pipeline:
@@ -557,6 +558,13 @@ class Pipeline:
                 case MessageType.ENDPOINT:
                     self._endpoints[task_id] = msg_dict.get("value")
                     print(f"[Pipeline] New endpoint from {task_id}: {msg_dict}")
+                case MessageType.ERROR:
+                    print(
+                        f"[Pipeline] Received ERROR from {task_id}... shutting down: {msg_dict}"
+                    )
+                    self.end_tasks()
+                    self.close()
+                    sys.exit(1)
                 case _:
                     print(f"[Pipeline] Unknown message from {task_id}: {msg_dict}")
 
