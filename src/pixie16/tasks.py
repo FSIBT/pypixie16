@@ -37,6 +37,7 @@ class DummyData(Task):
         self.name = "Data generator"
 
         self.runtime = 10
+        self.time_done = 0
         self.filename = None
 
         self.data = None
@@ -44,6 +45,8 @@ class DummyData(Task):
         self.chunk_size = 20_000
         self.mycounter = 0
         self.pos = 0
+
+        self.status_frequency = 1
 
     def configure(self):
         if (filename := self.state.get("filename")) is None:
@@ -59,14 +62,18 @@ class DummyData(Task):
             print("[red]ERROR[/] chunk_size too big")
         self.modules = self.state.get("modules", [2])
         self.runtime = self.state.get("runtime", 10)
+        self.time_done = 0
 
     def add_user_status(self, stat):
         stat["runtime"] = self.runtime
         stat["filename"] = self.filename
+        stat["time done"] = self.time_done
         return stat
 
     def do_work(self, value):
-        if time.time() - self.start_time > self.runtime:
+        dt = time.time() - self.start_time
+        self.time_done = dt
+        if self.time_done >= self.runtime:
             self.status = TaskStatus.FINISHED
             return {"type": MessageType.FINISHED}
 

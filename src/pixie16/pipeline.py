@@ -160,6 +160,7 @@ class Task(multiprocessing.Process):
         self.last_update = time.time()
         self.work_counter = 0
 
+        self.status_frequency = 5
         # keep track of any internal state
         self.state = {}
 
@@ -347,7 +348,7 @@ class Task(multiprocessing.Process):
                     pass
 
                 # handle status updates
-                if now - last_status_time >= 5.0:
+                if now - last_status_time >= self.status_frequency:
                     self.send_status()
                     last_status_time = now
                     wait = False

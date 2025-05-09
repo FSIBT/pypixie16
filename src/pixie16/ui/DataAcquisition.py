@@ -204,7 +204,7 @@ class DataAcquisition(QWidget):
         self.progress_bar = QProgressBar()
         self.progress_bar.setMinimum(0)
         self.progress_bar.setMaximum(100)
-        self.progress_bar.setValue(20)
+        self.progress_bar.setValue(0)
         self.progress_bar.setFixedWidth(800)
         self.run_time_progress_text = QLabel(
             '<span style="color:yellow;">0:00:10</span>'
@@ -257,6 +257,8 @@ class DataAcquisition(QWidget):
                 msg.exec()
                 return
         self.run_time_input.setText(str(runtime))
+        self.progress_bar.setMaximum(runtime)
+
         if self.pipeline.current_pipeline:
             task_id = self.pipeline.current_pipeline[0]
             conf = {"runtime": runtime}
@@ -302,6 +304,9 @@ class DataAcquisition(QWidget):
         for t, status in self.pipeline.status.items():
             extra_info = []
             for key, val in status.items():
+                if key == "time done":
+                    self.progress_bar.setValue(int(val))
+                    continue
                 display_value = self.format_value(key, val)
                 if key in ordered_keys:
                     item = QTableWidgetItem(display_value)
