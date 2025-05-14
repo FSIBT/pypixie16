@@ -382,6 +382,10 @@ class ListModeDataReader:
                 event_header.update(**event_values)
             except KeyError:
                 print("Something went wrong with the binary data.", flush=True)
+                print(
+                    "If you are reading from multiple files, make sure they are ordered correctly.",
+                    flush=True,
+                )
                 raise
 
         trace_length = event_length - header_length
@@ -474,17 +478,42 @@ def to_tuple(obj):
 
 
 def read_list_mode_data(files, buffer_size=int(1e9)):
-    """Loads a list of binary files into a pandas DataFrame"""
+    """Loads a list of binary files into a pandas DataFrame.
+
+    Note: the binary files need to be ordered correctly, in case an
+    event is distributed across two files.
+
+    """
     files = to_tuple(files)
-    events = (e.to_list() for e in events_from_files_generator(files))
+    try:
+        events = (e.to_list() for e in events_from_files_generator(files))
+    except KeyError:
+        print(
+            "A possible reason for this error is that the files are not in the same"
+            "order as received from the pixie."
+        )
+        raise
     return pd.DataFrame.from_records(events, columns=Event.__struct_fields__)
 
 
 def read_list_mode_data_as_events(files, buffer_size=int(1e9), max_size=None):
-    """Returns a list of at most max_size events from files"""
+    """Returns a list of at most max_size events from files.
+
+    Note: the binary files need to be ordered correctly, in case an
+    event is distributed across two files.
+
+    """
     files = to_tuple(files)
-    gen = events_from_files_generator(files)
-    return list(islice(gen, max_size))
+    try:
+        gen = events_from_files_generator(files)
+        out = list(islice(gen, max_size))
+    except KeyError:
+        print(
+            "A possible reason for this error is that the files are not in the same"
+            "order as received from the pixie."
+        )
+        raise
+    return out
 
 
 def sort_events_by_channel(events, channel_list=None):

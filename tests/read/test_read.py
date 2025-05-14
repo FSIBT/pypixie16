@@ -27,6 +27,20 @@ def split_list_mode_binary_files():
 
 
 @pytest.fixture(scope="module")
+def split_list_mode_binary_files_out_of_order():
+    files = [
+        "pixie16_binary_data-00.bin",
+        "pixie16_binary_data-02.bin",  # wrong order
+        "pixie16_binary_data-01.bin",
+        "pixie16_binary_data-03.bin",
+        "pixie16_binary_data-04.bin",
+    ]
+
+    path = Path(__file__).parent
+    return [path / f for f in files]
+
+
+@pytest.fixture(scope="module")
 def list_mode_data_events():
     path = Path(__file__).parent
     events_file = path / "pixie16-events.parquet"
@@ -63,3 +77,11 @@ class TestReadListModeData:
 
         assert len(read_events) > 0
         assert_frame_equal(read_events, list_mode_data_events)
+
+    def test_read_split_binary_file_out_of_order(
+        self, split_list_mode_binary_files_out_of_order, list_mode_data_events
+    ):
+        with pytest.raises(KeyError):
+            read_events = pixie16.read.read_list_mode_data(
+                split_list_mode_binary_files_out_of_order
+            )
