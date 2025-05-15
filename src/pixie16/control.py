@@ -701,7 +701,7 @@ def take_MCA_spectra(
                     keep_running = True
             time.sleep(1)
             dt = time.time() - start
-            progress.update(task, advance=dt)
+            progress.update(task, completed=dt)
         progress.update(task, completed=duration)
     print()
     end_run()
