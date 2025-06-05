@@ -15,3 +15,9 @@ from . import tasks
 from . import cli
 
 __all__ = ["analyze", "plot", "ui", "scan", "control", "pipeline", "tasks", "cli"]
+
+# Live data functionality
+try:
+    from . import live
+except ImportError:
+    pass

@@ -1,12 +1,29 @@
 from pathlib import Path
-
+from PyQt6.QtCore import QTimer
 from PyQt6.QtGui import QIcon, QAction
-from PyQt6.QtWidgets import QFileDialog, QVBoxLayout, QWidget
+from PyQt6.QtWidgets import (
+    QFileDialog,
+    QVBoxLayout,
+    QWidget,
+    QCheckBox,
+    QHBoxLayout,
+    QLabel,
+    QSpinBox,
+    QPushButton,
+)
 
 import pixie16
 
 from ..widgets import BaseApp
 from .main_widget import CoincidencePlot
+
+try:
+    from ...live.live_data_reader import LiveDataReader, LiveDataSourceInterface
+
+    LIVE_MODE_AVAILABLE = True
+except ImportError:
+    LIVE_MODE_AVAILABLE = False
+    print("Live mode not available - install live dependencies")
 
 
 class CoincidenceApp(BaseApp):
@@ -46,6 +63,147 @@ class CoincidenceApp(BaseApp):
         self.setCentralWidget(self.main_widget)
 
         self.show()
+
+        self.live_reader = None
+        self.live_data_source = None
+        self.is_live_mode = False
+
+        self._setup_live_controls()
+
+        self.live_update_timer = QTimer()
+        self.live_update_timer.timeout.connect(self._update_live_display)
+
+    def _setup_live_controls(self):
+        """Add live mode controls to the UI."""
+        if not LIVE_MODE_AVAILABLE:
+            return
+
+        live_controls = QHBoxLayout()
+
+        self.live_checkbox = QCheckBox("Live Mode")
+        self.live_checkbox.toggled.connect(self._toggle_live_mode)
+        self.live_checkbox.setEnabled(False)  # Enable after loading settings
+        live_controls.addWidget(self.live_checkbox)
+
+        # Update rate spinner
+        live_controls.addWidget(QLabel("Update Rate (Hz):"))
+        self.update_rate_spinner = QSpinBox()
+        self.update_rate_spinner.setRange(1, 50)
+        self.update_rate_spinner.setValue(10)
+        self.update_rate_spinner.valueChanged.connect(self._set_update_rate)
+        live_controls.addWidget(self.update_rate_spinner)
+
+        # Start/Stop acquisition button
+        self.acquisition_button = QPushButton("Start Live Acquisition")
+        self.acquisition_button.clicked.connect(self._toggle_acquisition)
+        self.acquisition_button.setEnabled(False)
+        live_controls.addWidget(self.acquisition_button)
+
+        # Status label
+        self.live_status_label = QLabel("Live mode not active")
+        live_controls.addWidget(self.live_status_label)
+
+        self.vbox.insertLayout(0, live_controls)  # At Top  of layout
+
+    def _toggle_live_mode(self, enabled):
+        """Toggle live visualization mode."""
+        if not LIVE_MODE_AVAILABLE or not self.live_reader:
+            return
+
+        self.is_live_mode = enabled
+
+        if enabled:
+            # Start live visualization updates
+            update_interval = int(1000 / self.update_rate_spinner.value())
+            self.live_update_timer.start(update_interval)
+            self.live_status_label.setText("Live visualization active")
+        else:
+            # Stop live visualization
+            self.live_update_timer.stop()
+            self.live_status_label.setText("Live visualization stopped")
+
+    def _toggle_acquisition(self):
+        """Start or stop live data acquisition."""
+        if not self.live_data_source:
+            return
+
+        if not self.live_data_source.is_active:
+            # Start acquisition - you can modify this to use real hardware
+            # For now, we'll simulate with a file
+            binary_file = "/home/jo/Downloads/RUN-2025-06-03-00006-20250604T220357Z-1-001/RUN-2025-06-03-00006/binary-data/RUN-2025-06-03-00006-mod0-1748991222-589297-00000.bin"
+
+            if Path(binary_file).exists():
+                self.live_data_source.simulate_from_file(
+                    binary_file, chunk_size=500, delay_ms=100
+                )
+                self.acquisition_button.setText("Stop Live Acquisition")
+                self.live_checkbox.setEnabled(True)
+                self.live_status_label.setText(
+                    "Live acquisition started (file simulation)"
+                )
+            else:
+                self.live_status_label.setText("Error: Binary file not found")
+        else:
+            # Stop acquisition
+            self.live_data_source.stop_acquisition()
+            self.acquisition_button.setText("Start Live Acquisition")
+            self.live_checkbox.setChecked(False)
+            self.live_status_label.setText("Live acquisition stopped")
+
+    def _set_update_rate(self, rate_hz):
+        """Set the live update rate."""
+        if self.live_update_timer.isActive():
+            self.live_update_timer.setInterval(int(1000 / rate_hz))
+
+    def _update_live_display(self):
+        """Update the display with live data."""
+        if not self.is_live_mode or not self.live_reader:
+            return
+
+        try:
+            # Get live events
+            live_events = self.live_reader.get_live_events(count=50)
+
+            if live_events:
+                # Convert events to display format
+                display_data = self._convert_events_for_display(live_events)
+
+                # Update your existing plot with live data
+                if hasattr(self.data, "update_with_live_data"):
+                    self.data.update_with_live_data(display_data)
+
+                # Update status
+                total_events = sum(len(events) for events in live_events.values())
+                channels_active = list(live_events.keys())
+                self.live_status_label.setText(
+                    f"Live: {total_events} events, channels {channels_active}"
+                )
+
+        except Exception as e:
+            print(f"Error updating live display: {e}")
+            self._toggle_live_mode(False)
+
+    def _convert_events_for_display(self, live_events):
+        """Convert live events to format expected by visualizer."""
+        display_data = {}
+
+        for channel, events in live_events.items():
+            if not events:
+                continue
+
+            # Extract the data your visualizer needs
+            display_data[f"channel_{channel}"] = {
+                "fast_trigger": 1.0 if events else 0.0,  # Simplified - modify as needed
+                "coincidence": 0.5,  # You'll need to implement coincidence detection
+                "validation": 0.8,  # And validation logic
+                "energy": events[-1].energy if events else 0,
+                "timestamp": events[-1].timestamp if events else 0,
+                "trace": events[-1].trace
+                if events and len(events[-1].trace) > 0
+                else np.array([]),
+            }
+
+        return display_data
 
     def open_file(self, filename=None) -> None:
         if filename is None or not isinstance(filename, str | Path):
@@ -93,3 +251,14 @@ class CoincidenceApp(BaseApp):
                 "Validation Stretch": self.settings.ChanTrigStretch[c],
             }
             self.data.channel_widgets[i].vstack.value = values
+
+        if LIVE_MODE_AVAILABLE and self.settings is not None:
+            # Setup live data reader
+            self.live_reader = LiveDataReader()
+            self.live_data_source = LiveDataSourceInterface(self.live_reader)
+
+            # Enable live controls
+            self.acquisition_button.setEnabled(True)
+            self.live_status_label.setText(
+                "Live mode ready - click Start Live Acquisition"
+            )
