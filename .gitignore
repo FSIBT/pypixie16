@@ -28,3 +28,24 @@ src/pixie16/_version.py
 *.DS_*
 
 .ipynb_checkpoints
+
+# Debug and temporary files
+Pixie16Msg.log
+**/Pixie16Msg.log
+debug.py
+**/debug.py
+setup_live.sh.save
+mkdir
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# VS Code
+.vscode/
+
+# Temporary files
+*.tmp
+*.temp
+*.log
