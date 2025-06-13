@@ -22,8 +22,6 @@ from PyQt6.QtWidgets import (
     QWidget,
     QVBoxLayout,
     QHBoxLayout,
-    QGridLayout,
-    QTabWidget,
     QMessageBox,
     QGroupBox,
     QScrollArea,
@@ -33,8 +31,6 @@ from PyQt6.QtWidgets import (
     QDoubleSpinBox,
     QComboBox,
     QCheckBox,
-    QButtonGroup,
-    QRadioButton,
 )
 from PyQt6.QtGui import QIcon
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal
@@ -63,13 +59,18 @@ except ImportError as e:
 
 from pixie16.ui.widgets import BaseApp
 from pixie16.ui.spectrum_plotter import ContinuousSpectrumPlotter
+from pixie16.ui.channel_controls import ChannelDisplayControls
+from pixie16.ui.parameter_controls import ParameterControls
+
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class PixieScopeApp(BaseApp):
     def __init__(self, dummy_mode=False, module_number=0, channels=None):
         super().__init__()
 
-        # Set window title
         if hasattr(self, "setWindowTitle"):
             self.setWindowTitle("Pixie16 Scope")
 
@@ -79,11 +80,8 @@ class PixieScopeApp(BaseApp):
         self.live_reader = None
         self.data_source = None
         self.is_acquiring = False
-
-        # Auto-start flag
         self.auto_started = False
 
-        # stats tracking
         self.last_event_count = 0
         self.last_update_time = time.time()
 
@@ -92,14 +90,16 @@ class PixieScopeApp(BaseApp):
         self.setup_timers()
 
     def init_ui(self):
-        self.setGeometry(100, 100, 1400, 900)
-
+        self.setGeometry(100, 100, 1600, 1000)
         main_widget = QWidget()
         self.setCentralWidget(main_widget)
-        layout = QVBoxLayout()
 
-        control_panel = self.create_control_panel()  # top
-        layout.addWidget(control_panel)
+        main_layout = QHBoxLayout()
+
+        left_layout = QVBoxLayout()
+
+        control_panel = self.create_control_panel()
+        left_layout.addWidget(control_panel)
 
         self.spectrum_tab = ContinuousSpectrumPlotter(
             app=None,
@@ -110,14 +110,65 @@ class PixieScopeApp(BaseApp):
             bins=1000,
         )
 
-        layout.addWidget(self.spectrum_tab)
+        left_layout.addWidget(self.spectrum_tab)
 
-        self.info_bar = QLabel("Initializing scope...")  # bottom
-        layout.addWidget(self.info_bar)
+        right_layout = QVBoxLayout()
 
-        main_widget.setLayout(layout)
+        self.channel_controls = ChannelDisplayControls(
+            channels=self.channels, title="Channel Display"
+        )
+        self.channel_controls.channels_changed.connect(self.update_display_channels)
+        right_layout.addWidget(self.channel_controls)
+
+        self.parameter_controls = ParameterControls(
+            initial_module=self.module_number, title="PIXIE-16 Parameters"
+        )
+        self.parameter_controls.parameter_changed.connect(self.handle_parameter_change)
+        self.parameter_controls.apply_all_requested.connect(
+            self.handle_apply_all_parameters
+        )
+        self.parameter_controls.status_message.connect(self.update_info_bar)
+
+        right_layout.addWidget(self.parameter_controls)
+
+        right_layout.addStretch()
+
+        left_widget = QWidget()
+        left_widget.setLayout(left_layout)
+
+        right_widget = QWidget()
+        right_widget.setLayout(right_layout)
+        right_widget.setMaximumWidth(450)
+        right_widget.setMinimumWidth(450)
+
+        main_layout.addWidget(left_widget, stretch=1)
+        main_layout.addWidget(right_widget)
+
+        bottom_layout = QVBoxLayout()
+        bottom_layout.addLayout(main_layout)
+
+        self.info_bar = QLabel("Initializing scope...")
+        bottom_layout.addWidget(self.info_bar)
+
+        main_widget.setLayout(bottom_layout)
 
         QTimer.singleShot(1000, self.auto_start_acquisition)
+
+    def update_display_channels(self, selected_channels):
+        print(f"Scope: channels changed to {selected_channels}")
+
+        if hasattr(self.spectrum_tab, "set_display_channels"):
+            self.spectrum_tab.set_display_channels(selected_channels)
+            print(f"Called set_display_channels with {selected_channels}")
+        else:
+            print("ERROR: spectrum_tab doesn't have set_display_channels method")
+
+        if selected_channels:
+            self.info_bar.setText(
+                f"Displaying {len(selected_channels)} channels: {selected_channels}"
+            )
+        else:
+            self.info_bar.setText("No channels selected for display")
 
     def create_control_panel(self):
         group = QGroupBox("Scope Controls")
@@ -144,10 +195,59 @@ class PixieScopeApp(BaseApp):
         group.setLayout(layout)
         return group
 
+    def handle_parameter_change(self, param_name, value, module, channel):
+        print(
+            f"DEBUG: Handling parameter change: {param_name} = {value} for M{module}:Ch{channel}"
+        )
+        try:
+            if not self.dummy_mode:
+                import pixie16 as px
+
+                px.control.set_channel_parameter(param_name, value, module, channel)
+                self.info_bar.setText(
+                    f"Set {param_name} = {value} on M{module}:Ch{channel}"
+                )
+                print(f"SUCCESS: Set {param_name} = {value} on hardware")
+            else:
+                self.info_bar.setText(
+                    f"Dummy: {param_name} = {value} on M{module}:Ch{channel}"
+                )
+                print(
+                    f"DUMMY MODE: Would set {param_name} = {value} on M{module}:Ch{channel}"
+                )
+        except Exception as e:
+            error_msg = f"Error setting {param_name}: {e}"
+            self.info_bar.setText(error_msg)
+            print(f"ERROR: {error_msg}")
+
+    def handle_apply_all_parameters(self, params_dict, module, channel):
+        try:
+            if not self.dummy_mode:
+                import pixie16 as px
+
+                for param_name, value in params_dict.items():
+                    px.control.set_channel_parameter(param_name, value, module, channel)
+
+                success_msg = f"Applied all {len(params_dict)} parameters to Module {module}, Channel {channel}"
+                self.info_bar.setText(success_msg)
+                logger.info(success_msg)
+            else:
+                self.info_bar.setText(
+                    f"Dummy: Applied {len(params_dict)} parameters to M{module}:Ch{channel}"
+                )
+
+        except Exception as e:
+            error_msg = f"Error applying parameters: {e}"
+            self.info_bar.setText(error_msg)
+            logger.error(error_msg)
+
+    def update_info_bar(self, message):
+        self.info_bar.setText(message)
+
     def init_pixie16(self):
         try:
             if not self.dummy_mode:
-                # Initialize real hardware
+                # for real hardware
                 px.control.init_and_boot(modules=[self.module_number])
                 self.info_bar.setText(
                     f"Pixie16 Module {self.module_number} initialized - Ready to start"
@@ -155,11 +255,9 @@ class PixieScopeApp(BaseApp):
             else:
                 self.info_bar.setText("Running in dummy mode - Ready to start")
 
-            # Create live data reader
             self.live_reader = LiveDataReader()
             self.data_source = LiveDataSourceInterface(self.live_reader)
 
-            # Connect event processing
             self.live_reader.add_event_callback(self.process_event)
 
         except Exception as e:
@@ -191,10 +289,8 @@ class PixieScopeApp(BaseApp):
             self.info_bar.setText("Starting continuous acquisition...")
 
             if self.dummy_mode:
-                # Start dummy data simulation
                 self.start_dummy_data()
             else:
-                # Start real hardware acquisition
                 px.control.start_list_mode_run()
                 self.data_timer.start(50)  # ms
 
@@ -237,7 +333,6 @@ class PixieScopeApp(BaseApp):
             from PyQt6.QtWidgets import QFileDialog
             import json
 
-            # Get save location
             file_path, _ = QFileDialog.getSaveFileName(
                 self,
                 "Save Spectrum Data",
@@ -246,7 +341,6 @@ class PixieScopeApp(BaseApp):
             )
 
             if file_path:
-                # Collect data from all channels
                 data_to_save = {}
                 for channel in self.channels:
                     if (
@@ -257,7 +351,6 @@ class PixieScopeApp(BaseApp):
                             self.spectrum_tab.energy_data[channel]
                         )
 
-                # Add metadata
                 data_to_save["metadata"] = {
                     "timestamp": time.time(),
                     "channels": self.channels,
@@ -269,7 +362,6 @@ class PixieScopeApp(BaseApp):
                     ),
                 }
 
-                # Save to file
                 with open(file_path, "w") as f:
                     json.dump(data_to_save, f, indent=2)
 
@@ -285,7 +377,6 @@ class PixieScopeApp(BaseApp):
             return
 
         try:
-            # Read data from PIXIE FIFO
             data_list = px.control.read_list_mode_fifo(check=True, threshold=32)
 
             for data in data_list:
@@ -314,7 +405,6 @@ class PixieScopeApp(BaseApp):
                 binary_data = np.fromfile(data_file, dtype=np.uint32)
                 print(f"Loaded {len(binary_data)} words from real data file")
 
-                # Feed chunks of data to the live reader
                 chunk_size = 1000
                 total_chunks = len(binary_data) // chunk_size
 
@@ -325,7 +415,7 @@ class PixieScopeApp(BaseApp):
                     chunk = binary_data[i : i + chunk_size]
                     self.live_reader.add_data(chunk)
 
-                    if i // chunk_size % 10 == 0:  # Print every 10th chunk
+                    if i // chunk_size % 10 == 0:
                         print(
                             f"Fed chunk {i // chunk_size + 1}/{total_chunks} to live reader"
                         )
@@ -336,7 +426,6 @@ class PixieScopeApp(BaseApp):
 
             except Exception as e:
                 print(f"Error with real data simulation: {e}")
-                # Fallback to synthetic data
                 self.start_synthetic_data()
 
         self.real_data_thread = threading.Thread(
@@ -344,15 +433,14 @@ class PixieScopeApp(BaseApp):
         )
         self.real_data_thread.start()
 
-    def start_synthetic_data(self):
+    def start_synthetic_data(self):  # TODO: fix and remove when tested.
         import random
 
         def event_generator():
             event_count = 0
             while self.data_source.is_active:
-                # Generate random events for the ACTUAL channels we're using
                 for channel in self.channels:
-                    if random.random() < 0.05:  # 5% chance per channel per cycle
+                    if random.random() < 0.05:
                         if channel < 4:  # Channels 0-3
                             energy = max(0, int(random.gauss(500, 100)))
                         elif channel < 8:  # Channels 4-7
@@ -375,7 +463,6 @@ class PixieScopeApp(BaseApp):
                             },
                         )()
 
-                        # Process event
                         self.process_event(event)
                         event_count += 1
 
@@ -389,7 +476,6 @@ class PixieScopeApp(BaseApp):
             channel = getattr(event, "channel", 0)
             energy = getattr(event, "energy", 0)
 
-            # Debug output
             if hasattr(self, "_event_count"):
                 self._event_count += 1
             else:
@@ -408,160 +494,32 @@ class PixieScopeApp(BaseApp):
 
             traceback.print_exc()
 
-    def handle_parameter_change(self, parameter, value):
-        try:
-            if not self.dummy_mode:
-                # The parameter widget already handles setting the hardware parameter
-                # This is just for logging/status updates
-                module = getattr(self.parameter_tab, "module", 0)
-                channel = getattr(self.parameter_tab, "channel", 0)
-                print(
-                    f"Parameter {parameter} = {value} applied to Module {module}, Channel {channel}"
-                )
-                self.info_bar.setText(f"Updated {parameter} = {value} for Ch{channel}")
-            else:
-                self.info_bar.setText(f"Dummy mode: {parameter} = {value}")
-
-        except Exception as e:
-            error_msg = f"Error handling parameter change: {str(e)}"
-            print(error_msg)
-
-    def change_display_mode(self, mode):
-        if mode == "Single Channel":
-            self.focus_channel_combo.setEnabled(True)
-            # Update spectrum plotter to show only selected channel
-            selected_channel = int(self.focus_channel_combo.currentText().split()[1])
-            self.spectrum_tab.set_display_channels([selected_channel])
-        else:
-            self.focus_channel_combo.setEnabled(False)
-            # Show all channels
-            self.spectrum_tab.set_display_channels(self.channels)
-
-    def change_focus_channel(self, channel_text):
-        if self.display_mode_combo.currentText() == "Single Channel":
-            channel = int(channel_text.split()[1])
-            self.spectrum_tab.set_display_channels([channel])
-            # Also update parameter controls to this channel
-            self.param_channel_spin.setValue(channel)
-
-    def update_energy_range(self):
-        min_energy = self.energy_min_spin.value()
-        max_energy = self.energy_max_spin.value()
-        if min_energy >= max_energy:
-            max_energy = min_energy + 100
-            self.energy_max_spin.setValue(max_energy)
-        self.spectrum_tab.set_energy_range(min_energy, max_energy)
-
-    def toggle_log_scale(self, checked):
-        if hasattr(self.spectrum_tab, "set_log_scale"):
-            self.spectrum_tab.set_log_scale(checked)
-
-    # Parameter update methods
-    def update_threshold(self):
-        value = self.threshold_spin.value()
-        self.set_pixie_parameter("TRIGGER_THRESHOLD", value)
-
-    def update_energy_rise(self):
-        value = self.energy_rise_spin.value()
-        self.set_pixie_parameter("ENERGY_RISETIME", value)
-
-    def update_energy_flat(self):
-        value = self.energy_flat_spin.value()
-        self.set_pixie_parameter("ENERGY_FLATTOP", value)
-
-    def update_trigger_rise(self):
-        value = self.trigger_rise_spin.value()
-        self.set_pixie_parameter("TRIGGER_RISETIME", value)
-
-    def update_gain(self):
-        value = float(self.gain_combo.currentText())
-        self.set_pixie_parameter("Gain", value)
-
-    def update_polarity(self):
-        value = self.polarity_combo.currentText()
-        self.set_pixie_parameter("Polarity", value)
-
-    def update_channel_enable(self):
-        value = self.channel_enable_check.isChecked()
-        self.set_pixie_parameter("GoodChannel", value)
-
-    def set_pixie_parameter(self, param_name, value):
-        try:
-            if not self.dummy_mode:
-                module = self.param_module_spin.value()
-                channel = self.param_channel_spin.value()
-                px.control.set_channel_parameter(param_name, value, module, channel)
-                self.info_bar.setText(
-                    f"Set {param_name} = {value} on M{module}:Ch{channel}"
-                )
-            else:
-                self.info_bar.setText(f"Dummy: {param_name} = {value}")
-        except Exception as e:
-            self.info_bar.setText(f"Error setting {param_name}: {e}")
-
-    def apply_current_settings(self):
-        try:
-            if not self.dummy_mode:
-                module = self.param_module_spin.value()
-                channel = self.param_channel_spin.value()
-
-                # Apply all parameters
-                px.control.set_channel_parameter(
-                    "TRIGGER_THRESHOLD", self.threshold_spin.value(), module, channel
-                )
-                px.control.set_channel_parameter(
-                    "ENERGY_RISETIME", self.energy_rise_spin.value(), module, channel
-                )
-                px.control.set_channel_parameter(
-                    "ENERGY_FLATTOP", self.energy_flat_spin.value(), module, channel
-                )
-                px.control.set_channel_parameter(
-                    "TRIGGER_RISETIME", self.trigger_rise_spin.value(), module, channel
-                )
-                px.control.set_channel_parameter(
-                    "Gain", float(self.gain_combo.currentText()), module, channel
-                )
-                px.control.set_channel_parameter(
-                    "Polarity", self.polarity_combo.currentText(), module, channel
-                )
-                px.control.set_channel_parameter(
-                    "GoodChannel",
-                    self.channel_enable_check.isChecked(),
-                    module,
-                    channel,
-                )
-
-                self.info_bar.setText(
-                    f"Applied all settings to Module {module}, Channel {channel}"
-                )
-            else:
-                self.info_bar.setText("Dummy mode: All settings applied")
-        except Exception as e:
-            self.info_bar.setText(f"Error applying settings: {e}")
-
     def update_status(self):
         if not self.live_reader:
             return
 
         try:
             stats = self.live_reader.get_statistics()
-
-            # Update rate and event count
             rate = stats.get("processing_rate", 0)
             events = stats.get("events_processed", 0)
 
             self.rate_label.setText(f"Rate: {rate:.1f} Hz")
             self.events_label.setText(f"Events: {events}")
 
-            # Update info bar with more detailed statistics
-            if self.is_acquiring:
-                if hasattr(self.spectrum_tab, "energy_data"):
-                    total_events = sum(
-                        len(data) for data in self.spectrum_tab.energy_data.values()
-                    )
-                    self.info_bar.setText(
-                        f"Acquiring - Rate: {rate:.1f} Hz, Total Events: {total_events}"
-                    )
+            if self.is_acquiring and hasattr(self.spectrum_tab, "energy_data"):
+                total_events = sum(
+                    len(data) for data in self.spectrum_tab.energy_data.values()
+                )
+                self.info_bar.setText(
+                    f"Acquiring - Rate: {rate:.1f} Hz, Total Events: {total_events}"
+                )
+
+                channel_stats = {}
+                for ch in self.channels:
+                    channel_stats[ch] = len(self.spectrum_tab.energy_data.get(ch, []))
+
+                if hasattr(self, "channel_controls"):
+                    self.channel_controls.update_channel_statistics(channel_stats)
 
         except Exception as e:
             print(f"Error updating status: {e}")
@@ -596,7 +554,6 @@ def main():
     app = QApplication(sys.argv)
     app.setApplicationName("Pixie16 Scope")
 
-    # Set application style
     app.setStyle("Fusion")
 
     try:

@@ -51,36 +51,37 @@ class ContinuousSpectrumPlotter(QGroupBox):
         self.energy_range = energy_range
         self.bins = bins
         self.update_hooks = update_hooks or []
-        self.display_channels = self.channels.copy()  # Track which channels to display
+        self.display_channels = self.channels.copy()
         self.channel_controls = None
 
-        # Data storage - longer buffer for accumulated spectra
         self.energy_data = defaultdict(lambda: deque(maxlen=50000))
         self.last_update = time.time()
         self.update_rate = 0.5  # seconds
 
-        # Color scheme (same as TracePlotter)
         channel_colors = [
             (3, 7, 252),  # Blue
             (252, 3, 3),  # Red
             (0, 128, 0),  # Green
+            (128, 128, 128),  # Gray
+            (255, 192, 203),  # Pink
+            (255, 20, 147),  # Deep Pink
+            (75, 0, 130),  # Indigo
+            (255, 105, 180),  # Hot Pink
+            (0, 255, 127),  # Spring Green
             (246, 190, 0),  # Yellow
             (255, 0, 255),  # Magenta
             (0, 255, 255),  # Cyan
             (128, 0, 128),  # Purple
             (255, 165, 0),  # Orange
+            (128, 128, 0),  # Olive
+            (0, 0, 128),  # Navy
         ]
 
         self.setup_ui(bkg_color, channel_colors)
         self.setup_continuous_reading()
 
     def setup_ui(self, bkg_color, channel_colors):
-        main_layout = QHBoxLayout()
-        splitter = QSplitter(QtCore.Qt.Orientation.Horizontal)
-
-        # left
-        plot_widget = QWidget()
-        plot_layout = QVBoxLayout()
+        main_layout = QVBoxLayout()
 
         self.display = pg.PlotWidget()
         self.display.setBackground(bkg_color)
@@ -90,7 +91,6 @@ class ContinuousSpectrumPlotter(QGroupBox):
         self.display.showGrid(x=True, y=True)
         self.display.setMenuEnabled(enableMenu=True)
 
-        # plot items for each channel
         self.plot_items = {}
         for i, channel in enumerate(self.channels):
             color = channel_colors[i % len(channel_colors)]
@@ -99,30 +99,12 @@ class ContinuousSpectrumPlotter(QGroupBox):
             self.plot_items[channel] = curve
             self.display.addItem(curve)
 
-        plot_layout.addWidget(self.display)
+        main_layout.addWidget(self.display)
 
         self.create_control_widgets()
         control_group = self.create_control_group()
-        plot_layout.addWidget(control_group)
+        main_layout.addWidget(control_group)
 
-        plot_widget.setLayout(plot_layout)
-        splitter.addWidget(plot_widget)
-
-        # Right side
-        self.channel_controls = ChannelDisplayControls(
-            channels=self.channels,
-            channel_names=self.channel_names,
-            title="Channel Controls",
-        )
-
-        self.channel_controls.channels_changed.connect(self.on_channels_changed)
-        # print(f"DEBUG: Connected channels_changed signal to on_channels_changed")
-
-        splitter.addWidget(self.channel_controls)
-        splitter.setStretchFactor(0, 3)
-        splitter.setStretchFactor(1, 1)
-        splitter.setSizes([900, 300])
-        main_layout.addWidget(splitter)
         self.setLayout(main_layout)
 
     def create_control_widgets(self):
@@ -161,7 +143,6 @@ class ContinuousSpectrumPlotter(QGroupBox):
             from PyQt6.QtWidgets import QFileDialog
             import json
 
-            # Get save location
             file_path, _ = QFileDialog.getSaveFileName(
                 self,
                 "Save Spectrum Data",
@@ -180,7 +161,6 @@ class ContinuousSpectrumPlotter(QGroupBox):
                             self.spectrum_tab.energy_data[channel]
                         )
 
-                # Add metadata
                 data_to_save["metadata"] = {
                     "timestamp": time.time(),
                     "channels": self.channels,
@@ -192,7 +172,6 @@ class ContinuousSpectrumPlotter(QGroupBox):
                     ),
                 }
 
-                # Save to file
                 with open(file_path, "w") as f:
                     json.dump(data_to_save, f, indent=2)
 
@@ -227,7 +206,7 @@ class ContinuousSpectrumPlotter(QGroupBox):
 
     def setup_continuous_reading(self):
         for channel in self.display_channels:
-            param_name = f"CH{channel}_ENERGY_DATA"  # Recent energy data
+            param_name = f"CH{channel}_ENERGY_DATA"
 
             if self.app:
                 self.app.add_auto_update_instrument_parameter(
@@ -246,47 +225,27 @@ class ContinuousSpectrumPlotter(QGroupBox):
         self.update_timer.start(int(self.update_rate * 1000))
 
     def create_energy_hook(self, channel):
-        """Create a hook that processes energy data from instrument."""
-
         def energy_hook(energy_data_string):
             return self.process_energy_data(channel, energy_data_string)
 
         return energy_hook
 
-    def on_channels_changed(self, selected_channels):
-        print(f"DEBUG: on_channels_changed called with: {selected_channels}")
-        self.display_channels = selected_channels
-
-        # Update curve visibility
-        for channel in self.channels:
-            curve = self.plot_items[channel]
-            if channel in self.display_channels:
-                print(f"DEBUG: Showing channel {channel}")
-                curve.show()
-            else:
-                print(f"DEBUG: Hiding channel {channel}")
-                curve.hide()
-
     def process_energy_data(self, channel, energy_data_string):
-        """Process energy data from the instrument parameter."""
         if energy_data_string is None:
             return energy_data_string
 
         try:
-            # Parse energy data (could be JSON list of recent energies)
             if isinstance(energy_data_string, str):
                 energy_list = json.loads(energy_data_string)
             else:
                 energy_list = energy_data_string
 
-            # Apply update hooks
             for hook in self.update_hooks:
                 try:
                     energy_list = hook(self, channel, energy_list)
                 except Exception as e:
                     logger.warning(f"Update hook failed: {e}")
 
-            # Add to our data storage
             if isinstance(energy_list, list):
                 for energy in energy_list:
                     self.energy_data[channel].append(energy)
@@ -297,58 +256,42 @@ class ContinuousSpectrumPlotter(QGroupBox):
         return energy_data_string
 
     def update_display(self):
-        """Update the spectrum display (called by timer)."""
         current_time = time.time()
         if current_time - self.last_update < self.update_rate:
             return
 
         self.last_update = current_time
-        # print(f"DEBUG: Updating display for channels: {self.display_channels}")
 
-        # Update spectra for DISPLAYED channels only
-        for channel in self.display_channels:
+        for channel in self.channels:
             if channel not in self.energy_data or len(self.energy_data[channel]) == 0:
-                # Set empty data for channels with no events
-                self.plot_items[channel].setData([], [])
                 if channel in self.stats_labels:
                     self.stats_labels[channel].setText(f"Ch{channel}: 0 events")
+                self.plot_items[channel].setData([], [])
                 continue
 
-            # Create histogram from accumulated data
             energies = list(self.energy_data[channel])
-            counts, bin_edges = np.histogram(
-                energies, bins=self.bins, range=self.energy_range
-            )
 
-            # Use bin centers for plotting
-            bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2
-
-            # Update plot
-            if self.log_scale_cb.isChecked():
-                counts = np.maximum(counts, 1)  # Avoid log(0)
-                self.plot_items[channel].setData(bin_centers, np.log10(counts))
-            else:
-                self.plot_items[channel].setData(bin_centers, counts)
-
-            # Update statistics
             if channel in self.stats_labels:
                 self.stats_labels[channel].setText(
                     f"Ch{channel}: {len(energies)} events"
                 )
 
-        # Hide non-displayed channels
-        for channel in self.channels:
-            if channel not in self.display_channels:
-                self.plot_items[channel].setData([], [])  # Clear data
-                if channel in self.stats_labels:
-                    self.stats_labels[channel].setText(f"Ch{channel}: 0 events")
+            if channel in self.display_channels:
+                counts, bin_edges = np.histogram(
+                    energies, bins=self.bins, range=self.energy_range
+                )
 
-        # Auto scale if enabled
+                bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2
+                if self.log_scale_cb.isChecked():
+                    counts = np.maximum(counts, 1)
+                    self.plot_items[channel].setData(bin_centers, np.log10(counts))
+                else:
+                    self.plot_items[channel].setData(bin_centers, counts)
+            else:
+                self.plot_items[channel].setData([], [])
+
         if self.auto_scale_cb.isChecked():
             self.display.autoRange()
-        if self.channel_controls:
-            channel_stats = {ch: len(self.energy_data[ch]) for ch in self.channels}
-            self.channel_controls.update_channel_statistics(channel_stats)
 
     def update_energy_range(self):
         self.energy_range = (self.energy_min_spin.value(), self.energy_max_spin.value())
@@ -369,5 +312,12 @@ class ContinuousSpectrumPlotter(QGroupBox):
             self.display.setXRange(*self.energy_range)
 
     def set_display_channels(self, channels):
+        print(f"Spectrum plotter: setting display channels to {channels}")
         self.display_channels = channels
-        self.on_channels_changed(channels)
+
+        for channel in self.channels:
+            if channel in self.display_channels:
+                print(f"Showing channel {channel}")
+            else:
+                print(f"Hiding channel {channel}")
+                self.plot_items[channel].setData([], [])
