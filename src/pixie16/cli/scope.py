@@ -6,7 +6,7 @@ Usage:
 
 Options:
   --dummy           Use dummy data for testing without hardware
-  --module <N>      Specify module number [default: 0]
+  --module <N>      Specify module number [default: 2]
   --channels <list> Specify channels to display [default: 0,1,2,3,4,5,6,7]
 """
 
@@ -68,26 +68,76 @@ logger = logging.getLogger(__name__)
 
 
 class PixieScopeApp(BaseApp):
-    def __init__(self, dummy_mode=False, module_number=0, channels=None):
+    def __init__(self, dummy_mode=False, module_number=2, channels=[(0, 4), (0, 9)]):
         super().__init__()
 
         if hasattr(self, "setWindowTitle"):
             self.setWindowTitle("Pixie16 Scope")
 
         self.dummy_mode = dummy_mode
-        self.module_number = module_number
-        self.channels = channels or list(range(8))
+        self.module_number = 2
+        self.channels = [(0, 4), (0, 9)]  # or list(range(8))
+        print("I am printing channel type:", type(self.channels))
         self.live_reader = None
         self.data_source = None
         self.is_acquiring = False
         self.auto_started = False
+
+        self.settings = {
+            "channels": self.channels,
+            "TRACE_LENGTH": 1.0,
+            "TRIGGER_THRESHOLD": 100,
+            "TRACE_DELAY": 0.2,
+            "MultiplicityMaskL": 0.0,
+            "MultiplicityMaskH": 0.0,
+            "TRIGGER_RISETIME": 0.02,
+            "TRIGGER_FLATTOP": 0.02,
+            "FAST_FILTER_RANGE": 0,
+            "MODULE_CSRB": 0,
+            "BackplanePullup": True,
+            "TrigConfig0": 0,
+            "TrigConfig1": 0,
+            "TrigConfig2": 0,
+            "TrigConfig3": 0,
+            "Polarity": "positive",
+            "CaptureTrace": True,
+            "EnableChannelVal": False,
+            "EnableCFD": False,
+        }
+
+        self.raw_settings = {
+            "channels": self.channels,
+            "PeakSample": [
+                4,
+                8,
+                61,
+                110,
+                113,
+                105,
+                105,
+                4,
+                4,
+                4,
+                4,
+            ],  # Atlas 4 was 100 or 118
+        }
 
         self.last_event_count = 0
         self.last_update_time = time.time()
 
         self.init_ui()
         self.init_pixie16()
+        self.plot_mca()
         self.setup_timers()
+
+    def plot_mca(self):
+        """Using pixie control's tale_MCA_spectra to collect data."""
+        print(self.raw_settings)
+        px.control.change_raw_setting_from_dict(self.raw_settings, call_pixie=True)
+        histogram = px.control.take_MCA_spectra(
+            channels=self.channels, duration=10, verbose=True
+        )
+        print(histogram, type(histogram))
 
     def init_ui(self):
         self.setGeometry(100, 100, 1600, 1000)
@@ -249,6 +299,11 @@ class PixieScopeApp(BaseApp):
             if not self.dummy_mode:
                 # for real hardware
                 px.control.init_and_boot(modules=[self.module_number])
+
+                px.control.change_setting_from_dict(
+                    settings=self.settings, call_pixie=True
+                )
+
                 self.info_bar.setText(
                     f"Pixie16 Module {self.module_number} initialized - Ready to start"
                 )
@@ -539,11 +594,12 @@ def main():
     args = docopt(__doc__)
 
     dummy_mode = args["--dummy"]
-    module_number = int(args["--module"] or 0)
+    module_number = 2
 
     # Parse channels
     channels_str = args["--channels"] or "0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15"
     try:
+        print("Are you failing1")
         channels = [int(ch.strip()) for ch in channels_str.split(",")]
     except ValueError:
         print(
@@ -557,6 +613,7 @@ def main():
     app.setStyle("Fusion")
 
     try:
+        print("fail before creating??")
         window = PixieScopeApp(
             dummy_mode=dummy_mode, module_number=module_number, channels=channels
         )
