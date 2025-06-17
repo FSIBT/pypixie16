@@ -142,7 +142,7 @@ class PixieScopeApp(BaseApp):
         print(histogram, type(histogram))
 
     def on_mode_changed(self, mode_text):
-        """Handle acquisition mode changes"""
+        """Handle acquisition mode changes - UPDATED for new MCA plotter"""
         self.current_mode = mode_text.lower().replace(" ", "_")
 
         # Stop current acquisition if running
@@ -151,6 +151,7 @@ class PixieScopeApp(BaseApp):
 
         # Switch spectrum plotter based on mode
         if self.current_mode == "mca_mode":
+            # Import the UPDATED MCA plotter (your new rebinned version)
             from pixie16.ui.mca_spectrum_plotter import MCASpectrumPlotter
 
             # Get channels from settings
@@ -158,75 +159,33 @@ class PixieScopeApp(BaseApp):
             for module, channel in self.settings.get("channels", [(0, 4), (0, 9)]):
                 active_channels.append(channel)
 
-            # Replace spectrum tab
+            # Replace spectrum tab with NEW plotter
             old_spectrum_tab = self.spectrum_tab
             self.spectrum_tab = MCASpectrumPlotter(
                 channels=active_channels, title="PIXIE-16 MCA Spectra"
             )
-        if self.current_mode == "list_mode":
+
+            # IMPORTANT: Update the layout to use the new plotter
+            if hasattr(self, "left_layout"):
+                # Remove old plotter from layout
+                if old_spectrum_tab:
+                    self.left_layout.removeWidget(old_spectrum_tab)
+                    old_spectrum_tab.setParent(None)
+
+                # Add new plotter to layout
+                self.left_layout.addWidget(self.spectrum_tab)
+
+        elif self.current_mode == "list_mode":
             print("Mode changed to List Mode")
 
         self.info_bar.setText(f"Mode changed to: {mode_text} - MCA plotter ready")
         print(f"Switched to {self.current_mode} mode with MCA plotter")
 
-    def start_mca_mode(self):
-        """Start MCA histogram acquisition using real PIXIE functions"""
-        try:
-            if not self.dummy_mode:
-                # Apply current settings before starting
-                settings = self.parameter_controls.get_current_settings()
-                import pixie16 as px
-
-                px.control.change_setting_from_dict(settings, call_pixie=True)
-
-                # Start PIXIE histogram run
-                px.control.start_histogram_run()
-                print("Started PIXIE histogram run")
-
-            # Set up timer to read MCA data periodically
-            if self.acquisition_timer:
-                self.acquisition_timer.stop()
-
-            self.acquisition_timer = QTimer()
-            self.acquisition_timer.timeout.connect(self.read_mca_data)
-            self.acquisition_timer.start(1000)  # Read every 1 second for MCA
-
-            # Initialize MCA data storage for active channels - FLEXIBLE SIZE
-            active_channels = []
-            for module, channel in self.settings.get("channels", [(0, 4), (0, 9)]):
-                active_channels.append(channel)
-                # Don't pre-allocate fixed size!
-                self.mca_data[channel] = np.array([])
-
-            # Update spectrum plotter channels
-            if hasattr(self.spectrum_tab, "set_channels"):
-                self.spectrum_tab.set_channels(active_channels)
-
-            runtime = (
-                self.parameter_controls.get_runtime()
-                if hasattr(self.parameter_controls, "get_runtime")
-                else 10
-            )
-            self.info_bar.setText(
-                f"MCA mode: Histogram accumulation for {runtime} seconds"
-            )
-
-        except Exception as e:
-            error_msg = f"Error starting MCA mode: {str(e)}"
-            print(error_msg)
-            self.info_bar.setText(error_msg)
-            raise
-
     def start_mca_acquisition(self):
-        """Start MCA mode with UI updates - UNIFIED METHOD"""
         try:
             if not self.dummy_mode:
                 # Apply current settings before starting
-                settings = (
-                    self.parameter_controls.get_current_settings()
-                    if hasattr(self.parameter_controls, "get_current_settings")
-                    else self.settings
-                )
+                settings = self.settings
                 px.control.change_setting_from_dict(settings, call_pixie=True)
 
                 # Start PIXIE histogram run
@@ -256,49 +215,88 @@ class PixieScopeApp(BaseApp):
             raise
 
     def read_mca_data(self):
-        """Read MCA histogram data from PIXIE modules - FIXED API CALLS"""
+        """Read MCA histogram data from PIXIE modules - FIXED for 2D numpy arrays"""
         try:
             if self.dummy_mode:
                 self.generate_dummy_mca_data()
                 return
 
-            # Use the CORRECT PIXIE API call
             try:
                 print("Reading MCA data using take_MCA_spectra...")
                 histogram_result = px.control.take_MCA_spectra(
                     channels=self.channels,  # [(0,4), (0,9)]
-                    duration=1.0,  # Short duration for frequent updates
+                    duration=10,
                     verbose=False,
                 )
 
                 print(f"MCA result type: {type(histogram_result)}")
-                if hasattr(histogram_result, "__len__"):
-                    print(f"MCA result length: {len(histogram_result)}")
 
-                if isinstance(histogram_result, list) and len(histogram_result) >= 2:
-                    # Map list results to channel numbers
-                    channel_numbers = [ch for _, ch in self.channels]  # [4, 9]
+                if isinstance(histogram_result, np.ndarray):
+                    print(f"MCA result shape: {histogram_result.shape}")
+
+                    if len(histogram_result.shape) == 2:
+                        # This is a 2D array: shape = (num_connected_channels, num_bins)
+                        num_channels, num_bins = histogram_result.shape
+                        print(
+                            f"Found {num_channels} channels with {num_bins} bins each"
+                        )
+
+                        # Map array rows to physical channel numbers
+                        channel_numbers = [ch for _, ch in self.channels]  # [4, 9]
+
+                        for row_idx in range(min(num_channels, len(channel_numbers))):
+                            physical_channel = channel_numbers[row_idx]
+
+                            # Extract the row data: data[row, :]
+                            raw_data = histogram_result[row_idx, :]
+
+                            print(
+                                f"Row {row_idx} -> Physical Channel {physical_channel}"
+                            )
+                            print(
+                                f"  Shape: {raw_data.shape}, sum: {np.sum(raw_data)}, max: {np.max(raw_data)}"
+                            )
+
+                            # Store the full data
+                            self.mca_data[physical_channel] = raw_data.copy()
+
+                            # Update the spectrum plotter
+                            if hasattr(self.spectrum_tab, "update_mca_histogram"):
+                                self.spectrum_tab.update_mca_histogram(
+                                    physical_channel, raw_data
+                                )
+
+                    elif len(histogram_result.shape) == 1:
+                        # Single channel data
+                        print(f"Single channel data: {len(histogram_result)} bins")
+                        if len(self.channels) > 0:
+                            physical_channel = self.channels[0][1]  # First channel
+                            self.mca_data[physical_channel] = histogram_result.copy()
+                            if hasattr(self.spectrum_tab, "update_mca_histogram"):
+                                self.spectrum_tab.update_mca_histogram(
+                                    physical_channel, histogram_result
+                                )
+
+                elif isinstance(histogram_result, list):
+                    # Fallback: treat as list (your old code)
+                    print(f"MCA result is list with {len(histogram_result)} elements")
+                    channel_numbers = [ch for _, ch in self.channels]
 
                     for i, channel_num in enumerate(channel_numbers):
                         if i < len(histogram_result):
                             raw_data = np.array(histogram_result[i])
-
-                            # DON'T TRUNCATE - Keep full data!
                             self.mca_data[channel_num] = raw_data
 
-                            print(
-                                f"Channel {channel_num}: {len(raw_data)} bins, "
-                                f"max={np.max(raw_data)}, sum={np.sum(raw_data)}"
-                            )
-
-                            # Update the spectrum plotter with FULL histogram data
                             if hasattr(self.spectrum_tab, "update_mca_histogram"):
                                 self.spectrum_tab.update_mca_histogram(
                                     channel_num, raw_data
                                 )
 
                 else:
-                    print(f"Unexpected histogram_result format: {histogram_result}")
+                    print(
+                        f"Unexpected histogram_result format: {type(histogram_result)}"
+                    )
+                    return
 
             except Exception as e:
                 print(f"Error in take_MCA_spectra: {e}")
@@ -317,48 +315,69 @@ class PixieScopeApp(BaseApp):
             traceback.print_exc()
 
     def generate_dummy_mca_data(self):
-        """Generate dummy MCA data for testing - FIXED TO MATCH REAL DATA"""
-        import random
+        """Load real MCA data from .npy file instead of generating dummy data"""
 
-        channel_numbers = [ch for _, ch in self.channels]  # [4, 9]
+        npy_file = Path(
+            "/home/jo/Downloads/RUN-2025-06-17-00000-mca-2025-06-17-09-23-28.npy"
+        )
 
-        for channel in channel_numbers:
-            # Create 32768 bins to match real hardware
-            if channel not in self.mca_data or len(self.mca_data[channel]) != 32768:
-                self.mca_data[channel] = np.zeros(32768, dtype=np.int32)
+        try:
+            print(f"Loading real MCA data from: {npy_file}")
 
-            # Add some random counts in realistic ranges
-            for _ in range(200):  # More counts for visibility
-                if channel == 4:
-                    # Put data in higher bins like real data
-                    bin_idx = int(random.gauss(25000, 2000))
-                elif channel == 9:
-                    bin_idx = int(random.gauss(28000, 1500))
-                else:
-                    bin_idx = int(random.gauss(26000, 1000))
+            # Load the .npy file
+            real_mca_data = np.load(npy_file)
 
-                bin_idx = max(0, min(bin_idx, 32767))  # Clamp to full range
-                self.mca_data[channel][bin_idx] += random.randint(1, 5)
+            print(f"Loaded MCA data shape: {real_mca_data.shape}")
+            print(f"Data type: {real_mca_data.dtype}")
 
-            print(
-                f"Generated dummy data for channel {channel}: "
-                f"{len(self.mca_data[channel])} bins, "
-                f"sum={np.sum(self.mca_data[channel])}"
-            )
+            # Check if it's 2D array as expected
+            if len(real_mca_data.shape) == 2:
+                num_channels_in_file, num_bins = real_mca_data.shape
+                print(
+                    f"Found {num_channels_in_file} channels with {num_bins} bins each in file"
+                )
 
-            # Update the MCA plotter with full data
-            if hasattr(self.spectrum_tab, "update_mca_histogram"):
-                self.spectrum_tab.update_mca_histogram(channel, self.mca_data[channel])
-                print(f"Updated MCA plotter for channel {channel}")
+                # Map the file data to your configured channels
+                channel_numbers = [ch for _, ch in self.channels]  # [4, 9]
 
-    def update_mca_histogram(self, channel, histogram_data):
-        """Update histogram for a specific channel"""
-        if len(histogram_data) > 0:
-            x_data = np.arange(len(histogram_data))  # Bin numbers
-            y_data = histogram_data  # Counts
+                for i, physical_channel in enumerate(channel_numbers):
+                    if i < num_channels_in_file:
+                        # Extract the row data from the file
+                        raw_data = real_mca_data[i, :]
 
-            # Update the plot with full data
-            self.plot_widget.plot(x_data, y_data, pen=self.channel_colors[channel])
+                        data_sum = np.sum(raw_data)
+                        data_max = np.max(raw_data)
+                        non_zero_bins = np.count_nonzero(raw_data)
+
+                        print(
+                            f"Channel {physical_channel} (file row {i}): sum={data_sum}, max={data_max}, non-zero bins={non_zero_bins}"
+                        )
+
+                        # Find where the data actually is
+                        if data_sum > 0:
+                            non_zero_indices = np.where(raw_data > 0)[0]
+                            print(
+                                f"  Data range: bins {non_zero_indices[0]} to {non_zero_indices[-1]}"
+                            )
+
+                        # Store the real data
+                        self.mca_data[physical_channel] = raw_data.copy()
+
+                        # Update the spectrum plotter
+                        if hasattr(self.spectrum_tab, "update_mca_histogram"):
+                            self.spectrum_tab.update_mca_histogram(
+                                physical_channel, raw_data
+                            )
+                            print(f"  Updated plotter for channel {physical_channel}")
+                    else:
+                        print(
+                            f"Warning: Not enough channels in file for physical channel {physical_channel}"
+                        )
+
+        except FileNotFoundError:
+            print(f"MCA file not found: {npy_file}")
+            print("Falling back to synthetic dummy data")
+            self.generate_original_dummy_data()
 
     def init_ui(self):
         self.setGeometry(100, 100, 1600, 1000)
@@ -367,12 +386,14 @@ class PixieScopeApp(BaseApp):
 
         main_layout = QHBoxLayout()
 
-        left_layout = QVBoxLayout()
+        # Store reference to left layout for dynamic updates
+        self.left_layout = QVBoxLayout()
 
         control_panel = self.create_control_panel()
-        left_layout.addWidget(control_panel)
+        self.left_layout.addWidget(control_panel)
 
         if self.current_mode == "mca_mode":
+            # Import the UPDATED MCA plotter
             from pixie16.ui.mca_spectrum_plotter import MCASpectrumPlotter
 
             # Extract just the channel numbers for MCA plotter
@@ -390,7 +411,7 @@ class PixieScopeApp(BaseApp):
                 bins=1000,
             )
 
-        left_layout.addWidget(self.spectrum_tab)
+        self.left_layout.addWidget(self.spectrum_tab)
 
         right_layout = QVBoxLayout()
 
@@ -414,7 +435,7 @@ class PixieScopeApp(BaseApp):
         right_layout.addStretch()
 
         left_widget = QWidget()
-        left_widget.setLayout(left_layout)
+        left_widget.setLayout(self.left_layout)  # Use stored reference
 
         right_widget = QWidget()
         right_widget.setLayout(right_layout)
@@ -432,7 +453,7 @@ class PixieScopeApp(BaseApp):
 
         main_widget.setLayout(bottom_layout)
 
-        self.info_bar.setText("Ready - Select mode and click Start Acquisition")
+        self.info_bar.setText("Ready - Select mode and click 'Start Acquisition'")
 
     def update_display_channels(self, selected_channels):
         print(f"Scope: channels changed to {selected_channels}")
@@ -660,48 +681,48 @@ class PixieScopeApp(BaseApp):
         self.data_timer = QTimer()
         self.data_timer.timeout.connect(self.read_pixie_data)
 
-    def auto_start_acquisition(self):
-        if not self.auto_started:
-            self.auto_started = True
-            self.start_continuous_acquisition()
+    # def auto_start_acquisition(self):
+    #     if not self.auto_started:
+    #         self.auto_started = True
+    #         self.start_continuous_acquisition()
 
-    def start_continuous_acquisition(self):
-        try:
-            self.info_bar.setText("Starting continuous acquisition...")
+    # def start_continuous_acquisition(self):
+    #     try:
+    #         self.info_bar.setText("Starting continuous acquisition...")
 
-            if self.dummy_mode:
-                self.start_dummy_data()
-            else:
-                px.control.start_list_mode_run()
-                self.data_timer.start(50)  # ms
+    #         if self.dummy_mode:
+    #             self.start_dummy_data()
+    #         else:
+    #             px.control.start_list_mode_run()
+    #             self.data_timer.start(50)  # ms
 
-            self.data_source.start_acquisition()
+    #         self.data_source.start_acquisition()
 
-            self.is_acquiring = True
-            self.status_label.setText("Status: Live")
-            self.info_bar.setText("Live acquisition - displaying real-time data")
+    #         self.is_acquiring = True
+    #         self.status_label.setText("Status: Live")
+    #         self.info_bar.setText("Live acquisition - displaying real-time data")
 
-        except Exception as e:
-            error_msg = f"Failed to start continuous acquisition: {str(e)}"
-            print(error_msg)
-            self.info_bar.setText(f"Error: {error_msg}")
-            QTimer.singleShot(5000, self.start_continuous_acquisition)  # 5s
+    #     except Exception as e:
+    #         error_msg = f"Failed to start continuous acquisition: {str(e)}"
+    #         print(error_msg)
+    #         self.info_bar.setText(f"Error: {error_msg}")
+    #         QTimer.singleShot(5000, self.start_continuous_acquisition)  # 5s
 
-    def stop_continuous_acquisition(self):
-        try:
-            if self.data_source:
-                self.data_source.stop_acquisition()
-            self.data_timer.stop()
+    # def stop_continuous_acquisition(self):
+    #     try:
+    #         if self.data_source:
+    #             self.data_source.stop_acquisition()
+    #         self.data_timer.stop()
 
-            if not self.dummy_mode:
-                px.control.end_run()
+    #         if not self.dummy_mode:
+    #             px.control.end_run()
 
-            self.is_acquiring = False
-            self.status_label.setText("Status: Stopped")
-            self.info_bar.setText("Acquisition stopped")
+    #         self.is_acquiring = False
+    #         self.status_label.setText("Status: Stopped")
+    #         self.info_bar.setText("Acquisition stopped")
 
-        except Exception as e:
-            print(f"Error stopping acquisition: {e}")
+    #     except Exception as e:
+    #         print(f"Error stopping acquisition: {e}")
 
     def clear_data(self):
         if hasattr(self.spectrum_tab, "clear_data"):

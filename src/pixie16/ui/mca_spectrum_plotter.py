@@ -1,6 +1,11 @@
 """
 MCA Spectrum Plotter for PIXIE-16
 Displays multi-channel analyzer histograms in real-time
+FEATURES:
+- Rebins data to ~2000 bins for better display performance
+- Log y-axis scaling
+- Step plots for proper histogram visualization
+- Handles data[channel_row, :] format from PIXIE
 """
 
 import numpy as np
@@ -24,14 +29,24 @@ class MCASpectrumPlotter(QWidget):
     def __init__(self, channels=None, title="PIXIE-16 MCA Spectra"):
         super().__init__()
 
-        self.channels = channels or [4, 9]  # Default channels from working config
-        self.mca_data = {ch: np.zeros(4096, dtype=np.int32) for ch in self.channels}
+        self.channels = channels or [4, 9]  # Channel numbers (not row indices)
+
+        # Data storage - keyed by channel number
+        self.mca_data = {ch: np.array([]) for ch in self.channels}
+        self.bin_counts = {ch: 0 for ch in self.channels}
+        self.max_bins_seen = 0
+
+        # Rebinning settings
+        self.target_bins = 2048  # Target number of bins for display
+        self.rebin_factor = 1  # Will be calculated based on input data
 
         # Display settings
         self.energy_min = 0
-        self.energy_max = 4095
-        self.log_scale = False
+        self.energy_max = 2047  # In rebinned coordinates
+        self.log_scale = True  # Default to log scale for MCA data
         self.auto_scale = True
+
+        self.info_bar = None
 
         # Channel colors
         self.colors = [
@@ -55,27 +70,42 @@ class MCASpectrumPlotter(QWidget):
 
         self.setWindowTitle(title)
         self.init_ui()
-        # print("Adding test data to verify plotting...")
-        # for i, channel in enumerate(self.channels):
-        #     test_data = np.zeros(4096, dtype=np.int32)
-        #     # Create a clear peak at different positions for each channel
-        #     peak_pos = 500 + i * 500  # Channel 4 at bin 500, Channel 9 at bin 1000
-        #     for j in range(50):  # Create a 50-bin wide peak
-        #         if peak_pos + j < 4096:
-        #             test_data[peak_pos + j] = 100 - j  # Descending peak
-
-        #     self.mca_data[channel] = test_data
-        #     print(
-        #         f"Added test peak for channel {channel} at bin {peak_pos}, sum={np.sum(test_data)}"
-        #     )
 
         # Update timer
         self.update_timer = QTimer()
         self.update_timer.timeout.connect(self.update_plots)
-        # self.update_timer.start(500)  # Update every 500ms
 
-        # # Force an immediate plot update to show test data
-        # QTimer.singleShot(100, self.update_plots)
+    def rebin_data(self, data, target_bins=None):
+        """Rebin histogram data to target number of bins"""
+        if target_bins is None:
+            target_bins = self.target_bins
+
+        original_bins = len(data)
+        if original_bins <= target_bins:
+            # No rebinning needed
+            return data, np.arange(len(data)), 1
+
+        # Calculate rebin factor
+        rebin_factor = original_bins // target_bins
+        if original_bins % target_bins != 0:
+            rebin_factor += 1
+
+        # Trim data to make it evenly divisible
+        trimmed_length = (original_bins // rebin_factor) * rebin_factor
+        trimmed_data = data[:trimmed_length]
+
+        # Reshape and sum
+        reshaped = trimmed_data.reshape(-1, rebin_factor)
+        rebinned_data = np.sum(reshaped, axis=1)
+
+        # Create new x-axis in terms of original bin numbers (bin centers)
+        rebinned_x = np.arange(len(rebinned_data)) * rebin_factor + rebin_factor // 2
+
+        print(
+            f"Rebinning: {original_bins} -> {len(rebinned_data)} bins (factor: {rebin_factor})"
+        )
+
+        return rebinned_data, rebinned_x, rebin_factor
 
     def init_ui(self):
         layout = QVBoxLayout()
@@ -86,16 +116,19 @@ class MCASpectrumPlotter(QWidget):
 
         # Plot area
         self.plot_widget = pg.PlotWidget()
-        self.plot_widget.setLabel("left", "Counts")
-        self.plot_widget.setLabel("bottom", "Channel/Energy")
+        self.plot_widget.setLabel("left", "Counts (Log Scale)")
+        self.plot_widget.setLabel("bottom", "Energy/Channel (Rebinned)")
         self.plot_widget.setTitle("MCA Spectra")
         self.plot_widget.showGrid(True, True, alpha=0.3)
         self.plot_widget.addLegend()
 
+        # Set log scale by default
+        self.plot_widget.setLogMode(False, True)
+
         layout.addWidget(self.plot_widget)
 
         # Statistics display
-        self.stats_label = QLabel("Statistics: No data")
+        self.stats_label = QLabel("Statistics: Waiting for data...")
         layout.addWidget(self.stats_label)
 
         self.setLayout(layout)
@@ -104,31 +137,52 @@ class MCASpectrumPlotter(QWidget):
         self.curves = {}
         for i, channel in enumerate(self.channels):
             color = self.colors[i % len(self.colors)]
+            # Use stepMode for proper histogram display
             self.curves[channel] = self.plot_widget.plot(
-                pen=pg.mkPen(color=color, width=2), name=f"Ch {channel}"
+                pen=pg.mkPen(color=color, width=2),
+                name=f"Ch {channel}",
+                stepMode=True,  # This gives us step plots like plt.step
             )
 
     def create_controls(self):
         group = QGroupBox("Display Controls")
         layout = QHBoxLayout()
 
-        # Energy range
-        layout.addWidget(QLabel("Energy Min:"))
+        # Rebinning controls
+        layout.addWidget(QLabel("Target Bins:"))
+        self.target_bins_spin = QSpinBox()
+        self.target_bins_spin.setRange(500, 8192)
+        self.target_bins_spin.setValue(self.target_bins)
+        self.target_bins_spin.valueChanged.connect(self.update_target_bins)
+        layout.addWidget(self.target_bins_spin)
+
+        # Energy range (in rebinned coordinates) - FIXED: Better defaults
+        layout.addWidget(QLabel("Display Min:"))
         self.energy_min_spin = QSpinBox()
-        self.energy_min_spin.setRange(0, 4090)
-        self.energy_min_spin.setValue(0)
+        self.energy_min_spin.setRange(0, 8191)
+        self.energy_min_spin.setValue(0)  # Start at 0
         self.energy_min_spin.valueChanged.connect(self.update_energy_range)
         layout.addWidget(self.energy_min_spin)
 
         layout.addWidget(QLabel("Max:"))
         self.energy_max_spin = QSpinBox()
-        self.energy_max_spin.setRange(5, 4095)
-        self.energy_max_spin.setValue(4095)
+        self.energy_max_spin.setRange(1, 8192)
+        self.energy_max_spin.setValue(2047)  # Show full rebinned range
         self.energy_max_spin.valueChanged.connect(self.update_energy_range)
         layout.addWidget(self.energy_max_spin)
 
+        # ADDED: Auto-detect button
+        self.auto_detect_btn = QPushButton("Auto-Detect Range")
+        self.auto_detect_btn.clicked.connect(self.auto_detect_data_range)
+        layout.addWidget(self.auto_detect_btn)
+
+        # Bin info display
+        self.bin_info_label = QLabel("Bins: Unknown")
+        layout.addWidget(self.bin_info_label)
+
         # Display options
-        self.log_scale_cb = QCheckBox("Log Scale")
+        self.log_scale_cb = QCheckBox("Log Y-Scale")
+        self.log_scale_cb.setChecked(True)  # Default to log
         self.log_scale_cb.toggled.connect(self.toggle_log_scale)
         layout.addWidget(self.log_scale_cb)
 
@@ -142,23 +196,93 @@ class MCASpectrumPlotter(QWidget):
         self.clear_btn.clicked.connect(self.clear_data)
         layout.addWidget(self.clear_btn)
 
-        # ROI controls
-        layout.addWidget(QLabel("ROI:"))
-        self.roi_start = QSpinBox()
-        self.roi_start.setRange(0, 4090)
-        self.roi_start.setValue(100)
-        layout.addWidget(self.roi_start)
-
-        layout.addWidget(QLabel("to"))
-        self.roi_end = QSpinBox()
-        self.roi_end.setRange(5, 4095)
-        self.roi_end.setValue(200)
-        layout.addWidget(self.roi_end)
-
         layout.addStretch()
 
         group.setLayout(layout)
         return group
+
+    def auto_detect_data_range(self):
+        """Auto-detect where the actual data is and set display range"""
+        print("Auto-detecting data range...")
+
+        # Find where data actually exists across all channels
+        min_data_bin = float("inf")
+        max_data_bin = 0
+        total_counts = 0
+
+        for channel in self.channels:
+            if channel in self.mca_data and len(self.mca_data[channel]) > 0:
+                raw_data = self.mca_data[channel]
+
+                # Find non-zero data range in original coordinates
+                non_zero_bins = np.where(raw_data > 0)[0]
+                if len(non_zero_bins) > 0:
+                    # Convert to rebinned coordinates
+                    rebin_factor = (
+                        len(raw_data) // self.target_bins
+                        if len(raw_data) > self.target_bins
+                        else 1
+                    )
+
+                    min_raw = non_zero_bins[0]
+                    max_raw = non_zero_bins[-1]
+
+                    min_rebinned = min_raw // rebin_factor
+                    max_rebinned = max_raw // rebin_factor
+
+                    min_data_bin = min(min_data_bin, min_rebinned)
+                    max_data_bin = max(max_data_bin, max_rebinned)
+
+                    total_counts += np.sum(raw_data)
+
+                    print(
+                        f"Channel {channel}: raw range {min_raw}-{max_raw}, rebinned {min_rebinned}-{max_rebinned}"
+                    )
+
+        if min_data_bin != float("inf") and total_counts > 0:
+            # Add some padding around the data
+            padding = max(50, (max_data_bin - min_data_bin) // 10)
+
+            new_min = max(0, min_data_bin - padding)
+            new_max = min(self.target_bins - 1, max_data_bin + padding)
+
+            print(f"Auto-detected range: {new_min} to {new_max} (rebinned coordinates)")
+            print(f"Total counts found: {total_counts}")
+
+            # Update the controls
+            self.energy_min_spin.setValue(new_min)
+            self.energy_max_spin.setValue(new_max)
+
+            # This will trigger update_energy_range automatically
+            self.info_bar.setText(
+                f"Auto-detected data range: {new_min}-{new_max} (rebinned), {total_counts:,} counts"
+            )
+        else:
+            print("No data found for auto-detection")
+            self.info_bar.setText("No data found - cannot auto-detect range")
+
+    def update_target_bins(self):
+        """Update target bin count for rebinning"""
+        self.target_bins = self.target_bins_spin.value()
+        # Update energy range controls
+        self.energy_max_spin.setMaximum(self.target_bins)
+        self.energy_min_spin.setMaximum(self.target_bins - 1)
+        if self.energy_max > self.target_bins:
+            self.energy_max = self.target_bins - 1
+            self.energy_max_spin.setValue(self.energy_max)
+
+    def update_dynamic_ranges(self, num_bins):
+        """Update UI ranges based on actual number of bins received"""
+        if num_bins > self.max_bins_seen:
+            self.max_bins_seen = num_bins
+
+            # Calculate what rebinned size will be
+            rebinned_size = min(num_bins, self.target_bins)
+
+            print(f"MCA Plotter: Raw bins: {num_bins}, Rebinned: {rebinned_size}")
+
+            # Update bin info display
+            self.bin_info_label.setText(f"Raw: {num_bins}, Display: {rebinned_size}")
 
     def start_live_updates(self):
         """Start the plot update timer"""
@@ -174,19 +298,25 @@ class MCASpectrumPlotter(QWidget):
 
     def update_mca_histogram(self, channel, histogram_data):
         """Update MCA histogram data for a specific channel"""
+        if not isinstance(histogram_data, np.ndarray):
+            histogram_data = np.array(histogram_data)
+
+        num_bins = len(histogram_data)
+        data_sum = np.sum(histogram_data)
+        data_max = np.max(histogram_data) if num_bins > 0 else 0
+
         print(f"MCA Plotter: Received data for channel {channel}")
-        print(
-            f"MCA Plotter: Data type={type(histogram_data)}, shape={histogram_data.shape if hasattr(histogram_data, 'shape') else 'no shape'}"
-        )
-        print(
-            f"MCA Plotter: Data sum={np.sum(histogram_data) if hasattr(histogram_data, '__len__') else 'no sum'}"
-        )
+        print(f"MCA Plotter: Raw bins={num_bins}, sum={data_sum}, max={data_max}")
 
         if channel in self.mca_data:
-            old_sum = np.sum(self.mca_data[channel])
+            # Store the raw data
             self.mca_data[channel] = histogram_data.copy()
-            new_sum = np.sum(self.mca_data[channel])
-            print(f"MCA Plotter: Channel {channel} updated: {old_sum} -> {new_sum}")
+            self.bin_counts[channel] = num_bins
+
+            # Update UI ranges if needed
+            self.update_dynamic_ranges(num_bins)
+
+            print(f"MCA Plotter: Channel {channel} updated with {num_bins} bins")
         else:
             print(
                 f"MCA Plotter: Channel {channel} not in mca_data keys: {list(self.mca_data.keys())}"
@@ -206,8 +336,10 @@ class MCASpectrumPlotter(QWidget):
         self.log_scale = enabled
         if enabled:
             self.plot_widget.setLogMode(False, True)
+            self.plot_widget.setLabel("left", "Counts (Log Scale)")
         else:
             self.plot_widget.setLogMode(False, False)
+            self.plot_widget.setLabel("left", "Counts (Linear Scale)")
 
     def toggle_auto_scale(self, enabled):
         """Toggle auto scaling"""
@@ -218,11 +350,12 @@ class MCASpectrumPlotter(QWidget):
     def clear_data(self):
         """Clear all MCA data"""
         for channel in self.channels:
-            self.mca_data[channel] = np.zeros(4096, dtype=np.int32)
+            self.mca_data[channel] = np.array([])
+            self.bin_counts[channel] = 0
         self.update_plots()
 
     def update_plots(self):
-        """Update the plot display"""
+        """Update the plot display with rebinned data and step plots - FIXED stepMode"""
         try:
             total_counts = 0
             channel_stats = {}
@@ -233,54 +366,70 @@ class MCASpectrumPlotter(QWidget):
 
             for channel in self.channels:
                 if channel in self.mca_data and channel in self.curves:
-                    data = self.mca_data[channel]
-                    data_sum = np.sum(data)
-                    data_max = np.max(data)
+                    raw_data = self.mca_data[channel]
+
+                    if len(raw_data) == 0:
+                        print(f"Plot Update: Channel {channel} - no data")
+                        continue
+
+                    # Rebin the data
+                    rebinned_data, rebinned_x, rebin_factor = self.rebin_data(raw_data)
+
+                    data_sum = np.sum(rebinned_data)
+                    data_max = np.max(rebinned_data)
 
                     print(
-                        f"Plot Update: Channel {channel} - sum={data_sum}, max={data_max}"
+                        f"Plot Update: Channel {channel} - rebinned bins={len(rebinned_data)}, sum={data_sum}, max={data_max}"
                     )
 
-                    # Create x-axis (bin numbers or energy if calibrated)
-                    x_data = np.arange(len(data))
+                    # Apply display range filter
+                    mask = (rebinned_x >= self.energy_min) & (
+                        rebinned_x <= self.energy_max
+                    )
+                    x_plot = rebinned_x[mask]
+                    y_plot = rebinned_data[mask]
 
-                    # Apply energy range filter for display
-                    mask = (x_data >= self.energy_min) & (x_data <= self.energy_max)
-                    x_plot = x_data[mask]
-                    y_plot = data[mask]
-
-                    # Handle log scale
+                    # Handle log scale - avoid log(0)
                     if self.log_scale:
-                        y_plot = np.where(y_plot > 0, y_plot, 0.1)  # Avoid log(0)
-                    # Update curve
+                        y_plot = np.where(y_plot > 0, y_plot, 0.1)
+
+                    # FIXED: For stepMode=True, x must have len(y)+1 elements
+                    # Create bin edges instead of bin centers
                     if len(x_plot) > 0:
+                        # Create x_edges array with one more element
+                        if len(x_plot) == len(y_plot):
+                            # Add one more bin edge at the end
+                            bin_width = rebin_factor if len(x_plot) > 1 else 1
+                            x_edges = np.append(x_plot, x_plot[-1] + bin_width)
+                        else:
+                            x_edges = x_plot
+
                         print(
-                            f"Plot Update: Setting data for channel {channel}: x_len={len(x_plot)}, y_max={np.max(y_plot)}"
+                            f"Plot Update: Setting data for channel {channel}: x_len={len(x_edges)}, y_len={len(y_plot)}, y_max={np.max(y_plot) if len(y_plot) > 0 else 0}"
                         )
-                        self.curves[channel].setData(x_plot, y_plot)
+
+                        # Now x_edges has len(y_plot) + 1 elements as required
+                        self.curves[channel].setData(x_edges, y_plot)
                     else:
-                        print(f"Plot Update: No data to plot for channel {channel}")
+                        print(f"Plot Update: No data in range for channel {channel}")
 
-                    # Statistics
-                    total_ch_counts = np.sum(data)
+                    # Statistics (using original raw data for accuracy)
+                    total_ch_counts = np.sum(raw_data)
                     total_counts += total_ch_counts
-
-                    # ROI analysis
-                    roi_start = self.roi_start.value()
-                    roi_end = self.roi_end.value()
-                    roi_counts = np.sum(data[roi_start : roi_end + 1])
 
                     channel_stats[channel] = {
                         "total": total_ch_counts,
-                        "roi": roi_counts,
-                        "peak_bin": np.argmax(data),
-                        "peak_counts": np.max(data),
+                        "peak_bin": np.argmax(raw_data),
+                        "peak_counts": np.max(raw_data),
+                        "raw_bins": len(raw_data),
+                        "display_bins": len(rebinned_data),
+                        "rebin_factor": rebin_factor,
                     }
 
             # Update statistics display
             stats_text = f"Total Counts: {total_counts:,} | "
             for ch, stats in channel_stats.items():
-                stats_text += f"Ch{ch}: {stats['total']:,} ({stats['roi']} ROI) | "
+                stats_text += f"Ch{ch}: {stats['total']:,} ({stats['raw_bins']}->{stats['display_bins']} bins) | "
 
             self.stats_label.setText(stats_text.rstrip(" | "))
 
@@ -290,9 +439,12 @@ class MCASpectrumPlotter(QWidget):
 
         except Exception as e:
             print(f"Error updating MCA plots: {e}")
+            import traceback
+
+            traceback.print_exc()
 
     def get_spectrum_data(self):
-        """Get current spectrum data for saving"""
+        """Get current spectrum data for saving (returns raw, not rebinned data)"""
         return self.mca_data.copy()
 
     def set_channels(self, channels):
@@ -304,21 +456,24 @@ class MCASpectrumPlotter(QWidget):
 
         # Update channels
         self.channels = channels
-        self.mca_data = {
-            ch: self.mca_data.get(ch, np.zeros(4096, dtype=np.int32))
-            for ch in self.channels
-        }
+        # Preserve existing data, create empty arrays for new channels
+        new_mca_data = {}
+        for ch in self.channels:
+            new_mca_data[ch] = self.mca_data.get(ch, np.array([]))
+        self.mca_data = new_mca_data
 
-        # Create new curves
+        # Create new curves with step mode
         self.curves = {}
         for i, channel in enumerate(self.channels):
             color = self.colors[i % len(self.colors)]
             self.curves[channel] = self.plot_widget.plot(
-                pen=pg.mkPen(color=color, width=2), name=f"Ch {channel}"
+                pen=pg.mkPen(color=color, width=2),
+                name=f"Ch {channel}",
+                stepMode=True,  # Step plots for histogram data
             )
 
     def export_data(self, filename):
-        """Export MCA data to file"""
+        """Export MCA data to file (saves raw data, not rebinned)"""
         try:
             np.savez(
                 filename, **{f"ch_{ch}": data for ch, data in self.mca_data.items()}
