@@ -129,17 +129,7 @@ class PixieScopeApp(BaseApp):
 
         self.init_ui()
         self.init_pixie16()
-        # self.plot_mca()
         self.setup_timers()
-
-    def plot_mca(self):
-        """Using pixie control's tale_MCA_spectra to collect data."""
-        print(self.raw_settings)
-        px.control.change_raw_setting_from_dict(self.raw_settings, call_pixie=True)
-        histogram = px.control.take_MCA_spectra(
-            channels=self.channels, duration=10, verbose=True
-        )
-        print(histogram, type(histogram))
 
     def on_mode_changed(self, mode_text):
         """Handle acquisition mode changes - UPDATED for new MCA plotter"""
@@ -225,7 +215,7 @@ class PixieScopeApp(BaseApp):
                 print("Reading MCA data using take_MCA_spectra...")
                 histogram_result = px.control.take_MCA_spectra(
                     channels=self.channels,  # [(0,4), (0,9)]
-                    duration=10,
+                    duration=0.5,
                     verbose=False,
                 )
 
@@ -318,7 +308,8 @@ class PixieScopeApp(BaseApp):
         """Load real MCA data from .npy file instead of generating dummy data"""
 
         npy_file = Path(
-            "/home/jo/Downloads/RUN-2025-06-17-00000-mca-2025-06-17-09-23-28.npy"
+            # "/home/jo/Downloads/RUN-2025-06-17-00000-mca-2025-06-17-09-23-28.npy"
+            "/home/carbon/data/2025-06-17/RUN-2025-06-17-00000/MCA-data/RUN-2025-06-17-00000-mca-2025-06-17-09-23-28.npy"
         )
 
         try:
