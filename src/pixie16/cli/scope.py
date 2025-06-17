@@ -68,7 +68,7 @@ logger = logging.getLogger(__name__)
 
 
 class PixieScopeApp(BaseApp):
-    def __init__(self, dummy_mode=False, module_number=2, channels=[(0, 4), (0, 9)]):
+    def __init__(self, dummy_mode=False, module_number=2, channels=[(0, 4)]):
         super().__init__()
 
         if hasattr(self, "setWindowTitle"):
@@ -76,7 +76,7 @@ class PixieScopeApp(BaseApp):
 
         self.dummy_mode = dummy_mode
         self.module_number = 2
-        self.channels = [(0, 4), (0, 9)]  # or list(range(8))
+        self.channels = [(0, 1), (0, 4), (0, 9)]  # or list(range(8))
         self.live_reader = None
         self.data_source = None
         self.is_acquiring = False
@@ -121,11 +121,24 @@ class PixieScopeApp(BaseApp):
             ],  # Atlas 4 was 100 or 118
         }
 
+        self.channel_mapping = {
+            0: 1,
+            1: 4,  # LaBr: Data row 1 -> Physical channel 4
+        }
+
+        self.cumulative_mca_data = {}
+
         self.mca_data = {}  # Store MCA histogram data
         self.current_mode = "mca_mode"  # Default mode
         self.acquisition_timer = None
         self.last_event_count = 0
         self.last_update_time = time.time()
+
+        for physical_channel in self.channel_mapping.values():
+            self.cumulative_mca_data[physical_channel] = np.zeros(
+                8192, dtype=np.int64
+            )  # Use int64 for accumulation
+            self.mca_data[physical_channel] = np.zeros(8192, dtype=np.int32)
 
         self.init_ui()
         self.init_pixie16()
@@ -141,21 +154,18 @@ class PixieScopeApp(BaseApp):
 
         # Switch spectrum plotter based on mode
         if self.current_mode == "mca_mode":
-            # Import the UPDATED MCA plotter (your new rebinned version)
             from pixie16.ui.mca_spectrum_plotter import MCASpectrumPlotter
 
             # Get channels from settings
             active_channels = []
-            for module, channel in self.settings.get("channels", [(0, 4), (0, 9)]):
+            for module, channel in self.settings.get("channels", [(0, 4)]):
                 active_channels.append(channel)
 
-            # Replace spectrum tab with NEW plotter
             old_spectrum_tab = self.spectrum_tab
             self.spectrum_tab = MCASpectrumPlotter(
                 channels=active_channels, title="PIXIE-16 MCA Spectra"
             )
 
-            # IMPORTANT: Update the layout to use the new plotter
             if hasattr(self, "left_layout"):
                 # Remove old plotter from layout
                 if old_spectrum_tab:
@@ -182,10 +192,9 @@ class PixieScopeApp(BaseApp):
                 px.control.start_histogram_run()
                 print("Started PIXIE histogram run")
 
-            # Initialize MCA data for active channels - use flexible size
-            for module, channel in self.channels:
-                # Don't pre-allocate a fixed size - let the hardware determine it
-                self.mca_data[channel] = np.array([])
+            print(
+                f"MCA acquisition starting for mapped channels: {list(self.channel_mapping.values())}"
+            )
 
             # Start the MCA plotter's update timer
             if hasattr(self.spectrum_tab, "start_live_updates"):
@@ -204,171 +213,161 @@ class PixieScopeApp(BaseApp):
             self.info_bar.setText(error_msg)
             raise
 
+    def accumulate_mapped_data(self, mapped_data):
+        for physical_channel, fresh_data in mapped_data.items():
+            fresh_data_int64 = fresh_data.astype(np.int64)
+            self.accumulate_channel_data(physical_channel, fresh_data_int64)
+
+    def accumulate_channel_data(self, physical_channel, fresh_data):
+        try:
+            if self.cumulative_mca_data[physical_channel] is None:
+                # First time - initialize with the actual data size
+                print(
+                    f"Initializing channel {physical_channel} with {len(fresh_data)} bins"
+                )
+                self.cumulative_mca_data[physical_channel] = fresh_data.copy()
+                self.mca_data[physical_channel] = fresh_data.astype(np.int32)
+            else:
+                # Check if sizes match
+                existing_size = len(self.cumulative_mca_data[physical_channel])
+                new_size = len(fresh_data)
+
+                if existing_size == new_size:
+                    # Same size - simple accumulation
+                    self.cumulative_mca_data[physical_channel] += fresh_data
+
+                elif new_size > existing_size:
+                    # New data is larger - resize existing and accumulate
+                    print(
+                        f"Resizing channel {physical_channel}: {existing_size} -> {new_size} bins"
+                    )
+                    old_cumulative = self.cumulative_mca_data[physical_channel]
+                    self.cumulative_mca_data[physical_channel] = np.zeros(
+                        new_size, dtype=np.int64
+                    )
+                    self.cumulative_mca_data[physical_channel][:existing_size] = (
+                        old_cumulative
+                    )
+                    self.cumulative_mca_data[physical_channel] += fresh_data
+
+                elif new_size < existing_size:
+                    # New data is smaller - only accumulate the overlapping part
+                    print(
+                        f"Warning: New data smaller ({new_size}) than existing ({existing_size}) for channel {physical_channel}"
+                    )
+                    self.cumulative_mca_data[physical_channel][:new_size] += fresh_data
+
+                # Update display data (with overflow protection)
+                self.mca_data[physical_channel] = np.clip(
+                    self.cumulative_mca_data[physical_channel],
+                    0,
+                    np.iinfo(np.int32).max,
+                ).astype(np.int32)
+
+            # Update plotter
+            if hasattr(self.spectrum_tab, "update_mca_histogram"):
+                self.spectrum_tab.update_mca_histogram(
+                    physical_channel, self.mca_data[physical_channel]
+                )
+                print(
+                    f"Updated plotter for channel {physical_channel}: {np.sum(self.mca_data[physical_channel])} total counts"
+                )
+
+        except Exception as e:
+            print(f"Error accumulating data for channel {physical_channel}: {e}")
+            import traceback
+
+            traceback.print_exc()
+
     def read_mca_data(self):
-        """Read MCA histogram data from PIXIE modules - FIXED for 2D numpy arrays"""
+        """Read and ACCUMULATE MCA data over time with dynamic sizing"""
         try:
             if self.dummy_mode:
                 self.generate_dummy_mca_data()
                 return
 
             try:
-                print("Reading MCA data using take_MCA_spectra...")
+                # Read fresh histogram data from hardware
                 histogram_result = px.control.take_MCA_spectra(
-                    channels=self.channels,  # [(0,4), (0,9)]
-                    duration=0.5,
+                    channels=self.channels,
+                    duration=1.0,
                     verbose=False,
                 )
 
-                print(f"MCA result type: {type(histogram_result)}")
-
-                if isinstance(histogram_result, np.ndarray):
-                    print(f"MCA result shape: {histogram_result.shape}")
-
-                    if len(histogram_result.shape) == 2:
-                        # This is a 2D array: shape = (num_connected_channels, num_bins)
-                        num_channels, num_bins = histogram_result.shape
-                        print(
-                            f"Found {num_channels} channels with {num_bins} bins each"
-                        )
-
-                        # Map array rows to physical channel numbers
-                        channel_numbers = [ch for _, ch in self.channels]  # [4, 9]
-
-                        for row_idx in range(min(num_channels, len(channel_numbers))):
-                            physical_channel = channel_numbers[row_idx]
-
-                            # Extract the row data: data[row, :]
-                            raw_data = histogram_result[row_idx, :]
-
-                            print(
-                                f"Row {row_idx} -> Physical Channel {physical_channel}"
-                            )
-                            print(
-                                f"  Shape: {raw_data.shape}, sum: {np.sum(raw_data)}, max: {np.max(raw_data)}"
-                            )
-
-                            # Store the full data
-                            self.mca_data[physical_channel] = raw_data.copy()
-
-                            # Update the spectrum plotter
-                            if hasattr(self.spectrum_tab, "update_mca_histogram"):
-                                self.spectrum_tab.update_mca_histogram(
-                                    physical_channel, raw_data
-                                )
-
-                    elif len(histogram_result.shape) == 1:
-                        # Single channel data
-                        print(f"Single channel data: {len(histogram_result)} bins")
-                        if len(self.channels) > 0:
-                            physical_channel = self.channels[0][1]  # First channel
-                            self.mca_data[physical_channel] = histogram_result.copy()
-                            if hasattr(self.spectrum_tab, "update_mca_histogram"):
-                                self.spectrum_tab.update_mca_histogram(
-                                    physical_channel, histogram_result
-                                )
+                if (
+                    isinstance(histogram_result, np.ndarray)
+                    and len(histogram_result.shape) == 2
+                ):
+                    mapped_data = self.apply_channel_mapping(histogram_result)
+                    self.accumulate_mapped_data(mapped_data)
 
                 elif isinstance(histogram_result, list):
-                    # Fallback: treat as list (your old code)
-                    print(f"MCA result is list with {len(histogram_result)} elements")
-                    channel_numbers = [ch for _, ch in self.channels]
-
-                    for i, channel_num in enumerate(channel_numbers):
-                        if i < len(histogram_result):
-                            raw_data = np.array(histogram_result[i])
-                            self.mca_data[channel_num] = raw_data
-
-                            if hasattr(self.spectrum_tab, "update_mca_histogram"):
-                                self.spectrum_tab.update_mca_histogram(
-                                    channel_num, raw_data
-                                )
-
-                else:
-                    print(
-                        f"Unexpected histogram_result format: {type(histogram_result)}"
-                    )
-                    return
+                    # Handle list format
+                    for data_row_idx, fresh_histogram in enumerate(histogram_result):
+                        if data_row_idx in self.channel_mapping:
+                            physical_channel = self.channel_mapping[data_row_idx]
+                            fresh_data = np.array(fresh_histogram, dtype=np.int64)
+                            self.accumulate_channel_data(physical_channel, fresh_data)
 
             except Exception as e:
                 print(f"Error in take_MCA_spectra: {e}")
-                import traceback
-
-                traceback.print_exc()
                 return
 
-            total_counts = sum(np.sum(hist) for hist in self.mca_data.values())
-            self.info_bar.setText(f"MCA: Read histograms, total counts: {total_counts}")
+            # Update display and statistics
+            self.update_display_and_stats()
 
         except Exception as e:
             print(f"Error in read_mca_data: {e}")
-            import traceback
 
-            traceback.print_exc()
+    def apply_channel_mapping(self, data_array):
+        """Apply channel mapping with better error handling"""
+        if len(data_array.shape) != 2:
+            print(f"Warning: Expected 2D array, got shape {data_array.shape}")
+            return {}
 
-    def generate_dummy_mca_data(self):
-        """Load real MCA data from .npy file instead of generating dummy data"""
+        print(f"Applying mapping to data shape: {data_array.shape}")
+        mapped_data = {}
 
-        npy_file = Path(
-            # "/home/jo/Downloads/RUN-2025-06-17-00000-mca-2025-06-17-09-23-28.npy"
-            "/home/carbon/data/2025-06-17/RUN-2025-06-17-00000/MCA-data/RUN-2025-06-17-00000-mca-2025-06-17-09-23-28.npy"
-        )
-
-        try:
-            print(f"Loading real MCA data from: {npy_file}")
-
-            # Load the .npy file
-            real_mca_data = np.load(npy_file)
-
-            print(f"Loaded MCA data shape: {real_mca_data.shape}")
-            print(f"Data type: {real_mca_data.dtype}")
-
-            # Check if it's 2D array as expected
-            if len(real_mca_data.shape) == 2:
-                num_channels_in_file, num_bins = real_mca_data.shape
+        for data_row_idx, physical_channel in self.channel_mapping.items():
+            if data_row_idx < data_array.shape[0]:
+                mapped_data[physical_channel] = data_array[data_row_idx, :].copy()
                 print(
-                    f"Found {num_channels_in_file} channels with {num_bins} bins each in file"
+                    f"Mapped row {data_row_idx} -> channel {physical_channel}: {len(mapped_data[physical_channel])} bins"
+                )
+            else:
+                print(
+                    f"Warning: Data row {data_row_idx} not available (array has {data_array.shape[0]} rows)"
                 )
 
-                # Map the file data to your configured channels
-                channel_numbers = [ch for _, ch in self.channels]  # [4, 9]
+        return mapped_data
 
-                for i, physical_channel in enumerate(channel_numbers):
-                    if i < num_channels_in_file:
-                        # Extract the row data from the file
-                        raw_data = real_mca_data[i, :]
+    def generate_dummy_mca_data(self):
+        """Load and ADD the same .npy file data to simulate live accumulation"""
+        npy_file = "/home/jo/Downloads/RUN-2025-06-17-00000-mca-2025-06-17-09-23-28.npy"
 
-                        data_sum = np.sum(raw_data)
-                        data_max = np.max(raw_data)
-                        non_zero_bins = np.count_nonzero(raw_data)
+        try:
+            # Load fresh data (same file every time)
+            fresh_data = np.load(npy_file)
 
-                        print(
-                            f"Channel {physical_channel} (file row {i}): sum={data_sum}, max={data_max}, non-zero bins={non_zero_bins}"
-                        )
+            # Apply mapping and accumulate (this ADDS to existing data)
+            mapped_data = self.apply_channel_mapping(fresh_data)
+            self.accumulate_mapped_data(mapped_data)
 
-                        # Find where the data actually is
-                        if data_sum > 0:
-                            non_zero_indices = np.where(raw_data > 0)[0]
-                            print(
-                                f"  Data range: bins {non_zero_indices[0]} to {non_zero_indices[-1]}"
-                            )
+            # Log the accumulation
+            for ch, data in mapped_data.items():
+                if data is not None:
+                    new_counts = np.sum(data)
+                    total_counts = (
+                        np.sum(self.mca_data[ch])
+                        if self.mca_data[ch] is not None
+                        else 0
+                    )
+                    print(
+                        f"Added {new_counts:,} counts to Ch{ch}, total now: {total_counts:,}"
+                    )
 
-                        # Store the real data
-                        self.mca_data[physical_channel] = raw_data.copy()
-
-                        # Update the spectrum plotter
-                        if hasattr(self.spectrum_tab, "update_mca_histogram"):
-                            self.spectrum_tab.update_mca_histogram(
-                                physical_channel, raw_data
-                            )
-                            print(f"  Updated plotter for channel {physical_channel}")
-                    else:
-                        print(
-                            f"Warning: Not enough channels in file for physical channel {physical_channel}"
-                        )
-
-        except FileNotFoundError:
-            print(f"MCA file not found: {npy_file}")
-            print("Falling back to synthetic dummy data")
-            self.generate_original_dummy_data()
+        except Exception as e:
+            print(f"Failed to load/accumulate MCA data: {e}")
 
     def init_ui(self):
         self.setGeometry(100, 100, 1600, 1000)
@@ -716,54 +715,70 @@ class PixieScopeApp(BaseApp):
     #         print(f"Error stopping acquisition: {e}")
 
     def clear_data(self):
+        """Clear all accumulated MCA data"""
+        # Reset cumulative data
+        for physical_channel in self.cumulative_mca_data:
+            self.cumulative_mca_data[physical_channel].fill(0)
+            self.mca_data[physical_channel].fill(0)
+
+        # Clear plotter
         if hasattr(self.spectrum_tab, "clear_data"):
             self.spectrum_tab.clear_data()
+
         self.last_event_count = 0
-        self.info_bar.setText("Data cleared")
+        self.info_bar.setText("All MCA data cleared")
 
     def save_data(self):
+        """Save the accumulated MCA data"""
         try:
             from PyQt6.QtWidgets import QFileDialog
             import json
+            import datetime
 
-            file_path, _ = QFileDialog.getSaveFileName(
+            timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+
+            # Save as NPY (recommended for numerical data)
+            npy_path, _ = QFileDialog.getSaveFileName(
                 self,
-                "Save Spectrum Data",
-                f"pixie_spectra_{int(time.time())}.json",
-                "JSON Files (*.json);;All Files (*)",
+                "Save Accumulated MCA Data",
+                f"accumulated_mca_{timestamp}.npz",
+                "NumPy Files (*.npz);;JSON Files (*.json)",
             )
 
-            if file_path:
-                data_to_save = {}
-                for channel in self.channels:
-                    if (
-                        hasattr(self.spectrum_tab, "energy_data")
-                        and channel in self.spectrum_tab.energy_data
-                    ):
-                        data_to_save[f"channel_{channel}"] = list(
-                            self.spectrum_tab.energy_data[channel]
-                        )
-
-                data_to_save["metadata"] = {
-                    "timestamp": time.time(),
-                    "channels": self.channels,
+            if npy_path:
+                # Prepare data for saving
+                save_dict = {}
+                metadata = {
+                    "timestamp": timestamp,
+                    "physical_channels": list(self.mca_data.keys()),
+                    "channel_mapping": self.channel_mapping,
+                    "total_counts_per_channel": {},
                     "dummy_mode": self.dummy_mode,
-                    "total_events": sum(
-                        len(data)
-                        for data in data_to_save.values()
-                        if isinstance(data, list)
-                    ),
                 }
 
-                with open(file_path, "w") as f:
-                    json.dump(data_to_save, f, indent=2)
+                for physical_channel, histogram in self.mca_data.items():
+                    save_dict[f"channel_{physical_channel}"] = histogram
+                    save_dict[f"channel_{physical_channel}_cumulative"] = (
+                        self.cumulative_mca_data[physical_channel]
+                    )
+                    metadata["total_counts_per_channel"][physical_channel] = int(
+                        np.sum(histogram)
+                    )
 
-                self.info_bar.setText(f"Data saved to {file_path}")
+                save_dict["metadata"] = metadata
+
+                # Save as compressed NPZ
+                np.savez_compressed(npy_path, **save_dict)
+
+                total_counts = sum(metadata["total_counts_per_channel"].values())
+                self.info_bar.setText(
+                    f"Saved {total_counts:,} total counts to {npy_path}"
+                )
 
         except Exception as e:
-            error_msg = f"Failed to save data: {str(e)}"
-            QMessageBox.warning(self, "Save Error", error_msg)
-            self.info_bar.setText(f"Save error: {error_msg}")
+            error_msg = f"Failed to save accumulated data: {str(e)}"
+            print(error_msg)
+            self.info_bar.setText(error_msg)
 
     def read_pixie_data(self):
         if not self.is_acquiring or not self.live_reader:

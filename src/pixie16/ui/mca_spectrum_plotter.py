@@ -275,29 +275,23 @@ class MCASpectrumPlotter(QWidget):
         """Update UI ranges based on actual number of bins received"""
         if num_bins > self.max_bins_seen:
             self.max_bins_seen = num_bins
-
-            # Calculate what rebinned size will be
             rebinned_size = min(num_bins, self.target_bins)
 
             print(f"MCA Plotter: Raw bins: {num_bins}, Rebinned: {rebinned_size}")
 
-            # Update bin info display
             self.bin_info_label.setText(f"Raw: {num_bins}, Display: {rebinned_size}")
 
     def start_live_updates(self):
-        """Start the plot update timer"""
         if not self.update_timer.isActive():
             self.update_timer.start(500)
             print("MCA Plotter: Started live updates")
 
     def stop_live_updates(self):
-        """Stop the plot update timer"""
         if self.update_timer.isActive():
             self.update_timer.stop()
             print("MCA Plotter: Stopped live updates")
 
     def update_mca_histogram(self, channel, histogram_data):
-        """Update MCA histogram data for a specific channel"""
         if not isinstance(histogram_data, np.ndarray):
             histogram_data = np.array(histogram_data)
 
