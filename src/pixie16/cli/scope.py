@@ -167,12 +167,10 @@ class PixieScopeApp(BaseApp):
             )
 
             if hasattr(self, "left_layout"):
-                # Remove old plotter from layout
                 if old_spectrum_tab:
                     self.left_layout.removeWidget(old_spectrum_tab)
                     old_spectrum_tab.setParent(None)
 
-                # Add new plotter to layout
                 self.left_layout.addWidget(self.spectrum_tab)
 
         elif self.current_mode == "list_mode":
@@ -189,8 +187,8 @@ class PixieScopeApp(BaseApp):
                 px.control.change_setting_from_dict(settings, call_pixie=True)
 
                 # Start PIXIE histogram run
-                px.control.start_histogram_run()
-                print("Started PIXIE histogram run")
+                # px.control.start_histogram_run()
+                # print("Started PIXIE histogram run")
 
             print(
                 f"MCA acquisition starting for mapped channels: {list(self.channel_mapping.values())}"
@@ -313,8 +311,8 @@ class PixieScopeApp(BaseApp):
                 print(f"Error in take_MCA_spectra: {e}")
                 return
 
-            # Update display and statistics
-            self.update_display_and_stats()
+            # # Update display and statistics
+            # self.update_display_and_stats()
 
         except Exception as e:
             print(f"Error in read_mca_data: {e}")
