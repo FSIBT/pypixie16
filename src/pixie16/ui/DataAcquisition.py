@@ -24,6 +24,7 @@ import pyqtgraph as pg
 import psutil
 
 import pixie16 as px
+from pixie16.tasks import SetDefaults
 
 
 class DataAcquisition(QWidget):
@@ -170,6 +171,7 @@ class DataAcquisition(QWidget):
 
         self.Pixie_reboot = QPushButton("Reboot Pixie")
         self.Pixie_default = QPushButton("Set Pixie default")
+        self.Pixie_default.clicked.connect(self.set_pixie_default)
 
         self.diagnostics_layout.addWidget(self.mca_group_box)
         self.diagnostics_layout.addWidget(self.traces_group_box)
@@ -229,6 +231,11 @@ class DataAcquisition(QWidget):
 
     def start_run(self):
         self.pipeline.start()
+
+    def set_pixie_default(self):
+        """Sets reasonable defaults for all parameters in the pixie16"""
+        defaults_task = SetDefaults(self.pipeline.bind_address)
+        defaults_task.do_work(None)
 
     def on_mode_change(self, text: str):
         print(f"selected {text}")
