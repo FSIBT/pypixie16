@@ -25,6 +25,7 @@ import psutil
 
 import pixie16 as px
 from pixie16.tasks import SetDefaults
+from pixie16.config import LocalSettings
 
 
 class DataAcquisition(QWidget):
@@ -36,6 +37,7 @@ class DataAcquisition(QWidget):
         self.app = app
         self.taskid_to_row = {}
         self.pipeline = px.pipeline.Pipeline()
+        self.local_settings = LocalSettings() 
 
         self.create_layout()
 
@@ -229,6 +231,11 @@ class DataAcquisition(QWidget):
 
         self.setLayout(self.layout)
 
+        self.MCA_diagnostics.stateChanged.connect(self.update_skip_mca)
+        self.traces_enabled.stateChanged.connect(self.update_traces_setting)
+        self.traces_set_time.editingFinished.connect(self.update_trace_time)
+        self.MCA_set_time.editingFinished.connect(self.update_mca_time)
+
     def start_run(self):
         self.pipeline.start()
 
@@ -265,6 +272,7 @@ class DataAcquisition(QWidget):
                 return
         self.run_time_input.setText(str(runtime))
         self.progress_bar.setMaximum(runtime)
+        self.local_settings.runtime = runtime  # Update LocalSettings
 
         if self.pipeline.current_pipeline:
             task_id = self.pipeline.current_pipeline[0]
@@ -353,3 +361,29 @@ class DataAcquisition(QWidget):
         self.pipeline.close()
 
         event.accept()
+
+    def update_skip_mca(self, state):
+        """Update skip_mca in LocalSettings when MCA_diagnostics checkbox is toggled."""
+        self.local_settings.skip_mca = bool(self.MCA_diagnostics.isChecked())
+
+    def update_traces_setting(self, state):
+        """Update traces in LocalSettings when traces_enabled checkbox is toggled."""
+        self.local_settings.traces = bool(self.traces_enabled.isChecked())
+
+    def update_trace_time(self):
+        """Update trace_time in LocalSettings when traces_set_time QLineEdit is changed."""
+        try:
+            value = float(self.traces_set_time.text())
+            self.local_settings.trace_time = value
+        except ValueError:
+            pass 
+
+    def update_mca_time(self):
+        """Update mca_time in LocalSettings when MCA_set_time QLineEdit is changed."""
+        try:
+            value = float(self.MCA_set_time.text())
+            self.local_settings.mca_time = value
+        except ValueError:
+            pass 
+
+
