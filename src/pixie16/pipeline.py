@@ -78,6 +78,7 @@ class TaskStatus(Enum):
     READY = "✅"
     PAUSED = "⏸️"
     FINISHED = "🏁"
+    ERROR = "❌"
 
 
 class Task(multiprocessing.Process):
@@ -239,6 +240,8 @@ class Task(multiprocessing.Process):
 
             case MessageType.START:
                 self.status = TaskStatus.RUNNING
+            case MessageType.PAUSE:
+                self.status = TaskStatus.PAUSED
             case MessageType.CONFIGURE:
                 cfg = cmd.get("config")
                 if isinstance(cfg, dict):
@@ -516,6 +519,11 @@ class Pipeline:
         """Start all tasks."""
         for t in self._tasks:
             self.send_command(t, {"type": MessageType.START})
+
+    def pause_tasks(self):
+        """Pause all tasks"""
+        for t in self._tasks:
+            self.send_command(t, {"type": MessageType.PAUSE})
 
     def end_tasks(self):
         """Start all tasks."""

@@ -42,7 +42,7 @@ class DataAcquisition(QWidget):
         self.create_layout()
 
         self.start_button.clicked.connect(self.start_run)
-        self.pause_button.clicked.connect(self.pipeline.end_tasks)
+        self.pause_button.clicked.connect(self.pipeline.pause_task)
         self.stop_button.clicked.connect(self.pipeline.close)
         self.on_mode_change(self.settings_modes.currentText())
         self.run_time_input.editingFinished.connect(self.set_runtime)
