@@ -42,6 +42,8 @@ class DataAcquisition(QWidget):
         self.create_layout()
 
         self.start_button.clicked.connect(self.start_run)
+        self.pause_button.clicked.connect(self.pipeline.end_tasks)
+        self.stop_button.clicked.connect(self.pipeline.close)
         self.on_mode_change(self.settings_modes.currentText())
         self.run_time_input.editingFinished.connect(self.set_runtime)
 
@@ -375,6 +377,10 @@ class DataAcquisition(QWidget):
         try:
             value = float(self.traces_set_time.text())
             self.local_settings.trace_time = value
+            task_id = self.pipeline.current_pipeline[0]
+            conf = {"trace_time": value}
+            msg = {"type": px.pipeline.MessageType.CONFIGURE, "config": conf}
+            self.pipeline.send_command(task_id, msg)
         except ValueError:
             pass 
 
@@ -383,6 +389,10 @@ class DataAcquisition(QWidget):
         try:
             value = float(self.MCA_set_time.text())
             self.local_settings.mca_time = value
+            task_id = self.pipeline.current_pipeline[0]
+            conf = {"mca_time": value}
+            msg = {"type": px.pipeline.MessageType.CONFIGURE, "config": conf}
+            self.pipeline.send_command(task_id, msg)
         except ValueError:
             pass 
 
