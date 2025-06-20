@@ -8,7 +8,7 @@ from typing import Union
 
 import appdirs
 import platformdirs
-
+from dataclasses import dataclass, field
 
 # move from appdirs to platformdirs
 dirs_old = appdirs.AppDirs("PIXIE16")
@@ -118,3 +118,17 @@ def get_sdk():
         os.environ["PATH"] = str(sdk.parent) + ";" + os.environ["PATH"]
 
     return str(sdk)
+
+@dataclass
+class LocalSettings:
+    """
+    Keep track of local mode and settings i.e. diagnostic MCA and traces, runtime
+    """
+    trace_time: float = 5
+    mca_time: float = 30
+    runtime: float = 60
+    skip_mca: bool = False
+    traces: bool = False
+    modules: list[int] = field(default_factory=list)
+    channels: list = field(default_factory=list)
+    
