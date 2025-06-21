@@ -520,6 +520,11 @@ class Pipeline:
         for t in self._tasks:
             self.send_command(t, {"type": MessageType.START})
 
+    def config(self, dictionary):
+        """Send the config dictionary"""
+        for t in self.current_pipeline:
+            self.send_command(t, {"type": MessageType.CONFIGURE, "config":dictionary})
+
     def pause_tasks(self):
         """Pause all tasks"""
         for t in self._tasks:
