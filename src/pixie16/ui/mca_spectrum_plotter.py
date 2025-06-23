@@ -109,8 +109,10 @@ class MCASpectrumPlotter(QWidget):
 
     def init_ui(self):
         layout = QVBoxLayout()
+        layout.setSpacing(5)  # Reduce spacing
+        layout.setContentsMargins(5, 5, 5, 5)  # Reduce margins
 
-        # Controls
+        # Controls - compact version
         controls = self.create_controls()
         layout.addWidget(controls)
 
@@ -122,13 +124,17 @@ class MCASpectrumPlotter(QWidget):
         self.plot_widget.showGrid(True, True, alpha=0.3)
         self.plot_widget.addLegend()
 
+        self.plot_widget.setBackground("w")
+
         # Set log scale by default
         self.plot_widget.setLogMode(False, True)
 
         layout.addWidget(self.plot_widget)
 
-        # Statistics display
+        # Statistics display - compact version
         self.stats_label = QLabel("Statistics: Waiting for data...")
+        self.stats_label.setMaximumHeight(30)  # Limit height
+        self.stats_label.setStyleSheet("QLabel { font-size: 11px; padding: 2px; }")
         layout.addWidget(self.stats_label)
 
         self.setLayout(layout)
@@ -145,60 +151,86 @@ class MCASpectrumPlotter(QWidget):
             )
 
     def create_controls(self):
+        """Create compact control panel"""
         group = QGroupBox("Display Controls")
-        layout = QHBoxLayout()
+        group.setMaximumHeight(100)  # Limit height for compactness
 
-        # Rebinning controls
-        layout.addWidget(QLabel("Target Bins:"))
+        # Use two rows for better space utilization
+        main_layout = QVBoxLayout()
+        main_layout.setSpacing(3)
+
+        # First row - Binning and range controls
+        row1_layout = QHBoxLayout()
+        row1_layout.setSpacing(5)
+
+        # Target bins - compact
+        row1_layout.addWidget(QLabel("Bins:"))
         self.target_bins_spin = QSpinBox()
         self.target_bins_spin.setRange(500, 8192)
         self.target_bins_spin.setValue(self.target_bins)
         self.target_bins_spin.valueChanged.connect(self.update_target_bins)
-        layout.addWidget(self.target_bins_spin)
+        self.target_bins_spin.setMaximumWidth(80)
+        row1_layout.addWidget(self.target_bins_spin)
 
-        # Energy range (in rebinned coordinates) - FIXED: Better defaults
-        layout.addWidget(QLabel("Display Min:"))
+        # Energy range - compact
+        row1_layout.addWidget(QLabel("Min:"))
         self.energy_min_spin = QSpinBox()
         self.energy_min_spin.setRange(0, 8191)
-        self.energy_min_spin.setValue(0)  # Start at 0
+        self.energy_min_spin.setValue(0)
         self.energy_min_spin.valueChanged.connect(self.update_energy_range)
-        layout.addWidget(self.energy_min_spin)
+        self.energy_min_spin.setMaximumWidth(80)
+        row1_layout.addWidget(self.energy_min_spin)
 
-        layout.addWidget(QLabel("Max:"))
+        row1_layout.addWidget(QLabel("Max:"))
         self.energy_max_spin = QSpinBox()
         self.energy_max_spin.setRange(1, 8192)
-        self.energy_max_spin.setValue(2047)  # Show full rebinned range
+        self.energy_max_spin.setValue(2047)
         self.energy_max_spin.valueChanged.connect(self.update_energy_range)
-        layout.addWidget(self.energy_max_spin)
+        self.energy_max_spin.setMaximumWidth(80)
+        row1_layout.addWidget(self.energy_max_spin)
 
-        # ADDED: Auto-detect button
-        self.auto_detect_btn = QPushButton("Auto-Detect Range")
+        # Auto-detect button - compact
+        self.auto_detect_btn = QPushButton("Auto")
+        self.auto_detect_btn.setToolTip("Auto-detect data range")
         self.auto_detect_btn.clicked.connect(self.auto_detect_data_range)
-        layout.addWidget(self.auto_detect_btn)
+        self.auto_detect_btn.setMaximumWidth(50)
+        row1_layout.addWidget(self.auto_detect_btn)
 
-        # Bin info display
+        # Bin info display - compact
         self.bin_info_label = QLabel("Bins: Unknown")
-        layout.addWidget(self.bin_info_label)
+        self.bin_info_label.setStyleSheet("QLabel { font-size: 10px; }")
+        row1_layout.addWidget(self.bin_info_label)
 
-        # Display options
-        self.log_scale_cb = QCheckBox("Log Y-Scale")
-        self.log_scale_cb.setChecked(True)  # Default to log
+        row1_layout.addStretch()
+
+        # Second row - Display options and actions
+        row2_layout = QHBoxLayout()
+        row2_layout.setSpacing(5)
+
+        # Display options - compact checkboxes
+        self.log_scale_cb = QCheckBox("Log")
+        self.log_scale_cb.setChecked(True)
         self.log_scale_cb.toggled.connect(self.toggle_log_scale)
-        layout.addWidget(self.log_scale_cb)
+        row2_layout.addWidget(self.log_scale_cb)
 
         self.auto_scale_cb = QCheckBox("Auto Scale")
         self.auto_scale_cb.setChecked(True)
         self.auto_scale_cb.toggled.connect(self.toggle_auto_scale)
-        layout.addWidget(self.auto_scale_cb)
+        row2_layout.addWidget(self.auto_scale_cb)
 
-        # Clear button
-        self.clear_btn = QPushButton("Clear Spectra")
+        # Clear button - compact
+        self.clear_btn = QPushButton("Clear")
         self.clear_btn.clicked.connect(self.clear_data)
-        layout.addWidget(self.clear_btn)
+        self.clear_btn.setMaximumWidth(60)
+        row2_layout.addWidget(self.clear_btn)
 
-        layout.addStretch()
+        row2_layout.addStretch()
 
-        group.setLayout(layout)
+        # Add rows to main layout
+        main_layout.addLayout(row1_layout)
+        main_layout.addLayout(row2_layout)
+
+        group.setLayout(main_layout)
         return group
 
     def auto_detect_data_range(self):
@@ -253,13 +285,15 @@ class MCASpectrumPlotter(QWidget):
             self.energy_min_spin.setValue(new_min)
             self.energy_max_spin.setValue(new_max)
 
-            # This will trigger update_energy_range automatically
-            self.info_bar.setText(
-                f"Auto-detected data range: {new_min}-{new_max} (rebinned), {total_counts:,} counts"
-            )
+            # Update info bar if available
+            if self.info_bar:
+                self.info_bar.setText(
+                    f"Auto-detected data range: {new_min}-{new_max} (rebinned), {total_counts:,} counts"
+                )
         else:
             print("No data found for auto-detection")
-            self.info_bar.setText("No data found - cannot auto-detect range")
+            if self.info_bar:
+                self.info_bar.setText("No data found - cannot auto-detect range")
 
     def update_target_bins(self):
         """Update target bin count for rebinning"""
@@ -420,12 +454,26 @@ class MCASpectrumPlotter(QWidget):
                         "rebin_factor": rebin_factor,
                     }
 
-            # Update statistics display
-            stats_text = f"Total Counts: {total_counts:,} | "
-            for ch, stats in channel_stats.items():
-                stats_text += f"Ch{ch}: {stats['total']:,} ({stats['raw_bins']}->{stats['display_bins']} bins) | "
+            # Update statistics display - compact version
+            if len(channel_stats) > 0:
+                # Show only essential info for space efficiency
+                stats_text = f"Total: {total_counts:,} | "
 
-            self.stats_label.setText(stats_text.rstrip(" | "))
+                # Show first few channels to avoid overcrowding
+                display_channels = list(channel_stats.keys())[:6]  # Limit to 6 channels
+
+                for ch in display_channels:
+                    stats = channel_stats[ch]
+                    stats_text += f"Ch{ch}: {stats['total']:,} | "
+
+                if len(channel_stats) > 6:
+                    stats_text += f"...+{len(channel_stats) - 6} more"
+                else:
+                    stats_text = stats_text.rstrip(" | ")
+
+                self.stats_label.setText(stats_text)
+            else:
+                self.stats_label.setText("Statistics: Waiting for data...")
 
             # Auto scale if enabled
             if self.auto_scale and total_counts > 0:
@@ -466,6 +514,10 @@ class MCASpectrumPlotter(QWidget):
                 stepMode=True,  # Step plots for histogram data
             )
 
+    def set_display_channels(self, channels):
+        """Set which channels to display (compatibility method)"""
+        self.set_channels(channels)
+
     def export_data(self, filename):
         """Export MCA data to file (saves raw data, not rebinned)"""
         try:
@@ -475,3 +527,7 @@ class MCASpectrumPlotter(QWidget):
             print(f"MCA data exported to {filename}")
         except Exception as e:
             print(f"Error exporting MCA data: {e}")
+
+    def set_info_bar(self, info_bar):
+        """Set reference to parent info bar for status updates"""
+        self.info_bar = info_bar

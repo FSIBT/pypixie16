@@ -97,36 +97,49 @@ class ParameterControls(QGroupBox):
         tab = QWidget()
         layout = QGridLayout()
 
-        layout.addWidget(QLabel("Trigger Threshold:"), 0, 0)
+        # Set spacing and column widths for better layout
+        layout.setVerticalSpacing(10)
+        layout.setHorizontalSpacing(20)  # Add more horizontal spacing
+        layout.setColumnMinimumWidth(1, 100)  # Make input columns wider
+        layout.setColumnMinimumWidth(3, 100)  # Make input columns wider
+
+        # First row
+        layout.addWidget(QLabel("Threshold:"), 0, 0)
         self.threshold_spin = QSpinBox()
         self.threshold_spin.setRange(0, 65535)
         self.threshold_spin.setValue(1000)
         self.threshold_spin.setSuffix(" ADC")
+        self.threshold_spin.setMinimumWidth(100)  # Ensure minimum width
         self.threshold_spin.setToolTip("ADC threshold for event detection (0-65535)")
         layout.addWidget(self.threshold_spin, 0, 1)
-        layout.addWidget(QLabel("Trigger Rise Time:"), 1, 0)
+
+        # Add another parameter in the same row for better space usage
+        layout.addWidget(QLabel("RiseTime:"), 1, 0)
         self.trigger_rise_spin = QDoubleSpinBox()
         self.trigger_rise_spin.setRange(0.01, 10.0)
         self.trigger_rise_spin.setValue(0.1)
         self.trigger_rise_spin.setSuffix(" μs")
         self.trigger_rise_spin.setDecimals(3)
+        self.trigger_rise_spin.setMinimumWidth(100)  # Ensure minimum width
         self.trigger_rise_spin.setToolTip(
             "Fast filter rise time for trigger (0.01-10.0 μs)"
         )
         layout.addWidget(self.trigger_rise_spin, 1, 1)
 
-        layout.addWidget(QLabel("Trigger Flat Top:"), 2, 0)
+        # Second row
+        layout.addWidget(QLabel("FlatTop:"), 2, 0)
         self.trigger_flat_spin = QDoubleSpinBox()
         self.trigger_flat_spin.setRange(0.01, 5.0)
         self.trigger_flat_spin.setValue(0.1)
         self.trigger_flat_spin.setSuffix(" μs")
         self.trigger_flat_spin.setDecimals(3)
+        self.trigger_flat_spin.setMinimumWidth(100)  # Ensure minimum width
         self.trigger_flat_spin.setToolTip(
             "Fast filter flat top for trigger timing (0.01-5.0 μs)"
         )
         layout.addWidget(self.trigger_flat_spin, 2, 1)
 
-        layout.setRowStretch(3, 1)
+        layout.setRowStretch(2, 1)  # Add stretch to push everything up
         tab.setLayout(layout)
         return tab
 
@@ -134,7 +147,7 @@ class ParameterControls(QGroupBox):
         tab = QWidget()
         layout = QGridLayout()
 
-        layout.addWidget(QLabel("Energy Rise Time:"), 0, 0)
+        layout.addWidget(QLabel("RiseTime:"), 0, 0)
         self.energy_rise_spin = QDoubleSpinBox()
         self.energy_rise_spin.setRange(0.1, 100.0)
         self.energy_rise_spin.setValue(2.0)
@@ -145,7 +158,7 @@ class ParameterControls(QGroupBox):
         )
         layout.addWidget(self.energy_rise_spin, 0, 1)
 
-        layout.addWidget(QLabel("Energy Flat Top:"), 1, 0)
+        layout.addWidget(QLabel("FlatTop:"), 1, 0)
         self.energy_flat_spin = QDoubleSpinBox()
         self.energy_flat_spin.setRange(0.01, 10.0)
         self.energy_flat_spin.setValue(0.5)
@@ -163,11 +176,13 @@ class ParameterControls(QGroupBox):
     def create_hardware_tab(self):
         tab = QWidget()
         layout = QGridLayout()
+        layout.setVerticalSpacing(10)
 
         layout.addWidget(QLabel("Gain:"), 0, 0)
         self.gain_combo = QComboBox()
         self.gain_combo.addItems(["0.625", "2.5"])
         self.gain_combo.setCurrentText("2.5")
+        self.gain_combo.setMinimumHeight(20)
         self.gain_combo.setToolTip(
             "Analog gain setting (0.625 = low gain, 2.5 = high gain)"
         )
@@ -177,6 +192,7 @@ class ParameterControls(QGroupBox):
         self.polarity_combo = QComboBox()
         self.polarity_combo.addItems(["negative", "positive"])
         self.polarity_combo.setCurrentText("negative")
+        self.polarity_combo.setMinimumHeight(25)
         self.polarity_combo.setToolTip("Signal polarity (must match detector output)")
         layout.addWidget(self.polarity_combo, 1, 1)
 
@@ -199,10 +215,10 @@ class ParameterControls(QGroupBox):
         return tab
 
     def create_action_buttons(self):
-        group = QGroupBox("Actions")
+        group = QGroupBox("Settings Actions")
         layout = QHBoxLayout()
 
-        self.apply_all_btn = QPushButton("Apply All Settings")
+        self.apply_all_btn = QPushButton("Apply")
         self.apply_all_btn.setToolTip(
             "Apply all current parameter values to selected module/channel"
         )
@@ -224,11 +240,11 @@ class ParameterControls(QGroupBox):
         """)
         layout.addWidget(self.apply_all_btn)
 
-        self.load_preset_btn = QPushButton("Load Preset")
+        self.load_preset_btn = QPushButton("Load")
         self.load_preset_btn.setToolTip("Load parameter values from file")
         layout.addWidget(self.load_preset_btn)
 
-        self.save_preset_btn = QPushButton("Save Preset")
+        self.save_preset_btn = QPushButton("Save")
         self.save_preset_btn.setToolTip("Save current parameter values to file")
         layout.addWidget(self.save_preset_btn)
 
