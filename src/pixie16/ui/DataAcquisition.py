@@ -23,9 +23,10 @@ from PyQt6 import QtCore
 import pyqtgraph as pg
 import psutil
 
-import pixie16 as px
-from pixie16.tasks import SetDefaults
-from pixie16.config import LocalSettings
+from .. import pipeline
+
+from ..pipeline.tasks import SetDefaults
+from ..config import LocalSettings
 
 
 class DataAcquisition(QWidget):
@@ -36,8 +37,8 @@ class DataAcquisition(QWidget):
 
         self.app = app
         self.taskid_to_row = {}
-        self.pipeline = px.pipeline.Pipeline()
-        self.local_settings = LocalSettings() 
+        self.pipeline = pipeline.Pipeline()
+        self.local_settings = LocalSettings()
 
         self.create_layout()
 
@@ -279,7 +280,7 @@ class DataAcquisition(QWidget):
         if self.pipeline.current_pipeline:
             task_id = self.pipeline.current_pipeline[0]
             conf = {"runtime": runtime}
-            msg = {"type": px.pipeline.MessageType.CONFIGURE, "config": conf}
+            msg = {"type": pipeline.MessageType.CONFIGURE, "config": conf}
             self.pipeline.send_command(task_id, msg)
 
     def update_status(self):
@@ -379,10 +380,10 @@ class DataAcquisition(QWidget):
             self.local_settings.trace_time = value
             task_id = self.pipeline.current_pipeline[0]
             conf = {"trace_time": value}
-            msg = {"type": px.pipeline.MessageType.CONFIGURE, "config": conf}
+            msg = {"type": pipeline.MessageType.CONFIGURE, "config": conf}
             self.pipeline.send_command(task_id, msg)
         except ValueError:
-            pass 
+            pass
 
     def update_mca_time(self):
         """Update mca_time in LocalSettings when MCA_set_time QLineEdit is changed."""
@@ -391,9 +392,7 @@ class DataAcquisition(QWidget):
             self.local_settings.mca_time = value
             task_id = self.pipeline.current_pipeline[0]
             conf = {"mca_time": value}
-            msg = {"type": px.pipeline.MessageType.CONFIGURE, "config": conf}
+            msg = {"type": pipeline.MessageType.CONFIGURE, "config": conf}
             self.pipeline.send_command(task_id, msg)
         except ValueError:
-            pass 
-
-
+            pass
