@@ -480,9 +480,11 @@ class PixieScopeApp(QMainWindow):
             raise
 
     def cleanup_live_reader(self):
-        """Clean up existing live reader and data source"""
+        """Clean up existing live reader and data source - ENHANCED"""
         try:
-            # Stop any existing dummy threads
+            print("Starting cleanup of live reader and data source...")
+
+            # Stop any existing dummy threads first
             if (
                 hasattr(self, "dummy_thread")
                 and self.dummy_thread
@@ -493,20 +495,28 @@ class PixieScopeApp(QMainWindow):
 
             # Stop existing data source
             if hasattr(self, "data_source") and self.data_source:
-                self.data_source.stop_acquisition()
-                self.data_source = None
-                print("Stopped existing data source")
+                try:
+                    self.data_source.stop_acquisition()
+                    print("Stopped existing data source")
+                except Exception as e:
+                    print(f"Error stopping data source: {e}")
+                finally:
+                    self.data_source = None
 
             # Clean up existing live reader
             if hasattr(self, "live_reader") and self.live_reader:
-                # Stop the live reader processing
-                if hasattr(self.live_reader, "stop_processing"):
-                    self.live_reader.stop_processing()
-                self.live_reader = None
-                print("Cleaned up existing live reader")
+                try:
+                    if hasattr(self.live_reader, "stop_processing"):
+                        self.live_reader.stop_processing()
+                    print("Cleaned up existing live reader")
+                except Exception as e:
+                    print(f"Error stopping live reader: {e}")
+                finally:
+                    self.live_reader = None
 
             # Give threads time to stop
-            time.sleep(0.1)
+            time.sleep(0.2)
+            print("Live reader cleanup completed")
 
         except Exception as e:
             print(f"Error during live reader cleanup: {e}")
@@ -639,7 +649,7 @@ class PixieScopeApp(QMainWindow):
             self.accumulate_channel_data(channel, fake_data)
 
     def start_dummy_list_mode_data(self):
-        """Start reading dummy list mode data from binary file - FRESH START"""
+        """Start reading dummy list mode data from binary file"""
 
         def dummy_list_mode_reader():
             try:
@@ -658,11 +668,21 @@ class PixieScopeApp(QMainWindow):
                 chunk_size = 1000
                 position = 0  # Always start from 0
 
-                while self.data_source.is_active and position < len(binary_data):
+                while (
+                    hasattr(self, "data_source")
+                    and self.data_source is not None
+                    and getattr(self.data_source, "is_active", False)
+                    and position < len(binary_data)
+                ):
                     end_pos = min(position + chunk_size, len(binary_data))
                     chunk = binary_data[position:end_pos]
 
-                    self.live_reader.add_data(chunk)
+                    if hasattr(self, "live_reader") and self.live_reader is not None:
+                        self.live_reader.add_data(chunk)
+                    else:
+                        print("Live reader no longer available, stopping binary reader")
+                        break
+
                     position = end_pos
 
                     if position % 10000 == 0:  # Progress every 10k words
@@ -674,7 +694,11 @@ class PixieScopeApp(QMainWindow):
 
             except Exception as e:
                 print(f"Error with list mode binary file simulation: {e}")
-                self.generate_synthetic_list_mode_events()
+                # Fallback to synthetic events if file reading fails
+                try:
+                    self.generate_synthetic_list_mode_events()
+                except Exception as e2:
+                    print(f"Error starting synthetic events: {e2}")
 
         # Stop any existing thread before starting new one
         if (
@@ -683,7 +707,6 @@ class PixieScopeApp(QMainWindow):
             and self.dummy_thread.is_alive()
         ):
             print("Waiting for existing dummy thread to stop...")
-            # Thread will stop when data_source.is_active becomes False
             time.sleep(0.2)
 
         self.dummy_thread = threading.Thread(target=dummy_list_mode_reader, daemon=True)
@@ -691,6 +714,8 @@ class PixieScopeApp(QMainWindow):
         print("Started fresh dummy list mode thread")
 
     def start_dummy_traces_data(self):
+        """Start reading dummy traces data"""
+
         def dummy_traces_reader():
             try:
                 if not Path(DUMMY_BINARY_FILE).exists():
@@ -708,11 +733,21 @@ class PixieScopeApp(QMainWindow):
                 chunk_size = 500  # Smaller chunks for traces
                 position = 0  # Always start from 0
 
-                while self.data_source.is_active and position < len(binary_data):
+                while (
+                    hasattr(self, "data_source")
+                    and self.data_source is not None
+                    and getattr(self.data_source, "is_active", False)
+                    and position < len(binary_data)
+                ):
                     end_pos = min(position + chunk_size, len(binary_data))
                     chunk = binary_data[position:end_pos]
 
-                    self.live_reader.add_data(chunk)
+                    if hasattr(self, "live_reader") and self.live_reader is not None:
+                        self.live_reader.add_data(chunk)
+                    else:
+                        print("Live reader no longer available, stopping traces reader")
+                        break
+
                     position = end_pos
 
                     if position % 5000 == 0:  # Progress every 5k words
@@ -724,7 +759,11 @@ class PixieScopeApp(QMainWindow):
 
             except Exception as e:
                 print(f"Error with traces mode binary file simulation: {e}")
-                self.generate_synthetic_traces()
+                # Fallback to synthetic traces if file reading fails
+                try:
+                    self.generate_synthetic_traces()
+                except Exception as e2:
+                    print(f"Error starting synthetic traces: {e2}")
 
         # Stop any existing thread before starting new one
         if (
@@ -740,11 +779,13 @@ class PixieScopeApp(QMainWindow):
         print("Started fresh dummy traces thread")
 
     def generate_synthetic_list_mode_events(self):
-        """Generate synthetic list mode events as fallback"""
-
         def synthetic_event_generator():
             event_count = 0
-            while self.data_source.is_active:
+            while (
+                hasattr(self, "data_source")
+                and self.data_source is not None
+                and getattr(self.data_source, "is_active", False)
+            ):
                 for channel in self.channel_numbers:
                     if np.random.random() < 0.1:  # 10% chance per channel
                         energy = int(np.random.gamma(2, 300 + channel * 100))
@@ -760,22 +801,32 @@ class PixieScopeApp(QMainWindow):
                             },
                         )()
 
-                        self.process_list_mode_event(event)
-                        event_count += 1
+                        try:
+                            self.process_list_mode_event(event)
+                            event_count += 1
+                        except Exception as e:
+                            print(f"Error processing synthetic event: {e}")
+                            break
 
                 time.sleep(0.01)  # 100 Hz
+
+            print(
+                f"Synthetic list mode event generator stopped after {event_count} events"
+            )
 
         self.dummy_thread = threading.Thread(
             target=synthetic_event_generator, daemon=True
         )
         self.dummy_thread.start()
 
-    def generate_synthetic_traces(self):
-        """Generate synthetic traces as fallback"""
-
+    def generate_synthetic_traces(self):  # Fallback
         def synthetic_trace_generator():
             trace_count = 0
-            while self.data_source.is_active:
+            while (
+                hasattr(self, "data_source")
+                and self.data_source is not None
+                and getattr(self.data_source, "is_active", False)
+            ):
                 for channel in self.channel_numbers:
                     if np.random.random() < 0.05:  # 5% chance per channel
                         trace_length = 100
@@ -809,10 +860,16 @@ class PixieScopeApp(QMainWindow):
                             },
                         )()
 
-                        self.process_traces_event(event)
-                        trace_count += 1
+                        try:
+                            self.process_traces_event(event)
+                            trace_count += 1
+                        except Exception as e:
+                            print(f"Error processing synthetic trace: {e}")
+                            break
 
                 time.sleep(0.1)  # 10 Hz
+
+            print(f"Synthetic traces generator stopped after {trace_count} traces")
 
         self.dummy_thread = threading.Thread(
             target=synthetic_trace_generator, daemon=True
@@ -820,6 +877,7 @@ class PixieScopeApp(QMainWindow):
         self.dummy_thread.start()
 
     def accumulate_channel_data(self, channel, fresh_data):
+        # for a specific channel
         try:
             # Always accumulate data regardless of display selection
             self.cumulative_mca_data[channel] += fresh_data
@@ -831,24 +889,34 @@ class PixieScopeApp(QMainWindow):
             ).astype(np.int32)
 
             # ALWAYS update the plotter with new data
-            # The plotter will decide what to display based on its internal settings
             if hasattr(self.spectrum_tab, "update_mca_histogram"):
                 self.spectrum_tab.update_mca_histogram(channel, self.mca_data[channel])
+
+            if hasattr(self, "channel_controls"):
+                total_counts = int(np.sum(self.mca_data[channel]))
+                self.channel_controls.update_channel_statistics({channel: total_counts})
 
         except Exception as e:
             print(f"Error accumulating data for channel {channel}: {e}")
 
     def process_list_mode_event(self, event):
-        """Process events for list mode"""
         try:
             channel = getattr(event, "channel", 0)
             energy = getattr(event, "energy", 0)
 
             if (
                 hasattr(self.spectrum_tab, "energy_data")
-                and channel in self.channel_numbers  # Check against ALL channels
+                and channel in self.channel_numbers
             ):
                 self.spectrum_tab.energy_data[channel].append(energy)
+
+                if hasattr(self, "_event_counter"):
+                    self._event_counter += 1
+                else:
+                    self._event_counter = 1
+
+                if self._event_counter % 100 == 0:  # Update every 100 events
+                    self.update_list_mode_channel_stats()
 
         except Exception as e:
             print(f"Error processing list mode event: {e}")
@@ -858,26 +926,108 @@ class PixieScopeApp(QMainWindow):
             channel = getattr(event, "channel", 0)
             trace = getattr(event, "trace", None)
 
-            # Processes traces for ALL channels, not just selected ones
             if (
                 hasattr(self, "spectrum_tab")
                 and self.spectrum_tab
                 and hasattr(self.spectrum_tab, "add_trace")
-                and channel in self.channel_numbers  # Check against ALL channels
+                and channel in self.channel_numbers
                 and trace is not None
                 and len(trace) > 0
             ):
                 self.spectrum_tab.add_trace(channel, trace)
 
+                # Update stats periodically (every 10 traces to avoid overhead)
+                if hasattr(self, "_trace_counter"):
+                    self._trace_counter += 1
+                else:
+                    self._trace_counter = 1
+
+                if self._trace_counter % 10 == 0:  # Update every 10 traces
+                    self.update_traces_channel_stats()
         except RuntimeError as e:
             if "wrapped C/C++ object" in str(e):
-                # Widget has been deleted, stop processing
                 print("Traces plotter has been deleted, stopping trace processing")
                 return
             else:
                 print(f"Runtime error processing traces event: {e}")
         except Exception as e:
             print(f"Error processing traces event: {e}")
+
+    def update_mca_channel_stats(self):
+        """Update channel statistics for MCA mode"""
+        try:
+            channel_stats = {}
+
+            # Get statistics from accumulated MCA data
+            for channel in self.channel_numbers:
+                if channel in self.mca_data:
+                    total_counts = int(np.sum(self.mca_data[channel]))
+                    channel_stats[channel] = total_counts
+                else:
+                    channel_stats[channel] = 0
+
+            # Update the channel controls
+            if hasattr(self, "channel_controls"):
+                self.channel_controls.update_channel_statistics(channel_stats)
+
+            print(f"MCA Stats updated: {channel_stats}")
+
+        except Exception as e:
+            print(f"Error updating MCA channel stats: {e}")
+
+    def update_list_mode_channel_stats(self):
+        """Update channel statistics for List Mode"""
+        try:
+            channel_stats = {}
+
+            # Get statistics from energy data
+            if hasattr(self.spectrum_tab, "energy_data"):
+                for channel in self.channel_numbers:
+                    if channel in self.spectrum_tab.energy_data:
+                        event_count = len(self.spectrum_tab.energy_data[channel])
+                        channel_stats[channel] = event_count
+                    else:
+                        channel_stats[channel] = 0
+            else:
+                # No energy data available
+                for channel in self.channel_numbers:
+                    channel_stats[channel] = 0
+
+            # Update the channel controls
+            if hasattr(self, "channel_controls"):
+                self.channel_controls.update_channel_statistics(channel_stats)
+
+            print(f"List Mode Stats updated: {channel_stats}")
+
+        except Exception as e:
+            print(f"Error updating List Mode channel stats: {e}")
+
+    def update_traces_channel_stats(self):
+        """Update channel statistics for Traces Mode"""
+        try:
+            channel_stats = {}
+
+            # Get statistics from trace data
+            if hasattr(self.spectrum_tab, "trace_data"):
+                for channel in self.channel_numbers:
+                    if channel in self.spectrum_tab.trace_data:
+                        trace_count = len(self.spectrum_tab.trace_data[channel])
+                        channel_stats[channel] = trace_count
+                    else:
+                        channel_stats[channel] = 0
+            else:
+                # No trace data available
+                for channel in self.channel_numbers:
+                    channel_stats[channel] = 0
+
+            # Update the channel controls
+            if hasattr(self, "channel_controls"):
+                self.channel_controls.update_channel_statistics(channel_stats)
+
+            print(f"Traces Stats updated: {channel_stats}")
+
+        except Exception as e:
+            print(f"Error updating Traces channel stats: {e}")
 
     def read_pixie_data(self):
         """Read data from PIXIE FIFO for list mode and traces (real hardware only)"""
@@ -1049,7 +1199,6 @@ class PixieScopeApp(QMainWindow):
             self.data_timer.timeout.connect(self.read_pixie_data)
 
     def update_status(self):
-        """Update status display"""
         if self.live_reader:
             try:
                 stats = self.live_reader.get_statistics()
@@ -1061,6 +1210,16 @@ class PixieScopeApp(QMainWindow):
 
             except Exception as e:
                 print(f"Error updating status: {e}")
+
+        try:
+            if self.current_mode == "mca_mode":
+                self.update_mca_channel_stats()
+            elif self.current_mode == "list_mode":
+                self.update_list_mode_channel_stats()
+            elif self.current_mode == "traces_mode":
+                self.update_traces_channel_stats()
+        except Exception as e:
+            print(f"Error updating channel statistics: {e}")
 
     def closeEvent(self, event):
         try:

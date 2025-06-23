@@ -342,7 +342,6 @@ class ContinuousSpectrumPlotter(QWidget):
             self.display.setXRange(*self.energy_range)
 
     def set_display_channels(self, channels):
-        """Set which channels to display - FIXED VERSION"""
         print(f"List Mode Plotter: set_display_channels called with {channels}")
         self.display_channels = channels if channels else []
 
