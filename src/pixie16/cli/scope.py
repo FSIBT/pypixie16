@@ -563,10 +563,11 @@ class PixieScopeApp(QMainWindow):
             print(f"Error in read_mca_data: {e}")
 
     def read_real_mca_data(self):
-        """Read real MCA data from hardware using px.control.take_MCA_spectra"""
         try:
+            # this always reads all channels from hardware
+
             histogram_result = px.control.take_MCA_spectra(
-                channels=self.channels,  # [(module, channel),....]
+                channels=self.channels,  # ALL channels, not just selected ones
                 duration=1.0,
                 verbose=False,
             )
@@ -576,13 +577,14 @@ class PixieScopeApp(QMainWindow):
                     if i < len(self.channel_numbers):
                         channel = self.channel_numbers[i]
                         fresh_data = np.array(fresh_histogram, dtype=np.int64)
+
+                        # Always accumulate data for all channels
                         self.accumulate_channel_data(channel, fresh_data)
 
         except Exception as e:
             print(f"Error in take_MCA_spectra: {e}")
 
     def read_dummy_mca_data(self):
-        """Read dummy MCA data from numpy file"""
         try:
             if not Path(DUMMY_NUMPY_FILE).exists():
                 print(f"Dummy numpy file not found: {DUMMY_NUMPY_FILE}")
@@ -594,7 +596,7 @@ class PixieScopeApp(QMainWindow):
             mca_data = np.load(DUMMY_NUMPY_FILE)
             print(f"Loaded MCA data from {DUMMY_NUMPY_FILE}, shape: {mca_data.shape}")
 
-            # Distribute data across channels
+            # Distribute data across ALL available channels
             if len(mca_data.shape) == 2:
                 # Multiple channels in file
                 for i, channel in enumerate(self.channel_numbers):
@@ -613,8 +615,7 @@ class PixieScopeApp(QMainWindow):
             self.generate_synthetic_mca_data()
 
     def generate_synthetic_mca_data(self):
-        """Generate synthetic MCA data as fallback"""
-        for channel in self.channel_numbers:
+        for channel in self.channel_numbers:  # ALL channels
             # Generate some fake peaks
             fake_data = np.zeros(8192, dtype=np.int64)
 
@@ -819,8 +820,8 @@ class PixieScopeApp(QMainWindow):
         self.dummy_thread.start()
 
     def accumulate_channel_data(self, channel, fresh_data):
-        """Accumulate MCA data for a specific channel"""
         try:
+            # Always accumulate data regardless of display selection
             self.cumulative_mca_data[channel] += fresh_data
 
             self.mca_data[channel] = np.clip(
@@ -829,6 +830,8 @@ class PixieScopeApp(QMainWindow):
                 np.iinfo(np.int32).max,
             ).astype(np.int32)
 
+            # ALWAYS update the plotter with new data
+            # The plotter will decide what to display based on its internal settings
             if hasattr(self.spectrum_tab, "update_mca_histogram"):
                 self.spectrum_tab.update_mca_histogram(channel, self.mca_data[channel])
 
@@ -843,7 +846,7 @@ class PixieScopeApp(QMainWindow):
 
             if (
                 hasattr(self.spectrum_tab, "energy_data")
-                and channel in self.channel_numbers
+                and channel in self.channel_numbers  # Check against ALL channels
             ):
                 self.spectrum_tab.energy_data[channel].append(energy)
 
@@ -851,17 +854,16 @@ class PixieScopeApp(QMainWindow):
             print(f"Error processing list mode event: {e}")
 
     def process_traces_event(self, event):
-        """Process events for traces mode"""
         try:
             channel = getattr(event, "channel", 0)
             trace = getattr(event, "trace", None)
 
-            # Make sure we have valid data and the widget still exists
+            # Processes traces for ALL channels, not just selected ones
             if (
                 hasattr(self, "spectrum_tab")
                 and self.spectrum_tab
                 and hasattr(self.spectrum_tab, "add_trace")
-                and channel in self.channel_numbers
+                and channel in self.channel_numbers  # Check against ALL channels
                 and trace is not None
                 and len(trace) > 0
             ):
@@ -941,21 +943,38 @@ class PixieScopeApp(QMainWindow):
             self.info_bar.setText(error_msg)
 
     def update_display_channels(self, selected_channels):
-        """Update which channels are displayed"""
         print(f"Scope: channels changed to {selected_channels}")
+        print(f"Scope: current mode is {self.current_mode}")
 
-        if hasattr(self.spectrum_tab, "set_display_channels"):
-            self.spectrum_tab.set_display_channels(selected_channels)
-        elif hasattr(self.spectrum_tab, "set_channels"):
-            self.spectrum_tab.set_channels(selected_channels)
+        try:
+            # Update the spectrum plotter's display channels
+            if hasattr(self.spectrum_tab, "set_display_channels"):
+                print(f"Calling set_display_channels with {selected_channels}")
+                self.spectrum_tab.set_display_channels(selected_channels)
+            elif hasattr(self.spectrum_tab, "set_channels"):
+                print(f"Calling set_channels with {selected_channels}")
+                self.spectrum_tab.set_channels(selected_channels)
+            else:
+                print(f"ERROR: spectrum_tab doesn't have display channel methods")
+                print(f"spectrum_tab type: {type(self.spectrum_tab)}")
+                print(
+                    f"spectrum_tab methods: {[m for m in dir(self.spectrum_tab) if not m.startswith('_')]}"
+                )
 
-        if selected_channels:
-            mode_status = "DUMMY MODE - " if self.dummy_mode else ""
-            self.info_bar.setText(
-                f"{mode_status}Displaying {len(selected_channels)} channels: {selected_channels}"
-            )
-        else:
-            self.info_bar.setText("No channels selected for display")
+            # Update status message
+            if selected_channels:
+                mode_status = "DUMMY MODE - " if self.dummy_mode else ""
+                self.info_bar.setText(
+                    f"{mode_status}Displaying {len(selected_channels)} channels: {selected_channels}"
+                )
+            else:
+                self.info_bar.setText("No channels selected for display")
+
+        except Exception as e:
+            print(f"ERROR in update_display_channels: {e}")
+            import traceback
+
+            traceback.print_exc()
 
     def handle_parameter_change(self, param_name, value, module, channel):
         """Handle parameter changes from the UI"""

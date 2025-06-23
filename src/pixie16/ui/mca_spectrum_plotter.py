@@ -31,6 +31,8 @@ class MCASpectrumPlotter(QWidget):
 
         self.channels = channels or [4, 9]  # Channel numbers (not row indices)
 
+        self.display_channels = self.channels.copy()  # Start showing all channels
+
         # Data storage - keyed by channel number
         self.mca_data = {ch: np.array([]) for ch in self.channels}
         self.bin_counts = {ch: 0 for ch in self.channels}
@@ -383,22 +385,35 @@ class MCASpectrumPlotter(QWidget):
         self.update_plots()
 
     def update_plots(self):
-        """Update the plot display with rebinned data and step plots - FIXED stepMode"""
+        """Update the plot display - FIXED to respect display_channels"""
         try:
             total_counts = 0
             channel_stats = {}
 
-            print(
-                f"Plot Update: Processing {len(self.channels)} channels: {self.channels}"
-            )
+            print(f"Plot Update: All channels: {self.channels}")
+            print(f"Plot Update: Display channels: {self.display_channels}")
 
+            # Process ALL channels but only show selected ones
             for channel in self.channels:
                 if channel in self.mca_data and channel in self.curves:
                     raw_data = self.mca_data[channel]
 
                     if len(raw_data) == 0:
-                        print(f"Plot Update: Channel {channel} - no data")
+                        # No data - hide curve
+                        self.curves[channel].setData([], [])
                         continue
+
+                    # Check if this channel should be displayed
+                    if channel not in self.display_channels:
+                        # Channel has data but shouldn't be displayed - hide it
+                        self.curves[channel].setData([], [])
+                        print(
+                            f"Plot Update: Hiding channel {channel} (not in display list)"
+                        )
+                        continue
+
+                    # Channel should be displayed - process and show data
+                    print(f"Plot Update: Processing channel {channel} for display")
 
                     # Rebin the data
                     rebinned_data, rebinned_x, rebin_factor = self.rebin_data(raw_data)
@@ -421,25 +436,20 @@ class MCASpectrumPlotter(QWidget):
                     if self.log_scale:
                         y_plot = np.where(y_plot > 0, y_plot, 0.1)
 
-                    # FIXED: For stepMode=True, x must have len(y)+1 elements
-                    # Create bin edges instead of bin centers
                     if len(x_plot) > 0:
-                        # Create x_edges array with one more element
+                        # Create x_edges array with one more element for stepMode
                         if len(x_plot) == len(y_plot):
-                            # Add one more bin edge at the end
                             bin_width = rebin_factor if len(x_plot) > 1 else 1
                             x_edges = np.append(x_plot, x_plot[-1] + bin_width)
                         else:
                             x_edges = x_plot
 
-                        print(
-                            f"Plot Update: Setting data for channel {channel}: x_len={len(x_edges)}, y_len={len(y_plot)}, y_max={np.max(y_plot) if len(y_plot) > 0 else 0}"
-                        )
-
-                        # Now x_edges has len(y_plot) + 1 elements as required
+                        # Show the curve
                         self.curves[channel].setData(x_edges, y_plot)
+                        print(f"Plot Update: Displayed channel {channel}")
                     else:
-                        print(f"Plot Update: No data in range for channel {channel}")
+                        # No data in range
+                        self.curves[channel].setData([], [])
 
                     # Statistics (using original raw data for accuracy)
                     total_ch_counts = np.sum(raw_data)
@@ -454,26 +464,22 @@ class MCASpectrumPlotter(QWidget):
                         "rebin_factor": rebin_factor,
                     }
 
-            # Update statistics display - compact version
-            if len(channel_stats) > 0:
-                # Show only essential info for space efficiency
-                stats_text = f"Total: {total_counts:,} | "
-
-                # Show first few channels to avoid overcrowding
-                display_channels = list(channel_stats.keys())[:6]  # Limit to 6 channels
-
-                for ch in display_channels:
-                    stats = channel_stats[ch]
-                    stats_text += f"Ch{ch}: {stats['total']:,} | "
-
-                if len(channel_stats) > 6:
-                    stats_text += f"...+{len(channel_stats) - 6} more"
                 else:
-                    stats_text = stats_text.rstrip(" | ")
+                    # Channel not in data or curves - hide it
+                    if channel in self.curves:
+                        self.curves[channel].setData([], [])
 
-                self.stats_label.setText(stats_text)
+            # Update statistics display - only show displayed channels
+            if self.display_channels and channel_stats:
+                stats_text = f"Displayed: {total_counts:,} | "
+                for ch in self.display_channels:
+                    if ch in channel_stats:
+                        stats = channel_stats[ch]
+                        stats_text += f"Ch{ch}: {stats['total']:,} | "
+
+                self.stats_label.setText(stats_text.rstrip(" | "))
             else:
-                self.stats_label.setText("Statistics: Waiting for data...")
+                self.stats_label.setText("No channels selected for display")
 
             # Auto scale if enabled
             if self.auto_scale and total_counts > 0:
@@ -490,14 +496,20 @@ class MCASpectrumPlotter(QWidget):
         return self.mca_data.copy()
 
     def set_channels(self, channels):
-        """Update the list of channels to display"""
+        """Update the list of channels - COMPATIBILITY METHOD"""
+        print(f"MCAPlotter: set_channels called with {channels}")
+
+        # This method completely rebuilds the channel list and curves
         # Remove old curves
         for channel in self.channels:
             if channel in self.curves:
                 self.plot_widget.removeItem(self.curves[channel])
 
         # Update channels
+        old_channels = self.channels
         self.channels = channels
+        self.display_channels = channels.copy()  # Show all new channels by default
+
         # Preserve existing data, create empty arrays for new channels
         new_mca_data = {}
         for ch in self.channels:
@@ -514,9 +526,19 @@ class MCASpectrumPlotter(QWidget):
                 stepMode=True,  # Step plots for histogram data
             )
 
+        print(f"MCAPlotter: Rebuilt curves for channels {old_channels} -> {channels}")
+
     def set_display_channels(self, channels):
-        """Set which channels to display (compatibility method)"""
-        self.set_channels(channels)
+        """Set which channels to display - FIXED VERSION"""
+        print(f"MCAPlotter: set_display_channels called with {channels}")
+
+        # Store the display channels
+        self.display_channels = channels if channels else []
+
+        print(f"MCAPlotter: display_channels set to {self.display_channels}")
+
+        # Update the plots immediately to show/hide channels
+        self.update_plots()
 
     def export_data(self, filename):
         """Export MCA data to file (saves raw data, not rebinned)"""
@@ -531,3 +553,15 @@ class MCASpectrumPlotter(QWidget):
     def set_info_bar(self, info_bar):
         """Set reference to parent info bar for status updates"""
         self.info_bar = info_bar
+
+    def get_channel_info(self):
+        """Get current channel state for debugging"""
+        return {
+            "all_channels": self.channels,
+            "display_channels": self.display_channels,
+            "data_channels": list(self.mca_data.keys()),
+            "curve_channels": list(self.curves.keys()),
+            "data_counts": {
+                ch: len(data) for ch, data in self.mca_data.items() if len(data) > 0
+            },
+        }

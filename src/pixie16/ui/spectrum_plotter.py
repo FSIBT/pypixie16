@@ -31,14 +31,14 @@ class ContinuousSpectrumPlotter(QWidget):
     def __init__(
         self,
         app=None,
-        instrument_name: str = "pixie16",
-        display_name: str = "PIXIE Energy Spectra",
-        channels: list[int] = None,
-        channel_names: list[str] = None,
-        energy_range: tuple = (0, 4096),
-        bins: int = 1000,
-        bkg_color: str = "w",
-        update_hooks: list = None,
+        instrument_name="pixie16",
+        display_name="PIXIE Energy Spectra",
+        channels=None,
+        channel_names=None,
+        energy_range=(0, 4096),
+        bins=1000,
+        bkg_color="w",
+        update_hooks=None,
     ):
         super().__init__()
 
@@ -253,57 +253,59 @@ class ContinuousSpectrumPlotter(QWidget):
                 self.energy_data[channel].append(energies)
 
     def update_display(self):
-        """Update the spectrum display"""
         current_time = time.time()
         if current_time - self.last_update < self.update_rate:
             return
 
         self.last_update = current_time
-
         total_events = 0
 
+        # Process ALL channels but only display selected ones
         for channel in self.channels:
-            if channel not in self.energy_data or len(self.energy_data[channel]) == 0:
-                # No data for this channel
-                if channel in self.stats_labels:
-                    self.stats_labels[channel].setText(f"Ch{channel}: 0 events")
-                self.plot_items[channel].setData([], [])
-                continue
-
-            energies = list(self.energy_data[channel])
-            event_count = len(energies)
+            event_count = (
+                len(self.energy_data[channel]) if channel in self.energy_data else 0
+            )
             total_events += event_count
 
-            # Update statistics
+            # Update statistics for ALL channels (even hidden ones)
             if channel in self.stats_labels:
                 self.stats_labels[channel].setText(f"Ch{channel}: {event_count} events")
 
-            # Update plot if channel is in display list
-            if channel in self.display_channels and event_count > 0:
-                try:
-                    # Create histogram
-                    counts, bin_edges = np.histogram(
-                        energies, bins=self.bins, range=self.energy_range
-                    )
+            # Only display data for selected channels
+            if channel not in self.display_channels:
+                # Channel not selected for display - hide it
+                self.plot_items[channel].setData([], [])
+                continue
 
-                    # Calculate bin centers
-                    bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2
+            # Channel is selected for display
+            if event_count == 0:
+                # No data for this channel
+                self.plot_items[channel].setData([], [])
+                continue
 
-                    # Apply log scale if enabled
-                    if self.log_scale_cb.isChecked():
-                        # Avoid log(0) by setting minimum value
-                        plot_counts = np.where(counts > 0, counts, 0.1)
-                        plot_counts = np.log10(plot_counts)
-                    else:
-                        plot_counts = counts
+            # Display the channel data
+            try:
+                energies = list(self.energy_data[channel])
 
-                    self.plot_items[channel].setData(bin_centers, plot_counts)
+                # Create histogram
+                counts, bin_edges = np.histogram(
+                    energies, bins=self.bins, range=self.energy_range
+                )
 
-                except Exception as e:
-                    print(f"Error updating channel {channel}: {e}")
-                    self.plot_items[channel].setData([], [])
-            else:
-                # Hide channel
+                # Calculate bin centers
+                bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2
+
+                # Apply log scale if enabled
+                if self.log_scale_cb.isChecked():
+                    plot_counts = np.where(counts > 0, counts, 0.1)
+                    plot_counts = np.log10(plot_counts)
+                else:
+                    plot_counts = counts
+
+                self.plot_items[channel].setData(bin_centers, plot_counts)
+
+            except Exception as e:
+                print(f"Error updating channel {channel}: {e}")
                 self.plot_items[channel].setData([], [])
 
         # Auto scale if enabled
@@ -340,17 +342,19 @@ class ContinuousSpectrumPlotter(QWidget):
             self.display.setXRange(*self.energy_range)
 
     def set_display_channels(self, channels):
-        """Set which channels to display"""
-        print(f"List Mode Plotter: setting display channels to {channels}")
-        self.display_channels = channels
+        """Set which channels to display - FIXED VERSION"""
+        print(f"List Mode Plotter: set_display_channels called with {channels}")
+        self.display_channels = channels if channels else []
 
+        # hide unselected channels
         for channel in self.channels:
-            if channel in self.display_channels:
-                print(f"Showing channel {channel}")
-                # Channel will be shown in next update
-            else:
-                print(f"Hiding channel {channel}")
+            if channel not in self.display_channels:
                 self.plot_items[channel].setData([], [])
+                print(f"List Mode: Hiding channel {channel}")
+            else:
+                print(f"List Mode: Will show channel {channel}")
+
+        self.update_display()
 
     def clear_data(self):
         """Clear all spectrum data"""

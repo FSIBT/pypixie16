@@ -36,6 +36,7 @@ class TracesPlotter(QWidget):
         super().__init__()
 
         self.channels = channels or list(range(16))  # Channel numbers
+        self.display_channels = self.channels.copy()
 
         # Data storage - keyed by channel number
         self.trace_data = {
@@ -237,52 +238,27 @@ class TracesPlotter(QWidget):
         self.update_plots()
 
     def update_plots(self):
-        """Update the trace display"""
         try:
             total_traces = 0
             channel_stats = {}
 
+            # Process ALL channels but only display selected ones
             for channel in self.channels:
-                if channel in self.trace_data and len(self.trace_data[channel]) > 0:
+                has_data = (
+                    channel in self.trace_data and len(self.trace_data[channel]) > 0
+                )
+
+                if has_data:
                     traces = list(self.trace_data[channel])
+                    total_traces += len(traces)
 
-                    # Select traces to display (most recent up to max_traces_display)
-                    display_traces = traces[-self.max_traces_display :]
-
-                    if display_traces:
-                        # Create overlay of multiple traces
-                        trace_length = len(display_traces[0])
-                        time_axis = np.arange(trace_length) * self.time_per_sample
-
-                        # Plot all traces with some transparency
-                        combined_y = []
-                        combined_x = []
-
-                        for i, trace in enumerate(display_traces):
-                            if len(trace) == trace_length:  # Ensure consistent length
-                                # Offset traces slightly for visibility
-                                offset = i * 0.01  # Small vertical offset
-                                y_data = trace + offset
-
-                                combined_x.extend(time_axis)
-                                combined_x.append(
-                                    np.nan
-                                )  # Separator for multiple traces
-                                combined_y.extend(y_data)
-                                combined_y.append(np.nan)
-
-                        if combined_x and combined_y:
-                            self.curves[channel].setData(combined_x, combined_y)
-                            self.last_traces[channel] = display_traces[
-                                -1
-                            ]  # Keep most recent
-
-                        # Calculate statistics
-                        recent_trace = display_traces[-1]
+                    # Calculate statistics for ALL channels (even hidden ones)
+                    if traces:
+                        recent_trace = traces[-1]
                         amplitude = np.max(recent_trace) - np.min(recent_trace)
-                        baseline = np.mean(
-                            recent_trace[:10]
-                        )  # First 10 samples as baseline
+                        baseline = (
+                            np.mean(recent_trace[:10]) if len(recent_trace) > 10 else 0
+                        )
 
                         channel_stats[channel] = {
                             "count": len(traces),
@@ -292,19 +268,59 @@ class TracesPlotter(QWidget):
                             "min_value": np.min(recent_trace),
                         }
 
-                        total_traces += len(traces)
+                # Only display data for selected channels
+                if channel not in self.display_channels:
+                    # Channel not selected for display - hide it
+                    self.curves[channel].setData([], [])
+                    continue
 
-                else:
+                # Channel is selected for display
+                if not has_data:
                     # No data for this channel
                     self.curves[channel].setData([], [])
+                    continue
 
-            # Update statistics display
+                # Display the channel data
+                traces = list(self.trace_data[channel])
+                display_traces = traces[-self.max_traces_display :]
+
+                if display_traces:
+                    # Create overlay of multiple traces
+                    trace_length = len(display_traces[0])
+                    time_axis = np.arange(trace_length) * self.time_per_sample
+
+                    # Plot all traces with some transparency
+                    combined_y = []
+                    combined_x = []
+
+                    for i, trace in enumerate(display_traces):
+                        if len(trace) == trace_length:  # Ensure consistent length
+                            # Offset traces slightly for visibility
+                            offset = i * 0.01  # Small vertical offset
+                            y_data = trace + offset
+
+                            combined_x.extend(time_axis)
+                            combined_x.append(np.nan)  # Separator for multiple traces
+                            combined_y.extend(y_data)
+                            combined_y.append(np.nan)
+
+                    if combined_x and combined_y:
+                        self.curves[channel].setData(combined_x, combined_y)
+                        self.last_traces[channel] = display_traces[
+                            -1
+                        ]  # Keep most recent
+
+            # Update statistics display - show stats for displayed channels
             if self.show_statistics:
-                stats_text = f"Total Traces: {total_traces} | "
-                for ch, stats in channel_stats.items():
-                    stats_text += f"Ch{ch}: {stats['count']} traces, Amp: {stats['amplitude']:.3f}V | "
-
-                self.stats_label.setText(stats_text.rstrip(" | "))
+                if self.display_channels:
+                    stats_text = f"Total Traces: {total_traces} | "
+                    for ch in self.display_channels:
+                        if ch in channel_stats:
+                            stats = channel_stats[ch]
+                            stats_text += f"Ch{ch}: {stats['count']} traces, Amp: {stats['amplitude']:.3f}V | "
+                    self.stats_label.setText(stats_text.rstrip(" | "))
+                else:
+                    self.stats_label.setText("No channels selected for display")
             else:
                 self.stats_label.setText("Statistics hidden")
 
@@ -343,8 +359,19 @@ class TracesPlotter(QWidget):
             )
 
     def set_display_channels(self, channels):
-        """Set which channels to display (compatibility with scope interface)"""
-        self.set_channels(channels)
+        print(f"Traces Plotter: set_display_channels called with {channels}")
+        self.display_channels = channels if channels else []
+
+        # Immediately hide non-selected channels
+        for channel in self.channels:
+            if channel not in self.display_channels:
+                self.curves[channel].setData([], [])
+                print(f"Traces: Hiding channel {channel}")
+            else:
+                print(f"Traces: Will show channel {channel}")
+
+        # Force immediate update
+        self.update_plots()
 
     def get_trace_data(self):
         """Get current trace data for saving"""
