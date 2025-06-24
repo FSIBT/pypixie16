@@ -6,7 +6,8 @@ class Status(enum.Enum):
     Represents ``Task`` states.
     """
 
+    DONE = "🆒"
+    READY = "✅"
     RUNNING = "▶️"
     PAUSED = "⏸️"
-    FINISHED = "✅"
     ERROR = "🆘"

@@ -4,27 +4,27 @@ import pixie16
 
 
 class Test_PrintData:
-
-    def test(self):
-        pipeline = pixie16.pipeline.Pipeline()
-        printer = pixie16.pipeline.tasks.PrintData("Print Data", pipeline.address_router)
-        pipeline.task_append(printer)
+    @staticmethod
+    def test():
+        printer = pixie16.pipeline.tasks.PrintData("Print Data")
+        pipeline = pixie16.pipeline.Pipeline(printer)
         pipeline.init(["Print Data"])
         pipeline.start()
 
-        while printer.is_alive():
+        while True:
             pipeline.poll()
 
-            if pipeline.reports["Print Data"]["status"] == pixie16.pipeline.Status.RUNNING:
-                pipeline.task_stop("Print Data")
-
-            if pipeline.reports["Print Data"]["status"] == pixie16.pipeline.Status.FINISHED:
+            if (
+                pipeline.reports["Print Data"]["status"]
+                == pixie16.pipeline.Status.PAUSED
+            ):
                 break
+            if (
+                pipeline.reports["Print Data"]["status"]
+                == pixie16.pipeline.Status.ERROR
+            ):
+                assert False
 
-            for report in pipeline.reports.values():
-                if report["status"] == pixie16.pipeline.Status.ERROR:
-                    assert False
+            pipeline.pause()
 
-            time.sleep(0.1)
-
-        pipeline.task_remove("Print Data")
+        pipeline.stop()

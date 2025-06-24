@@ -26,16 +26,15 @@ class DummyData(task.Task):
         filename: Path to dummy data.
     """
 
-    def __init__(self, name: str, address_router: str):
+    def __init__(self, name: str):
         """
         Iniailzies ``DummyData``.
 
         Parameters:
             name: Task name.
-            address_router: Pipeline ZMQ router address.
         """
 
-        super().__init__(name, address_router)
+        super().__init__(name)
 
         self.pos = 0
         self.runtime = 10
@@ -76,7 +75,7 @@ class DummyData(task.Task):
         # Checking runtime.
         self.time_done = time.time() - self.time_start
         if self.time_done >= self.runtime:
-            self.status = status.Status.FINISHED
+            self.send_report({"finished": True})
             return
 
         # Chuncking dummy data.
@@ -88,9 +87,7 @@ class DummyData(task.Task):
             ret = self.data[self.pos :]
             self.pos = 0
 
-        ret = {m: ret for m in self.modules}
-
-        self.send_data(ret)
+        self.send_data({m: ret for m in self.modules})
 
     def add_user_status(self, stat):
         stat["runtime"] = self.runtime

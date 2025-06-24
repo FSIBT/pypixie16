@@ -1,12 +1,14 @@
 import sys
+import copy
 import typing
 import pickle
 import itertools
 
 import zmq
 
-from . import task
-from . import message
+from .task import Task
+from .status import Status
+from .message import Message
 
 
 class Pipeline:
@@ -28,7 +30,7 @@ class Pipeline:
         * 🔣 PRINT: Print to stdout/stderr.
 
     Attributes:
-        names: Names of active tasks.
+        tasks_active: Names of active tasks.
         tasks: Pools of tasks.
         reports: Task reports.
         context: ZMQ context.
@@ -37,21 +39,29 @@ class Pipeline:
         poller: ZMQ poller.
     """
 
-    def __init__(self):
+    def __init__(self, *tasks: Task):
         """
         Initializes ``Pipeline``.
         """
 
-        self.names = []
-        self.tasks = {}
+        self._tasks_active = []
+        self._tasks_all = {}
         self.reports = {}
-
         self.context = zmq.Context()
         self.socket_router = self.context.socket(zmq.ROUTER)
         self.address_router = self.socket_router.bind_to_random_port("tcp://127.0.0.1")
         self.address_router = f"tcp://127.0.0.1:{self.address_router}"
-        self.poller = zmq.Poller()
-        self.poller.register(self.socket_router, zmq.POLLIN)
+
+        for task in tasks:
+            if task.status != Status.READY:
+                raise RuntimeError
+
+            self._tasks_all[task.name] = task
+            task.address_router = self.address_router
+            task.start()
+
+            while task.name not in self.reports:
+                self.poll()
 
     def handle_report(self, name: str, report: dict[str, typing.Any]) -> None:
         """
@@ -62,7 +72,7 @@ class Pipeline:
             report: Recieved report.
         """
 
-        if name not in self.tasks:
+        if name not in self._tasks_all:
             raise ValueError
 
         self.reports[name] = report
@@ -77,7 +87,7 @@ class Pipeline:
             stderr: Recieved stderr.
         """
 
-        if name not in self.tasks:
+        if name not in self._tasks_all:
             raise ValueError
 
         if stdout:
@@ -85,7 +95,7 @@ class Pipeline:
         if stderr:
             print(stderr, file=sys.stderr)
 
-    def task_connect(self, name: str, address_pull: str) -> None:
+    def send_connect(self, name: str, address_pull: str) -> None:
         """
         Sends ``CONNECT`` messages to tasks.
 
@@ -94,15 +104,13 @@ class Pipeline:
             address_pull: ZMQ pull socket address.
         """
 
-        if name not in self.tasks:
+        if name not in self._tasks_all:
             raise ValueError
 
-        msg = pickle.dumps(message.Message.CONNECT(address_pull))
+        msg = pickle.dumps(Message.CONNECT(address_pull))
         self.socket_router.send_multipart([name.encode(), msg])
 
-        self.socket_router.recv_multipart()
-
-    def task_disconnect(self, name: str) -> None:
+    def send_disconnect(self, name: str) -> None:
         """
         Sends ``DISCONNECT`` messages to tasks.
 
@@ -110,13 +118,13 @@ class Pipeline:
             name: Task name.
         """
 
-        if name not in self.tasks:
+        if name not in self._tasks_all:
             raise ValueError
 
-        msg = pickle.dumps(message.Message.DISCONNECT)
+        msg = pickle.dumps(Message.DISCONNECT)
         self.socket_router.send_multipart([name.encode(), msg])
 
-    def task_start(self, name: str) -> None:
+    def send_start(self, name: str) -> None:
         """
         Sends ``START`` messages to tasks.
 
@@ -124,13 +132,13 @@ class Pipeline:
             name: Task name.
         """
 
-        if name not in self.tasks:
+        if name not in self._tasks_all:
             raise ValueError
 
-        msg = pickle.dumps(message.Message.START)
+        msg = pickle.dumps(Message.START)
         self.socket_router.send_multipart([name.encode(), msg])
 
-    def task_pause(self, name: str) -> None:
+    def send_pause(self, name: str) -> None:
         """
         Sends ``PAUSE`` messages to tasks.
 
@@ -138,13 +146,13 @@ class Pipeline:
             name: Task name.
         """
 
-        if name not in self.tasks:
+        if name not in self._tasks_all:
             raise ValueError
 
-        msg = pickle.dumps(message.Message.PAUSE)
+        msg = pickle.dumps(Message.PAUSE)
         self.socket_router.send_multipart([name.encode(), msg])
 
-    def task_stop(self, name: str) -> None:
+    def send_stop(self, name: str) -> None:
         """
         Sends ``STOP`` messages to tasks.
 
@@ -152,15 +160,13 @@ class Pipeline:
             name: Task name.
         """
 
-        if name not in self.tasks:
+        if name not in self._tasks_all:
             raise ValueError
 
-        msg = pickle.dumps(message.Message.STOP)
+        msg = pickle.dumps(Message.STOP)
         self.socket_router.send_multipart([name.encode(), msg])
 
-        self.socket_router.recv_multipart()
-
-    def task_configure(self, name: str, config: dict[str, typing.Any]) -> None:
+    def send_configure(self, name: str, config: dict[str, typing.Any]) -> None:
         """
         Sends ``CONFIGURE`` messages to tasks.
 
@@ -169,118 +175,70 @@ class Pipeline:
             config: Recieved parameters.
         """
 
-        if name not in self.tasks:
+        if name not in self._tasks_all:
             raise ValueError
 
-        msg = pickle.dumps(message.Message.CONFIGURE(config))
+        msg = pickle.dumps(Message.CONFIGURE(config))
         self.socket_router.send_multipart([name.encode(), msg])
 
-    def task_append(self, tsk: task.Task) -> str:
-        """
-        Pushes task to the pool.
-
-        Parameter:
-            tsk: Task to append.
-
-        Returns:
-            Name of the task appended.
-        """
-
-        if tsk.name in self.tasks:
-            raise ValueError
-
-        self.tasks[tsk.name] = tsk
-
-        tsk.start()
-
-        while tsk.name not in self.reports:
-            self.poll()
-
-        return tsk.name
-
-    def task_remove(self, name: str) -> task.Task:
-        """
-        Pops task off the pool.
-
-        Parameter:
-            name: Name of task to remove.
-
-        Returns:
-            Task removed.
-        """
-
-        if name not in self.tasks:
-            raise ValueError
-
-        if self.tasks[name].is_alive():
-            self.task_stop(name)
-
-        tsk = self.tasks.pop(name)
-
-        tsk.join()
-        tsk.close()
-        # tsk.kill()
-
-        return tsk
-
-    def init(self, names: list[str]) -> None:
+    def init(self, tasks_active: list[str]) -> None:
         """
         Initialize the chain by pausing, disconnecting, and reconnecting
         tasks.
 
         Parameters:
-            names: Names of tasks to connect.
+            tasks_active: Names of tasks to connect.
         """
 
         # Pausing & disconnecting old tasks.
-        if self.names:
-            for name in self.names:
-                self.task_pause(name)
-                self.task_disconnect(name)
+        if self._tasks_active:
+            for name in self._tasks_active:
+                self.send_pause(name)
+                self.send_disconnect(name)
 
         # Pausing & disconnecting new tasks.
-        for name in names:
-            self.task_pause(name)
-            self.task_disconnect(name)
+        for name in tasks_active:
+            self.send_pause(name)
+            self.send_disconnect(name)
 
-        self.names = names
+        self._tasks_active = tasks_active
 
         # Connecting new tasks
-        if len(names) > 1:
-            for name_a, name_b in itertools.pairwise(names):
-                self.task_connect(name_b, self.reports[name_a]["address_push"])
+        if len(tasks_active) > 1:
+            for name_a, name_b in itertools.pairwise(tasks_active):
+                self.send_connect(name_b, self.reports[name_a]["address_push"])
 
     def start(self) -> None:
         """
         Starts the chain.
         """
 
-        for name in self.names:
-            self.task_start(name)
+        for name in self._tasks_active:
+            self.send_start(name)
 
     def pause(self) -> None:
         """
         Pauses the chain.
         """
 
-        for name in self.names:
-            self.task_pause(name)
+        for name in self._tasks_active:
+            self.send_pause(name)
 
     def stop(self) -> None:
         """
         Stops the chain.
         """
 
-        for name in self.names:
-            self.task_stop(name)
+        for name in self._tasks_active:
+            self.send_stop(name)
 
     def configure(self, config: dict[str, typing.Any]) -> None:
         """
         Configures the chain.
         """
 
-        for name in self.names:
-            self.task_configure(name, config)
+        for name in self._tasks_active:
+            self.send_configure(name, config)
 
     def poll(self) -> None:
         """
@@ -294,7 +252,9 @@ class Pipeline:
         except zmq.Again:
             return
 
-        if type(msg) == message.Message.REPORT:
+        if type(msg) == Message.REPORT:
             self.handle_report(name, *msg())
-        elif type(msg) == message.Message.PRINT:
+        elif type(msg) == Message.PRINT:
             self.handle_print(name, *msg())
+        else:
+            raise RuntimeError

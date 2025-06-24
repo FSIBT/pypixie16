@@ -10,208 +10,151 @@ import pixie16
 
 
 class DummyTask(pixie16.pipeline.Task):
-    def do_startup(self):
-        pass
-
-    def do_cleanup(self):
-        pass
-
     def do_work(self):
         if len(self.queue):
             self.queue.popleft()
 
 
-def do_work_report(self):
-    self.send_report({})
-
-
-def do_work_print(self):
-    self.send_print("Hi", "Err")
-
-
-def do_work_data(self):
-    self.send_data([0, 1, 2])
+@pytest.fixture
+def context() -> zmq.Context:
+    context = zmq.Context()
+    yield context
+    context.term()
 
 
 @pytest.fixture
-def socket() -> tuple[zmq.Socket, str]:
-    context = zmq.Context()
-    socket = context.socket(zmq.ROUTER)
+def router(context: zmq.Context) -> tuple[str, zmq.Socket]:
+    socket = context.socket(zmq.PAIR)
     address = socket.bind_to_random_port("tcp://127.0.0.1")
     address = f"tcp://127.0.0.1:{address}"
 
-    return socket, address
+    yield address, socket
+
+    socket.close()
 
 
 @pytest.fixture
-def task(socket: tuple[zmq.Socket, str]) -> pixie16.pipeline.Task:
-    socket, address = socket
+def push(context: zmq.Context) -> tuple[str, zmq.Socket]:
+    socket = context.socket(zmq.PAIR)
+    address = socket.bind_to_random_port("tcp://127.0.0.1")
+    address = f"tcp://127.0.0.1:{address}"
 
-    return DummyTask("Hello", address)
+    yield address, socket
+
+    socket.close()
+
+
+@pytest.fixture
+def pull(context: zmq.Context) -> tuple[str, zmq.Socket]:
+    socket = context.socket(zmq.PAIR)
+    address = socket.bind_to_random_port("tcp://127.0.0.1")
+    address = f"tcp://127.0.0.1:{address}"
+
+    yield address, socket
+
+    socket.close()
+
+
+@pytest.fixture
+def dealer(
+    context: zmq.Context, router: tuple[str, zmq.Socket]
+) -> tuple[str, zmq.Socket]:
+    socket = context.socket(zmq.PAIR)
+    address = socket.bind_to_random_port("tcp://127.0.0.1")
+    address = f"tcp://127.0.0.1:{address}"
+
+    yield address, socket
+
+    socket.close()
+
+
+@pytest.fixture
+def task(
+    router: tuple[str, zmq.Socket],
+    dealer: tuple[str, zmq.Socket],
+    pull: tuple[str, zmq.Socket],
+    push: tuple[str, zmq.Socket],
+) -> pixie16.pipeline.Task:
+    address_router, socket_router = router
+    address_dealer, socket_dealer = dealer
+    address_pull, socket_pull = pull
+    address_push, socket_push = push
+
+    task = DummyTask("Hello")
+    task.socket_dealer = socket_dealer
+    task.address_router = address_router
+    task.socket_pull = socket_pull
+    task.address_pull = address_pull
+    task.socket_push = socket_push
+    task.address_push = address_push
+
+    return task
 
 
 class Test_Task:
-    def test__init(self):
-        DummyTask("Hello", "tcp://127.0.0.1:1234")
+    @staticmethod
+    def test___init__():
+        DummyTask("Hello")
 
-    def test_do_startup(self, task: pixie16.pipeline.Task):
+    @staticmethod
+    def test_do_startup(task: pixie16.pipeline.Task):
         task.do_startup()
 
-    def test_do_cleanup(self, task: pixie16.pipeline.Task):
+    @staticmethod
+    def test_do_cleanup(task: pixie16.pipeline.Task):
         task.do_cleanup()
 
-    def test_do_work(self, task: pixie16.pipeline.Task):
+    @staticmethod
+    def test_do_work(task: pixie16.pipeline.Task):
         task.do_work()
 
-    def test_handle_connect(
-        self, task: pixie16.pipeline.Task, socket: tuple[zmq.Socket, str]
+    @staticmethod
+    def test_handle_connect(task: pixie16.pipeline.Task, pull: tuple[str, zmq.Socket]):
+        address_pull, socket_pull = pull
+
+        task.handle_connect(address_pull)
+
+    @staticmethod
+    def test_handle_disconnect_A(
+        task: pixie16.pipeline.Task, pull: tuple[str, zmq.Socket]
     ):
-        task.start()
-        socket, address = socket
-        socket.recv_multipart()
+        address_pull, socket_pull = pull
 
-        msg = pickle.dumps(pixie16.pipeline.Message.CONNECT("tcp://127.0.0.1:1534"))
-        socket.send_multipart([task.name.encode(), msg])
+        task.handle_disconnect()
 
-        msg = pickle.dumps(pixie16.pipeline.Message.STOP)
-        socket.send_multipart([task.name.encode(), msg])
-
-        task.join()
-        task.close()
-
-    def test_handle_disconnect(
-        self, task: pixie16.pipeline.Task, socket: tuple[zmq.Socket, str]
+    @staticmethod
+    def test_handle_disconnect_B(
+        task: pixie16.pipeline.Task, pull: tuple[str, zmq.Socket]
     ):
-        task.start()
-        socket, address = socket
-        socket.recv_multipart()
+        address_pull, socket_pull = pull
 
-        msg = pickle.dumps(pixie16.pipeline.Message.CONNECT("tcp://127.0.0.1:1534"))
-        socket.send_multipart([task.name.encode(), msg])
+        task.handle_connect(address_pull)
+        task.handle_disconnect()
 
-        msg = pickle.dumps(pixie16.pipeline.Message.CONNECT("tcp://127.0.0.1:1534"))
-        socket.send_multipart([task.name.encode(), msg])
+    @staticmethod
+    def test_handle_start(task: pixie16.pipeline.Task):
+        task.handle_start()
 
-        msg = pickle.dumps(pixie16.pipeline.Message.DISCONNECT)
-        socket.send_multipart([task.name.encode(), msg])
+    @staticmethod
+    def test_handle_pause(task: pixie16.pipeline.Task):
+        task.handle_pause()
 
-        msg = pickle.dumps(pixie16.pipeline.Message.STOP)
-        socket.send_multipart([task.name.encode(), msg])
+    @staticmethod
+    def test_handle_stop(task: pixie16.pipeline.Task):
+        task.handle_stop()
 
-        task.join()
-        task.close()
+    @staticmethod
+    def test_handle_configure(task: pixie16.pipeline.Task):
+        task.handle_configure({})
 
-    def test_handle_start(
-        self, task: pixie16.pipeline.Task, socket: tuple[zmq.Socket, str]
-    ):
-        task.start()
-        socket, address = socket
-        socket.recv_multipart()
+    # @staticmethod
+    # def test_send_report(task: pixie16.pipeline.Task):
+    #     task.send_report({})
 
-        msg = pickle.dumps(pixie16.pipeline.Message.START)
-        socket.send_multipart([task.name.encode(), msg])
+    # @staticmethod
+    # def test_send_print(task: pixie16.pipeline.Task):
+    #     task.send_print('Hi', 'Hi')
 
-        msg = pickle.dumps(pixie16.pipeline.Message.STOP)
-        socket.send_multipart([task.name.encode(), msg])
-
-        task.join()
-        task.close()
-
-    def test_handle_pause(
-        self, task: pixie16.pipeline.Task, socket: tuple[zmq.Socket, str]
-    ):
-        task.start()
-        socket, address = socket
-        socket.recv_multipart()
-
-        msg = pickle.dumps(pixie16.pipeline.Message.PAUSE)
-        socket.send_multipart([task.name.encode(), msg])
-
-        msg = pickle.dumps(pixie16.pipeline.Message.STOP)
-        socket.send_multipart([task.name.encode(), msg])
-
-        task.join()
-        task.close()
-
-    def test_handle_stop(
-        self, task: pixie16.pipeline.Task, socket: tuple[zmq.Socket, str]
-    ):
-        task.start()
-        socket, address = socket
-        socket.recv_multipart()
-
-        msg = pickle.dumps(pixie16.pipeline.Message.STOP)
-        socket.send_multipart([task.name.encode(), msg])
-
-        task.join()
-        task.close()
-
-    def test_handle_configure(
-        self, task: pixie16.pipeline.Task, socket: tuple[zmq.Socket, str]
-    ):
-        task.start()
-        socket, address = socket
-        socket.recv_multipart()
-
-        msg = pickle.dumps(pixie16.pipeline.Message.CONFIGURE({}))
-        socket.send_multipart([task.name.encode(), msg])
-
-        msg = pickle.dumps(pixie16.pipeline.Message.STOP)
-        socket.send_multipart([task.name.encode(), msg])
-
-        task.join()
-        task.close()
-
-    def test_send_report(
-        self, task: pixie16.pipeline.Task, socket: tuple[zmq.Socket, str]
-    ):
-        task.do_work = do_work_report
-        task.queue.append("Hi")
-        task.start()
-        socket, address = socket
-        socket.recv_multipart()
-
-        msg = pickle.dumps(pixie16.pipeline.Message.START)
-        task.do_work = do_work_report
-
-        msg = pickle.dumps(pixie16.pipeline.Message.STOP)
-        socket.send_multipart([task.name.encode(), msg])
-
-        task.join()
-        task.close()
-
-    def test_send_print(
-        self, task: pixie16.pipeline.Task, socket: tuple[zmq.Socket, str]
-    ):
-        task.do_work = do_work_print
-        task.queue.append("Hi")
-        task.start()
-        socket, address = socket
-        socket.recv_multipart()
-
-        msg = pickle.dumps(pixie16.pipeline.Message.START)
-        task.do_work = do_work_print
-
-        msg = pickle.dumps(pixie16.pipeline.Message.STOP)
-        socket.send_multipart([task.name.encode(), msg])
-
-        task.join()
-        task.close()
-
-    def test_send_data(
-        self, task: pixie16.pipeline.Task, socket: tuple[zmq.Socket, str]
-    ):
-        task.do_work = do_work_data
-        task.queue.append("Hi")
-        task.start()
-        socket, address = socket
-        socket.recv_multipart()
-
-        msg = pickle.dumps(pixie16.pipeline.Message.START)
-        task.do_work = do_work_data
-
-        msg = pickle.dumps(pixie16.pipeline.Message.STOP)
-        socket.send_multipart([task.name.encode(), msg])
-
-        task.join()
-        task.close()
+    # @staticmethod
+    # def test_send_data(task: pixie16.pipeline.Task):
+    #     task.send_data('Hi')

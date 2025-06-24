@@ -10,8 +10,8 @@ import multiprocessing
 
 import zmq
 
-from . import status
-from . import message
+from .status import Status
+from .message import Message
 
 
 class Task(multiprocessing.Process, abc.ABC):
@@ -23,7 +23,8 @@ class Task(multiprocessing.Process, abc.ABC):
 
     * ▶️ RUNNING: Processing data.
     * ⏸️ PAUSED: Waiting to process data.
-    * ✅ FINISHED: Done processing data.
+    * 🆒 DONE: Done processing data.
+    * ✅ READY: Process initialized.
     * 🆘 ERROR: Failing to process data.
 
     Tasks uses ZMQ Push/Pull sockets to get and send messages between other
@@ -80,45 +81,41 @@ class Task(multiprocessing.Process, abc.ABC):
         the pipeline.
     """
 
-    class_registry = {}
-
-    def __init_subclass__(cls, **kwargs):
-        """
-        Stores subclasses in ``class_registry``.
-        """
-
-        super().__init_subclass__(**kwargs)
-
-        Task.class_registry[cls.__name__] = cls
-
-    def __init__(self, name: str, address_router: str):
+    def __init__(self, name: str):
         """
         Initializes ``Task``.
 
         Parameters:
             name: Task name.
             address_pull: ZMQ pull socket address.
+
+        Note:
+            This function runs in the main process.
         """
 
         super().__init__()
 
         self.name: str = name
-        self.address_router: str = address_router
-
+        self._kill: bool = False
         self.queue: collections.deque = collections.deque()
-        self.config: dict[str, typing.Any] = dict()
-        self.status: status.Status = status.Status.PAUSED
+        self.config: dict[str, typing.Any] = {}
+        self.status: Status = Status.READY
 
+        # ZMQ fields:
         self.context: zmq.Context = None
         self.socket_pull: zmq.Socket = None
         self.socket_push: zmq.Socket = None
         self.socket_dealer: zmq.Socket = None
         self.address_pull: str = None
         self.address_push: str = None
+        self.address_router: str = None
 
     def do_startup(self) -> None:
         """
         Called after initialization.
+
+        Note:
+            This function runs in the subprocess.
         """
 
         pass
@@ -126,6 +123,9 @@ class Task(multiprocessing.Process, abc.ABC):
     def do_cleanup(self) -> None:
         """
         Called after termination.
+
+        Note:
+            This function runs in the subprocess.
         """
 
         pass
@@ -145,6 +145,9 @@ class Task(multiprocessing.Process, abc.ABC):
             off the queue, processes it, and return. Task runtimes will call
             ``do_work`` repeatedly while the task has the RUNING status and the
             queue has data.
+
+        Note:
+            This function runs in the subprocess.
         """
 
         raise NotImplementedError
@@ -160,44 +163,47 @@ class Task(multiprocessing.Process, abc.ABC):
         self.socket_pull.connect(address_pull)
         self.address_pull = address_pull
 
-        self.send_report({})
-
     def handle_disconnect(self) -> None:
         """
         Handles ``DISCONNECT`` messages from the pipeline.
+
+        Note:
+            This function runs in the subprocess.
         """
 
         if self.address_pull:
             self.socket_pull.disconnect(self.address_pull)
         self.address_pull = None
 
-        self.queue = collections.deque()
-
-        self.send_report({})
-
     def handle_start(self) -> None:
         """
         Handles ``START`` messages from the pipeline.
+
+        Note:
+            This function runs in the subprocess.
         """
 
-        self.status = status.Status.RUNNING
-        self.send_report({})
+        self.status = Status.RUNNING
 
     def handle_pause(self) -> None:
         """
         Handles ``PAUSE`` messages from the pipeline.
+
+        Note:
+            This function runs in the subprocess.
         """
 
-        self.status = status.Status.PAUSED
-        self.send_report({})
+        self.status = Status.PAUSED
 
     def handle_stop(self) -> None:
         """
         Handles ``STOP`` messages from the pipeline.
+
+        Note:
+            This function runs in the subprocess.
         """
 
-        self.status = status.Status.FINISHED
-        self.send_report({})
+        self._kill = True
 
     def handle_configure(self, config: dict[str, typing.Any]) -> None:
         """
@@ -205,14 +211,19 @@ class Task(multiprocessing.Process, abc.ABC):
 
         Parameters:
             config: Recieved parameters.
+
+        Note:
+            This function runs in the subprocess.
         """
 
         self.config = config
-        self.send_report({})
 
     def send_report(self, report: dict[str, typing.Any]) -> None:
         """
         Sends ``REPORT`` messages to the pipeline.
+
+        Note:
+            This function runs in the subprocess.
         """
 
         report |= {
@@ -224,9 +235,7 @@ class Task(multiprocessing.Process, abc.ABC):
             "address_router": self.address_router,
         }
 
-        msg = pickle.dumps(
-            message.Message.REPORT(report), protocol=pickle.HIGHEST_PROTOCOL
-        )
+        msg = pickle.dumps(Message.REPORT(report), protocol=pickle.HIGHEST_PROTOCOL)
         self.socket_dealer.send(msg)
 
     def send_print(self, stdout: str, stderr: str) -> None:
@@ -236,10 +245,13 @@ class Task(multiprocessing.Process, abc.ABC):
         Parameters:
             stdout: Captured stdout to send.
             stderr: Captured stderr to send.
+
+        Note:
+            This function runs in the subprocess.
         """
 
         msg = pickle.dumps(
-            message.Message.PRINT(stdout, stderr), protocol=pickle.HIGHEST_PROTOCOL
+            Message.PRINT(stdout, stderr), protocol=pickle.HIGHEST_PROTOCOL
         )
         self.socket_dealer.send(msg)
 
@@ -249,10 +261,49 @@ class Task(multiprocessing.Process, abc.ABC):
 
         Parameters:
             data: Sent data.
+
+        Note:
+            This function runs in the subprocess.
         """
 
-        msg = message.Message.DATA(data)
+        msg = Message.DATA(data)
         self.socket_push.send_pyobj(msg)
+
+    def poll(self) -> None:
+        """
+        Polls the sockets, checking for and processing messages, without blocking.
+        """
+
+        # Processing messages from pipeline.
+        try:
+            msg = self.socket_dealer.recv(flags=zmq.NOBLOCK)
+            msg = pickle.loads(msg)
+
+            if type(msg) == Message.CONNECT:
+                self.handle_connect(*msg())
+            elif msg == Message.DISCONNECT:
+                self.handle_disconnect()
+            elif msg == Message.START:
+                self.handle_start()
+            elif msg == Message.PAUSE:
+                self.handle_pause()
+            elif msg == Message.STOP:
+                self.handle_stop()
+            elif type(msg) == Message.CONFIGURE:
+                self.handle_configure(*msg())
+            else:
+                assert False
+
+            self.send_report({})
+        except zmq.Again:
+            pass
+
+        # Processing messages from tasks.
+        try:
+            msg = self.socket_pull.recv_pyobj(flags=zmq.NOBLOCK)
+            self.queue.append(*msg())
+        except zmq.Again:
+            pass
 
     def run(self):
         """
@@ -261,90 +312,60 @@ class Task(multiprocessing.Process, abc.ABC):
         This function initializes ZMQ sockets, dispatches interprocess
         communication, implements the state machine, and calls the
         user-implemented "do" methods.
+
+        Note:
+            This function is the subprocess
         """
 
-        # Creating ZMQ sockets.
+        self.status = Status.PAUSED
+
+        # Opening ZMQ sockets.
         self.context = zmq.Context()
         self.socket_dealer = self.context.socket(zmq.DEALER)
         self.socket_push = self.context.socket(zmq.PUSH)
         self.socket_pull = self.context.socket(zmq.PULL)
-
-        # Configuring ZMQ sockets.
         self.socket_dealer.setsockopt(zmq.IDENTITY, self.name.encode())
         self.socket_dealer.connect(self.address_router)
-
         self.address_push = self.socket_push.bind_to_random_port("tcp://127.0.0.1")
         self.address_push = f"tcp://127.0.0.1:{self.address_push}"
 
         # Doing startup and collecting stdout/stderr
         try:
             self.do_startup()
-            # self.send_print(f.read(), g.read())
         except Exception as err:
-            print(err)
-            exit(1)
+            self.status = Status.ERROR
+            self.send_report({"error": err})
 
         self.send_report({})
 
-        while True:
-            # Processing messages from pipeline.
+        while self._kill:
+            self.poll()
+
             try:
-                msg = self.socket_dealer.recv(flags=zmq.NOBLOCK)
-                msg = pickle.loads(msg)
-
-                if type(msg) == message.Message.CONNECT:
-                    self.handle_connect(*msg())
-                elif msg == message.Message.DISCONNECT:
-                    self.handle_disconnect()
-                elif msg == message.Message.START:
-                    self.handle_start()
-                elif msg == message.Message.PAUSE:
-                    self.handle_pause()
-                elif msg == message.Message.STOP:
-                    self.handle_stop()
-                elif type(msg) == message.Message.CONFIGURE:
-                    self.handle_configure(*msg())
-                else:
-                    self.status = status.Status.ERROR
-                    self.send_report({"error": msg})
-            except zmq.Again:
-                pass
-
-            # Processing messages from tasks.
-            try:
-                msg = self.socket_pull.recv_pyobj(flags=zmq.NOBLOCK)
-                self.queue.append(*msg())
-            except zmq.Again:
-                pass
-
-            # Proceeding according to state.
-            if self.status == status.Status.RUNNING:
-                try:
-                    # Doing work and collecting stdout/stderr
+                if self.status == Status.RUNNING:
                     self.do_work()
-                    # self.send_print(f.read(), g.read())
-                except Exception as err:
-                    self.status = status.Status.ERROR
-                    self.send_report({"error": err})
-            elif self.status == status.Status.PAUSED:
-                time.sleep(0.1)
-            elif self.status == status.Status.FINISHED:
-                time.sleep(0.1)
-                self.send_report({})
-                break
-            elif self.status == status.Status.ERROR:
-                time.sleep(0.1)
-            else:
-                self.status = status.Status.ERROR
-                self.send_report({"error": msg})
+                elif self.status == Status.PAUSED:
+                    pass
+                elif self.status == Status.ERROR:
+                    pass
+                else:
+                    raise RuntimeError
+            except Exception as err:
+                self.status = Status.ERROR
+                self.send_report({"error": err})
+
+            time.sleep(0.1)
+
+        self.send_report({})
 
         # Doing cleanup and collecting stdout/stderr
         try:
             self.do_cleanup()
-            # self.send_print(f.read(), g.read())
         except Exception as err:
-            print(err)
-            exit(1)
+            self.status = Status.ERROR
+            self.send_report({"error": err})
+
+        self.send_report({})
 
         # Closing ZMQ sockets.
         if self.socket_pull:
@@ -355,3 +376,5 @@ class Task(multiprocessing.Process, abc.ABC):
             self.socket_dealer.close()
         if self.context:
             self.context.term()
+
+        self.status = Status.DONE
