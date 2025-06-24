@@ -1,68 +1,99 @@
+import time
+import pathlib
+
+import numpy as np
+
 from .. import task
 from ... import read
+from .. import status
+from .. import message
 from ... import control
 
 
 class DummyData(task.Task):
-    """A class that will send dummy data into a pipeline.
+    """
+    Sends dummy data into a chain.
 
-    This can be used as a first task in a pipeline during testing and
-    when the pixie16 is not online/available.
+    This task goes first in a chain and stands in for a pixie16. It helps
+    during testing, debugging, and whenever a pixie16 is offline/unavaliable.
 
+    Attributes:
+        pos: Stream position.
+        runtime: Desired runtime.
+        time_done: Current runtime.
+        time_start: Run start time.
+        data: Dummy data.
+        filename: Path to dummy data.
     """
 
-    def __init__(self, pipeline_address):
-        super().__init__(pipeline_address)
-        self.name = "Data generator"
+    def __init__(self, name: str, address_router: str):
+        """
+        Iniailzies ``DummyData``.
 
+        Parameters:
+            name: Task name.
+            address_router: Pipeline ZMQ router address.
+        """
+
+        super().__init__(name, address_router)
+
+        self.pos = 0
         self.runtime = 10
         self.time_done = 0
-        self.filename = None
+        self.filename = (
+            pathlib.Path(__file__).parent.parent.parent.parent.parent
+            / "tests"
+            / "files"
+            / "bin"
+            / "pixie16-data-01.bin"
+        )
 
-        self.data = None
-        self.length = 0
-        self.chunk_size = 20_000
-        self.mycounter = 0
-        self.pos = 0
+        self.config = {
+            "modules": None,
+            "runtime": None,
+            "chunk_size": None,
+        }
 
-        self.status_frequency = 1
+    def do_startup(self):
+        """
+        Prepares the data and configuration.
+        """
 
-    def configure(self):
-        if (filename := self.state.get("filename")) is None:
-            self.filename = files("pixie16") / "data" / "pixie16-data-01.bin"
-        else:
-            self.filename = Path(filename)
-
+        # Load data & metadata.
         self.data = np.fromfile(self.filename, dtype=np.uint8)
-        self.length = len(self.data)
-        self.chunk_size = self.state.get("chunk_size") or 20_000
-        self.pos = 0
-        if self.chunk_size > self.length:
-            print("[red]ERROR[/] chunk_size too big")
-        self.modules = self.state.get("modules", [2])
-        self.runtime = self.state.get("runtime", 10)
-        self.time_done = 0
+        self.time_start = time.time()
+
+        # Load configuration.
+        self.chunk_size = self.config.get("chunk_size") or min(20_000, len(self.data))
+        self.modules = self.config["modules"] or [2]
+        self.runtime = self.config["runtime"] or 10
+
+    def do_work(self):
+        """
+        Simulates data acqusition.
+        """
+
+        # Checking runtime.
+        self.time_done = time.time() - self.time_start
+        if self.time_done >= self.runtime:
+            self.status = status.Status.FINISHED
+            return
+
+        # Chuncking dummy data.
+        time.sleep(0.2)
+        if self.pos + self.chunk_size < len(self.data):
+            ret = self.data[self.pos : self.pos + self.chunk_size]
+            self.pos += self.chunk_size
+        else:
+            ret = self.data[self.pos :]
+            self.pos = 0
+
+        ret = {m: ret for m in self.modules}
+
+        self.send_data(ret)
 
     def add_user_status(self, stat):
         stat["runtime"] = self.runtime
         stat["filename"] = self.filename
         stat["time done"] = self.time_done
         return stat
-
-    def do_work(self, value):
-        dt = time.time() - self.start_time
-        self.time_done = dt
-        if self.time_done >= self.runtime:
-            self.status = TaskStatus.FINISHED
-            return {"type": MessageType.FINISHED}
-
-        time.sleep(0.2)
-        self.mycounter += 1
-        if self.pos + self.chunk_size < self.length:
-            out = self.data[self.pos : self.pos + self.chunk_size]
-            self.pos += self.chunk_size
-        else:
-            out = self.data[self.pos :]
-            self.pos = 0
-        ret = {m: out for m in self.modules}
-        return {"type": MessageType.DATA, "data": ret}
