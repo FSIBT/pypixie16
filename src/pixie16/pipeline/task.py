@@ -116,21 +116,19 @@ class Task(multiprocessing.Process, abc.ABC):
         self.address_pull: str = None
         self.address_push: str = None
 
-    @abc.abstractmethod
     def do_startup(self) -> None:
         """
         Called after initialization.
         """
 
-        raise NotImplementedError
+        pass
 
-    @abc.abstractmethod
     def do_cleanup(self) -> None:
         """
         Called after termination.
         """
 
-        raise NotImplementedError
+        pass
 
     @abc.abstractmethod
     def do_work(self) -> None:
@@ -161,6 +159,7 @@ class Task(multiprocessing.Process, abc.ABC):
 
         self.socket_pull.connect(address_pull)
         self.address_pull = address_pull
+
         self.send_report({})
 
     def handle_disconnect(self) -> None:
@@ -230,7 +229,7 @@ class Task(multiprocessing.Process, abc.ABC):
         )
         self.socket_dealer.send(msg)
 
-    def send_print(self, stdout: io.StringIO, stderr: io.StringIO) -> None:
+    def send_print(self, stdout: str, stderr: str) -> None:
         """
         Sends ``PRINT`` messages to the pipeline.
 
@@ -279,13 +278,11 @@ class Task(multiprocessing.Process, abc.ABC):
 
         # Doing startup and collecting stdout/stderr
         try:
-            with contextlib.redirect_stdout(io.StringIO()) as f:
-                with contextlib.redirect_stderr(io.StringIO()) as g:
-                    self.do_startup()
-            self.send_print(f, g)
-        except:
-            self.status = status.Status.ERROR
-            self.send_report({})
+            self.do_startup()
+            # self.send_print(f.read(), g.read())
+        except Exception as err:
+            print(err)
+            exit(1)
 
         self.send_report({})
 
@@ -309,7 +306,7 @@ class Task(multiprocessing.Process, abc.ABC):
                     self.handle_configure(*msg())
                 else:
                     self.status = status.Status.ERROR
-                    self.send_report({})
+                    self.send_report({"error": msg})
             except zmq.Again:
                 pass
 
@@ -322,48 +319,39 @@ class Task(multiprocessing.Process, abc.ABC):
 
             # Proceeding according to state.
             if self.status == status.Status.RUNNING:
-                if self.queue:
-                    try:
-                        # Doing work and collecting stdout/stderr
-                        with contextlib.redirect_stdout(io.StringIO()) as f:
-                            with contextlib.redirect_stderr(io.StringIO()) as g:
-                                self.do_work()
-                        self.send_print(f, g)
-                    except Exception as err:
-                        self.status = status.Status.ERROR
-                        self.send_report({})
-                    continue
+                try:
+                    # Doing work and collecting stdout/stderr
+                    self.do_work()
+                    # self.send_print(f.read(), g.read())
+                except Exception as err:
+                    self.status = status.Status.ERROR
+                    self.send_report({"error": err})
             elif self.status == status.Status.PAUSED:
-                pass
+                time.sleep(0.1)
             elif self.status == status.Status.FINISHED:
+                time.sleep(0.1)
+                self.send_report({})
                 break
             elif self.status == status.Status.ERROR:
-                pass
+                time.sleep(0.1)
             else:
                 self.status = status.Status.ERROR
-                self.send_report({})
-
-            time.sleep(0.1)
+                self.send_report({"error": msg})
 
         # Doing cleanup and collecting stdout/stderr
         try:
-            with contextlib.redirect_stdout(io.StringIO()) as f:
-                with contextlib.redirect_stderr(io.StringIO()) as g:
-                    self.do_cleanup()
-            self.send_print(f, g)
+            self.do_cleanup()
+            # self.send_print(f.read(), g.read())
         except Exception as err:
-            self.status = status.Status.ERROR
-            self.send_report({})
-
-        self.send_report({})
+            print(err)
+            exit(1)
 
         # Closing ZMQ sockets.
         if self.socket_pull:
-            self.socket_pull.setsockopt(zmq.LINGER, 0)
             self.socket_pull.close()
         if self.socket_push:
-            self.socket_push.setsockopt(zmq.LINGER, 0)
             self.socket_push.close()
-        self.socket_dealer.setsockopt(zmq.LINGER, 0)
-        self.socket_dealer.close()
-        self.context.term()
+        if self.socket_dealer:
+            self.socket_dealer.close()
+        if self.context:
+            self.context.term()

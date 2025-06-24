@@ -1,4 +1,3 @@
-import io
 import sys
 import typing
 import pickle
@@ -68,7 +67,7 @@ class Pipeline:
 
         self.reports[name] = report
 
-    def handle_print(self, name: str, stdout: io.StringIO, stderr: io.StringIO) -> None:
+    def handle_print(self, name: str, stdout: str, stderr: str) -> None:
         """
         Handles ``PRINT`` messages from some task.
 
@@ -81,8 +80,10 @@ class Pipeline:
         if name not in self.tasks:
             raise ValueError
 
-        # print(stdout.read(), file=sys.stdout)
-        # print(stderr.read(), file=sys.stderr)
+        if stdout:
+            print(stdout, file=sys.stdout)
+        if stderr:
+            print(stderr, file=sys.stderr)
 
     def task_connect(self, name: str, address_pull: str) -> None:
         """
@@ -115,8 +116,6 @@ class Pipeline:
         msg = pickle.dumps(message.Message.DISCONNECT)
         self.socket_router.send_multipart([name.encode(), msg])
 
-        self.socket_router.recv_multipart()
-
     def task_start(self, name: str) -> None:
         """
         Sends ``START`` messages to tasks.
@@ -131,8 +130,6 @@ class Pipeline:
         msg = pickle.dumps(message.Message.START)
         self.socket_router.send_multipart([name.encode(), msg])
 
-        self.socket_router.recv_multipart()
-
     def task_pause(self, name: str) -> None:
         """
         Sends ``PAUSE`` messages to tasks.
@@ -146,8 +143,6 @@ class Pipeline:
 
         msg = pickle.dumps(message.Message.PAUSE)
         self.socket_router.send_multipart([name.encode(), msg])
-
-        self.socket_router.recv_multipart()
 
     def task_stop(self, name: str) -> None:
         """
@@ -217,13 +212,14 @@ class Pipeline:
         if name not in self.tasks:
             raise ValueError
 
-        self.task_stop(name)
+        if self.tasks[name].is_alive():
+            self.task_stop(name)
 
         tsk = self.tasks.pop(name)
 
-        # tsk.join()
-        # tsk.close()
-        tsk.kill()
+        tsk.join()
+        tsk.close()
+        # tsk.kill()
 
         return tsk
 
@@ -291,15 +287,14 @@ class Pipeline:
         Polls the pool, checking for and processing messages, without blocking.
         """
 
-        socks = dict(self.poller.poll(0))
-        if not socks.get(self.socket_router) == zmq.POLLIN:
+        try:
+            name, msg = self.socket_router.recv_multipart(flags=zmq.NOBLOCK)
+            name = name.decode()
+            msg = pickle.loads(msg)
+        except zmq.Again:
             return
-
-        name, msg = self.socket_router.recv_multipart()
-        name = name.decode()
-        msg = pickle.loads(msg)
 
         if type(msg) == message.Message.REPORT:
             self.handle_report(name, *msg())
-        elif type(message.Message.PRINT):
+        elif type(msg) == message.Message.PRINT:
             self.handle_print(name, *msg())
