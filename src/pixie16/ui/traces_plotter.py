@@ -1,11 +1,11 @@
 """
-Traces Plotter for PIXIE-16
+Traces Plotter for PIXIE-16 with Real-Time Axis
 Displays real-time ADC traces from PIXIE-16 channels
 FEATURES:
 - Multi-channel trace overlay
 - Configurable trace history depth
 - Amplitude-based trace selection
-- Time axis in nanoseconds
+- Real-time axis in nanoseconds (based on PIXIE-16 timing)
 - Color-coded channels
 - Trace statistics and analysis
 """
@@ -13,6 +13,8 @@ FEATURES:
 import numpy as np
 from collections import deque, defaultdict
 import time
+import json
+from pathlib import Path
 
 from PyQt6.QtWidgets import (
     QWidget,
@@ -54,6 +56,12 @@ class TracesPlotter(QWidget):
         self.auto_scale = True
         self.show_statistics = True
 
+        # REAL-TIME AXIS SETTINGS
+        self.use_realtime_axis = True  # ON by default as per your request
+        self.trace_delay_ns = {}  # Per-channel TRACE_DELAY from default.json
+        self.sampling_period_ns = 2.0  # Will be loaded from config
+        self.alpha_channel = 9  # Alpha detector channel
+
         # Channel colors
         self.colors = [
             "#1f77b4",
@@ -91,11 +99,17 @@ class TracesPlotter(QWidget):
         # Plot area
         self.plot_widget = pg.PlotWidget()
         self.plot_widget.setLabel("left", "Amplitude (V)")
-        self.plot_widget.setLabel("bottom", "Time (ns)")
-        self.plot_widget.setTitle("PIXIE-16 Traces")
+
+        # Set initial axis label based on real-time axis setting
+        if self.use_realtime_axis:
+            self.plot_widget.setLabel("bottom", "Time (ns) - Real-Time Axis")
+            self.plot_widget.setTitle("PIXIE-16 Traces - Real-Time Axis")
+        else:
+            self.plot_widget.setLabel("bottom", "Sample Index")
+            self.plot_widget.setTitle("PIXIE-16 Traces - Sample Index")
+
         self.plot_widget.showGrid(True, True, alpha=0.3)
         self.plot_widget.addLegend()
-
         self.plot_widget.setBackground("w")
 
         layout.addWidget(self.plot_widget)
@@ -116,61 +130,115 @@ class TracesPlotter(QWidget):
 
     def create_controls(self):
         group = QGroupBox("Trace Controls")
-        group.setMaximumHeight(80)  # Make more compact
-        layout = QHBoxLayout()  # Use horizontal layout for compactness
-        layout.setSpacing(5)
+        group.setMaximumHeight(120)
+        layout = QVBoxLayout()
+        layout.setSpacing(3)
 
-        # First row of controls
-        layout.addWidget(QLabel("Max:"))
+        # First row - Original controls
+        row1_layout = QHBoxLayout()
+        row1_layout.setSpacing(5)
+
+        row1_layout.addWidget(QLabel("Max:"))
         self.max_traces_spin = QSpinBox()
         self.max_traces_spin.setRange(1, 50)
         self.max_traces_spin.setValue(self.max_traces_display)
         self.max_traces_spin.valueChanged.connect(self.update_max_traces)
         self.max_traces_spin.setMaximumWidth(60)
-        layout.addWidget(self.max_traces_spin)
+        row1_layout.addWidget(self.max_traces_spin)
 
-        layout.addWidget(QLabel("Thr:"))
+        row1_layout.addWidget(QLabel("Thr:"))
         self.threshold_spin = QDoubleSpinBox()
         self.threshold_spin.setRange(0.0, 2.0)
         self.threshold_spin.setValue(self.amplitude_threshold)
         self.threshold_spin.setSingleStep(0.01)
         self.threshold_spin.valueChanged.connect(self.update_threshold)
         self.threshold_spin.setMaximumWidth(80)
-        layout.addWidget(self.threshold_spin)
+        row1_layout.addWidget(self.threshold_spin)
 
-        layout.addWidget(QLabel("ns/smp:"))
+        row1_layout.addWidget(QLabel("ns/smp:"))
         self.time_per_sample_spin = QDoubleSpinBox()
         self.time_per_sample_spin.setRange(0.1, 10.0)
         self.time_per_sample_spin.setValue(self.time_per_sample)
         self.time_per_sample_spin.setSingleStep(0.1)
         self.time_per_sample_spin.valueChanged.connect(self.update_time_scale)
         self.time_per_sample_spin.setMaximumWidth(80)
-        layout.addWidget(self.time_per_sample_spin)
+        row1_layout.addWidget(self.time_per_sample_spin)
 
         # Checkboxes
         self.auto_scale_cb = QCheckBox("Auto")
         self.auto_scale_cb.setChecked(True)
         self.auto_scale_cb.toggled.connect(self.toggle_auto_scale)
-        layout.addWidget(self.auto_scale_cb)
+        row1_layout.addWidget(self.auto_scale_cb)
 
         self.show_stats_cb = QCheckBox("Stats")
         self.show_stats_cb.setChecked(True)
         self.show_stats_cb.toggled.connect(self.toggle_statistics)
-        layout.addWidget(self.show_stats_cb)
+        row1_layout.addWidget(self.show_stats_cb)
 
         # Clear button
         self.clear_btn = QPushButton("Clear")
         self.clear_btn.clicked.connect(self.clear_data)
         self.clear_btn.setMaximumWidth(60)
-        layout.addWidget(self.clear_btn)
+        row1_layout.addWidget(self.clear_btn)
 
-        layout.addStretch()
+        row1_layout.addStretch()
+
+        # 2nd row - Real-time axis controls
+        row2_layout = QHBoxLayout()
+        row2_layout.setSpacing(5)
+
+        # Show timing info
+        row2_layout.addWidget(QLabel("Timing:"))
+        self.timing_info_label = QLabel(f"{self.sampling_period_ns:.1f}ns/smp")
+        self.timing_info_label.setStyleSheet("font-size: 10px; color: gray;")
+        row2_layout.addWidget(self.timing_info_label)
+
+        row2_layout.addStretch()
+
+        # Add both rows to layout
+        layout.addLayout(row1_layout)
+        layout.addLayout(row2_layout)
 
         group.setLayout(layout)
         return group
 
+    def update_alpha_channel(self, channel):
+        """Update alpha channel for timing reference"""
+        self.alpha_channel = channel
+        print(f" Alpha channel set to: {channel}")
+
+    def calculate_real_time_axis(self, trace_length, channel):
+        """
+        Calculate real-time axis for a trace based on PIXIE-16 timing
+        From your notes: time_ns = (sample * sampling_period) - trace_delay
+        """
+        if not self.use_realtime_axis:
+            # Standard sample index
+            return np.arange(trace_length)
+
+        # Get channel-specific trace delay
+        trace_delay = self.trace_delay_ns.get(channel, 200)  # Fallback to 200ns
+
+        # Each sample represents sampling_period_ns of time
+        sample_times = np.arange(trace_length) * self.sampling_period_ns
+
+        # Subtract trace delay (time before trigger)
+        # This gives time relative to trigger (negative = before trigger)
+        real_times = sample_times - trace_delay
+
+        print(f" Ch{channel} Real-Time Axis:")
+        print(f"   Trace length: {trace_length} samples")
+        print(f"   Sampling period: {self.sampling_period_ns} ns/sample")
+        print(f"   Trace delay: {trace_delay} ns")
+        print(f"   Time range: {real_times[0]:.1f} to {real_times[-1]:.1f} ns")
+        print(
+            f"   Trigger at sample {trace_delay / self.sampling_period_ns:.0f} (time=0)"
+        )
+
+        return real_times
+
     def add_trace(self, channel, trace_data):
-        """Add a new trace for the specified channel"""
+        """Add a new trace for the specified channel (unchanged from working version)"""
         try:
             if channel not in self.channels:
                 return
@@ -209,6 +277,7 @@ class TracesPlotter(QWidget):
     def update_time_scale(self):
         """Update time scale (ns per sample)"""
         self.time_per_sample = self.time_per_sample_spin.value()
+        # Note: For real-time axis, sampling_period_ns comes from config, not this control
 
     def toggle_auto_scale(self, enabled):
         """Toggle auto scaling"""
@@ -238,6 +307,7 @@ class TracesPlotter(QWidget):
         self.update_plots()
 
     def update_plots(self):
+        """Updated to use real-time axis when enabled"""
         try:
             total_traces = 0
             channel_stats = {}
@@ -287,7 +357,7 @@ class TracesPlotter(QWidget):
                 if display_traces:
                     # Create overlay of multiple traces
                     trace_length = len(display_traces[0])
-                    time_axis = np.arange(trace_length) * self.time_per_sample
+                    time_axis = self.calculate_real_time_axis(trace_length, channel)
 
                     # Plot all traces with some transparency
                     combined_y = []
@@ -313,11 +383,17 @@ class TracesPlotter(QWidget):
             # Update statistics display - show stats for displayed channels
             if self.show_statistics:
                 if self.display_channels:
-                    stats_text = f"Total Traces: {total_traces} | "
+                    axis_mode = "Real-Time" if self.use_realtime_axis else "Sample"
+                    stats_text = f"Total Traces: {total_traces} ({axis_mode}) | "
                     for ch in self.display_channels:
                         if ch in channel_stats:
                             stats = channel_stats[ch]
-                            stats_text += f"Ch{ch}: {stats['count']} traces, Amp: {stats['amplitude']:.3f}V | "
+                            delay_info = (
+                                f"({self.trace_delay_ns.get(ch, 0):.0f}ns)"
+                                if self.use_realtime_axis
+                                else ""
+                            )
+                            stats_text += f"Ch{ch}{delay_info}: {stats['count']} traces, Amp: {stats['amplitude']:.3f}V | "
                     self.stats_label.setText(stats_text.rstrip(" | "))
                 else:
                     self.stats_label.setText("No channels selected for display")
@@ -334,6 +410,17 @@ class TracesPlotter(QWidget):
 
             traceback.print_exc()
 
+    def set_timing_settings(self, settings):
+        """Receive timing settings from scope"""
+        self.trace_delay_ns = settings.get("trace_delay_ns", {})
+        self.sampling_period_ns = settings.get("sampling_period_ns", 2.0)
+        self.alpha_channel = settings.get("alpha_channel", 9)
+
+        # Update timing info label
+        if hasattr(self, "timing_info_label"):
+            self.timing_info_label.setText(f"{self.sampling_period_ns:.1f}ns/smp")
+
+    # All other methods remain unchanged from the working version
     def set_channels(self, channels):
         """Update the list of channels to display"""
         # Remove old curves
@@ -378,11 +465,11 @@ class TracesPlotter(QWidget):
         return {ch: list(traces) for ch, traces in self.trace_data.items()}
 
     def export_data(self, filename):
-        """Export trace data to file"""
+        """Export trace data to file (includes real-time axis info)"""
         try:
             trace_data = self.get_trace_data()
 
-            # Add metadata
+            # Add metadata including real-time axis info
             metadata = {
                 "channels": self.channels,
                 "max_traces_display": self.max_traces_display,
@@ -390,6 +477,11 @@ class TracesPlotter(QWidget):
                 "amplitude_threshold": self.amplitude_threshold,
                 "total_traces": sum(len(traces) for traces in trace_data.values()),
                 "timestamp": time.time(),
+                # Real-time axis metadata
+                "use_realtime_axis": self.use_realtime_axis,
+                "sampling_period_ns": self.sampling_period_ns,
+                "trace_delay_ns": self.trace_delay_ns,
+                "alpha_channel": self.alpha_channel,
             }
 
             if filename.endswith(".npz"):
@@ -425,7 +517,9 @@ class TracesPlotter(QWidget):
                 with open(filename, "w") as f:
                     json.dump(json_data, f, indent=2)
 
-            print(f"Trace data exported to {filename}")
+            print(
+                f"Trace data exported to {filename} (Real-time axis: {self.use_realtime_axis})"
+            )
 
         except Exception as e:
             print(f"Error exporting trace data: {e}")
@@ -445,6 +539,11 @@ class TracesPlotter(QWidget):
                     self.amplitude_threshold = metadata.get(
                         "amplitude_threshold", self.amplitude_threshold
                     )
+                    # Load real-time axis settings if available
+                    self.use_realtime_axis = metadata.get("use_realtime_axis", True)
+                    self.sampling_period_ns = metadata.get("sampling_period_ns", 2.0)
+                    if "trace_delay_ns" in metadata:
+                        self.trace_delay_ns = metadata["trace_delay_ns"]
 
                 # Load trace data
                 for key in data.keys():

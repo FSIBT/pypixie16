@@ -15,6 +15,7 @@ import os
 import time
 import threading
 from pathlib import Path
+import json
 
 from PyQt6.QtWidgets import (
     QApplication,
@@ -121,9 +122,135 @@ class PixieScopeApp(QMainWindow):
             "EnableChannelVal": True,
         }
 
+        self.use_realtime_axis = True  # ON by default
+        self.trace_delay_ns = {}  # Per-channel delays from default.json
+        self.sampling_period_ns = 2.0  # 500 MSPS = 2ns per sample
+        self.alpha_channel = 9  # Alpha detector channel
+
+        self.load_pixie16_timing_settings()
+
         self.init_ui()
         self.init_pixie16()
         self.setup_timers()
+
+    def setup_dummy_timing(self):
+        """Fallback timing settings for dummy mode"""
+        self.sampling_period_ns = 2.0
+        # Use realistic values based on your default.json
+        dummy_delays = [
+            108,
+            108,
+            16,
+            176,
+            64,
+            324,
+            108,
+            108,
+            408,
+            24,
+            48,
+            16,
+            64,
+            64,
+            64,
+            64,
+        ]
+        for i in range(16):
+            self.trace_delay_ns[i] = dummy_delays[i]
+        print("Using dummy timing settings")
+
+    def load_pixie16_timing_settings(self):
+        """Load timing settings from your default.json file"""
+        try:
+            config_paths = [
+                Path("default.json"),
+                Path("data/default.json"),
+                Path(__file__).parent / "default.json",
+                Path(__file__).parent.parent / "default.json",
+                Path(__file__).parent.parent / "data" / "default.json",
+            ]
+
+            config_path = None
+            for path in config_paths:
+                if path.exists():
+                    config_path = path
+                    break
+
+            if not config_path:
+                print("default.json not found, using dummy timing settings")
+                self.setup_dummy_timing()
+                return
+
+            print(f"Loading PIXIE-16 timing from: {config_path}")
+
+            with open(config_path) as f:
+                config = json.load(f)
+
+            module_data = config[0]
+
+            channel_input = module_data["channel"]["input"]
+
+            # Hardware specs are in metadata.config[0]
+            adc_msps = module_data["metadata"]["config"][0]["adc_msps"]
+            self.sampling_period_ns = 1000.0 / adc_msps  # 500 MSPS -> 2ns
+
+            # Get per-channel trigger delays (in samples)
+            trigger_delays = channel_input["TriggerDelay"]
+
+            # Convert to ns
+            for channel in range(16):
+                self.trace_delay_ns[channel] = (
+                    trigger_delays[channel] * self.sampling_period_ns
+                )
+
+            print(f"Loaded PIXIE-16 timing: {self.sampling_period_ns}ns/sample")
+            print(
+                f"    Alpha Ch{self.alpha_channel}: {self.trace_delay_ns[self.alpha_channel]:.1f}ns delay"
+            )
+
+            # Print key channels for your alpha-gamma analysis
+            key_channels = [1, 4, 9]  # Based on your setup
+            for ch in key_channels:
+                if ch < len(trigger_delays):
+                    print(f"   Ch{ch}: {self.trace_delay_ns[ch]:.1f}ns delay")
+
+            self.analyze_alpha_gamma_timing()
+
+        except Exception as e:
+            print(f"Error loading default.json: {e}")
+            self.setup_dummy_timing()
+
+    def analyze_alpha_gamma_timing(self):
+        alpha_ch = self.alpha_channel
+        gamma_channels = [1, 4]  # Your gamma detectors
+
+        alpha_delay = self.trace_delay_ns[alpha_ch]
+        expected_gamma_delay = 20
+
+        print(f"\n=== Alpha-Gamma Timing Analysis ===")
+        print(f"Expected: Gamma {expected_gamma_delay}ns after alpha")
+        print(f"Alpha Ch{alpha_ch}: {alpha_delay:.1f}ns recording delay")
+
+        for gamma_ch in gamma_channels:
+            gamma_delay = self.trace_delay_ns[gamma_ch]
+            recording_diff = gamma_delay - alpha_delay
+
+            # True timing accounting for different recording delays
+            apparent_delay = expected_gamma_delay - recording_diff
+
+            print(f"Gamma Ch{gamma_ch}: {gamma_delay:.1f}ns recording delay")
+            print(
+                f"  -> Records {abs(recording_diff):.1f}ns {'earlier' if recording_diff > 0 else 'later'} than alpha"
+            )
+
+            if apparent_delay < 0:
+                print(
+                    f"  -> Gamma timestamp will appear {abs(apparent_delay):.1f}ns BEFORE alpha!"
+                )
+            else:
+                print(
+                    f"  -> Gamma timestamp will appear {apparent_delay:.1f}ns after alpha"
+                )
 
     def init_ui(self):
         # Set responsive window size
@@ -212,48 +339,49 @@ class PixieScopeApp(QMainWindow):
 
     def create_control_panel(self):
         group = QGroupBox("Controls")
-        group.setMaximumHeight(120)
+        group.setMaximumHeight(100)  # Reduced height since we have fewer rows
         layout = QVBoxLayout()
         layout.setSpacing(5)
 
-        # Mode selection
-        mode_layout = QHBoxLayout()
-        mode_layout.addWidget(QLabel("Mode:"))
+        # Mode selection and acquisition controls on same row
+        top_layout = QHBoxLayout()
 
+        # Mode selection
+        top_layout.addWidget(QLabel("Mode:"))
         self.mode_combo = QComboBox()
         self.mode_combo.addItems(["MCA Mode", "List Mode", "Traces Mode"])
         self.mode_combo.currentTextChanged.connect(self.on_mode_changed)
         self.mode_combo.setMaximumWidth(120)
-        mode_layout.addWidget(self.mode_combo)
-        mode_layout.addStretch()
+        top_layout.addWidget(self.mode_combo)
 
-        # Acquisition controls
-        acq_layout = QHBoxLayout()
+        # Add some spacing between mode and buttons
+        top_layout.addSpacing(20)
 
+        # Acquisition control buttons
         self.start_btn = QPushButton("Start")
         self.start_btn.clicked.connect(self.start_acquisition)
-        self.start_btn.setMaximumWidth(80)
+        self.start_btn.setMaximumWidth(60)  # Made slightly smaller
+        top_layout.addWidget(self.start_btn)
 
         self.stop_btn = QPushButton("Stop")
         self.stop_btn.clicked.connect(self.stop_acquisition)
         self.stop_btn.setEnabled(False)
-        self.stop_btn.setMaximumWidth(80)
+        self.stop_btn.setMaximumWidth(60)
+        top_layout.addWidget(self.stop_btn)
 
         self.clear_btn = QPushButton("Clear")
         self.clear_btn.clicked.connect(self.clear_data)
-        self.clear_btn.setMaximumWidth(80)
+        self.clear_btn.setMaximumWidth(60)
+        top_layout.addWidget(self.clear_btn)
 
         self.save_btn = QPushButton("Save")
         self.save_btn.clicked.connect(self.save_data)
-        self.save_btn.setMaximumWidth(80)
+        self.save_btn.setMaximumWidth(60)
+        top_layout.addWidget(self.save_btn)
 
-        acq_layout.addWidget(self.start_btn)
-        acq_layout.addWidget(self.stop_btn)
-        acq_layout.addWidget(self.clear_btn)
-        acq_layout.addWidget(self.save_btn)
-        acq_layout.addStretch()
+        top_layout.addStretch()
 
-        # Status display
+        # Status display (second row)
         status_layout = QHBoxLayout()
         self.status_label = QLabel("Status: Ready")
         self.status_label.setMinimumWidth(100)
@@ -267,9 +395,8 @@ class PixieScopeApp(QMainWindow):
         status_layout.addWidget(self.events_label)
         status_layout.addStretch()
 
-        # Add all layouts
-        layout.addLayout(mode_layout)
-        layout.addLayout(acq_layout)
+        # Add both layouts
+        layout.addLayout(top_layout)
         layout.addLayout(status_layout)
 
         group.setLayout(layout)
@@ -323,11 +450,19 @@ class PixieScopeApp(QMainWindow):
                 bins=1000,
             )
         elif self.current_mode == "traces_mode":
-            from pixie16.ui.traces_plotter import TracesPlotter
-
             self.spectrum_tab = TracesPlotter(
                 channels=self.channel_numbers, title="PIXIE-16 Traces"
             )
+
+            # Pass timing settings to plotter
+            if hasattr(self.spectrum_tab, "set_timing_settings"):
+                self.spectrum_tab.set_timing_settings(
+                    {
+                        "trace_delay_ns": self.trace_delay_ns,
+                        "sampling_period_ns": self.sampling_period_ns,
+                        "alpha_channel": self.alpha_channel,
+                    }
+                )
 
         # Add new spectrum tab
         self.left_layout.addWidget(self.spectrum_tab)
@@ -452,7 +587,7 @@ class PixieScopeApp(QMainWindow):
                     f"List mode acquisition starting in DUMMY MODE using: {DUMMY_BINARY_FILE}"
                 )
 
-            # ALWAYS create a fresh LiveDataReader for list mode
+            # create a fresh LiveDataReader for list mode
             self.cleanup_live_reader()  # Clean up old reader first
 
             self.live_reader = LiveDataReader()
@@ -536,7 +671,7 @@ class PixieScopeApp(QMainWindow):
                     f"Traces acquisition starting in DUMMY MODE using: {DUMMY_BINARY_FILE}"
                 )
 
-            # ALWAYS create a fresh LiveDataReader for traces mode
+            # fresh LiveDataReader for traces mode
             self.cleanup_live_reader()  # Clean up old reader first
 
             self.live_reader = LiveDataReader()
@@ -922,34 +1057,31 @@ class PixieScopeApp(QMainWindow):
             print(f"Error processing list mode event: {e}")
 
     def process_traces_event(self, event):
+        """Enhanced traces event processing with real-time axis"""
         try:
             channel = getattr(event, "channel", 0)
             trace = getattr(event, "trace", None)
+            timestamp = getattr(event, "timestamp", 0)
 
             if (
                 hasattr(self, "spectrum_tab")
                 and self.spectrum_tab
-                and hasattr(self.spectrum_tab, "add_trace")
                 and channel in self.channel_numbers
                 and trace is not None
                 and len(trace) > 0
             ):
+                # Just use the standard add_trace - real-time axis calculated in update_plots()
                 self.spectrum_tab.add_trace(channel, trace)
 
-                # Update stats periodically (every 10 traces to avoid overhead)
+                # Update stats periodically
                 if hasattr(self, "_trace_counter"):
                     self._trace_counter += 1
                 else:
                     self._trace_counter = 1
 
-                if self._trace_counter % 10 == 0:  # Update every 10 traces
+                if self._trace_counter % 10 == 0:
                     self.update_traces_channel_stats()
-        except RuntimeError as e:
-            if "wrapped C/C++ object" in str(e):
-                print("Traces plotter has been deleted, stopping trace processing")
-                return
-            else:
-                print(f"Runtime error processing traces event: {e}")
+
         except Exception as e:
             print(f"Error processing traces event: {e}")
 
