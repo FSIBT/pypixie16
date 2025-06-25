@@ -114,8 +114,6 @@ class Task(multiprocessing.Process, abc.ABC):
             "is_start": False,
         }
         self.status: Status = Status.READY
-        self.is_final: bool = None
-        self.is_start: bool = None
 
         # ZMQ fields:
         self.context: zmq.Context = None
@@ -323,7 +321,7 @@ class Task(multiprocessing.Process, abc.ABC):
         """
 
         msg = Message.DATA(data)
-        if not self.is_final:
+        if not self.config["is_final"]:
             self.socket_push.send_pyobj(msg)
 
     def send_finished(self) -> None:
@@ -338,7 +336,7 @@ class Task(multiprocessing.Process, abc.ABC):
         self.send_report()
 
         msg = Message.FINISHED
-        if not self.is_final:
+        if not self.config["is_final"]:
             self.socket_push.send_pyobj(msg)
 
     def poll(self, is_noblock: bool = True) -> None:
@@ -428,7 +426,7 @@ class Task(multiprocessing.Process, abc.ABC):
 
             try:
                 if self.status == Status.RUNNING:
-                    if self.queue or self.is_start:
+                    if self.queue or self.config["is_start"]:
                         val = self.queue.popleft() if self.queue else None
                         ret = self.do_work(val)
                         self.send_data(ret)
