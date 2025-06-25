@@ -55,31 +55,37 @@ class SortEvents(task.Task):
 
     """
 
-    def __init__(self, pipeline_address):
-        start_time: float = 0
-        maxsize: int = 10_000
-        number_to_sort: int = 8_000
-        all_start_times: list[float] | float | None = None
-
+    def __init__(self):
+        super().__init__()
         self.name = "Sort events"
 
-        super().__init__(pipeline_address)
         self.data = []
-        assert number_to_sort < maxsize, (
-            "The number_to_sort needs to be smaller than maxisze"
-        )
-        self.state = {
-            "maxsize": 10_000,
-            "N_to_sort": 8_000,
-            "nr_sorted": 0,
+        self.config |= {
+            "sort_size": 10_000,
+            "sort_number_to_sort": 8_000,
+            "sort_start_time": 0,
+            "sort_all_start_time": None,
         }
+
+    def do_report(self):
+        return {"sorted blocks": self.nr_sorted}
+
+    def handle_configure(self, config_dict: dict):
+        super().handle_configure(config_dict)
+
+        self.N_to_sort = self.config["sort_number_to_sort"]
+        self.sort_size = self.config["sort_size"]
+        self.start_time = self.config["sort_start_time"]
+
+        self.nr_sorted = 0
+
         # timestamp of first and current event in binary data in s
         self.first_event_timestamp = None
         self.last_event_timestamp = 0
         # in case the the aqcuisition was stopped and restarted this
         # should either be a list of all start times or a float
         # estimating the average time of the break in acquisitioin
-        self.all_start_times = all_start_times
+        self.all_start_times = self.config["sort_all_start_time"]
         # if all_start_times are not known, we estimate them and report them back
         # if a special queue was put in place
         self.report_times = [start_time]
@@ -90,7 +96,7 @@ class SortEvents(task.Task):
     def do_work(self, events_lst):
         """Does the sorting, time reset recognition and handling.
 
-        Whenever we reach `self.maxsize` events, sort them by time and
+        Whenever we reach `self.sort_size` events, sort them by time and
         pass the first `self.N_to_sort` events to the next `Task`. We keep
         the a few events behind, since they might need to be sorted with
         the next incoming batch.
@@ -133,19 +139,18 @@ class SortEvents(task.Task):
         # Sort events according to UNIX timestamp
         out = []
         self.data.extend(new_events_lst)
-        while len(self.data) > self.maxsize:
+        while len(self.data) > self.sort_size:
             self.data.sort(key=lambda x: x.chunk_timestamp)
             out = self.data[: self.N_to_sort]
             self.data = self.data[self.N_to_sort :]
-            if out and self.output_queue:
-                self.output_queue.put(out)
+            if not self.config["is_final"]:
+                self.send_data(out)
                 self.nr_sorted += 1
-        self.send_status({"sorted blocks": self.nr_sorted})
 
     def cleanup(self):
         self.data.sort(key=lambda x: x.chunk_timestamp)
-        if self.output_queue:
-            self.output_queue.put(self.data)
+        if not self.config["is_final"]:
+            self.send_data(self.data)
         if self.report_time_queue:
             self.report_time_queue.put(self.report_times)
         self.data = []
