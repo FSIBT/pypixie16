@@ -6,10 +6,8 @@ import pixie16
 class Test_DummyData:
     @staticmethod
     def test():
-        task0 = pixie16.pipeline.tasks.DummyData("Dummy")
-        task1 = pixie16.pipeline.tasks.PrintData("Print")
-        pipe = pixie16.pipeline.Pipeline(task0, task1)
-        pipe.init(["Dummy", "Print"])
+        pipe = pixie16.pipeline.Pipeline()
+        pipe.init(["DummyData", "PrintData"])
         pipe.start()
 
         while True:

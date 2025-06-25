@@ -6,9 +6,8 @@ import pixie16
 class Test_PrintData:
     @staticmethod
     def test():
-        task0 = pixie16.pipeline.tasks.PrintData("Print")
-        pipe = pixie16.pipeline.Pipeline(task0)
-        pipe.init(["Print"])
+        pipe = pixie16.pipeline.Pipeline()
+        pipe.init(["PrintData"])
         pipe.start()
         pipe.poll()
         pipe.stop()

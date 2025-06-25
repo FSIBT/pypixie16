@@ -49,7 +49,7 @@ class Pipeline:
 
     def __init__(self):
         self._status = Status.READY
-        self._tasks_active = []
+        self.tasks_active = []
         self._tasks_all = {}
         self.reports = {}
         self.context = zmq.Context()
@@ -58,21 +58,23 @@ class Pipeline:
         self.address_router = f"tcp://127.0.0.1:{self.address_router}"
 
     def create_task(self, name: str):
-        """Create Task if it doesn't exist already."""
+        """
+        Creates tasks using class names.
+
+        Parameter:
+            name: Task class name.
+        """
 
         if name in self._tasks_all:
             return
 
         if name not in Task.class_registry:
-            print(f"ERROR cannot find pypixie16 task '{name}'")
-            sys.exit(1)
+            raise ValueError(f"ERROR cannot find pypixie16 task '{name}'")
 
         task = Task.class_registry[name]()
         self._tasks_all[name] = task
         task.address_router = self.address_router
         task.start()
-
-        self.poll(is_noblock=False)
 
     def handle_report(self, name: str, report: dict[str, typing.Any]) -> None:
         """
@@ -136,6 +138,8 @@ class Pipeline:
         msg = pickle.dumps(Message.CONNECT(address_pull))
         self.socket_router.send_multipart([name.encode(), msg])
 
+        self.poll(is_noblock=False)
+
     def send_disconnect(self, name: str) -> None:
         """
         Sends ``DISCONNECT`` messages to tasks.
@@ -149,6 +153,8 @@ class Pipeline:
 
         msg = pickle.dumps(Message.DISCONNECT)
         self.socket_router.send_multipart([name.encode(), msg])
+
+        self.poll(is_noblock=False)
 
     def send_start(self, name: str) -> None:
         """
@@ -164,6 +170,8 @@ class Pipeline:
         msg = pickle.dumps(Message.START)
         self.socket_router.send_multipart([name.encode(), msg])
 
+        self.poll(is_noblock=False)
+
     def send_pause(self, name: str) -> None:
         """
         Sends ``PAUSE`` messages to tasks.
@@ -178,6 +186,8 @@ class Pipeline:
         msg = pickle.dumps(Message.PAUSE)
         self.socket_router.send_multipart([name.encode(), msg])
 
+        self.poll(is_noblock=False)
+
     def send_stop(self, name: str) -> None:
         """
         Sends ``STOP`` messages to tasks.
@@ -191,6 +201,8 @@ class Pipeline:
 
         msg = pickle.dumps(Message.STOP)
         self.socket_router.send_multipart([name.encode(), msg])
+        
+        self.poll(is_noblock=False)
 
     def send_configure(self, name: str, config: dict[str, typing.Any]) -> None:
         """
@@ -207,6 +219,8 @@ class Pipeline:
         msg = pickle.dumps(Message.CONFIGURE(config))
         self.socket_router.send_multipart([name.encode(), msg])
 
+        self.poll(is_noblock=False)
+
     def init(self, tasks_active: list[str]) -> None:
         """
         Initialize the chain by pausing, disconnecting, and reconnecting
@@ -216,6 +230,7 @@ class Pipeline:
             tasks_active: Names of tasks to connect.
         """
 
+        # Clearing messages and updating state.
         self._status = Status.READY
 
         # Pausing & disconnecting old tasks.
@@ -224,6 +239,8 @@ class Pipeline:
                 self.send_pause(name)
                 self.send_disconnect(name)
                 self.send_configure(name, {"is_final": False, "is_start": False})
+
+        self.tasks_active = []
 
         # Pausing & disconnecting new tasks.
         for name in tasks_active:
@@ -238,27 +255,25 @@ class Pipeline:
         if len(tasks_active) > 1:
             for name_a, name_b in itertools.pairwise(tasks_active):
                 self.send_connect(name_b, self.reports[name_a]["address_push"])
-                self.poll(is_noblock=False)
 
+        # Setting start/final flags.
         if tasks_active:
             self.send_configure(
-                self._tasks_active[0], {"is_final": False, "is_start": True}
+                self.tasks_active[0], {"is_final": False, "is_start": True}
             )
             self.send_configure(
-                self._tasks_active[-1], {"is_final": True, "is_start": False}
+                self.tasks_active[-1], {"is_final": True, "is_start": False}
             )
-
-            self.poll(is_noblock=False)
-            self.poll(is_noblock=False)
 
     def start(self) -> None:
         """
         Starts the chain.
         """
 
+        # Clearing messages and updating state.
         self._status = Status.RUNNING
 
-        for name in self._tasks_active:
+        for name in self.tasks_active:
             self.send_start(name)
 
     def pause(self) -> None:
@@ -266,9 +281,10 @@ class Pipeline:
         Pauses the chain.
         """
 
+        # Clearing messages and updating state.
         self._status = Status.PAUSED
 
-        for name in self._tasks_active:
+        for name in self.tasks_active:
             self.send_pause(name)
 
     def stop(self) -> None:
@@ -276,9 +292,10 @@ class Pipeline:
         Stops the chain.
         """
 
+        # Clearing messages and updating state.
         self._status = Status.DONE
 
-        for name in self._tasks_active:
+        for name in self._tasks_all:
             self.send_stop(name)
 
     def configure(self, config: dict[str, typing.Any]) -> None:
@@ -302,11 +319,11 @@ class Pipeline:
                 name, msg = self.socket_router.recv_multipart(flags=zmq.NOBLOCK)
             else:
                 name, msg = self.socket_router.recv_multipart()
-
-            name = name.decode()
-            msg = pickle.loads(msg)
         except zmq.Again:
             return
+
+        name = name.decode()
+        msg = pickle.loads(msg)
 
         if type(msg) == Message.REPORT:
             self.handle_report(name, *msg())
@@ -315,13 +332,13 @@ class Pipeline:
         else:
             raise RuntimeError
 
-        for name in self._tasks_active:
+        for name in self.tasks_active:
             if self.reports[name]["status"] == Status.ERROR:
                 self.handle_error(self.reports[name]["error"])
 
         if self._status != Status.READY:
             if (
-                not self._tasks_active
-                or self.reports[self._tasks_active[-1]]["status"] == Status.FINISHED
+                not self.tasks_active
+                or self.reports[self.tasks_active[-1]]["status"] == Status.FINISHED
             ):
                 self.handle_finished()

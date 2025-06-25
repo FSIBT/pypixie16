@@ -27,35 +27,6 @@ def context() -> zmq.Context:
 
 
 @pytest.fixture
-def task() -> pixie16.pipeline.Task:
-    task = DummyTask("Hello")
-    yield task
-    task.kill()
-
-
-@pytest.fixture
-def pipeline_b(task: pixie16.pipeline.Task) -> pixie16.pipeline.Pipeline:
-    pipeline = pixie16.pipeline.Pipeline(task)
-    yield pipeline
-    pipeline.stop()
-
-
-@pytest.fixture
-def pipeline_i(pipeline_b: pixie16.pipeline.Pipeline) -> pixie16.pipeline.Pipeline:
-    pipeline_b.init(["Hello"])
-    yield pipeline_b
-    pipeline_b.stop()
-
-
-@pytest.fixture
-def pipeline_s(pipeline_i: pixie16.pipeline.Pipeline) -> pixie16.pipeline.Pipeline:
-    pipeline_i.start()
-    yield pipeline_i
-    pipeline_i.stop()
-    assert pipeline_i._status == pixie16.pipeline.Status.DONE
-
-
-@pytest.fixture
 def pull(context: zmq.Context) -> tuple[str, zmq.Socket]:
     socket = context.socket(zmq.PAIR)
     address = socket.bind_to_random_port("tcp://127.0.0.1")
@@ -68,124 +39,185 @@ def pull(context: zmq.Context) -> tuple[str, zmq.Socket]:
 
 class Test_Pipeline:
     @staticmethod
-    def test___init__(task: pixie16.pipeline.Task):
-        pixie16.pipeline.Pipeline(task)
+    def test___init__():
+        pixie16.pipeline.Pipeline()
 
     @staticmethod
-    def test_handle_report_A(pipeline_s: pixie16.pipeline.Pipeline):
+    def test_create_task():
+        pipeline = pixie16.pipeline.Pipeline()
+        pipeline.create_task("DummyTask")
+        pipeline._tasks_all['DummyTask'].kill()
+
+    @staticmethod
+    def test_handle_report_A():
+        pipeline = pixie16.pipeline.Pipeline()
+        pipeline.init(['DummyTask'])
+        pipeline.start()
         time.sleep(1)
+        pipeline.stop()
 
     @staticmethod
-    def test_handle_report_B(pipeline_s: pixie16.pipeline.Pipeline):
+    def test_handle_report_B():
+        pipeline = pixie16.pipeline.Pipeline()
         with pytest.raises(ValueError):
-            pipeline_s.handle_report("Nope", {})
+            pipeline.handle_report("Nope", {})
 
     @staticmethod
-    def test_handle_print_A(pipeline_s: pixie16.pipeline.Pipeline):
+    def test_handle_print_A():
+        pipeline = pixie16.pipeline.Pipeline()
+        pipeline.init(['DummyTask'])
+        pipeline.start()
         time.sleep(1)
+        pipeline.stop()
 
     @staticmethod
-    def test_handle_print_B(pipeline_s: pixie16.pipeline.Pipeline):
+    def test_handle_print_B():
+        pipeline = pixie16.pipeline.Pipeline()
         with pytest.raises(ValueError):
-            pipeline_s.handle_print("Nope", io.StringIO("out"), io.StringIO("err"))
+            pipeline.handle_print("Nope", io.StringIO("out"), io.StringIO("err"))
 
     @staticmethod
-    def test_send_connect_A(
-        pipeline_s: pixie16.pipeline.Pipeline, pull: tuple[str, zmq.Socket]
-    ):
+    def test_send_connect_A(pull: tuple[str, zmq.Socket]):
         address_pull, socket_pull = pull
 
-        pipeline_s.send_connect("Hello", address_pull)
+        pipeline = pixie16.pipeline.Pipeline()
+        pipeline.init(['DummyTask'])
+        pipeline.start()
+        pipeline.send_connect("DummyTask", address_pull)
+        pipeline.stop()
 
     @staticmethod
-    def test_send_connect_B(
-        pipeline_s: pixie16.pipeline.Pipeline, pull: tuple[str, zmq.Socket]
-    ):
+    def test_send_connect_B(pull: tuple[str, zmq.Socket]):
         address_pull, socket_pull = pull
 
+        pipeline = pixie16.pipeline.Pipeline()
         with pytest.raises(ValueError):
-            pipeline_s.send_connect("Nope", address_pull)
+            pipeline.send_connect("Nope", address_pull)
 
     @staticmethod
-    def test_send_disconnect_A(
-        pipeline_s: pixie16.pipeline.Pipeline,
-    ):
-        pipeline_s.send_disconnect("Hello")
+    def test_send_disconnect_A():
+        pipeline = pixie16.pipeline.Pipeline()
+        pipeline.init(['DummyTask'])
+        pipeline.start()
+        pipeline.send_disconnect("DummyTask")
+        pipeline.stop()
 
     @staticmethod
-    def test_send_disconnect_B(
-        pipeline_s: pixie16.pipeline.Pipeline, pull: tuple[str, zmq.Socket]
-    ):
+    def test_send_disconnect_B(pull: tuple[str, zmq.Socket]):
         address_pull, socket_pull = pull
 
-        pipeline_s.send_connect("Hello", address_pull)
-        pipeline_s.send_disconnect("Hello")
+        pipeline = pixie16.pipeline.Pipeline()
+        pipeline.init(['DummyTask'])
+        pipeline.start()
+        pipeline.send_connect("DummyTask", address_pull)
+        pipeline.send_disconnect("DummyTask")
+        pipeline.stop()
 
     @staticmethod
-    def test_send_disconnect_C(pipeline_s: pixie16.pipeline.Pipeline):
+    def test_send_disconnect_C():
+        pipeline = pixie16.pipeline.Pipeline()
         with pytest.raises(ValueError):
-            pipeline_s.send_disconnect("Nope")
+            pipeline.send_disconnect("Nope")
 
     @staticmethod
-    def test_send_start_A(pipeline_s: pixie16.pipeline.Pipeline):
-        pipeline_s.send_start("Hello")
+    def test_send_start_A():
+        pipeline = pixie16.pipeline.Pipeline()
+        pipeline.init(['DummyTask'])
+        pipeline.start()
+        pipeline.send_start("DummyTask")
+        pipeline.stop()
 
     @staticmethod
-    def test_send_start_B(pipeline_s: pixie16.pipeline.Pipeline):
+    def test_send_start_B():
+        pipeline = pixie16.pipeline.Pipeline()
         with pytest.raises(ValueError):
-            pipeline_s.send_start("Nope")
+            pipeline.send_start("Nope")
 
     @staticmethod
-    def test_send_pause_A(pipeline_s: pixie16.pipeline.Pipeline):
-        pipeline_s.send_pause("Hello")
+    def test_send_pause_A():
+        pipeline = pixie16.pipeline.Pipeline()
+        pipeline.init(['DummyTask'])
+        pipeline.start()
+        pipeline.send_pause("DummyTask")
+        pipeline.stop()
 
     @staticmethod
-    def test_send_pause_B(pipeline_s: pixie16.pipeline.Pipeline):
+    def test_send_pause_B():
+        pipeline = pixie16.pipeline.Pipeline()
         with pytest.raises(ValueError):
-            pipeline_s.send_pause("Nope")
+            pipeline.send_pause("Nope")
 
     @staticmethod
-    def test_send_stop_A(pipeline_s: pixie16.pipeline.Pipeline):
-        pipeline_s.send_stop("Hello")
+    def test_send_stop_A():
+        pipeline = pixie16.pipeline.Pipeline()
+        pipeline.init(['DummyTask'])
+        pipeline.start()
+        pipeline.send_stop("DummyTask")
+        pipeline.stop()
 
     @staticmethod
-    def test_send_stop_B(pipeline_s: pixie16.pipeline.Pipeline):
+    def test_send_stop_B():
+        pipeline = pixie16.pipeline.Pipeline()
         with pytest.raises(ValueError):
-            pipeline_s.send_stop("Nope")
+            pipeline.send_stop("Nope")
 
     @staticmethod
-    def test_send_configure_A(pipeline_s: pixie16.pipeline.Pipeline):
-        pipeline_s.send_configure("Hello", {})
+    def test_send_configure_A():
+        pipeline = pixie16.pipeline.Pipeline()
+        pipeline.init(['DummyTask'])
+        pipeline.start()
+        pipeline.send_configure("DummyTask", {})
+        pipeline.stop()
 
     @staticmethod
-    def test_send_configure_B(pipeline_s: pixie16.pipeline.Pipeline):
+    def test_send_configure_B():
+        pipeline = pixie16.pipeline.Pipeline()
         with pytest.raises(ValueError):
-            pipeline_s.send_configure("Nope", {})
+            pipeline.send_configure("Nope", {})
 
     @staticmethod
-    def test_init_A(pipeline_b: pixie16.pipeline.Pipeline):
-        pipeline_b.init(["Hello"])
+    def test_init_A():
+        pipeline = pixie16.pipeline.Pipeline()
+        pipeline.init(["DummyTask"])
+        pipeline.stop()
 
     @staticmethod
-    def test_init_B(pipeline_b: pixie16.pipeline.Pipeline):
-        pipeline_b.init([])
+    def test_init_B():
+        pipeline = pixie16.pipeline.Pipeline()
+        pipeline.init([])
+        pipeline.stop()
 
     @staticmethod
-    def test_start(pipeline_i: pixie16.pipeline.Pipeline):
-        pipeline_i.start()
+    def test_start():
+        pipeline = pixie16.pipeline.Pipeline()
+        pipeline.init(["DummyTask"])
+        pipeline.start()
+        pipeline.stop()
 
     @staticmethod
-    def test_pause(pipeline_i: pixie16.pipeline.Pipeline):
-        pipeline_i.pause()
+    def test_pause():
+        pipeline = pixie16.pipeline.Pipeline()
+        pipeline.init(["DummyTask"])
+        pipeline.pause()
+        pipeline.stop()
 
     @staticmethod
-    def test_start(pipeline_i: pixie16.pipeline.Pipeline):
-        pipeline_i.stop()
+    def test_start():
+        pipeline = pixie16.pipeline.Pipeline()
+        pipeline.init(["DummyTask"])
+        pipeline.stop()
 
     @staticmethod
-    def test_configure(pipeline_i: pixie16.pipeline.Pipeline):
-        pipeline_i.configure({})
+    def test_configure():
+        pipeline = pixie16.pipeline.Pipeline()
+        pipeline.init(["DummyTask"])
+        pipeline.configure({})
+        pipeline.stop()
 
     @staticmethod
-    def test_poll(pipeline_i: pixie16.pipeline.Pipeline):
-        pipeline_i.poll()
+    def test_poll():
+        pipeline = pixie16.pipeline.Pipeline()
+        pipeline.init(["DummyTask"])
+        pipeline.start()
+        pipeline.poll()
+        pipeline.stop()

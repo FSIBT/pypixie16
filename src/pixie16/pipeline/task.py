@@ -84,7 +84,10 @@ class Task(multiprocessing.Process, abc.ABC):
     class_registry = {}
 
     def __init_subclass__(cls, **kwargs):
-        """Stores subclasses in ``class_registry``."""
+        """
+        Stores subclasses in ``class_registry``.
+        """
+        
         super().__init_subclass__(**kwargs)
         Task.class_registry[cls.__name__] = cls
 
@@ -103,7 +106,7 @@ class Task(multiprocessing.Process, abc.ABC):
         super().__init__()
 
         self.name: str = self.__class__.__name__
-        self.erorr: Exception = None
+        self.error: Exception = None
         self._kill: bool = False
         self.queue: collections.deque = collections.deque()
         self.config: dict[str, typing.Any] = {

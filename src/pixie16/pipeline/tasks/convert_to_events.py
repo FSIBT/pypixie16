@@ -11,12 +11,10 @@ class ConvertToEvents(task.Task):
     def do_work(self):
         value_dict = self.queue.popleft()
 
-        for i, v in value_dict.items():
-            if i not in self.list_mode_readers:
+        for key, val in value_dict.items():
+            if key not in self.list_mode_readers:
                 reader = read.StreamReader()
-                self.list_mode_readers[i] = read.ListModeDataReader(reader)
-            self.list_mode_readers[i].reader.put(v)
+                self.list_mode_readers[key] = read.ListModeDataReader(reader)
+            self.list_mode_readers[key].reader.put(val)
 
-        data = {mod: reader.pop_all() for mod, reader in self.list_mode_readers.items()}
-
-        send_data(data)
+        return {mod: reader.pop_all() for mod, reader in self.list_mode_readers.items()}
