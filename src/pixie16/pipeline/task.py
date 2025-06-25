@@ -101,6 +101,8 @@ class Task(multiprocessing.Process, abc.ABC):
         self.queue: collections.deque = collections.deque()
         self.config: dict[str, typing.Any] = {}
         self.status: Status = Status.READY
+        self.is_final: bool = None
+        self.is_start: bool = None
 
         # ZMQ fields:
         self.context: zmq.Context = None
@@ -111,12 +113,22 @@ class Task(multiprocessing.Process, abc.ABC):
         self.address_push: str = None
         self.address_router: str = None
 
+    def do_report(self) -> dict:
+        """
+        Generates reports to the pipeline.
+
+        Note:
+            This function runs in the subprocess, and should be overwritten.
+        """
+
+        return {}
+
     def do_startup(self) -> None:
         """
         Called after initialization.
 
         Note:
-            This function runs in the subprocess.
+            This function runs in the subprocess, and should be overwritten.
         """
 
         pass
@@ -126,7 +138,7 @@ class Task(multiprocessing.Process, abc.ABC):
         Called after termination.
 
         Note:
-            This function runs in the subprocess.
+            This function runs in the subprocess, and should be overwritten.
         """
 
         pass
@@ -236,7 +248,7 @@ class Task(multiprocessing.Process, abc.ABC):
 
         pass
 
-    def send_report(self, report: dict[str, typing.Any]) -> None:
+    def send_report(self) -> None:
         """
         Sends ``REPORT`` messages to the pipeline.
 
@@ -244,6 +256,7 @@ class Task(multiprocessing.Process, abc.ABC):
             This function runs in the subprocess.
         """
 
+        report = self.do_report()
         report |= {
             "name": self.name,
             "config": self.config,
@@ -325,7 +338,7 @@ class Task(multiprocessing.Process, abc.ABC):
         except zmq.Again:
             pass
 
-        self.send_report({})
+        self.send_report()
 
         # Processing messages from tasks.
         try:
@@ -371,14 +384,19 @@ class Task(multiprocessing.Process, abc.ABC):
             self.status = Status.ERROR
             self.error = err
 
-        self.send_report({})
+        self.send_report()
 
         while self._kill:
             self.poll()
 
             try:
                 if self.status == Status.RUNNING:
-                    self.do_work()
+                    if self.queue or self.is_start:
+                        ret = self.do_work()
+                        if not self.is_final:
+                            self.send_data(ret)
+                    else:
+                        continue
                 elif self.status == Status.PAUSED:
                     pass
                 elif self.status == Status.ERROR:
@@ -391,7 +409,7 @@ class Task(multiprocessing.Process, abc.ABC):
 
             time.sleep(0.1)
 
-        self.send_report({})
+        self.send_report()
 
         # Doing cleanup and collecting stdout/stderr
         try:
@@ -400,7 +418,7 @@ class Task(multiprocessing.Process, abc.ABC):
             self.status = Status.ERROR
             self.error = err
 
-        self.send_report({})
+        self.send_report()
 
         # Closing ZMQ sockets.
         if self.socket_pull:

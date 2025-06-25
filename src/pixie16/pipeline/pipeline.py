@@ -209,11 +209,15 @@ class Pipeline:
             for name in self._tasks_active:
                 self.send_pause(name)
                 self.send_disconnect(name)
+                self._tasks_all[name].is_final = False
+                self._tasks_all[name].is_inital = False
 
         # Pausing & disconnecting new tasks.
         for name in tasks_active:
             self.send_pause(name)
             self.send_disconnect(name)
+            self._tasks_all[name].is_final = False
+            self._tasks_all[name].is_inital = False
 
         self._tasks_active = tasks_active
 
@@ -221,6 +225,12 @@ class Pipeline:
         if len(tasks_active) > 1:
             for name_a, name_b in itertools.pairwise(tasks_active):
                 self.send_connect(name_b, self.reports[name_a]["address_push"])
+
+            self._tasks_all[self._tasks_active[0]].is_inital = True
+            self._tasks_all[self._tasks_active[-1]].is_final = True
+        elif len(tasks_active) == 1:
+            self._tasks_all[self._tasks_active[0]].is_inital = True
+            self._tasks_all[self._tasks_active[0]].is_final = True
 
     def start(self) -> None:
         """
