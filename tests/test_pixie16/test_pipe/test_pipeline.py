@@ -46,12 +46,12 @@ class Test_Pipeline:
     def test_create_task():
         pipeline = pixie16.pipeline.Pipeline()
         pipeline.create_task("DummyTask")
-        pipeline._tasks_all['DummyTask'].kill()
+        pipeline._tasks_all["DummyTask"].kill()
 
     @staticmethod
     def test_handle_report_A():
         pipeline = pixie16.pipeline.Pipeline()
-        pipeline.init(['DummyTask'])
+        pipeline.init(["DummyTask"])
         pipeline.start()
         time.sleep(1)
         pipeline.stop()
@@ -65,7 +65,7 @@ class Test_Pipeline:
     @staticmethod
     def test_handle_print_A():
         pipeline = pixie16.pipeline.Pipeline()
-        pipeline.init(['DummyTask'])
+        pipeline.init(["DummyTask"])
         pipeline.start()
         time.sleep(1)
         pipeline.stop()
@@ -81,7 +81,7 @@ class Test_Pipeline:
         address_pull, socket_pull = pull
 
         pipeline = pixie16.pipeline.Pipeline()
-        pipeline.init(['DummyTask'])
+        pipeline.init(["DummyTask"])
         pipeline.start()
         pipeline.send_connect("DummyTask", address_pull)
         pipeline.stop()
@@ -97,7 +97,7 @@ class Test_Pipeline:
     @staticmethod
     def test_send_disconnect_A():
         pipeline = pixie16.pipeline.Pipeline()
-        pipeline.init(['DummyTask'])
+        pipeline.init(["DummyTask"])
         pipeline.start()
         pipeline.send_disconnect("DummyTask")
         pipeline.stop()
@@ -107,7 +107,7 @@ class Test_Pipeline:
         address_pull, socket_pull = pull
 
         pipeline = pixie16.pipeline.Pipeline()
-        pipeline.init(['DummyTask'])
+        pipeline.init(["DummyTask"])
         pipeline.start()
         pipeline.send_connect("DummyTask", address_pull)
         pipeline.send_disconnect("DummyTask")
@@ -122,7 +122,7 @@ class Test_Pipeline:
     @staticmethod
     def test_send_start_A():
         pipeline = pixie16.pipeline.Pipeline()
-        pipeline.init(['DummyTask'])
+        pipeline.init(["DummyTask"])
         pipeline.start()
         pipeline.send_start("DummyTask")
         pipeline.stop()
@@ -136,7 +136,7 @@ class Test_Pipeline:
     @staticmethod
     def test_send_pause_A():
         pipeline = pixie16.pipeline.Pipeline()
-        pipeline.init(['DummyTask'])
+        pipeline.init(["DummyTask"])
         pipeline.start()
         pipeline.send_pause("DummyTask")
         pipeline.stop()
@@ -150,7 +150,7 @@ class Test_Pipeline:
     @staticmethod
     def test_send_stop_A():
         pipeline = pixie16.pipeline.Pipeline()
-        pipeline.init(['DummyTask'])
+        pipeline.init(["DummyTask"])
         pipeline.start()
         pipeline.send_stop("DummyTask")
         pipeline.stop()
@@ -164,7 +164,7 @@ class Test_Pipeline:
     @staticmethod
     def test_send_configure_A():
         pipeline = pixie16.pipeline.Pipeline()
-        pipeline.init(['DummyTask'])
+        pipeline.init(["DummyTask"])
         pipeline.start()
         pipeline.send_configure("DummyTask", {})
         pipeline.stop()

@@ -201,7 +201,7 @@ class Pipeline:
 
         msg = pickle.dumps(Message.STOP)
         self.socket_router.send_multipart([name.encode(), msg])
-        
+
         self.poll(is_noblock=False)
 
     def send_configure(self, name: str, config: dict[str, typing.Any]) -> None:

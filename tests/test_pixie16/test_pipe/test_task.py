@@ -149,12 +149,12 @@ class Test_Task:
 
     # @staticmethod
     # def test_send_report(task: pixie16.pipeline.Task):
-        # task.send_report()
+    # task.send_report()
 
     # @staticmethod
     # def test_send_print(task: pixie16.pipeline.Task):
-        # task.send_print('Hi', 'Hi')
+    # task.send_print('Hi', 'Hi')
 
     # @staticmethod
     # def test_send_data(task: pixie16.pipeline.Task):
-        # task.send_data('Hi')
+    # task.send_data('Hi')

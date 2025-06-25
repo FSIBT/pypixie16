@@ -87,7 +87,7 @@ class Task(multiprocessing.Process, abc.ABC):
         """
         Stores subclasses in ``class_registry``.
         """
-        
+
         super().__init_subclass__(**kwargs)
         Task.class_registry[cls.__name__] = cls
 
