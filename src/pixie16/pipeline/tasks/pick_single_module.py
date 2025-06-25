@@ -8,12 +8,12 @@ class PickSingleModule(task.Task):
     for a single module.
     """
 
-    def __init__(self):
-        super().__init__()
-        self.module = 2
+    def do_startup(self):
+        self.config |= {"pick_module": 2}
 
-    def do_work(self, value_dict):
-        if not value_dict["type"] == MessageType.DATA:
-            return
-        data = {k: v for k, v in value_dict.items() if k == self.module}
-        return {"type": MessageType.DATA, "data": data}
+    def handle_configure(self, config_dict: dict):
+        super().handle_configure(config_dict)
+        self.module = self.config["pick_module"]
+
+    def do_work(self, values):
+        return {k: v for k, v in values.items() if k == self.module}
