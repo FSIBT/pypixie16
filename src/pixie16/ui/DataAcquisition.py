@@ -25,7 +25,7 @@ import psutil
 
 from .. import pipeline
 
-from ..pipeline.tasks import SetDefaults
+# from ..pipeline.tasks import SetDefaults
 from ..config import LocalSettings
 
 
@@ -244,7 +244,7 @@ class DataAcquisition(QWidget):
 
     def set_pixie_default(self):
         """Sets reasonable defaults for all parameters in the pixie16"""
-        defaults_task = SetDefaults(self.pipeline.bind_address)
+        # defaults_task = SetDefaults(self.pipeline.bind_address)
         defaults_task.do_work(None)
 
     def on_mode_change(self, text: str):

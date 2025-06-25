@@ -2,7 +2,6 @@ from .gather_data import GatherData
 from .pick_single_module import PickSingleModule
 from .convert_to_events import ConvertToEvents
 from .gather_events import GatherEvents
-from .set_defaults import SetDefaults
 from .dummy_data import DummyData
 from .print_data import PrintData
 from .load_files import LoadFiles
@@ -13,7 +12,6 @@ __all__ = [
     "PickSingleModule",
     "ConvertToEvents",
     "GatherEvents",
-    "SetDefaults",
     "PrintData",
     "DummyData",
     "LoadFiles",
