@@ -55,10 +55,7 @@ class SortEvents(task.Task):
 
     """
 
-    def __init__(self):
-        super().__init__()
-        self.name = "Sort events"
-
+    def do_startup(self):
         self.data = []
         self.config |= {
             "sort_size": 10_000,

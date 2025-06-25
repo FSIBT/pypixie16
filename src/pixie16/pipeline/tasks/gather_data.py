@@ -8,10 +8,7 @@ class GatherData(task.Task):
     and one for saving data to disk.
     """
 
-    def __init__(self):
-        super().__init__()
-        self.name = "Gather Data"
-
+    def do_startup(self):
         self.config |= {
             "binary_save_size": None,
             "binary_size": 50e6,
