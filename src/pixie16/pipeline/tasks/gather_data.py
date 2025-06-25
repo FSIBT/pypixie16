@@ -12,7 +12,7 @@ class GatherData(task.Task):
         super().__init__()
         self.name = "Gather Data"
 
-        self.config = {
+        self.config |= {
             "binary_save_size": None,
             "binary_size": 50e6,
             "binary_save_path": None,
