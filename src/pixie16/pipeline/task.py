@@ -96,6 +96,7 @@ class Task(multiprocessing.Process, abc.ABC):
         super().__init__()
 
         self.name: str = name
+        self.erorr: Exception = None
         self._kill: bool = False
         self.queue: collections.deque = collections.deque()
         self.config: dict[str, typing.Any] = {}
@@ -218,6 +219,23 @@ class Task(multiprocessing.Process, abc.ABC):
 
         self.config = config
 
+    def handle_data(self) -> None:
+        """
+        Handles ``DATA`` message from the pervious task.
+
+        Parameter:
+            data: Recieved data.
+        """
+
+        self.queue.append(data)
+
+    def handle_finished(self, data: typing.Any) -> None:
+        """
+        Handles ``FINISHED`` messages from the previous task.
+        """
+
+        pass
+
     def send_report(self, report: dict[str, typing.Any]) -> None:
         """
         Sends ``REPORT`` messages to the pipeline.
@@ -269,6 +287,17 @@ class Task(multiprocessing.Process, abc.ABC):
         msg = Message.DATA(data)
         self.socket_push.send_pyobj(msg)
 
+    def send_finished(self) -> None:
+        """
+        Sends ``FINISHED`` messages to the next task.
+
+        Note:
+            This function runs in the subprocess.
+        """
+
+        msg = Message.FINISHED
+        self.socket_push.send_pyobj(msg)
+
     def poll(self) -> None:
         """
         Polls the sockets, checking for and processing messages, without blocking.
@@ -293,15 +322,21 @@ class Task(multiprocessing.Process, abc.ABC):
                 self.handle_configure(*msg())
             else:
                 assert False
-
-            self.send_report({})
         except zmq.Again:
             pass
+
+        self.send_report({})
 
         # Processing messages from tasks.
         try:
             msg = self.socket_pull.recv_pyobj(flags=zmq.NOBLOCK)
-            self.queue.append(*msg())
+
+            if type(msg) == Message.DATA:
+                self.handle_data(*msg())
+            elif msg == Message.FINISHED:
+                self.handle_finished()
+            else:
+                assert False
         except zmq.Again:
             pass
 
@@ -334,7 +369,7 @@ class Task(multiprocessing.Process, abc.ABC):
             self.do_startup()
         except Exception as err:
             self.status = Status.ERROR
-            self.send_report({"error": err})
+            self.error = err
 
         self.send_report({})
 
@@ -352,7 +387,7 @@ class Task(multiprocessing.Process, abc.ABC):
                     raise RuntimeError
             except Exception as err:
                 self.status = Status.ERROR
-                self.send_report({"error": err})
+                self.error = err
 
             time.sleep(0.1)
 
@@ -363,7 +398,7 @@ class Task(multiprocessing.Process, abc.ABC):
             self.do_cleanup()
         except Exception as err:
             self.status = Status.ERROR
-            self.send_report({"error": err})
+            self.error = err
 
         self.send_report({})
 

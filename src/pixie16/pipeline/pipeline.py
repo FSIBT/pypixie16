@@ -95,6 +95,20 @@ class Pipeline:
         if stderr:
             print(stderr, file=sys.stderr)
 
+    def handle_error(self, err: Exception) -> None:
+        """
+        Handles errors condition.
+        """
+
+        raise err
+
+    def handle_finished(self) -> None:
+        """
+        Handles finished condition.
+        """
+
+        self.pause()
+
     def send_connect(self, name: str, address_pull: str) -> None:
         """
         Sends ``CONNECT`` messages to tasks.
@@ -251,6 +265,12 @@ class Pipeline:
             msg = pickle.loads(msg)
         except zmq.Again:
             return
+
+        for name in self._tasks_active:
+            if self.reports[name]['status'] == Status.FINISHED:
+                self.handle_finished()
+            elif self.reports[name]['status'] == Status.ERROR:
+                self.handle_error(self.reports[name]['error'])
 
         if type(msg) == Message.REPORT:
             self.handle_report(name, *msg())

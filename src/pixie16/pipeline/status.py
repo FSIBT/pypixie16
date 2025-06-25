@@ -7,7 +7,8 @@ class Status(enum.Enum):
     """
 
     DONE = "🆒"
-    READY = "✅"
+    READY = "🆕"
     RUNNING = "▶️"
+    FINISHED = "✅"
     PAUSED = "⏸️"
     ERROR = "🆘"
