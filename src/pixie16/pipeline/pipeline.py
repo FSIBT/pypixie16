@@ -48,10 +48,6 @@ class Pipeline:
     """
 
     def __init__(self):
-        """
-        Initializes ``Pipeline``.
-        """
-
         self._status = Status.READY
         self._tasks_active = []
         self._tasks_all = {}
@@ -62,6 +58,11 @@ class Pipeline:
         self.address_router = f"tcp://127.0.0.1:{self.address_router}"
 
     def create_task(self, name: str):
+        """Create Task if it doesn't exist already."""
+
+        if name in self._tasks_all:
+            return
+
         if name not in Task.class_registry:
             print(f"ERROR cannot find pypixie16 task '{name}'")
             sys.exit(1)
