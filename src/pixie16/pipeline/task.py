@@ -81,7 +81,14 @@ class Task(multiprocessing.Process, abc.ABC):
         the pipeline.
     """
 
-    def __init__(self, name: str):
+    class_registry = {}
+
+    def __init_subclass__(cls, **kwargs):
+        """Stores subclasses in ``class_registry``."""
+        super().__init_subclass__(**kwargs)
+        Task.class_registry[cls.__name__] = cls
+
+    def __init__(self):
         """
         Initializes ``Task``.
 
@@ -95,7 +102,7 @@ class Task(multiprocessing.Process, abc.ABC):
 
         super().__init__()
 
-        self.name: str = name
+        self.name: str = self.__class__.__name__
         self.erorr: Exception = None
         self._kill: bool = False
         self.queue: collections.deque = collections.deque()

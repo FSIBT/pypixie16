@@ -26,15 +26,8 @@ class DummyData(task.Task):
         filename: Path to dummy data.
     """
 
-    def __init__(self, name: str):
-        """
-        Iniailzies ``DummyData``.
-
-        Parameters:
-            name: Task name.
-        """
-
-        super().__init__(name)
+    def __init__(self):
+        super().__init__()
 
         self.pos = 0
         self.runtime = 10

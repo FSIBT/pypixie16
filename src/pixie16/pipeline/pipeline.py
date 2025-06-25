@@ -39,12 +39,12 @@ class Pipeline:
         poller: ZMQ poller.
     """
 
-    def __init__(self, *tasks: Task):
+    def __init__(self):
         """
         Initializes ``Pipeline``.
         """
 
-        self._tasks_active = []
+        self.tasks_active = []
         self._tasks_all = {}
         self.reports = {}
         self.context = zmq.Context()
@@ -52,16 +52,18 @@ class Pipeline:
         self.address_router = self.socket_router.bind_to_random_port("tcp://127.0.0.1")
         self.address_router = f"tcp://127.0.0.1:{self.address_router}"
 
-        for task in tasks:
-            if task.status != Status.READY:
-                raise RuntimeError
+    def create_task(self, name: str):
+        if name not in Task.class_registry:
+            print(f"ERROR cannot find pypixie16 task '{name}'")
+            sys.exit(1)
 
-            self._tasks_all[task.name] = task
-            task.address_router = self.address_router
-            task.start()
+        task = Task.class_registry[name]()
+        self._tasks_all[name] = task
+        task.address_router = self.address_router
+        task.start()
 
-            while task.name not in self.reports:
-                self.poll()
+        while name not in self.reports:
+            self.poll()
 
     def handle_report(self, name: str, report: dict[str, typing.Any]) -> None:
         """
@@ -205,8 +207,8 @@ class Pipeline:
         """
 
         # Pausing & disconnecting old tasks.
-        if self._tasks_active:
-            for name in self._tasks_active:
+        if self.tasks_active:
+            for name in self.tasks_active:
                 self.send_pause(name)
                 self.send_disconnect(name)
                 self._tasks_all[name].is_final = False
@@ -214,30 +216,31 @@ class Pipeline:
 
         # Pausing & disconnecting new tasks.
         for name in tasks_active:
+            self.create_task(name)
             self.send_pause(name)
             self.send_disconnect(name)
             self._tasks_all[name].is_final = False
             self._tasks_all[name].is_inital = False
 
-        self._tasks_active = tasks_active
+        self.tasks_active = tasks_active
 
         # Connecting new tasks
         if len(tasks_active) > 1:
             for name_a, name_b in itertools.pairwise(tasks_active):
                 self.send_connect(name_b, self.reports[name_a]["address_push"])
 
-            self._tasks_all[self._tasks_active[0]].is_inital = True
-            self._tasks_all[self._tasks_active[-1]].is_final = True
+            self._tasks_all[self.tasks_active[0]].is_inital = True
+            self._tasks_all[self.tasks_active[-1]].is_final = True
         elif len(tasks_active) == 1:
-            self._tasks_all[self._tasks_active[0]].is_inital = True
-            self._tasks_all[self._tasks_active[0]].is_final = True
+            self._tasks_all[self.tasks_active[0]].is_inital = True
+            self._tasks_all[self.tasks_active[0]].is_final = True
 
     def start(self) -> None:
         """
         Starts the chain.
         """
 
-        for name in self._tasks_active:
+        for name in self.tasks_active:
             self.send_start(name)
 
     def pause(self) -> None:
@@ -245,7 +248,7 @@ class Pipeline:
         Pauses the chain.
         """
 
-        for name in self._tasks_active:
+        for name in self.tasks_active:
             self.send_pause(name)
 
     def stop(self) -> None:
@@ -253,7 +256,7 @@ class Pipeline:
         Stops the chain.
         """
 
-        for name in self._tasks_active:
+        for name in self.tasks_active:
             self.send_stop(name)
 
     def configure(self, config: dict[str, typing.Any]) -> None:
@@ -261,7 +264,7 @@ class Pipeline:
         Configures the chain.
         """
 
-        for name in self._tasks_active:
+        for name in self.tasks_active:
             self.send_configure(name, config)
 
     def poll(self) -> None:
@@ -276,11 +279,11 @@ class Pipeline:
         except zmq.Again:
             return
 
-        for name in self._tasks_active:
-            if self.reports[name]['status'] == Status.FINISHED:
+        for name in self.tasks_active:
+            if self.reports[name]["status"] == Status.FINISHED:
                 self.handle_finished()
-            elif self.reports[name]['status'] == Status.ERROR:
-                self.handle_error(self.reports[name]['error'])
+            elif self.reports[name]["status"] == Status.ERROR:
+                self.handle_error(self.reports[name]["error"])
 
         if type(msg) == Message.REPORT:
             self.handle_report(name, *msg())

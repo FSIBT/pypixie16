@@ -8,11 +8,9 @@ class PickSingleModule(task.Task):
     for a single module.
     """
 
-    def __init__(self, pipeline_address):
-        module = 2
-        super().__init__(pipeline_address)
-        self.module = module
-        self.name = f"Reduce to module {module}"
+    def __init__(self):
+        super().__init__()
+        self.module = 2
 
     def do_work(self, value_dict):
         if not value_dict["type"] == MessageType.DATA:

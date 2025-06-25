@@ -43,8 +43,8 @@ class DataAcquisition(QWidget):
         self.create_layout()
 
         self.start_button.clicked.connect(self.start_run)
-        self.pause_button.clicked.connect(self.pipeline.pause_tasks)
-        self.stop_button.clicked.connect(self.pipeline.close)
+        self.pause_button.clicked.connect(self.pipeline.pause)
+        self.stop_button.clicked.connect(self.pipeline.stop)
         self.on_mode_change(self.settings_modes.currentText())
         self.run_time_input.editingFinished.connect(self.set_runtime)
 
@@ -251,9 +251,7 @@ class DataAcquisition(QWidget):
         print(f"selected {text}")
         match text:
             case "DummyData":
-                self.pipeline.create_pipeline(
-                    ["DummyData", "PickSingleModule", "ConvertToEvents"]
-                )
+                self.pipeline.init(["DummyData", "PickSingleModule", "ConvertToEvents"])
             case _:
                 print("Should not happen")
 
@@ -287,10 +285,10 @@ class DataAcquisition(QWidget):
         """Get information from processes."""
 
         for i in range(10):
-            self.pipeline.poll_once()
+            self.pipeline.poll()
 
         keys = set()
-        for t, status in self.pipeline.status.items():
+        for t, status in self.pipeline.reports.items():
             keys.update(status.keys())
 
         ordered_keys = [
@@ -312,14 +310,14 @@ class DataAcquisition(QWidget):
             key_to_pos["Extra Info"], QHeaderView.ResizeMode.Stretch
         )
 
-        for t in self.pipeline._tasks:
+        for t in self.pipeline.tasks_active:
             if t in self.taskid_to_row:
                 continue
             row = self.task_table.rowCount()
             self.task_table.insertRow(row)
             self.taskid_to_row[t] = row
 
-        for t, status in self.pipeline.status.items():
+        for t, status in self.pipeline.reports.items():
             extra_info = []
             for key, val in status.items():
                 if key == "time done":
