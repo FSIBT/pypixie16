@@ -28,20 +28,23 @@ def context() -> zmq.Context:
 
 @pytest.fixture
 def task() -> pixie16.pipeline.Task:
-    return DummyTask("Hello")
+    task = DummyTask("Hello")
+    yield task
+    task.kill()
 
 
 @pytest.fixture
 def pipeline_b(task: pixie16.pipeline.Task) -> pixie16.pipeline.Pipeline:
     pipeline = pixie16.pipeline.Pipeline(task)
-    pipeline.init(["Hello"])
-    return pipeline
+    yield pipeline
+    pipeline.stop()
 
 
 @pytest.fixture
 def pipeline_i(pipeline_b: pixie16.pipeline.Pipeline) -> pixie16.pipeline.Pipeline:
     pipeline_b.init(["Hello"])
-    return pipeline_b
+    yield pipeline_b
+    pipeline_b.stop()
 
 
 @pytest.fixture
@@ -49,6 +52,7 @@ def pipeline_s(pipeline_i: pixie16.pipeline.Pipeline) -> pixie16.pipeline.Pipeli
     pipeline_i.start()
     yield pipeline_i
     pipeline_i.stop()
+    assert pipeline_i._status == pixie16.pipeline.Status.DONE
 
 
 @pytest.fixture

@@ -6,22 +6,18 @@ import pixie16
 class Test_DummyData:
     @staticmethod
     def test():
-        dummy = pixie16.pipeline.tasks.DummyData("Dummy Data")
-        printer = pixie16.pipeline.tasks.PrintData("Print Data")
-        pipeline = pixie16.pipeline.Pipeline(dummy, printer)
-        pipeline.init(["Dummy Data", "Print Data"])
-        pipeline.start()
+        task0 = pixie16.pipeline.tasks.DummyData("Dummy")
+        task1 = pixie16.pipeline.tasks.PrintData("Print")
+        pipe = pixie16.pipeline.Pipeline(task0, task1)
+        pipe.init(["Dummy", "Print"])
+        pipe.start()
 
-        while dummy.is_alive() and printer.is_alive():
-            pipeline.poll()
+        while True:
+            pipe.poll()
 
-            if "finished" in pipeline.reports["Dummy Data"]:
-                pipeline.pause()
+            if pipe._status == pixie16.pipeline.Status.FINISHED:
+                break
 
-            for report in pipeline.reports.values():
-                if report["status"] == pixie16.pipeline.Status.ERROR:
-                    assert False
+            time.sleep(0.3)
 
-            time.sleep(0.1)
-
-        pipeline.stop()
+        pipe.stop()

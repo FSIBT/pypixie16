@@ -18,6 +18,14 @@ class Pipeline:
     Pipelines uses ZMQ Push/Pull sockets to get and send messages to tasks.
     Pipeliens send and recieve the following kinds of messages to tasks:
 
+    Pipelines use the following states to transition between chain
+    initialization, running, pausing, and stoping:
+    * ▶️ RUNNING: Chain running.
+    * ⏸️ PAUSED: Chain waiting.
+    * 🆒 DONE: Chain done.
+    * ✅ READY: Chain initialized.
+    * 🆘 ERROR: Chain detected an error.
+
     * PIPELINE-TO-TASK:
         * 🔁 CONNECT: Connect to given ZMQ push queue.
         * 🔀 DISCONNECT: Disconnect from the ZMQ push queue.
@@ -44,7 +52,8 @@ class Pipeline:
         Initializes ``Pipeline``.
         """
 
-        self.tasks_active = []
+        self._status = Status.READY
+        self._tasks_active = []
         self._tasks_all = {}
         self.reports = {}
         self.context = zmq.Context()
@@ -62,8 +71,7 @@ class Pipeline:
         task.address_router = self.address_router
         task.start()
 
-        while name not in self.reports:
-            self.poll()
+        self.poll(is_noblock=False)
 
     def handle_report(self, name: str, report: dict[str, typing.Any]) -> None:
         """
@@ -102,6 +110,7 @@ class Pipeline:
         Handles errors condition.
         """
 
+        self._status = Status.ERROR
         raise err
 
     def handle_finished(self) -> None:
@@ -109,7 +118,7 @@ class Pipeline:
         Handles finished condition.
         """
 
-        self.pause()
+        self._status = Status.FINISHED
 
     def send_connect(self, name: str, address_pull: str) -> None:
         """
@@ -206,21 +215,21 @@ class Pipeline:
             tasks_active: Names of tasks to connect.
         """
 
+        self._status = Status.READY
+
         # Pausing & disconnecting old tasks.
         if self.tasks_active:
             for name in self.tasks_active:
                 self.send_pause(name)
                 self.send_disconnect(name)
-                self._tasks_all[name].is_final = False
-                self._tasks_all[name].is_inital = False
+                self.send_configure(name, {"is_final": False, "is_start": False})
 
         # Pausing & disconnecting new tasks.
         for name in tasks_active:
             self.create_task(name)
             self.send_pause(name)
             self.send_disconnect(name)
-            self._tasks_all[name].is_final = False
-            self._tasks_all[name].is_inital = False
+            self.send_configure(name, {"is_final": False, "is_start": False})
 
         self.tasks_active = tasks_active
 
@@ -228,19 +237,27 @@ class Pipeline:
         if len(tasks_active) > 1:
             for name_a, name_b in itertools.pairwise(tasks_active):
                 self.send_connect(name_b, self.reports[name_a]["address_push"])
+                self.poll(is_noblock=False)
 
-            self._tasks_all[self.tasks_active[0]].is_inital = True
-            self._tasks_all[self.tasks_active[-1]].is_final = True
-        elif len(tasks_active) == 1:
-            self._tasks_all[self.tasks_active[0]].is_inital = True
-            self._tasks_all[self.tasks_active[0]].is_final = True
+        if tasks_active:
+            self.send_configure(
+                self._tasks_active[0], {"is_final": False, "is_start": True}
+            )
+            self.send_configure(
+                self._tasks_active[-1], {"is_final": True, "is_start": False}
+            )
+
+            self.poll(is_noblock=False)
+            self.poll(is_noblock=False)
 
     def start(self) -> None:
         """
         Starts the chain.
         """
 
-        for name in self.tasks_active:
+        self._status = Status.RUNNING
+
+        for name in self._tasks_active:
             self.send_start(name)
 
     def pause(self) -> None:
@@ -248,7 +265,9 @@ class Pipeline:
         Pauses the chain.
         """
 
-        for name in self.tasks_active:
+        self._status = Status.PAUSED
+
+        for name in self._tasks_active:
             self.send_pause(name)
 
     def stop(self) -> None:
@@ -256,7 +275,9 @@ class Pipeline:
         Stops the chain.
         """
 
-        for name in self.tasks_active:
+        self._status = Status.DONE
+
+        for name in self._tasks_active:
             self.send_stop(name)
 
     def configure(self, config: dict[str, typing.Any]) -> None:
@@ -267,23 +288,24 @@ class Pipeline:
         for name in self.tasks_active:
             self.send_configure(name, config)
 
-    def poll(self) -> None:
+    def poll(self, is_noblock: bool = True) -> None:
         """
         Polls the pool, checking for and processing messages, without blocking.
+
+        Parameter:
+            is_noblock: Block/no block flag.
         """
 
         try:
-            name, msg = self.socket_router.recv_multipart(flags=zmq.NOBLOCK)
+            if is_noblock:
+                name, msg = self.socket_router.recv_multipart(flags=zmq.NOBLOCK)
+            else:
+                name, msg = self.socket_router.recv_multipart()
+
             name = name.decode()
             msg = pickle.loads(msg)
         except zmq.Again:
             return
-
-        for name in self.tasks_active:
-            if self.reports[name]["status"] == Status.FINISHED:
-                self.handle_finished()
-            elif self.reports[name]["status"] == Status.ERROR:
-                self.handle_error(self.reports[name]["error"])
 
         if type(msg) == Message.REPORT:
             self.handle_report(name, *msg())
@@ -291,3 +313,14 @@ class Pipeline:
             self.handle_print(name, *msg())
         else:
             raise RuntimeError
+
+        for name in self._tasks_active:
+            if self.reports[name]["status"] == Status.ERROR:
+                self.handle_error(self.reports[name]["error"])
+
+        if self._status != Status.READY:
+            if (
+                not self._tasks_active
+                or self.reports[self._tasks_active[-1]]["status"] == Status.FINISHED
+            ):
+                self.handle_finished()

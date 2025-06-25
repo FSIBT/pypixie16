@@ -1,4 +1,5 @@
 import time
+import typing
 import pathlib
 
 import numpy as np
@@ -60,7 +61,7 @@ class DummyData(task.Task):
         self.modules = self.config["modules"] or [2]
         self.runtime = self.config["runtime"] or 10
 
-    def do_work(self):
+    def do_work(self, value: typing.Any):
         """
         Simulates data acqusition.
         """
@@ -68,8 +69,7 @@ class DummyData(task.Task):
         # Checking runtime.
         self.time_done = time.time() - self.time_start
         if self.time_done >= self.runtime:
-            self.send_report({"finished": True})
-            return
+            self.send_finished()
 
         # Chuncking dummy data.
         time.sleep(0.2)
@@ -80,7 +80,7 @@ class DummyData(task.Task):
             ret = self.data[self.pos :]
             self.pos = 0
 
-        self.send_data({m: ret for m in self.modules})
+        return {m: ret for m in self.modules}
 
     def add_user_status(self, stat):
         stat["runtime"] = self.runtime

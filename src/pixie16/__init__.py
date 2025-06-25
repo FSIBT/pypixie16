@@ -11,8 +11,6 @@ from . import plot
 
 tasks = pipeline.tasks
 
-from ._version import __version__
-
 __all__ = [
     "cli",
     "pipeline",

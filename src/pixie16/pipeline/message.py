@@ -42,5 +42,7 @@ class Message(enum.Enum):
         pass
 
     # Task-to-Task
+    FINISHED = "✅"
+
     class DATA(_Message[any]):  # "📶"
         pass
