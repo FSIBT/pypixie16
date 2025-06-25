@@ -28,8 +28,6 @@ from PyQt6.QtWidgets import (
     QSplitter,
     QPushButton,
     QLabel,
-    QSpinBox,
-    QDoubleSpinBox,
     QComboBox,
     QCheckBox,
 )
@@ -37,12 +35,6 @@ from PyQt6.QtGui import QIcon
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal
 
 import numpy as np
-
-try:
-    import pyqtgraph as pg
-except ImportError:
-    print("Warning: pyqtgraph not found. Install with: pip install pyqtgraph")
-    pg = None
 
 try:
     from docopt import docopt
@@ -71,7 +63,7 @@ logger = logging.getLogger(__name__)
 
 # Hardcoded paths for testing
 DUMMY_BINARY_FILE = "/home/jo/Documents/work/data/RUN-2025-06-05-00001/binary-data/RUN-2025-06-05-00001-mod0-1749144651-168324-00000.bin"
-DUMMY_NUMPY_FILE = "/home/jo/Documents/work/data/RUN-2025-06-05-00001/binary-data/RUN-2025-06-05-00001-mod0-1749144651-168324-00000.npy"
+DUMMY_NUMPY_FILE = "/home/jo/Downloads/RUN-2025-06-17-00000-mca-2025-06-17-09-21-48.npy"
 
 
 class PixieScopeApp(QMainWindow):
@@ -339,11 +331,10 @@ class PixieScopeApp(QMainWindow):
 
     def create_control_panel(self):
         group = QGroupBox("Controls")
-        group.setMaximumHeight(100)  # Reduced height since we have fewer rows
+        group.setMaximumHeight(100)
         layout = QVBoxLayout()
         layout.setSpacing(5)
 
-        # Mode selection and acquisition controls on same row
         top_layout = QHBoxLayout()
 
         # Mode selection
@@ -373,11 +364,6 @@ class PixieScopeApp(QMainWindow):
         self.clear_btn.clicked.connect(self.clear_data)
         self.clear_btn.setMaximumWidth(60)
         top_layout.addWidget(self.clear_btn)
-
-        self.save_btn = QPushButton("Save")
-        self.save_btn.clicked.connect(self.save_data)
-        self.save_btn.setMaximumWidth(60)
-        top_layout.addWidget(self.save_btn)
 
         top_layout.addStretch()
 
@@ -439,8 +425,6 @@ class PixieScopeApp(QMainWindow):
                 channels=self.channel_numbers, title="PIXIE-16 MCA Spectra"
             )
         elif self.current_mode == "list_mode":
-            from pixie16.ui.spectrum_plotter import ContinuousSpectrumPlotter
-
             self.spectrum_tab = ContinuousSpectrumPlotter(
                 app=None,
                 instrument_name="pixie16",
@@ -703,11 +687,11 @@ class PixieScopeApp(QMainWindow):
             if self.dummy_mode:
                 self.read_dummy_mca_data()
             else:
-                self.read_real_mca_data()
+                self.read_mca_data()
         except Exception as e:
             print(f"Error in read_mca_data: {e}")
 
-    def read_real_mca_data(self):
+    def read_mca_data(self):
         try:
             # this always reads all channels from hardware
 
@@ -730,110 +714,65 @@ class PixieScopeApp(QMainWindow):
             print(f"Error in take_MCA_spectra: {e}")
 
     def read_dummy_mca_data(self):
-        try:
-            if not Path(DUMMY_NUMPY_FILE).exists():
-                print(f"Dummy numpy file not found: {DUMMY_NUMPY_FILE}")
-                print("Generating synthetic MCA data instead...")
-                self.generate_synthetic_mca_data()
-                return
+        if not Path(DUMMY_NUMPY_FILE).exists():
+            print(f"Dummy numpy file not found: {DUMMY_NUMPY_FILE}")
+            return
 
-            # Load the numpy data
-            mca_data = np.load(DUMMY_NUMPY_FILE)
-            print(f"Loaded MCA data from {DUMMY_NUMPY_FILE}, shape: {mca_data.shape}")
+        # Load the numpy data
+        mca_data = np.load(DUMMY_NUMPY_FILE)
+        print(f"Loaded MCA data from {DUMMY_NUMPY_FILE}, shape: {mca_data.shape}")
 
-            # Distribute data across ALL available channels
-            if len(mca_data.shape) == 2:
-                # Multiple channels in file
-                for i, channel in enumerate(self.channel_numbers):
-                    if i < mca_data.shape[0]:
-                        fresh_data = mca_data[i, :].astype(np.int64)
-                        self.accumulate_channel_data(channel, fresh_data)
-            else:
-                # Single channel, distribute to first channel
-                if self.channel_numbers:
-                    fresh_data = mca_data.astype(np.int64)
-                    self.accumulate_channel_data(self.channel_numbers[0], fresh_data)
-
-        except Exception as e:
-            print(f"Error loading dummy MCA data: {e}")
-            print("Generating synthetic MCA data instead...")
-            self.generate_synthetic_mca_data()
-
-    def generate_synthetic_mca_data(self):
-        for channel in self.channel_numbers:  # ALL channels
-            # Generate some fake peaks
-            fake_data = np.zeros(8192, dtype=np.int64)
-
-            # Add Gaussian peaks at different energies per channel
-            centers = [1000 + channel * 200, 2000 + channel * 150, 3500 + channel * 100]
-            for center in centers:
-                if center < 8192:
-                    width = 50 + np.random.randint(-20, 20)
-                    amplitude = np.random.randint(50, 200)
-                    x = np.arange(
-                        max(0, center - 3 * width), min(8192, center + 3 * width)
-                    )
-                    if len(x) > 0:
-                        counts = amplitude * np.exp(-0.5 * ((x - center) / width) ** 2)
-                        fake_data[x] += counts.astype(np.int64)
-
-            # Add background
-            background = np.random.poisson(0.5, size=8192).astype(np.int64)
-            fake_data += background
-
-            self.accumulate_channel_data(channel, fake_data)
+        # Distribute data across ALL available channels
+        if len(mca_data.shape) == 2:
+            # Multiple channels in file
+            for i, channel in enumerate(self.channel_numbers):
+                if i < mca_data.shape[0]:
+                    fresh_data = mca_data[i, :].astype(np.int64)
+                    self.accumulate_channel_data(channel, fresh_data)
+        else:
+            # Single channel, distribute to first channel
+            if self.channel_numbers:
+                fresh_data = mca_data.astype(np.int64)
+                self.accumulate_channel_data(self.channel_numbers[0], fresh_data)
 
     def start_dummy_list_mode_data(self):
-        """Start reading dummy list mode data from binary file"""
-
         def dummy_list_mode_reader():
-            try:
-                if not Path(DUMMY_BINARY_FILE).exists():
-                    print(f"Dummy binary file not found: {DUMMY_BINARY_FILE}")
-                    print("Using synthetic event generation instead...")
-                    self.generate_synthetic_list_mode_events()
-                    return
+            if not Path(DUMMY_BINARY_FILE).exists():
+                print(f"Dummy binary file not found: {DUMMY_BINARY_FILE}")
+                return
 
-                # ALWAYS start from beginning of file (for testing)
-                binary_data = np.fromfile(DUMMY_BINARY_FILE, dtype=np.uint32)
-                print(
-                    f"LIST MODE: Loaded {len(binary_data)} words from binary file (fresh start)"
-                )
+            # ALWAYS start from beginning of file (for testing)
+            binary_data = np.fromfile(DUMMY_BINARY_FILE, dtype=np.uint32)
+            print(
+                f"LIST MODE: Loaded {len(binary_data)} words from binary file (fresh start)"
+            )
 
-                chunk_size = 1000
-                position = 0  # Always start from 0
+            chunk_size = 1000
+            position = 0  # Always start from 0
 
-                while (
-                    hasattr(self, "data_source")
-                    and self.data_source is not None
-                    and getattr(self.data_source, "is_active", False)
-                    and position < len(binary_data)
-                ):
-                    end_pos = min(position + chunk_size, len(binary_data))
-                    chunk = binary_data[position:end_pos]
+            while (
+                hasattr(self, "data_source")
+                and self.data_source is not None
+                and getattr(self.data_source, "is_active", False)
+                and position < len(binary_data)
+            ):
+                end_pos = min(position + chunk_size, len(binary_data))
+                chunk = binary_data[position:end_pos]
 
-                    if hasattr(self, "live_reader") and self.live_reader is not None:
-                        self.live_reader.add_data(chunk)
-                    else:
-                        print("Live reader no longer available, stopping binary reader")
-                        break
+                if hasattr(self, "live_reader") and self.live_reader is not None:
+                    self.live_reader.add_data(chunk)
+                else:
+                    print("Live reader no longer available, stopping binary reader")
+                    break
 
-                    position = end_pos
+                position = end_pos
 
-                    if position % 10000 == 0:  # Progress every 10k words
-                        print(f"LIST MODE: Fed {position}/{len(binary_data)} words")
+                if position % 10000 == 0:  # Progress every 10k words
+                    print(f"LIST MODE: Fed {position}/{len(binary_data)} words")
 
-                    time.sleep(0.1)  # 10 Hz chunk feeding
+                time.sleep(0.1)  # 10 Hz chunk feeding
 
-                print("LIST MODE: Binary file simulation completed")
-
-            except Exception as e:
-                print(f"Error with list mode binary file simulation: {e}")
-                # Fallback to synthetic events if file reading fails
-                try:
-                    self.generate_synthetic_list_mode_events()
-                except Exception as e2:
-                    print(f"Error starting synthetic events: {e2}")
+            print("LIST MODE: Binary file simulation completed")
 
         # Stop any existing thread before starting new one
         if (
@@ -849,56 +788,43 @@ class PixieScopeApp(QMainWindow):
         print("Started fresh dummy list mode thread")
 
     def start_dummy_traces_data(self):
-        """Start reading dummy traces data"""
-
         def dummy_traces_reader():
-            try:
-                if not Path(DUMMY_BINARY_FILE).exists():
-                    print(f"Dummy binary file not found: {DUMMY_BINARY_FILE}")
-                    print("Using synthetic trace generation instead...")
-                    self.generate_synthetic_traces()
-                    return
+            if not Path(DUMMY_BINARY_FILE).exists():
+                print(f"Dummy binary file not found: {DUMMY_BINARY_FILE}")
+                return
 
-                # ALWAYS start from beginning of file
-                binary_data = np.fromfile(DUMMY_BINARY_FILE, dtype=np.uint32)
-                print(
-                    f"TRACES MODE: Loaded {len(binary_data)} words from binary file (fresh start)"
-                )
+            # ALWAYS start from beginning of file
+            binary_data = np.fromfile(DUMMY_BINARY_FILE, dtype=np.uint32)
+            print(
+                f"TRACES MODE: Loaded {len(binary_data)} words from binary file (fresh start)"
+            )
 
-                chunk_size = 500  # Smaller chunks for traces
-                position = 0  # Always start from 0
+            chunk_size = 500  # Smaller chunks for traces
+            position = 0  # Always start from 0
 
-                while (
-                    hasattr(self, "data_source")
-                    and self.data_source is not None
-                    and getattr(self.data_source, "is_active", False)
-                    and position < len(binary_data)
-                ):
-                    end_pos = min(position + chunk_size, len(binary_data))
-                    chunk = binary_data[position:end_pos]
+            while (
+                hasattr(self, "data_source")
+                and self.data_source is not None
+                and getattr(self.data_source, "is_active", False)
+                and position < len(binary_data)
+            ):
+                end_pos = min(position + chunk_size, len(binary_data))
+                chunk = binary_data[position:end_pos]
 
-                    if hasattr(self, "live_reader") and self.live_reader is not None:
-                        self.live_reader.add_data(chunk)
-                    else:
-                        print("Live reader no longer available, stopping traces reader")
-                        break
+                if hasattr(self, "live_reader") and self.live_reader is not None:
+                    self.live_reader.add_data(chunk)
+                else:
+                    print("Live reader no longer available, stopping traces reader")
+                    break
 
-                    position = end_pos
+                position = end_pos
 
-                    if position % 5000 == 0:  # Progress every 5k words
-                        print(f"TRACES MODE: Fed {position}/{len(binary_data)} words")
+                if position % 5000 == 0:  # Progress every 5k words
+                    print(f"TRACES MODE: Fed {position}/{len(binary_data)} words")
 
-                    time.sleep(0.2)  # 5 Hz chunk feeding for traces
+                time.sleep(0.2)  # 5 Hz chunk feeding for traces
 
-                print("TRACES MODE: Binary file traces simulation completed")
-
-            except Exception as e:
-                print(f"Error with traces mode binary file simulation: {e}")
-                # Fallback to synthetic traces if file reading fails
-                try:
-                    self.generate_synthetic_traces()
-                except Exception as e2:
-                    print(f"Error starting synthetic traces: {e2}")
+            print("TRACES MODE: Binary file traces simulation completed")
 
         # Stop any existing thread before starting new one
         if (
@@ -913,106 +839,7 @@ class PixieScopeApp(QMainWindow):
         self.dummy_thread.start()
         print("Started fresh dummy traces thread")
 
-    def generate_synthetic_list_mode_events(self):
-        def synthetic_event_generator():
-            event_count = 0
-            while (
-                hasattr(self, "data_source")
-                and self.data_source is not None
-                and getattr(self.data_source, "is_active", False)
-            ):
-                for channel in self.channel_numbers:
-                    if np.random.random() < 0.1:  # 10% chance per channel
-                        energy = int(np.random.gamma(2, 300 + channel * 100))
-                        energy = max(0, min(energy, 4095))
-
-                        event = type(
-                            "Event",
-                            (),
-                            {
-                                "channel": channel,
-                                "energy": energy,
-                                "timestamp": int(time.time() * 1e9),
-                            },
-                        )()
-
-                        try:
-                            self.process_list_mode_event(event)
-                            event_count += 1
-                        except Exception as e:
-                            print(f"Error processing synthetic event: {e}")
-                            break
-
-                time.sleep(0.01)  # 100 Hz
-
-            print(
-                f"Synthetic list mode event generator stopped after {event_count} events"
-            )
-
-        self.dummy_thread = threading.Thread(
-            target=synthetic_event_generator, daemon=True
-        )
-        self.dummy_thread.start()
-
-    def generate_synthetic_traces(self):  # Fallback
-        def synthetic_trace_generator():
-            trace_count = 0
-            while (
-                hasattr(self, "data_source")
-                and self.data_source is not None
-                and getattr(self.data_source, "is_active", False)
-            ):
-                for channel in self.channel_numbers:
-                    if np.random.random() < 0.05:  # 5% chance per channel
-                        trace_length = 100
-                        t = np.linspace(0, 1, trace_length)
-
-                        # Generate realistic pulse shape
-                        amplitude = np.random.uniform(0.2, 1.0)
-                        rise_time = np.random.uniform(0.1, 0.3)
-                        decay_time = np.random.uniform(0.3, 0.7)
-
-                        trace = np.zeros(trace_length)
-                        rise_mask = t < rise_time
-                        decay_mask = t >= rise_time
-
-                        trace[rise_mask] = amplitude * (t[rise_mask] / rise_time)
-                        trace[decay_mask] = amplitude * np.exp(
-                            -(t[decay_mask] - rise_time) / decay_time
-                        )
-
-                        # Add noise
-                        trace += np.random.normal(0, 0.01, trace_length)
-
-                        event = type(
-                            "Event",
-                            (),
-                            {
-                                "channel": channel,
-                                "trace": trace,
-                                "timestamp": int(time.time() * 1e9),
-                                "energy": int(amplitude * 1000),
-                            },
-                        )()
-
-                        try:
-                            self.process_traces_event(event)
-                            trace_count += 1
-                        except Exception as e:
-                            print(f"Error processing synthetic trace: {e}")
-                            break
-
-                time.sleep(0.1)  # 10 Hz
-
-            print(f"Synthetic traces generator stopped after {trace_count} traces")
-
-        self.dummy_thread = threading.Thread(
-            target=synthetic_trace_generator, daemon=True
-        )
-        self.dummy_thread.start()
-
     def accumulate_channel_data(self, channel, fresh_data):
-        # for a specific channel
         try:
             # Always accumulate data regardless of display selection
             self.cumulative_mca_data[channel] += fresh_data
@@ -1191,38 +1018,6 @@ class PixieScopeApp(QMainWindow):
 
         mode_status = "DUMMY MODE - " if self.dummy_mode else ""
         self.info_bar.setText(f"{mode_status}All data cleared")
-
-    def save_data(self):
-        """Save current data"""
-        try:
-            from PyQt6.QtWidgets import QFileDialog
-            import datetime
-
-            timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-
-            if self.current_mode == "mca_mode":
-                filename = f"mca_data_{timestamp}.npz"
-            elif self.current_mode == "list_mode":
-                filename = f"list_mode_data_{timestamp}.json"
-            else:
-                filename = f"traces_data_{timestamp}.npz"
-
-            file_path, _ = QFileDialog.getSaveFileName(
-                self, f"Save {self.current_mode.title()} Data", filename
-            )
-
-            if file_path:
-                if hasattr(self.spectrum_tab, "export_data"):
-                    self.spectrum_tab.export_data(file_path)
-                    mode_status = "DUMMY MODE - " if self.dummy_mode else ""
-                    self.info_bar.setText(f"{mode_status}Data saved to {file_path}")
-                else:
-                    self.info_bar.setText("Export not implemented for this mode")
-
-        except Exception as e:
-            error_msg = f"Failed to save data: {str(e)}"
-            print(error_msg)
-            self.info_bar.setText(error_msg)
 
     def update_display_channels(self, selected_channels):
         print(f"Scope: channels changed to {selected_channels}")
