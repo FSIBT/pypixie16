@@ -5,13 +5,11 @@ from ... import read
 class ConvertToEvents(task.Task):
     """Task to convert data stream to events."""
 
-    def do_setup(self):
+    def do_startup(self):
         self.list_mode_readers = {}
 
-    def do_work(self):
-        value_dict = self.queue.popleft()
-
-        for key, val in value_dict.items():
+    def do_work(self, data):
+        for key, val in data.items():
             if key not in self.list_mode_readers:
                 reader = read.StreamReader()
                 self.list_mode_readers[key] = read.ListModeDataReader(reader)
