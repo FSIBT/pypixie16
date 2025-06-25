@@ -45,13 +45,15 @@ class DataAcquisition(QWidget):
         self.start_button.clicked.connect(self.start_run)
         self.pause_button.clicked.connect(self.pipeline.pause)
         self.stop_button.clicked.connect(self.pipeline.stop)
-        self.on_mode_change(self.settings_modes.currentText())
         self.run_time_input.editingFinished.connect(self.set_runtime)
 
         # Timer to update table and plot
         self.timer = QtCore.QTimer()
         self.timer.timeout.connect(self.update_status)
         self.timer.start(100)
+
+        # select a default mode
+        self.on_mode_change(self.settings_modes.currentIndex())
 
     @property
     def modes(self):
@@ -247,7 +249,8 @@ class DataAcquisition(QWidget):
         # defaults_task = SetDefaults(self.pipeline.bind_address)
         defaults_task.do_work(None)
 
-    def on_mode_change(self, text: str):
+    def on_mode_change(self, idx: int):
+        text = modes[idx]
         print(f"selected {text}")
         match text:
             case "DummyData":
