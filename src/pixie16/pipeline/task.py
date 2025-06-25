@@ -9,6 +9,7 @@ import collections
 import multiprocessing
 
 import zmq
+import psutil
 
 from .status import Status
 from .message import Message
@@ -109,11 +110,11 @@ class Task(multiprocessing.Process, abc.ABC):
         self.error: Exception = None
         self._kill: bool = False
         self.queue: collections.deque = collections.deque()
+        self.status: Status = Status.READY
         self.config: dict[str, typing.Any] = {
             "is_final": False,
             "is_start": False,
         }
-        self.status: Status = Status.READY
 
         # ZMQ fields:
         self.context: zmq.Context = None
@@ -287,6 +288,13 @@ class Task(multiprocessing.Process, abc.ABC):
             "address_pull": self.address_pull,
             "address_push": self.address_push,
             "address_router": self.address_router,
+            "sys_cpu_count": psutil.cpu_count(),
+            "sys_cpu_times": psutil.cpu_times(),
+            "sys_cpu_percent": psutil.cpu_percent(interval=0.1),
+            "sys_cpu_stats": psutil.cpu_stats(),
+            "sys_mem_virtual": psutil.virtual_memory(),
+            "sys_mem_swap": psutil.swap_memory(),
+            "ps": psutil.Process().as_dict(),
         }
 
         msg = pickle.dumps(Message.REPORT(report), protocol=pickle.HIGHEST_PROTOCOL)
