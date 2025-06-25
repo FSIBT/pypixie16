@@ -8,28 +8,28 @@ class GatherData(task.Task):
     and one for saving data to disk.
     """
 
-    def __init__(self, pipeline_address):
-        maxsize = 50e6
-        save_size = None
-        path = None
-
-        super().__init__(pipeline_address)
+    def __init__(self):
+        super().__init__()
         self.name = "Gather Data"
 
-        self.data_queue = defaultdict(list)
-        self.data_disk = defaultdict(list)
-        self.maxsize = None
-        self.save_size = None
-        self.save_binary = False
+        self.config = {
+            "binary_save_size": None,
+            "binary_size": 50e6,
+            "binary_save_path": None,
+            "binary_save_data": True,
+        }
 
-    def configure(self):
         self.data_queue = defaultdict(list)
         self.data_disk = defaultdict(list)
-        self.maxsize = self.state.get("maxsize") or 50_000_000
-        self.save_size = self.state.get("save size") or self.maxsize
-        self.save_binary = self.save_size is not None
-        self.maxsize = self.state.get("maxsize") or 50_000_000
-        self.path = Path(self.state.get("path")) or Path(".")
+
+    def handle_configure(self, config_dict: dict):
+        super().handle_configure(config_dict)
+
+        self.data_queue = defaultdict(list)
+        self.data_disk = defaultdict(list)
+
+        self.path = Path(self.config["binary_save_path"]) or Path(".")
+
         self.mycounter = 0
         self.file_counter = 0
 
@@ -51,18 +51,15 @@ class GatherData(task.Task):
             return max(out)
         return 0
 
-    def user_status(self, d: dict):
-        d["data size queue"] = self.get_size(self.data_queue)
-        d["data size disk"] = self.get_size(self.data_disk)
+    def do_report(self):
+        d = {
+            "data size queue": self.get_size(self.data_queue),
+            "data size disk": self.get_size(self.data_disk),
+        }
         return d
 
     def do_work(self, value):
         self.mycounter += 1
-
-        if value["type"] != "data":
-            return
-
-        value = value["data"]
 
         for i, data in enumerate(value):
             self.data_queue[i].append(data)
@@ -71,9 +68,9 @@ class GatherData(task.Task):
         # handle data for saving
         data_size = self.get_size(self.data_disk)
         if data_size:
-            if data_size > self.save_size:
+            if data_size > self.config["binary_save_size"]:
                 out = {k: np.concatenate(v) for k, v in self.data_disk.items() if v}
-                if self.save_binary:
+                if self.config["binary_save_data"]:
                     self.save_data(out)
                 self.data_disk = defaultdict(list)
 
@@ -83,17 +80,17 @@ class GatherData(task.Task):
         if not data_size:
             return
 
-        if data_size > self.maxsize:
+        if data_size > self.config.get("binary_size"):
             out = {k: np.concatenate(v) for k, v in self.data_queue.items() if v}
             self.data_queue = defaultdict(list)
-            return {"type": "data", "data": out}
+            return out
 
     def cleanup(self):
         """Send data still in buffer."""
         out_queue = {k: np.concatenate(v) for k, v in self.data_queue.items() if v}
         out_disk = {k: np.concatenate(v) for k, v in self.data_disk.items() if v}
-        if self.output_queue:
-            self.push.send_pyobj({"type": MessageType.DATA, "data": out})
-        if out_disk and not self.is_final_task:
-            if self.save_binary:
+        if not self.config["is_final"]:
+            self.send_data(out_queue)
+        if out_disk:
+            if self.config["binary_save_data"]:
                 self.save_data(out_disk)

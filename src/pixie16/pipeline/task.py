@@ -106,7 +106,10 @@ class Task(multiprocessing.Process, abc.ABC):
         self.erorr: Exception = None
         self._kill: bool = False
         self.queue: collections.deque = collections.deque()
-        self.config: dict[str, typing.Any] = {}
+        self.config: dict[str, typing.Any] = {
+            "is_final": False,
+            "is_start": False,
+        }
         self.status: Status = Status.READY
         self.is_final: bool = None
         self.is_start: bool = None
@@ -236,11 +239,7 @@ class Task(multiprocessing.Process, abc.ABC):
             This function runs in the subprocess.
         """
 
-        self.config = config
-        if "is_start" in config:
-            self.is_start = config["is_start"]
-        if "is_final" in config:
-            self.is_final = config["is_final"]
+        self.config |= config
 
     def handle_data(self, data: typing.Any) -> None:
         """
