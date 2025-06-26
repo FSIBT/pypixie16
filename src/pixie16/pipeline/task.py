@@ -314,6 +314,7 @@ class Task(multiprocessing.Process, abc.ABC):
             "sys_mem_virtual": psutil.virtual_memory(),
             "sys_mem_swap": psutil.swap_memory(),
             "ps": psutil.Process().as_dict(),
+            "queue": len(self.queue),
         }
 
         msg = pickle.dumps(Message.REPORT(report), protocol=pickle.HIGHEST_PROTOCOL)
@@ -415,6 +416,8 @@ class Task(multiprocessing.Process, abc.ABC):
                 self.handle_finished()
             else:
                 assert False
+
+            self.send_report()
         except zmq.Again:
             pass
 
