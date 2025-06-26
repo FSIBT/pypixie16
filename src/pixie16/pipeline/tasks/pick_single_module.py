@@ -10,10 +10,14 @@ class PickSingleModule(task.Task):
     for a single module.
     """
 
+    def handle_configure(self, config: dict):
+        super().handle_configure(config)
+        self.pick_module = self.config.get("pick_module", 2)
+
     def do_startup(self):
         self.config |= {
             "pick_module": 2
         }
 
     def do_work(self, value: typing.Any):
-        return {k: v for k, v in values.items() if k == self.config['pick_module']}
+        return {k: v for k, v in value.items() if k == self.pick_module}

@@ -16,6 +16,7 @@ class Test_DummyData:
             if pipe._status == pixie16.pipeline.Status.FINISHED:
                 break
 
-            time.sleep(0.3)
+            if pipe._status == pixie16.pipeline.Status.ERROR:
+                assert False
 
         pipe.stop()
