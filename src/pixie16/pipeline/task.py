@@ -111,12 +111,12 @@ class Task(multiprocessing.Process, abc.ABC):
         self._kill: bool = False
         self.queue: collections.deque = collections.deque()
         self.status: Status = Status.READY
-        self.config: dict[str, typing.Any] = {
+        self.config: dict = {
             "is_final": False,
             "is_start": False,
         }
 
-        # ZMQ fields:
+        # ZMQ fields.
         self.context: zmq.Context = None
         self.socket_pull: zmq.Socket = None
         self.socket_push: zmq.Socket = None
@@ -130,27 +130,43 @@ class Task(multiprocessing.Process, abc.ABC):
         Generates reports to the pipeline.
 
         Note:
-            This function runs in the subprocess, and should be overwritten.
+            This function runs in the subprocess, and ought to be overwritten.
         """
 
         return {}
 
-    def do_startup(self) -> None:
+    def do_configure(self, config: dict) -> None:
         """
-        Called after initialization.
+        Called after every configuration and reconfiguration.
+
+        Parameter:
+            config: New configuration.
 
         Note:
-            This function runs in the subprocess, and should be overwritten.
+            This function runs in the subprocess, and ought to be overwritten.
         """
 
         pass
+
+    def do_startup(self) -> dict:
+        """
+        Called after initialization.
+
+        Returns:
+            Default initialized parameters.
+
+        Note:
+            This function runs in the subprocess, and ought to be overwritten.
+        """
+
+        return {}
 
     def do_cleanup(self) -> None:
         """
         Called after termination.
 
         Note:
-            This function runs in the subprocess, and should be overwritten.
+            This function runs in the subprocess, and ought to be overwritten.
         """
 
         pass
@@ -230,7 +246,7 @@ class Task(multiprocessing.Process, abc.ABC):
 
         self._kill = True
 
-    def handle_configure(self, config: dict[str, typing.Any]) -> None:
+    def handle_configure(self, config: dict) -> None:
         """
         Handles ``CONFIGURE`` messages from the pipeline.
 
@@ -241,6 +257,7 @@ class Task(multiprocessing.Process, abc.ABC):
             This function runs in the subprocess.
         """
 
+        self.do_configure(config)
         self.config |= config
 
     def handle_data(self, data: typing.Any) -> None:
@@ -288,13 +305,13 @@ class Task(multiprocessing.Process, abc.ABC):
             "address_pull": self.address_pull,
             "address_push": self.address_push,
             "address_router": self.address_router,
-            "sys_cpu_count": psutil.cpu_count(),
-            "sys_cpu_times": psutil.cpu_times(),
-            "sys_cpu_percent": psutil.cpu_percent(interval=0.1),
-            "sys_cpu_stats": psutil.cpu_stats(),
-            "sys_mem_virtual": psutil.virtual_memory(),
-            "sys_mem_swap": psutil.swap_memory(),
-            "ps": psutil.Process().as_dict(),
+            # "sys_cpu_count": psutil.cpu_count(),
+            # "sys_cpu_times": psutil.cpu_times(),
+            # "sys_cpu_percent": psutil.cpu_percent(interval=0.1),
+            # "sys_cpu_stats": psutil.cpu_stats(),
+            # "sys_mem_virtual": psutil.virtual_memory(),
+            # "sys_mem_swap": psutil.swap_memory(),
+            # "ps": psutil.Process().as_dict(),
         }
 
         msg = pickle.dumps(Message.REPORT(report), protocol=pickle.HIGHEST_PROTOCOL)
@@ -422,7 +439,7 @@ class Task(multiprocessing.Process, abc.ABC):
 
         # Doing startup and collecting stdout/stderr
         try:
-            self.do_startup()
+            self.config = self.do_startup() | self.config
         except Exception as err:
             self.status = Status.ERROR
             self.error = err

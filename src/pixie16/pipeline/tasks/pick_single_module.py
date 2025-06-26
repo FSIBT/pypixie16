@@ -3,6 +3,9 @@ import typing
 from .. import task
 
 
+DEFAULT_PICK_MODULE = 2
+
+
 class PickSingleModule(task.Task):
     """Task to pick events from a single module.
 
@@ -10,12 +13,11 @@ class PickSingleModule(task.Task):
     for a single module.
     """
 
-    def handle_configure(self, config: dict):
-        super().handle_configure(config)
-        self.pick_module = self.config.get("pick_module", 2)
-
     def do_startup(self):
-        self.config |= {"pick_module": 2}
+        return {"pick_module": DEFAULT_PICK_MODULE}
+
+    def do_configure(self, config: dict):
+        self.pick_module = config.get("pick_module", self.config["pick_module"])
 
     def do_work(self, value: typing.Any):
         return {k: v for k, v in value.items() if k == self.pick_module}

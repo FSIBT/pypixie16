@@ -1,19 +1,22 @@
 from .. import task
 
 
+DEFAULT_SIZE = 1_000_000
+
+
 class GatherEvents(task.Task):
     """Gather Events into larger chunks."""
 
-    def handle_configure(self, config: dict):
-        super().handle_configure(config)
-        self.size = self.config.get("size", 1_000_000)
-
     def do_startup(self):
-        self.data = []
         self.nr = 0
-        self.config |= {
-            "size": 1_000_000,
+        self.data = []
+
+        return {
+            "size": DEFAULT_SIZE,
         }
+
+    def do_configure(self, config: dict):
+        self.size = config.get("size", self.config["size"])
 
     def do_report(self):
         return {

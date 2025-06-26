@@ -1,4 +1,12 @@
+import pathlib
+
 from .. import task
+
+
+DEFAULT_BINARY_SAVE_SIZE = None
+DEFAULT_BINARY_SIZE = 50e6
+DEFAULT_BINARY_SAVE_PATH = None
+DEFAULT_BINARY_SAVE_DATA = True
 
 
 class GatherData(task.Task):
@@ -9,26 +17,33 @@ class GatherData(task.Task):
     """
 
     def do_startup(self):
-        self.config |= {
-            "binary_save_size": None,
-            "binary_size": 50e6,
-            "binary_save_path": None,
-            "binary_save_data": True,
-        }
-
-        self.data_queue = defaultdict(list)
-        self.data_disk = defaultdict(list)
-
-    def handle_configure(self, config_dict: dict):
-        super().handle_configure(config_dict)
-
-        self.data_queue = defaultdict(list)
-        self.data_disk = defaultdict(list)
-
-        self.path = Path(self.config["binary_save_path"]) or Path(".")
-
         self.mycounter = 0
         self.file_counter = 0
+        self.path = pathlib.Path(self.config.get("binary_save_path", "."))
+
+        return {
+            "binary_save_size": DEFAULT_BINARY_SAVE_SIZE,
+            "binary_size": DEFAULT_BINARY_SIZE,
+            "binary_save_path": DEFAULT_BINARY_SAVE_PATH,
+            "binary_save_data": DEFAULT_BINARY_SAVE_DATA,
+        }
+
+    def do_configure(self, config: dict):
+        # Getting configuration fields.
+        self.binary_save_size = config.get(
+            "binary_save_size", self.config["binary_save_size"]
+        )
+        self.binary_size = config.get("binary_size", self.config["binary_size"])
+        self.binary_save_path = config.get(
+            "binary_save_path", self.config["binary_save_path"]
+        )
+        self.binary_save_data = config.get(
+            "binary_save_data", self.config["binary_save_data"]
+        )
+
+        # Setting/resetting fields.
+        self.data_queue = defaultdict(list)
+        self.data_disk = defaultdict(list)
 
     def save_data(self, out):
         timestamp = datetime.today().strftime("%Y-%m-%d-%H-%M-%S")

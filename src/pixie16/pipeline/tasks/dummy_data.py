@@ -11,6 +11,12 @@ from .. import message
 from ... import control
 
 
+WORK_PAUSE = 0.2
+DEFAULT_MODULES = [2]
+DEFAULT_RUNTIME = 10
+DEFAULT_CHUNK_SIZE = 20_000
+
+
 class DummyData(task.Task):
     """
     Sends dummy data into a chain.
@@ -27,12 +33,7 @@ class DummyData(task.Task):
         filename: Path to dummy data.
     """
 
-    def __init__(self):
-        super().__init__()
-
-        self.pos = 0
-        self.runtime = 10
-        self.time_done = 0
+    def do_startup(self):
         self.filename = (
             pathlib.Path(__file__).parent.parent.parent.parent.parent
             / "tests"
@@ -40,39 +41,31 @@ class DummyData(task.Task):
             / "bin"
             / "pixie16-data-01.bin"
         )
+        self.pos = 0
+        self.time_done = 0
+        self.time_start = time.time()
+        self.data = np.fromfile(self.filename, dtype=np.uint8)
 
-        self.config = {
-            "modules": None,
-            "runtime": None,
-            "chunk_size": None,
+        return {
+            "modules": DEFAULT_MODULES,
+            "runtime": DEFAULT_RUNTIME,
+            "chunk_size": DEFAULT_CHUNK_SIZE,
         }
 
-    def do_startup(self):
-        """
-        Prepares the data and configuration.
-        """
-
-        # Load data & metadata.
-        self.data = np.fromfile(self.filename, dtype=np.uint8)
-        self.time_start = time.time()
-
-        # Load configuration.
-        self.chunk_size = self.config.get("chunk_size") or min(20_000, len(self.data))
-        self.modules = self.config["modules"] or [2]
-        self.runtime = self.config["runtime"] or 10
+    def do_configure(self, config: dict):
+        self.modules = config.get("modules", self.config["modules"])
+        self.runtime = config.get("runtime", self.config["runtime"])
+        self.chunk_size = config.get("chunk_size", self.config["chunk_size"])
 
     def do_work(self, value: typing.Any):
-        """
-        Simulates data acqusition.
-        """
-
         # Checking runtime.
         self.time_done = time.time() - self.time_start
         if self.time_done >= self.runtime:
             self.send_finished()
 
+        time.sleep(WORK_PAUSE)
+
         # Chuncking dummy data.
-        time.sleep(0.2)
         if self.pos + self.chunk_size < len(self.data):
             ret = self.data[self.pos : self.pos + self.chunk_size]
             self.pos += self.chunk_size
