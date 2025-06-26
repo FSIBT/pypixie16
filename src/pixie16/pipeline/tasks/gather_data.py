@@ -22,7 +22,7 @@ class GatherData(task.Task):
         self.mycounter = 0
         self.file_counter = 0
         self.path = pathlib.Path(self.config.get("binary_save_path", "."))
-        
+
         # Initialize data structures here instead of in do_configure
         self.data_queue = defaultdict(list)
         self.data_disk = defaultdict(list)
@@ -50,6 +50,7 @@ class GatherData(task.Task):
         # Only reset data structures if explicitly requested
         if config.get("reset_data_structures", False):
             from collections import defaultdict
+
             self.data_queue = defaultdict(list)
             self.data_disk = defaultdict(list)
 

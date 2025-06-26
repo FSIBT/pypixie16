@@ -57,7 +57,7 @@ class SortEvents(task.Task):
 
     def do_startup(self):
         self.data = []
-        
+
         self.nr_sorted = 0
         self.N_to_sort = 8_000
         self.sort_size = 10_000
@@ -68,7 +68,7 @@ class SortEvents(task.Task):
         self.report_times = [0]  # Initialize with start_time
         self.report_time_queue = None
         self.number_of_resets = 0
-        
+
         return {
             "sort_size": 10_000,
             "sort_number_to_sort": 8_000,
@@ -81,11 +81,17 @@ class SortEvents(task.Task):
 
     def do_configure(self, config_dict: dict):
         # Update configuration values
-        self.N_to_sort = config_dict.get("sort_number_to_sort", self.config["sort_number_to_sort"])
+        self.N_to_sort = config_dict.get(
+            "sort_number_to_sort", self.config["sort_number_to_sort"]
+        )
         self.sort_size = config_dict.get("sort_size", self.config["sort_size"])
-        self.start_time = config_dict.get("sort_start_time", self.config["sort_start_time"])
-        self.all_start_times = config_dict.get("sort_all_start_time", self.config["sort_all_start_time"])
-        
+        self.start_time = config_dict.get(
+            "sort_start_time", self.config["sort_start_time"]
+        )
+        self.all_start_times = config_dict.get(
+            "sort_all_start_time", self.config["sort_all_start_time"]
+        )
+
         # Update report_times if start_time changed
         if "sort_start_time" in config_dict:
             self.report_times = [self.start_time]
