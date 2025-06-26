@@ -77,38 +77,6 @@ class MCASpectrumPlotter(QWidget):
         self.update_timer = QTimer()
         self.update_timer.timeout.connect(self.update_plots)
 
-    def rebin_data(self, data, target_bins=None):
-        """Rebin histogram data to target number of bins"""
-        if target_bins is None:
-            target_bins = self.target_bins
-
-        original_bins = len(data)
-        if original_bins <= target_bins:
-            # No rebinning needed
-            return data, np.arange(len(data)), 1
-
-        # Calculate rebin factor
-        rebin_factor = original_bins // target_bins
-        if original_bins % target_bins != 0:
-            rebin_factor += 1
-
-        # Trim data to make it evenly divisible
-        trimmed_length = (original_bins // rebin_factor) * rebin_factor
-        trimmed_data = data[:trimmed_length]
-
-        # Reshape and sum
-        reshaped = trimmed_data.reshape(-1, rebin_factor)
-        rebinned_data = np.sum(reshaped, axis=1)
-
-        # Create new x-axis in terms of original bin numbers (bin centers)
-        rebinned_x = np.arange(len(rebinned_data)) * rebin_factor + rebin_factor // 2
-
-        print(
-            f"Rebinning: {original_bins} -> {len(rebinned_data)} bins (factor: {rebin_factor})"
-        )
-
-        return rebinned_data, rebinned_x, rebin_factor
-
     def init_ui(self):
         layout = QVBoxLayout()
         layout.setSpacing(5)  # Reduce spacing
@@ -149,7 +117,7 @@ class MCASpectrumPlotter(QWidget):
             self.curves[channel] = self.plot_widget.plot(
                 pen=pg.mkPen(color=color, width=2),
                 name=f"Ch {channel}",
-                stepMode=True,  # This gives us step plots like plt.step
+                stepMode=True,  # Or remove stepMode entirely
             )
 
     def create_controls(self):
@@ -332,21 +300,13 @@ class MCASpectrumPlotter(QWidget):
             histogram_data = np.array(histogram_data)
 
         num_bins = len(histogram_data)
-        data_sum = np.sum(histogram_data)
-        data_max = np.max(histogram_data) if num_bins > 0 else 0
 
-        print(f"MCA Plotter: Received data for channel {channel}")
-        print(f"MCA Plotter: Raw bins={num_bins}, sum={data_sum}, max={data_max}")
+        print(f"MCA Plotter: Received {num_bins} bins for channel {channel}")
 
         if channel in self.mca_data:
-            # Store the raw data
             self.mca_data[channel] = histogram_data.copy()
             self.bin_counts[channel] = num_bins
-
-            # Update UI ranges if needed
             self.update_dynamic_ranges(num_bins)
-
-            print(f"MCA Plotter: Channel {channel} updated with {num_bins} bins")
         else:
             print(
                 f"MCA Plotter: Channel {channel} not in mca_data keys: {list(self.mca_data.keys())}"
@@ -383,6 +343,38 @@ class MCASpectrumPlotter(QWidget):
             self.mca_data[channel] = np.array([])
             self.bin_counts[channel] = 0
         self.update_plots()
+
+    def rebin_data(self, data, target_bins=None):
+        """Rebin histogram data to target number of bins"""
+        if target_bins is None:
+            target_bins = self.target_bins
+
+        original_bins = len(data)
+        if original_bins <= target_bins:
+            # No rebinning needed
+            return data, np.arange(len(data)), 1
+
+        # Calculate rebin factor
+        rebin_factor = original_bins // target_bins
+        if original_bins % target_bins != 0:
+            rebin_factor += 1
+
+        # Trim data to make it evenly divisible
+        trimmed_length = (original_bins // rebin_factor) * rebin_factor
+        trimmed_data = data[:trimmed_length]
+
+        # Reshape and sum
+        reshaped = trimmed_data.reshape(-1, rebin_factor)
+        rebinned_data = np.sum(reshaped, axis=1)
+
+        # Create new x-axis in terms of original bin numbers (bin centers)
+        rebinned_x = np.arange(len(rebinned_data)) * rebin_factor + rebin_factor // 2
+
+        print(
+            f"Rebinning: {original_bins} -> {len(rebinned_data)} bins (factor: {rebin_factor})"
+        )
+
+        return rebinned_data, rebinned_x, rebin_factor
 
     def update_plots(self):
         """Update the plot display - FIXED to respect display_channels"""
@@ -437,21 +429,14 @@ class MCASpectrumPlotter(QWidget):
                         y_plot = np.where(y_plot > 0, y_plot, 0.1)
 
                     if len(x_plot) > 0:
-                        # Create x_edges array with one more element for stepMode
-                        if len(x_plot) == len(y_plot):
-                            bin_width = rebin_factor if len(x_plot) > 1 else 1
-                            x_edges = np.append(x_plot, x_plot[-1] + bin_width)
-                        else:
-                            x_edges = x_plot
+                        bin_width = rebin_factor if len(x_plot) > 1 else 1
+                        x_edges = np.append(
+                            x_plot - bin_width // 2, x_plot[-1] + bin_width // 2
+                        )
 
-                        # Show the curve
                         self.curves[channel].setData(x_edges, y_plot)
                         print(f"Plot Update: Displayed channel {channel}")
-                    else:
-                        # No data in range
-                        self.curves[channel].setData([], [])
 
-                    # Statistics (using original raw data for accuracy)
                     total_ch_counts = np.sum(raw_data)
                     total_counts += total_ch_counts
 
@@ -496,37 +481,28 @@ class MCASpectrumPlotter(QWidget):
         return self.mca_data.copy()
 
     def set_channels(self, channels):
-        """Update the list of channels - COMPATIBILITY METHOD"""
         print(f"MCAPlotter: set_channels called with {channels}")
 
-        # This method completely rebuilds the channel list and curves
-        # Remove old curves
         for channel in self.channels:
             if channel in self.curves:
                 self.plot_widget.removeItem(self.curves[channel])
 
-        # Update channels
-        old_channels = self.channels
+        old_data = self.mca_data.copy()
         self.channels = channels
-        self.display_channels = channels.copy()  # Show all new channels by default
+        self.display_channels = channels.copy()
 
-        # Preserve existing data, create empty arrays for new channels
-        new_mca_data = {}
+        self.mca_data = {}
         for ch in self.channels:
-            new_mca_data[ch] = self.mca_data.get(ch, np.array([]))
-        self.mca_data = new_mca_data
+            self.mca_data[ch] = old_data.get(ch, np.array([]))
 
-        # Create new curves with step mode
         self.curves = {}
         for i, channel in enumerate(self.channels):
             color = self.colors[i % len(self.colors)]
             self.curves[channel] = self.plot_widget.plot(
                 pen=pg.mkPen(color=color, width=2),
                 name=f"Ch {channel}",
-                stepMode=True,  # Step plots for histogram data
+                stepMode=True,
             )
-
-        print(f"MCAPlotter: Rebuilt curves for channels {old_channels} -> {channels}")
 
     def set_display_channels(self, channels):
         """Set which channels to display - FIXED VERSION"""
@@ -539,20 +515,6 @@ class MCASpectrumPlotter(QWidget):
 
         # Update the plots immediately to show/hide channels
         self.update_plots()
-
-    def export_data(self, filename):
-        """Export MCA data to file (saves raw data, not rebinned)"""
-        try:
-            np.savez(
-                filename, **{f"ch_{ch}": data for ch, data in self.mca_data.items()}
-            )
-            print(f"MCA data exported to {filename}")
-        except Exception as e:
-            print(f"Error exporting MCA data: {e}")
-
-    def set_info_bar(self, info_bar):
-        """Set reference to parent info bar for status updates"""
-        self.info_bar = info_bar
 
     def get_channel_info(self):
         """Get current channel state for debugging"""

@@ -94,11 +94,6 @@ class PixieScopeApp(QMainWindow):
         self.mca_data = {}
         self.cumulative_mca_data = {}
 
-        # Initialize MCA data storage for all channels
-        for ch in self.channel_numbers:
-            self.cumulative_mca_data[ch] = np.zeros(8192, dtype=np.int64)
-            self.mca_data[ch] = np.zeros(8192, dtype=np.int32)
-
         # PIXIE-16 settings
         self.settings = {
             "channels": self.channels,
@@ -682,58 +677,54 @@ class PixieScopeApp(QMainWindow):
             self.info_bar.setText(error_msg)
             raise
 
-    def read_mca_data(self):
-        try:
-            if self.dummy_mode:
-                self.read_dummy_mca_data()
-            else:
-                self.read_mca_data()
-        except Exception as e:
-            print(f"Error in read_mca_data: {e}")
-
-    def read_mca_data(self):
-        try:
-            # this always reads all channels from hardware
-
-            histogram_result = px.control.take_MCA_spectra(
-                channels=self.channels,  # ALL channels, not just selected ones
-                duration=1.0,
-                verbose=False,
-            )
-
-            if isinstance(histogram_result, list | np.ndarray):
-                for i, fresh_histogram in enumerate(histogram_result):
-                    if i < len(self.channel_numbers):
-                        channel = self.channel_numbers[i]
-                        fresh_data = np.array(fresh_histogram, dtype=np.int64)
-
-                        # Always accumulate data for all channels
-                        self.accumulate_channel_data(channel, fresh_data)
-
-        except Exception as e:
-            print(f"Error in take_MCA_spectra: {e}")
-
     def read_dummy_mca_data(self):
         if not Path(DUMMY_NUMPY_FILE).exists():
             print(f"Dummy numpy file not found: {DUMMY_NUMPY_FILE}")
             return
 
-        # Load the numpy data
         mca_data = np.load(DUMMY_NUMPY_FILE)
         print(f"Loaded MCA data from {DUMMY_NUMPY_FILE}, shape: {mca_data.shape}")
 
-        # Distribute data across ALL available channels
         if len(mca_data.shape) == 2:
-            # Multiple channels in file
+            # Multiple channels in file - distribute to available channels
             for i, channel in enumerate(self.channel_numbers):
                 if i < mca_data.shape[0]:
                     fresh_data = mca_data[i, :].astype(np.int64)
-                    self.accumulate_channel_data(channel, fresh_data)
+                    # Add some variation to make it look live
+                    noise = np.random.poisson(fresh_data * 0.01 + 1).astype(np.int64)
+                    self.accumulate_channel_data(channel, noise)
         else:
-            # Single channel, distribute to first channel
+            # Single channel - give to first channel with some distribution
             if self.channel_numbers:
                 fresh_data = mca_data.astype(np.int64)
-                self.accumulate_channel_data(self.channel_numbers[0], fresh_data)
+                for i, channel in enumerate(self.channel_numbers):
+                    # Scale data differently for each channel
+                    scale_factor = 0.5 + (i * 0.3)
+                    scaled_data = (fresh_data * scale_factor).astype(np.int64)
+                    noise = np.random.poisson(scaled_data * 0.01 + 1).astype(np.int64)
+                    self.accumulate_channel_data(channel, noise)
+
+    def read_mca_data(self):
+        try:
+            if self.dummy_mode:
+                self.read_dummy_mca_data()
+                return
+
+            histogram_result = px.control.take_MCA_spectra(
+                channels=self.channels,
+                duration=1.0,
+                verbose=False,
+            )
+
+            if isinstance(histogram_result | (list | np.ndarray)):
+                for i, fresh_histogram in enumerate(histogram_result):
+                    if i < len(self.channel_numbers):
+                        channel = self.channel_numbers[i]
+                        fresh_data = np.array(fresh_histogram, dtype=np.int64)
+                        self.accumulate_channel_data(channel, fresh_data)
+
+        except Exception as e:
+            print(f"Error in read_mca_data: {e}")
 
     def start_dummy_list_mode_data(self):
         def dummy_list_mode_reader():
@@ -841,22 +832,26 @@ class PixieScopeApp(QMainWindow):
 
     def accumulate_channel_data(self, channel, fresh_data):
         try:
-            # Always accumulate data regardless of display selection
-            self.cumulative_mca_data[channel] += fresh_data
+            data_size = len(fresh_data)
 
+            # Initialize arrays based on incoming data size
+            if channel not in self.cumulative_mca_data:
+                self.cumulative_mca_data[channel] = np.zeros(data_size, dtype=np.int64)
+                self.mca_data[channel] = np.zeros(data_size, dtype=np.int32)
+                print(f"Initialized channel {channel} with {data_size} bins")
+            elif len(self.cumulative_mca_data[channel]) != data_size:
+                # Data size changed, reinitialize
+                self.cumulative_mca_data[channel] = np.zeros(data_size, dtype=np.int64)
+                self.mca_data[channel] = np.zeros(data_size, dtype=np.int32)
+                print(f"Resized channel {channel} to {data_size} bins")
+
+            self.cumulative_mca_data[channel] += fresh_data
             self.mca_data[channel] = np.clip(
-                self.cumulative_mca_data[channel],
-                0,
-                np.iinfo(np.int32).max,
+                self.cumulative_mca_data[channel], 0, np.iinfo(np.int32).max
             ).astype(np.int32)
 
-            # ALWAYS update the plotter with new data
             if hasattr(self.spectrum_tab, "update_mca_histogram"):
                 self.spectrum_tab.update_mca_histogram(channel, self.mca_data[channel])
-
-            if hasattr(self, "channel_controls"):
-                total_counts = int(np.sum(self.mca_data[channel]))
-                self.channel_controls.update_channel_statistics({channel: total_counts})
 
         except Exception as e:
             print(f"Error accumulating data for channel {channel}: {e}")

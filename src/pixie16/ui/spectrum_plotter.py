@@ -2,7 +2,6 @@
 Real-time spectrum plotter for PIXIE-16 list mode (binary) data.
 """
 
-import json
 import pyqtgraph as pg
 import numpy as np
 from collections import deque, defaultdict
@@ -11,7 +10,6 @@ import time
 from PyQt6 import QtCore
 from PyQt6.QtWidgets import (
     QGroupBox,
-    QGridLayout,
     QHBoxLayout,
     QVBoxLayout,
     QLabel,
@@ -62,22 +60,22 @@ class ContinuousSpectrumPlotter(QWidget):
 
         # Channel colors
         self.channel_colors = [
-            (31, 119, 180),  # Blue
-            (255, 127, 14),  # Orange
-            (44, 160, 44),  # Green
-            (214, 39, 40),  # Red
-            (148, 103, 189),  # Purple
-            (140, 86, 75),  # Brown
-            (227, 119, 194),  # Pink
-            (127, 127, 127),  # Gray
-            (188, 189, 34),  # Olive
-            (23, 190, 207),  # Cyan
-            (174, 199, 232),  # Light Blue
-            (255, 187, 120),  # Light Orange
-            (152, 223, 138),  # Light Green
-            (255, 152, 150),  # Light Red
-            (197, 176, 213),  # Light Purple
-            (196, 156, 148),  # Light Brown
+            "#1f77b4",
+            "#ff7f0e",
+            "#2ca02c",
+            "#d62728",
+            "#9467bd",
+            "#8c564b",
+            "#e377c2",
+            "#7f7f7f",
+            "#bcbd22",
+            "#17becf",
+            "#aec7e8",
+            "#ffbb78",
+            "#98df8a",
+            "#ff9896",
+            "#c5b0d5",
+            "#c49c94",
         ]
 
         self.setWindowTitle(display_name)
@@ -149,13 +147,12 @@ class ContinuousSpectrumPlotter(QWidget):
         self.update_rate_spin.setRange(0.1, 10.0)
         self.update_rate_spin.setValue(self.update_rate)
         self.update_rate_spin.setSingleStep(0.1)
-        self.update_rate_spin.valueChanged.connect(self.update_update_rate)
+        self.update_rate_spin.valueChanged.connect(self.update_rate)
 
         self.clear_btn = QPushButton("Clear Spectra")
         self.clear_btn.clicked.connect(self.clear_data)
 
     def create_control_group(self):
-        """Create the control panel group - compact version"""
         self.create_control_widgets()
 
         group = QGroupBox("Plot Controls")
@@ -322,7 +319,7 @@ class ContinuousSpectrumPlotter(QWidget):
         """Update number of histogram bins"""
         self.bins = self.bins_spin.value()
 
-    def update_update_rate(self):
+    def update_rate(self):
         """Update the display update rate"""
         self.update_rate = self.update_rate_spin.value()
         if self.update_timer.isActive():
@@ -374,110 +371,6 @@ class ContinuousSpectrumPlotter(QWidget):
                 data[channel] = list(self.energy_data[channel])
         return data
 
-    def export_data(self, filename):
-        """Export spectrum data to file"""
-        try:
-            data_to_save = {}
-            metadata = {
-                "timestamp": time.time(),
-                "channels": self.channels,
-                "energy_range": self.energy_range,
-                "bins": self.bins,
-                "total_events": 0,
-            }
-
-            # Collect data from all channels
-            for channel in self.channels:
-                if len(self.energy_data[channel]) > 0:
-                    energies = list(self.energy_data[channel])
-                    data_to_save[f"channel_{channel}"] = energies
-                    metadata["total_events"] += len(energies)
-
-            data_to_save["metadata"] = metadata
-
-            if filename.endswith(".json"):
-                # Save as JSON
-                with open(filename, "w") as f:
-                    json.dump(data_to_save, f, indent=2)
-
-            elif filename.endswith(".npz"):
-                # Save as NumPy compressed format
-                save_dict = {}
-                save_dict["metadata"] = metadata
-
-                for channel in self.channels:
-                    if len(self.energy_data[channel]) > 0:
-                        save_dict[f"ch_{channel}_energies"] = np.array(
-                            list(self.energy_data[channel])
-                        )
-
-                np.savez_compressed(filename, **save_dict)
-
-            else:
-                # Default to JSON
-                with open(filename + ".json", "w") as f:
-                    json.dump(data_to_save, f, indent=2)
-
-            print(f"List mode data exported to {filename}")
-
-        except Exception as e:
-            print(f"Error exporting list mode data: {e}")
-
-    def import_data(self, filename):
-        """Import spectrum data from file"""
-        try:
-            if filename.endswith(".npz"):
-                data = np.load(filename, allow_pickle=True)
-
-                # Load metadata if available
-                if "metadata" in data:
-                    metadata = data["metadata"].item()
-                    self.energy_range = tuple(
-                        metadata.get("energy_range", self.energy_range)
-                    )
-                    self.bins = metadata.get("bins", self.bins)
-
-                # Load energy data
-                for key in data.keys():
-                    if key.startswith("ch_") and key.endswith("_energies"):
-                        ch_str = key.split("_")[1]
-                        try:
-                            ch = int(ch_str)
-                            if ch in self.channels:
-                                self.energy_data[ch] = deque(data[key], maxlen=50000)
-                        except ValueError:
-                            continue
-
-            else:
-                # Load JSON format
-                with open(filename) as f:
-                    data = json.load(f)
-
-                # Load metadata
-                if "metadata" in data:
-                    metadata = data["metadata"]
-                    self.energy_range = tuple(
-                        metadata.get("energy_range", self.energy_range)
-                    )
-                    self.bins = metadata.get("bins", self.bins)
-
-                # Load energy data
-                for key, energies in data.items():
-                    if key.startswith("channel_"):
-                        ch_str = key.split("_")[1]
-                        try:
-                            ch = int(ch_str)
-                            if ch in self.channels:
-                                self.energy_data[ch] = deque(energies, maxlen=50000)
-                        except ValueError:
-                            continue
-
-            print(f"List mode data imported from {filename}")
-            self.update_display()
-
-        except Exception as e:
-            print(f"Error importing list mode data: {e}")
-
     def set_channels(self, channels):
         """Update the list of channels"""
         # Remove old plot items
@@ -525,67 +418,26 @@ class ContinuousSpectrumPlotter(QWidget):
 
         layout.addStretch()
 
-    def get_channel_statistics(self):
-        """Get statistics for all channels"""
-        stats = {}
-        for channel in self.channels:
-            event_count = len(self.energy_data[channel])
-            if event_count > 0:
-                energies = list(self.energy_data[channel])
-                stats[channel] = {
-                    "count": event_count,
-                    "mean": np.mean(energies),
-                    "std": np.std(energies),
-                    "min": np.min(energies),
-                    "max": np.max(energies),
-                }
-            else:
-                stats[channel] = {
-                    "count": 0,
-                    "mean": 0,
-                    "std": 0,
-                    "min": 0,
-                    "max": 0,
-                }
-        return stats
-
-    def reset_display(self):
-        """Reset display settings to defaults"""
-        self.energy_range = (0, 4096)
-        self.bins = 1000
-        self.update_rate = 0.5
-
-        # Update UI controls
-        self.energy_min_spin.setValue(self.energy_range[0])
-        self.energy_max_spin.setValue(self.energy_range[1])
-        self.bins_spin.setValue(self.bins)
-        self.update_rate_spin.setValue(self.update_rate)
-        self.log_scale_cb.setChecked(False)
-        self.auto_scale_cb.setChecked(True)
-
-    def process_energy_data(self, channel, energy_data_string):
-        """Process energy data (compatibility method for hardware control integration)"""
-        if energy_data_string is None:
-            return energy_data_string
-
-        try:
-            if isinstance(energy_data_string, str):
-                energy_list = json.loads(energy_data_string)
-            else:
-                energy_list = energy_data_string
-
-            # Apply update hooks if any
-            for hook in self.update_hooks:
-                try:
-                    energy_list = hook(self, channel, energy_list)
-                except Exception as e:
-                    logger.warning(f"Update hook failed: {e}")
-
-            # Add energies to data
-            if isinstance(energy_list, list):
-                self.add_energy_events(channel, energy_list)
-
-        except Exception as e:
-            logger.warning(f"Failed to process energy data for channel {channel}: {e}")
-
-        return energy_data_string
+    # def get_channel_statistics(self):
+    #     """Get statistics for all channels"""
+    #     stats = {}
+    #     for channel in self.channels:
+    #         event_count = len(self.energy_data[channel])
+    #         if event_count > 0:
+    #             energies = list(self.energy_data[channel])
+    #             stats[channel] = {
+    #                 "count": event_count,
+    #                 "mean": np.mean(energies),
+    #                 "std": np.std(energies),
+    #                 "min": np.min(energies),
+    #                 "max": np.max(energies),
+    #             }
+    #         else:
+    #             stats[channel] = {
+    #                 "count": 0,
+    #                 "mean": 0,
+    #                 "std": 0,
+    #                 "min": 0,
+    #                 "max": 0,
+    #             }
+    #     return stats

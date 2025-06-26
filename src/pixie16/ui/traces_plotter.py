@@ -13,7 +13,7 @@ FEATURES:
 import numpy as np
 from collections import deque, defaultdict
 import time
-import json
+
 from pathlib import Path
 
 from PyQt6.QtWidgets import (
