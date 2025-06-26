@@ -2,6 +2,7 @@
 Real-time spectrum plotter for PIXIE-16 list mode (binary) data.
 """
 
+import json
 import pyqtgraph as pg
 import numpy as np
 from collections import deque, defaultdict
@@ -10,6 +11,7 @@ import time
 from PyQt6 import QtCore
 from PyQt6.QtWidgets import (
     QGroupBox,
+    QGridLayout,
     QHBoxLayout,
     QVBoxLayout,
     QLabel,
@@ -60,22 +62,22 @@ class ContinuousSpectrumPlotter(QWidget):
 
         # Channel colors
         self.channel_colors = [
-            "#1f77b4",
-            "#ff7f0e",
-            "#2ca02c",
-            "#d62728",
-            "#9467bd",
-            "#8c564b",
-            "#e377c2",
-            "#7f7f7f",
-            "#bcbd22",
-            "#17becf",
-            "#aec7e8",
-            "#ffbb78",
-            "#98df8a",
-            "#ff9896",
-            "#c5b0d5",
-            "#c49c94",
+            (31, 119, 180),  # Blue
+            (255, 127, 14),  # Orange
+            (44, 160, 44),  # Green
+            (214, 39, 40),  # Red
+            (148, 103, 189),  # Purple
+            (140, 86, 75),  # Brown
+            (227, 119, 194),  # Pink
+            (127, 127, 127),  # Gray
+            (188, 189, 34),  # Olive
+            (23, 190, 207),  # Cyan
+            (174, 199, 232),  # Light Blue
+            (255, 187, 120),  # Light Orange
+            (152, 223, 138),  # Light Green
+            (255, 152, 150),  # Light Red
+            (197, 176, 213),  # Light Purple
+            (196, 156, 148),  # Light Brown
         ]
 
         self.setWindowTitle(display_name)
@@ -147,12 +149,13 @@ class ContinuousSpectrumPlotter(QWidget):
         self.update_rate_spin.setRange(0.1, 10.0)
         self.update_rate_spin.setValue(self.update_rate)
         self.update_rate_spin.setSingleStep(0.1)
-        self.update_rate_spin.valueChanged.connect(self.update_rate)
+        self.update_rate_spin.valueChanged.connect(self.update_update_rate)
 
         self.clear_btn = QPushButton("Clear Spectra")
         self.clear_btn.clicked.connect(self.clear_data)
 
     def create_control_group(self):
+        """Create the control panel group - compact version"""
         self.create_control_widgets()
 
         group = QGroupBox("Plot Controls")
@@ -319,7 +322,7 @@ class ContinuousSpectrumPlotter(QWidget):
         """Update number of histogram bins"""
         self.bins = self.bins_spin.value()
 
-    def update_rate(self):
+    def update_update_rate(self):
         """Update the display update rate"""
         self.update_rate = self.update_rate_spin.value()
         if self.update_timer.isActive():
