@@ -4,28 +4,28 @@ from .. import task
 class GatherEvents(task.Task):
     """Gather Events into larger chunks."""
 
-    def __init__(self, pipeline_address):
-        super().__init__(pipeline_address)
+    def do_startup(self):
         self.data = []
-        self.state = {
+        self.config |= {
             "size": 1_000_000,
-            "nr": 0,
         }
-        self.name = "Gather events"
+        self.nr = 0
+
+    def do_report(self):
+        return {
+            'gathered events': self.nr,
+            'gathered queue': len(self.data),
+        }
 
     def do_work(self, value):
         self.data.extend(value)
-        if len(self.data) > self.size:
+
+        if len(self.data) > self.config['size']:
             out = self.data
+
             self.data = []
             self.nr += 1
+
             return out
 
-        self.send_status({"gathered events": self.nr, "gathered queue": len(self.data)})
-
-    def cleanup(self):
-        if self.output_queue and self.data:
-            self.output_queue.put(self.data)
-        self.data = []
-        self.nr += 1
-        self.send_status({"gathered events": self.nr, "gathered queue": len(self.data)})
+        self.send_report()
