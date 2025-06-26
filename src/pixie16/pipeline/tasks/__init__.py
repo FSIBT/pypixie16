@@ -6,6 +6,7 @@ from .dummy_data import DummyData
 from .print_data import PrintData
 from .load_files import LoadFiles
 from .sort_events import SortEvents
+from .take_data import TakeData
 
 __all__ = [
     "GatherData",
@@ -16,4 +17,5 @@ __all__ = [
     "DummyData",
     "LoadFiles",
     "SortEvents",
+    "TakeData",
 ]
