@@ -15,9 +15,7 @@ class PickSingleModule(task.Task):
         self.pick_module = self.config.get("pick_module", 2)
 
     def do_startup(self):
-        self.config |= {
-            "pick_module": 2
-        }
+        self.config |= {"pick_module": 2}
 
     def do_work(self, value: typing.Any):
         return {k: v for k, v in value.items() if k == self.pick_module}

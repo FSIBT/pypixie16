@@ -329,7 +329,7 @@ class Task(multiprocessing.Process, abc.ABC):
         """
 
         msg = Message.DATA(data)
-        if not self.config["is_final"]:
+        if not self.config["is_final"] and data:
             self.socket_push.send_pyobj(msg)
 
     def send_finished(self) -> None:
