@@ -1,3 +1,5 @@
+import typing
+
 from .. import task
 
 
@@ -9,11 +11,9 @@ class PickSingleModule(task.Task):
     """
 
     def do_startup(self):
-        self.config |= {"pick_module": 2}
+        self.config |= {
+            "pick_module": 2
+        }
 
-    def handle_configure(self, config_dict: dict):
-        super().handle_configure(config_dict)
-        self.module = self.config["pick_module"]
-
-    def do_work(self, values):
-        return {k: v for k, v in values.items() if k == self.module}
+    def do_work(self, value: typing.Any):
+        return {k: v for k, v in values.items() if k == self.config['pick_module']}
