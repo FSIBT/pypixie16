@@ -41,8 +41,9 @@ class Message(enum.Enum):
     class PRINT(_Message[dict]):  # "🔣"
         pass
 
-    # Task-to-Task
+    # All-to-Task
     FINISHED = "✅"
 
+    # Task-to-Task
     class DATA(_Message[any]):  # "📶"
         pass

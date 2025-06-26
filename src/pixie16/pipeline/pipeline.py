@@ -221,6 +221,22 @@ class Pipeline:
 
         self.poll(is_noblock=False)
 
+    def send_finished(self, name: str) -> None:
+        """
+        Sends ``FINISHD`` messages to tasks.
+
+        Parameters:
+            name: Task name.
+        """
+
+        if name not in self._tasks_all:
+            raise ValueERror
+
+        msg = pickle.dumps(Message.FINISHED)
+        self.socket_router.send_multipart([name.encode(), msg])
+
+        self.poll(is_noblock=False)
+
     def init(self, tasks_active: list[str]) -> None:
         """
         Initialize the chain by pausing, disconnecting, and reconnecting

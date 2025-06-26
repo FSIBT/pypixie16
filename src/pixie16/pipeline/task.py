@@ -275,6 +275,8 @@ class Task(multiprocessing.Process, abc.ABC):
         Handles ``FINISHED`` messages from the previous task.
         """
 
+        self.send_report()
+
         while self.queue:
             self.poll()
 
@@ -392,6 +394,8 @@ class Task(multiprocessing.Process, abc.ABC):
                 self.handle_pause()
             elif msg == Message.STOP:
                 self.handle_stop()
+            elif msg == Message.FINISHED:
+                self.handle_finished()
             elif type(msg) == Message.CONFIGURE:
                 self.handle_configure(*msg())
             else:
