@@ -305,13 +305,13 @@ class Task(multiprocessing.Process, abc.ABC):
             "address_pull": self.address_pull,
             "address_push": self.address_push,
             "address_router": self.address_router,
-            # "sys_cpu_count": psutil.cpu_count(),
-            # "sys_cpu_times": psutil.cpu_times(),
-            # "sys_cpu_percent": psutil.cpu_percent(interval=0.1),
-            # "sys_cpu_stats": psutil.cpu_stats(),
-            # "sys_mem_virtual": psutil.virtual_memory(),
-            # "sys_mem_swap": psutil.swap_memory(),
-            # "ps": psutil.Process().as_dict(),
+            "sys_cpu_count": psutil.cpu_count(),
+            "sys_cpu_times": psutil.cpu_times(),
+            "sys_cpu_percent": psutil.cpu_percent(interval=0.1),
+            "sys_cpu_stats": psutil.cpu_stats(),
+            "sys_mem_virtual": psutil.virtual_memory(),
+            "sys_mem_swap": psutil.swap_memory(),
+            "ps": psutil.Process().as_dict(),
         }
 
         msg = pickle.dumps(Message.REPORT(report), protocol=pickle.HIGHEST_PROTOCOL)
@@ -329,10 +329,11 @@ class Task(multiprocessing.Process, abc.ABC):
             This function runs in the subprocess.
         """
 
-        msg = pickle.dumps(
-            Message.PRINT(stdout, stderr), protocol=pickle.HIGHEST_PROTOCOL
-        )
-        self.socket_dealer.send(msg)
+        if stdout or stderr:
+            msg = pickle.dumps(
+                Message.PRINT(stdout, stderr), protocol=pickle.HIGHEST_PROTOCOL
+            )
+            self.socket_dealer.send(msg)
 
     def send_data(self, data: typing.Any) -> None:
         """
@@ -439,7 +440,10 @@ class Task(multiprocessing.Process, abc.ABC):
 
         # Doing startup and collecting stdout/stderr
         try:
-            self.config = self.do_startup() | self.config
+            with contextlib.redirect_stdout(io.StringIO()) as f:
+                with contextlib.redirect_stderr(io.StringIO()) as g:
+                    self.config = self.do_startup() | self.config
+                    self.send_print(f.getvalue(), g.getvalue())
         except Exception as err:
             self.status = Status.ERROR
             self.error = err
@@ -453,7 +457,10 @@ class Task(multiprocessing.Process, abc.ABC):
                 if self.status == Status.RUNNING:
                     if self.queue or self.config["is_start"]:
                         val = self.queue.popleft() if self.queue else None
-                        ret = self.do_work(val)
+                        with contextlib.redirect_stdout(io.StringIO()) as f:
+                            with contextlib.redirect_stderr(io.StringIO()) as g:
+                                ret = self.do_work(val)
+                                self.send_print(f.getvalue(), g.getvalue())
                         self.send_data(ret)
                     else:
                         continue
@@ -473,7 +480,10 @@ class Task(multiprocessing.Process, abc.ABC):
 
         # Doing cleanup and collecting stdout/stderr
         try:
-            self.do_cleanup()
+            with contextlib.redirect_stdout(io.StringIO()) as f:
+                with contextlib.redirect_stderr(io.StringIO()) as g:
+                    self.do_cleanup()
+                    self.send_print(f.getvalue(), g.getvalue())
         except Exception as err:
             self.status = Status.ERROR
             self.error = err

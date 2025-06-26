@@ -104,9 +104,9 @@ class Pipeline:
             raise ValueError
 
         if stdout:
-            print(stdout, file=sys.stdout)
+            print(stdout, end="")
         if stderr:
-            print(stderr, file=sys.stderr)
+            print(stderr, end="")
 
     def handle_error(self, err: Exception) -> None:
         """
