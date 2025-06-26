@@ -449,7 +449,8 @@ class Task(multiprocessing.Process, abc.ABC):
         try:
             with contextlib.redirect_stdout(io.StringIO()) as f:
                 with contextlib.redirect_stderr(io.StringIO()) as g:
-                    self.config = self.do_startup() | self.config
+                    startup_config = self.do_startup() or {}
+                    self.config = startup_config | self.config
                     self.send_print(f.getvalue(), g.getvalue())
         except Exception as err:
             self.status = Status.ERROR

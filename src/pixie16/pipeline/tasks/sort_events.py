@@ -57,7 +57,19 @@ class SortEvents(task.Task):
 
     def do_startup(self):
         self.data = []
-        self.config |= {
+        
+        self.nr_sorted = 0
+        self.N_to_sort = 8_000
+        self.sort_size = 10_000
+        self.start_time = 0
+        self.first_event_timestamp = None
+        self.last_event_timestamp = 0
+        self.all_start_times = None
+        self.report_times = [0]  # Initialize with start_time
+        self.report_time_queue = None
+        self.number_of_resets = 0
+        
+        return {
             "sort_size": 10_000,
             "sort_number_to_sort": 8_000,
             "sort_start_time": 0,
@@ -67,28 +79,16 @@ class SortEvents(task.Task):
     def do_report(self):
         return {"sorted blocks": self.nr_sorted}
 
-    def handle_configure(self, config_dict: dict):
-        super().handle_configure(config_dict)
-
-        self.N_to_sort = self.config["sort_number_to_sort"]
-        self.sort_size = self.config["sort_size"]
-        self.start_time = self.config["sort_start_time"]
-
-        self.nr_sorted = 0
-
-        # timestamp of first and current event in binary data in s
-        self.first_event_timestamp = None
-        self.last_event_timestamp = 0
-        # in case the the aqcuisition was stopped and restarted this
-        # should either be a list of all start times or a float
-        # estimating the average time of the break in acquisitioin
-        self.all_start_times = self.config["sort_all_start_time"]
-        # if all_start_times are not known, we estimate them and report them back
-        # if a special queue was put in place
-        self.report_times = [start_time]
-        self.report_time_queue = None
-        # keep track how many resets we have detected
-        self.number_of_resets = 0
+    def do_configure(self, config_dict: dict):
+        # Update configuration values
+        self.N_to_sort = config_dict.get("sort_number_to_sort", self.config["sort_number_to_sort"])
+        self.sort_size = config_dict.get("sort_size", self.config["sort_size"])
+        self.start_time = config_dict.get("sort_start_time", self.config["sort_start_time"])
+        self.all_start_times = config_dict.get("sort_all_start_time", self.config["sort_all_start_time"])
+        
+        # Update report_times if start_time changed
+        if "sort_start_time" in config_dict:
+            self.report_times = [self.start_time]
 
     def do_work(self, events_lst):
         """Does the sorting, time reset recognition and handling.

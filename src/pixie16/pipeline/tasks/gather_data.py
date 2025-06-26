@@ -1,7 +1,9 @@
 import pathlib
 
 from .. import task
-
+import datetime
+from collections import defaultdict
+import numpy as np
 
 DEFAULT_BINARY_SAVE_SIZE = None
 DEFAULT_BINARY_SIZE = 50e6
@@ -20,6 +22,10 @@ class GatherData(task.Task):
         self.mycounter = 0
         self.file_counter = 0
         self.path = pathlib.Path(self.config.get("binary_save_path", "."))
+        
+        # Initialize data structures here instead of in do_configure
+        self.data_queue = defaultdict(list)
+        self.data_disk = defaultdict(list)
 
         return {
             "binary_save_size": DEFAULT_BINARY_SAVE_SIZE,
@@ -41,9 +47,11 @@ class GatherData(task.Task):
             "binary_save_data", self.config["binary_save_data"]
         )
 
-        # Setting/resetting fields.
-        self.data_queue = defaultdict(list)
-        self.data_disk = defaultdict(list)
+        # Only reset data structures if explicitly requested
+        if config.get("reset_data_structures", False):
+            from collections import defaultdict
+            self.data_queue = defaultdict(list)
+            self.data_disk = defaultdict(list)
 
     def save_data(self, out):
         timestamp = datetime.today().strftime("%Y-%m-%d-%H-%M-%S")

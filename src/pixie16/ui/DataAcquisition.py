@@ -250,7 +250,7 @@ class DataAcquisition(QWidget):
         defaults_task.do_work(None)
 
     def on_mode_change(self, idx: int):
-        text = modes[idx]
+        text = self.modes[idx]
         print(f"selected {text}")
         match text:
             case "DummyData":
