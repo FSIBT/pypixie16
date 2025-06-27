@@ -1089,24 +1089,23 @@ class PixieScopeApp(QMainWindow):
         self.info_bar.setText(f"{mode_status}{message}")
 
     def init_pixie16(self):
-        """Initialize PIXIE-16 hardware"""
         try:
             if not self.dummy_mode:
                 print("Booting PIXIE-16...")
-                # Use px.control like in reference code
-                px.control.init_and_boot(modules=[self.module_number])
+                available_modules = [self.module_number]  # Convert to list
+                px.control.init_and_boot(modules=available_modules)
                 self.info_bar.setText(
                     f"PIXIE-16 Module {self.module_number} initialized"
                 )
             else:
                 self.info_bar.setText("DUMMY MODE - No hardware initialization")
-
         except Exception as e:
-            QMessageBox.critical(
-                self,
-                "PIXIE-16 Initialization Error",
-                f"Failed to initialize PIXIE-16 system:\n{str(e)}",
-            )
+            if "invalid module count" in str(e):
+                error_msg = f"Module {self.module_number} not available. Check hardware connections."
+            else:
+                error_msg = f"Failed to initialize PIXIE-16: {str(e)}"
+
+            QMessageBox.critical(self, "PIXIE-16 Initialization Error", error_msg)
             self.info_bar.setText("Initialization failed - check hardware")
 
     def setup_timers(self):
