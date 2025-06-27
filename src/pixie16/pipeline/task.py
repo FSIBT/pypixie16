@@ -65,6 +65,8 @@ class Task(multiprocessing.Process, abc.ABC):
         config: Task parameters.
         status: Task state.
         context: ZMQ context.
+        is_start: First task flag.
+        is_final: Last task flag.
         socket_pull: ZMQ pull socket.
         socket_push: ZMQ push socket.
         socket_dealer: ZMQ dealer socket.
@@ -111,10 +113,9 @@ class Task(multiprocessing.Process, abc.ABC):
         self._kill: bool = False
         self.queue: collections.deque = collections.deque()
         self.status: Status = Status.READY
-        self.config: dict = {
-            "is_final": False,
-            "is_start": False,
-        }
+        self.config: dict = {}
+        self.is_start: bool = False
+        self.is_final: bool = False
 
         # ZMQ fields.
         self.context: zmq.Context = None
@@ -193,7 +194,7 @@ class Task(multiprocessing.Process, abc.ABC):
 
         raise NotImplementedError
 
-    def handle_connect(self, address_pull: str) -> None:
+    def handle_connect(self, address_pull: str, is_start: bool, is_final: bool) -> None:
         """
         Handles ``CONNECT`` messages from the pipeline.
 
@@ -201,8 +202,13 @@ class Task(multiprocessing.Process, abc.ABC):
             address_pull: ZMQ pull socket address.
         """
 
-        self.socket_pull.connect(address_pull)
+        if address_pull:
+            self.socket_pull.connect(address_pull)
         self.address_pull = address_pull
+        self.is_start = is_start
+        self.is_final = is_final
+        self.handle_configure({})
+
 
     def handle_disconnect(self) -> None:
         """
@@ -215,6 +221,8 @@ class Task(multiprocessing.Process, abc.ABC):
         if self.address_pull:
             self.socket_pull.disconnect(self.address_pull)
         self.address_pull = None
+        self.is_start = False
+        self.is_final = False
 
     def handle_start(self) -> None:
         """
@@ -307,6 +315,8 @@ class Task(multiprocessing.Process, abc.ABC):
             "address_pull": self.address_pull,
             "address_push": self.address_push,
             "address_router": self.address_router,
+            "is_start": self.is_start,
+            "is_final": self.is_final,
             "sys_cpu_count": psutil.cpu_count(),
             "sys_cpu_times": psutil.cpu_times(),
             "sys_cpu_percent": psutil.cpu_percent(interval=0.1),
@@ -350,7 +360,7 @@ class Task(multiprocessing.Process, abc.ABC):
         """
 
         msg = Message.DATA(data)
-        if not self.config["is_final"] and data:
+        if not self.is_final and data:
             self.socket_push.send_pyobj(msg)
 
     def send_finished(self) -> None:
@@ -365,7 +375,7 @@ class Task(multiprocessing.Process, abc.ABC):
         self.send_report()
 
         msg = Message.FINISHED
-        if not self.config["is_final"]:
+        if not self.is_final:
             self.socket_push.send_pyobj(msg)
 
     def poll(self, is_noblock: bool = True) -> None:
@@ -463,7 +473,7 @@ class Task(multiprocessing.Process, abc.ABC):
 
             try:
                 if self.status == Status.RUNNING:
-                    if self.queue or self.config["is_start"]:
+                    if self.queue or self.is_start:
                         val = self.queue.popleft() if self.queue else None
                         with contextlib.redirect_stdout(io.StringIO()) as f:
                             with contextlib.redirect_stderr(io.StringIO()) as g:

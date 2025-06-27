@@ -146,13 +146,13 @@ class SortEvents(task.Task):
             self.data.sort(key=lambda x: x.chunk_timestamp)
             out = self.data[: self.N_to_sort]
             self.data = self.data[self.N_to_sort :]
-            if not self.config["is_final"]:
+            if not self.is_final:
                 self.send_data(out)
                 self.nr_sorted += 1
 
     def cleanup(self):
         self.data.sort(key=lambda x: x.chunk_timestamp)
-        if not self.config["is_final"]:
+        if not self.is_final:
             self.send_data(self.data)
         if self.report_time_queue:
             self.report_time_queue.put(self.report_times)

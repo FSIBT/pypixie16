@@ -66,7 +66,7 @@ class Pipeline:
         """
 
         if name in self._tasks_all:
-            return
+            raise ValueError(f"ERROR task already initialized")
 
         if name not in Task.class_registry:
             raise ValueError(f"ERROR cannot find pypixie16 task '{name}'")
@@ -123,7 +123,7 @@ class Pipeline:
 
         self._status = Status.FINISHED
 
-    def send_connect(self, name: str, address_pull: str) -> None:
+    def send_connect(self, name: str, address_pull: str, is_start: bool, is_final: bool) -> None:
         """
         Sends ``CONNECT`` messages to tasks.
 
@@ -135,7 +135,7 @@ class Pipeline:
         if name not in self._tasks_all:
             raise ValueError
 
-        msg = pickle.dumps(Message.CONNECT(address_pull))
+        msg = pickle.dumps(Message.CONNECT(address_pull, is_start, is_final))
         self.socket_router.send_multipart([name.encode(), msg])
 
         self.poll(is_noblock=False)
@@ -250,36 +250,20 @@ class Pipeline:
         self._status = Status.READY
 
         # Pausing & disconnecting old tasks.
-        if self.tasks_active:
-            for name in self.tasks_active:
+        for name in [*self._tasks_all, *tasks_active]:
+            try:
+                self.create_task(name)
+            except ValueError:
                 self.send_pause(name)
-                self.send_disconnect(name)
-                self.send_configure(name, {"is_final": False, "is_start": False})
-
-        self.tasks_active = []
-
-        # Pausing & disconnecting new tasks.
-        for name in tasks_active:
-            self.create_task(name)
-            self.send_pause(name)
             self.send_disconnect(name)
-            self.send_configure(name, {"is_final": False, "is_start": False})
 
         self.tasks_active = tasks_active
 
         # Connecting new tasks
-        if len(tasks_active) > 1:
-            for name_a, name_b in itertools.pairwise(tasks_active):
-                self.send_connect(name_b, self.reports[name_a]["address_push"])
-
-        # Setting start/final flags.
-        if tasks_active:
-            self.send_configure(
-                self.tasks_active[0], {"is_final": False, "is_start": True}
-            )
-            self.send_configure(
-                self.tasks_active[-1], {"is_final": True, "is_start": False}
-            )
+        prev = None
+        for name in tasks_active:
+            self.send_connect(name, self.reports[prev]['address_push'] if prev else None, self.tasks_active[0] == name, self.tasks_active[-1] == name)
+            prev = name
 
     def start(self) -> None:
         """

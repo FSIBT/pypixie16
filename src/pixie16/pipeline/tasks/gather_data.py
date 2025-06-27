@@ -110,7 +110,7 @@ class GatherData(task.Task):
         """Send data still in buffer."""
         out_queue = {k: np.concatenate(v) for k, v in self.data_queue.items() if v}
         out_disk = {k: np.concatenate(v) for k, v in self.data_disk.items() if v}
-        if not self.config["is_final"]:
+        if not self.is_final:
             self.send_data(out_queue)
         if out_disk:
             if self.config["binary_save_data"]:
