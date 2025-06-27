@@ -14,7 +14,7 @@ class DummyTask(pixie16.pipeline.Task):
     def do_cleanup(self) -> None:
         pass
 
-    def do_work(self) -> None:
+    def do_work(self, value) -> None:
         self.send_print("Hi", "Err")
         self.send_report({})
 
@@ -83,7 +83,7 @@ class Test_Pipeline:
         pipeline = pixie16.pipeline.Pipeline()
         pipeline.init(["DummyTask"])
         pipeline.start()
-        pipeline.send_connect("DummyTask", address_pull)
+        pipeline.send_connect("DummyTask", address_pull, False, False)
         pipeline.stop()
 
     @staticmethod
@@ -92,7 +92,7 @@ class Test_Pipeline:
 
         pipeline = pixie16.pipeline.Pipeline()
         with pytest.raises(ValueError):
-            pipeline.send_connect("Nope", address_pull)
+            pipeline.send_connect("Nope", address_pull, False, False)
 
     @staticmethod
     def test_send_disconnect_A():
@@ -109,7 +109,7 @@ class Test_Pipeline:
         pipeline = pixie16.pipeline.Pipeline()
         pipeline.init(["DummyTask"])
         pipeline.start()
-        pipeline.send_connect("DummyTask", address_pull)
+        pipeline.send_connect("DummyTask", address_pull, False, False)
         pipeline.send_disconnect("DummyTask")
         pipeline.stop()
 

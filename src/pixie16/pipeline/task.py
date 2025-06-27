@@ -20,13 +20,14 @@ class Task(multiprocessing.Process, abc.ABC):
     Represents pausable, custom processes that intergrate into ``Pipeline``.
 
     Since ``Task`` extends ``multiprocessing.Process``, tasks behave like state
-    machines. They have the following states:
+    machines. They have the following statues:
 
-    * ▶️ RUNNING: Processing data.
-    * ⏸️ PAUSED: Waiting to process data.
-    * 🆒 DONE: Done processing data.
-    * ✅ READY: Process initialized.
-    * 🆘 ERROR: Failing to process data.
+    * 🆕 READY: Task initialized but not started.
+    * ▶️ RUNNING: Task processing data.
+    * ⏸️ PAUSED: Task waiting.
+    * 🆒 DONE: Task done.
+    * ✅ FINISHED: Task finished and waiting.
+    * 🆘 ERROR: Task waiting with error.
 
     Tasks uses ZMQ Push/Pull sockets to get and send messages between other
     tasks and the pipeline. Tasks send and recieve the following kinds of
@@ -35,21 +36,23 @@ class Task(multiprocessing.Process, abc.ABC):
     * PIPELINE-TO-TASK:
         * 🔁 CONNECT: Connect to given ZMQ push queue.
         * 🔀 DISCONNECT: Disconnect from the ZMQ push queue.
-        * ▶️ START: Change status to RUNNING.
-        * ⏸️ PAUSE: Change status to PAUSED.
-        * ⏹️ STOP: Change status to FINISHED.
+        * ▶️ START: Change status to ``RUNNING``.
+        * ⏸️ PAUSE: Change status to ``PAUSED``.
+        * ⏹️ STOP: Change status to ``FINISHED``.
         * ℹ️ CONFIGURE: Update parameters.
+        * ✅ FINISHED: Change status to ``FINISHED``.
     * TASK-TO-PIPELINE:
         * 🆗 REPORT: Transmit status to pipeline.
         * 🔣 PRINT: Print to stdout/stderr.
     * TASK-TO-TASK:
         * 📶 DATA: Transmit data to next task.
+        * ✅ FINISHED: Change status to ``FINISHED``.
 
     Since ``Task`` extends ``abc.ABC``, it has methods that must be
     overwritten, i.e. the "do" methods:
 
     * ``do_work``: Tasks call this function continuously in RUNNING status when
-    there the queue has data. This function runs in a parallel subthread.
+    there the queue has data. This method runs in a parallel subthread.
     * ``do_startup``: Before running and initializing the ZMQ sockets, tasks
     call this function to open files, call ``init_and_boot``.
     * ``do_cleanup``: Before sending their final report, tasks call this
@@ -89,6 +92,9 @@ class Task(multiprocessing.Process, abc.ABC):
     def __init_subclass__(cls, **kwargs):
         """
         Stores subclasses in ``class_registry``.
+
+        Notes:
+            This method runs in the main process.
         """
 
         super().__init_subclass__(**kwargs)
@@ -98,16 +104,13 @@ class Task(multiprocessing.Process, abc.ABC):
         """
         Initializes ``Task``.
 
-        Parameters:
-            name: Task name.
-            address_pull: ZMQ pull socket address.
-
-        Note:
-            This function runs in the main process.
+        Notes:
+            This method runs in the main process.
         """
 
         super().__init__()
 
+        # Regular fields.
         self.name: str = self.__class__.__name__
         self.error: Exception = None
         self._kill: bool = False
@@ -128,66 +131,113 @@ class Task(multiprocessing.Process, abc.ABC):
 
     def do_report(self) -> dict:
         """
-        Generates reports to the pipeline.
+        Reports to the pipeline.
 
-        Note:
-            This function runs in the subprocess, and ought to be overwritten.
+        Ths task runtime calls this method when handling report generation.
+
+        Returns:
+            Dictionary to send a report to the pipeline.
+
+        Notes:
+            The task runtime captures prints to stdout/stderr and sends them to
+            the pipeline's ``handle_print`` method.
+
+            The task runtime captures errors, updates it status to ``ERROR``
+            and stores the latest error in the ``error`` field.
+
+            This method runs in subprocesses, and it can be overwritten.
         """
 
         return {}
 
     def do_configure(self, config: dict) -> None:
         """
-        Called after every configuration and reconfiguration.
+        Configures/reconfigures tasks.
 
-        Parameter:
+        Ths task runtime calls this method when handling configuration.
+
+        Parameters:
             config: New configuration.
 
-        Note:
-            This function runs in the subprocess, and ought to be overwritten.
+        Notes:
+            The task runtime captures prints to stdout/stderr and sends them to
+            the pipeline's ``handle_print`` method.
+
+            The task runtime captures errors, updates it status to ``ERROR``
+            and stores the latest error in the ``error`` field.
+
+            This method runs in subprocesses, and it can be overwritten.
         """
 
         pass
 
     def do_startup(self) -> None:
         """
-        Called after initialization.
+        Initializes task runtimes.
 
+        The task runtime calls this method after starting but before recieving
+        the ``START`` message.
 
-        Note:
-            This function runs in the subprocess, and ought to be overwritten.
+        Notes:
+            The task runtime captures prints to stdout/stderr and sends them to
+            the pipeline's ``handle_print`` method.
+
+            The task runtime captures errors, updates it status to ``ERROR``
+            and stores the latest error in the ``error`` field.
+
+            This method runs in subprocesses, and it can be overwritten.
         """
 
         pass
 
     def do_cleanup(self) -> None:
         """
-        Called after termination.
+        Deinitializes task runtimes.
 
-        Note:
-            This function runs in the subprocess, and ought to be overwritten.
+        The task runtime calls this method after recieving the ``STOP`` message
+        before closing.
+
+        Notes:
+            The task runtime captures prints to stdout/stderr and sends them to
+            the pipeline's ``handle_print`` method.
+
+            The task runtime captures errors, updates it status to ``ERROR``
+            and stores the latest error in the ``error`` field.
+
+            This method runs in subprocesses, and it can be overwritten.
         """
 
         pass
 
     @abc.abstractmethod
-    def do_work(self, value: typing.Any = None) -> None:
+    def do_work(self, value: typing.Any) -> typing.Any:
         """
-        Performs the task and processes data.
+        Does stuff.
 
-        When finished, update ``self.status`` to FINISHED and return. To pause
-        change the status to PAUSED and return. To throw an exception, raise
-        errors as usual or update ``self.status`` to ERROR and return.
+        The task runtime calls this method when in the ``RUNNING`` status and
+        the task is first in the pipeline or has data in its input queue.
 
-        Warning:
-            Tasks use cooperative multitasking, so return to recieve
-            communications from other tasks and the pipeline: pop data
-            off the queue, processes it, and return. Task runtimes will call
-            ``do_work`` repeatedly while the task has the RUNING status and the
-            queue has data.
+        When finished, call the ``send_finished``. To pause, call the
+        ``send_pause`` method. To stop, call the ``send_stop`` method. To
+        handle and error, raise it. Finally, return the data to send it to the
+        next task in the pipeline; if this method returns ``None`` it will not
+        send to the next task.
 
-        Note:
-            This function runs in the subprocess.
+        Parameters:
+            value: Data recieved from the previous task in the pipeline.
+
+        Return:
+            Data to send to the next task in the pipeline.
+
+
+        Notes:
+            The task runtime captures prints to stdout/stderr and sends them to
+            the pipeline's ``handle_print`` method.
+
+            The task runtime captures errors, updates it status to ``ERROR``
+            and stores the latest error in the ``error`` field.
+
+            This method runs in subprocesses, and it must be overwritten.
         """
 
         raise NotImplementedError
@@ -196,8 +246,14 @@ class Task(multiprocessing.Process, abc.ABC):
         """
         Handles ``CONNECT`` messages from the pipeline.
 
+        This method connects the ZMQ pull sockect and setes the start/final
+        flags. So, after calling this message, the task will communicate with
+        other tasks.
+
         Parameters:
             address_pull: ZMQ pull socket address.
+            is_start: First task flag.
+            is_final: Last task flag.
         """
 
         if address_pull:
@@ -207,13 +263,16 @@ class Task(multiprocessing.Process, abc.ABC):
         self.is_final = is_final
         self.handle_configure({})
 
-
     def handle_disconnect(self) -> None:
         """
         Handles ``DISCONNECT`` messages from the pipeline.
 
-        Note:
-            This function runs in the subprocess.
+        This method disconnects the ZMQ pull sockect and resets the start/final
+        flags to ``False``. So, after calling this message, the task will not
+        communicate with other tasks.
+
+        Notes:
+            This method runs in subprocesses.
         """
 
         if self.address_pull:
@@ -226,8 +285,12 @@ class Task(multiprocessing.Process, abc.ABC):
         """
         Handles ``START`` messages from the pipeline.
 
-        Note:
-            This function runs in the subprocess.
+        This method changes task's status to ``RUNNING``. So, the task will
+        still poll and handle message before calling ``do_work`` after getting
+        the ``START`` message.
+
+        Notes:
+            This method runs in subprocesses.
         """
 
         self.status = Status.RUNNING
@@ -236,8 +299,12 @@ class Task(multiprocessing.Process, abc.ABC):
         """
         Handles ``PAUSE`` messages from the pipeline.
 
-        Note:
-            This function runs in the subprocess.
+        This method changes task's status to ``PAUSED``. So, the task will
+        still poll and handle message but not call ``do_work`` after getting
+        the ``PAUSE`` message.
+
+        Notes:
+            This method runs in subprocesses.
         """
 
         self.status = Status.PAUSED
@@ -246,8 +313,11 @@ class Task(multiprocessing.Process, abc.ABC):
         """
         Handles ``STOP`` messages from the pipeline.
 
-        Note:
-            This function runs in the subprocess.
+        This method causes the tasks to quit and call ``do_cleanup``. So, the
+        tasks will close after getting the ``STOP`` message.
+
+        Notes:
+            This method runs in subprocesses.
         """
 
         self._kill = True
@@ -256,18 +326,25 @@ class Task(multiprocessing.Process, abc.ABC):
         """
         Handles ``CONFIGURE`` messages from the pipeline.
 
+        This method calls ``do_configure`` to enable user configuration and
+        on-the-fly reconfiguration of tasks. So, to minimize memory usage,
+        incoming configurations update, not replace, the current configuration.
+
         Parameters:
             config: Recieved parameters.
 
-        Note:
-            This function runs in the subprocess.
+        Notes:
+            Instead of overriding this function, use ``do_configure`` to
+            prevent issues.
+
+            This method runs in subprocesses.
         """
 
         try:
             with contextlib.redirect_stdout(io.StringIO()) as f:
                 with contextlib.redirect_stderr(io.StringIO()) as g:
                     self.do_configure(config)
-                    self.send_print(f.get_value(), g.getvalue())
+                    self.send_print(f.getvalue(), g.getvalue())
         except Exception as err:
             self.status = Status.ERROR
             self.error = err
@@ -278,8 +355,14 @@ class Task(multiprocessing.Process, abc.ABC):
         """
         Handles ``DATA`` message from the pervious task.
 
-        Parameter:
+        This method appends incoming data to the end of the queue. So, tasks
+        store their incoming data in their runtime.
+
+        Parameters:
             data: Recieved data.
+
+        Notes:
+            This method runs in subprocesses.
         """
 
         self.queue.append(data)
@@ -287,6 +370,14 @@ class Task(multiprocessing.Process, abc.ABC):
     def handle_finished(self) -> None:
         """
         Handles ``FINISHED`` messages from the previous task.
+
+        This method calls ``do_work`` until this tasks finishes, and it calls
+        ``send_finished`` to cascade the ``FINISHED`` message through the
+        pipeline. So, as ``FINISHED`` messages cascade through the pipeline,
+        tasks call this method.
+
+        Notes:
+            This method runs in subprocesses.
         """
 
         self.send_report()
@@ -299,7 +390,7 @@ class Task(multiprocessing.Process, abc.ABC):
                 with contextlib.redirect_stdout(io.StringIO()) as f:
                     with contextlib.redirect_stderr(io.StringIO()) as g:
                         ret = self.do_work(val)
-                        self.send_print(f.get_value(), g.getvalue())
+                        self.send_print(f.getvalue(), g.getvalue())
                 self.send_data(ret)
             except Exception as err:
                 self.status = Status.ERROR
@@ -311,15 +402,22 @@ class Task(multiprocessing.Process, abc.ABC):
         """
         Sends ``REPORT`` messages to the pipeline.
 
-        Note:
-            This function runs in the subprocess.
+        This method transfers the dictionary returned from ``do_report``
+        updated with default information to the pipeline. The pipeline handles
+        this using ``handle_report``.
+
+        Notes:
+            Instead of overriding this function, use ``do_report`` to
+            prevent issues.
+
+            This method runs in subprocesses.
         """
 
         try:
             with contextlib.redirect_stdout(io.StringIO()) as f:
                 with contextlib.redirect_stderr(io.StringIO()) as g:
                     report = self.do_report()
-                    self.send_print(f.get_value(), g.getvalue())
+                    self.send_print(f.getvalue(), g.getvalue())
         except Exception as err:
             self.status = Status.ERROR
             self.error = err
@@ -351,12 +449,16 @@ class Task(multiprocessing.Process, abc.ABC):
         """
         Sends ``PRINT`` messages to the pipeline.
 
+        This method transfers captured stdout and stderr data if anything was
+        written to the streams to the pipeline. The pipeline handles this using
+        ``handle_print``.
+
         Parameters:
             stdout: Captured stdout to send.
             stderr: Captured stderr to send.
 
-        Note:
-            This function runs in the subprocess.
+        Notes:
+            This method runs in subprocesses.
         """
 
         if stdout or stderr:
@@ -369,11 +471,14 @@ class Task(multiprocessing.Process, abc.ABC):
         """
         Sends ``DATA`` messages to the next task.
 
+        This transfering data through the pipeline if its not the final task.
+        The next task in the pipeline handles this using ``handle_data``.
+
         Parameters:
             data: Sent data.
 
-        Note:
-            This function runs in the subprocess.
+        Notes:
+            This method runs in subprocesses.
         """
 
         msg = Message.DATA(data)
@@ -384,8 +489,13 @@ class Task(multiprocessing.Process, abc.ABC):
         """
         Sends ``FINISHED`` messages to the next task.
 
-        Note:
-            This function runs in the subprocess.
+        This method changes this task's status to ``FINISHED`` and it cascades
+        the ``FINISHED`` message through the pipeline if its not the final
+        task in the pipeline. The next task in the pipeline handles this using
+        ``handle_finished``.
+
+        Notes:
+            This method runs in subprocesses.
         """
 
         self.status = Status.FINISHED
@@ -397,10 +507,18 @@ class Task(multiprocessing.Process, abc.ABC):
 
     def poll(self, is_noblock: bool = True) -> None:
         """
-        Polls the sockets, checking for and processing messages, without blocking.
+        Polls the sockets for messages from other the pipeline and other tasks.
 
-        Parameter:
+        This method handles messages by calling the "handle" methods. The
+        ``is_noblock`` flag determines if/if not this method block to wait for
+        some message from the pipeline. If this tasks recieves a message from
+        the pipeline or the previous task, it sends a report to the pipeline.
+
+        Parameters:
             is_noblock: Block/no block flag.
+
+        Notes:
+            This method runs in subprocesses.
         """
 
         # Processing messages from pipeline.
@@ -452,12 +570,13 @@ class Task(multiprocessing.Process, abc.ABC):
         """
         Runs the process.
 
-        This function initializes ZMQ sockets, dispatches interprocess
-        communication, implements the state machine, and calls the
-        user-implemented "do" methods.
+        This method initializes ZMQ sockets, listens for and handles
+        interprocess communication using the ``poll` method and the "handle"
+        methods, implements the state machine, and calls the user-implemented
+        "do" methods.
 
-        Note:
-            This function is the subprocess
+        Notes:
+            This method is subprocesses' runtime.
         """
 
         self.status = Status.PAUSED

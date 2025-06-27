@@ -18,21 +18,24 @@ class Pipeline:
     Pipelines uses ZMQ Push/Pull sockets to get and send messages to tasks.
     Pipeliens send and recieve the following kinds of messages to tasks:
 
-    Pipelines use the following states to transition between chain
-    initialization, running, pausing, and stoping:
-    * ▶️ RUNNING: Chain running.
-    * ⏸️ PAUSED: Chain waiting.
-    * 🆒 DONE: Chain done.
-    * ✅ READY: Chain initialized.
-    * 🆘 ERROR: Chain detected an error.
+    Pipelines use the following status to transition between initialization,
+    running, pausing, and stoping:
+
+    * 🆕 READY: Active tasks initialized.
+    * ▶️ RUNNING: Active tasks running.
+    * ⏸️ PAUSED: Active tasks waiting.
+    * 🆒 DONE: All tasks stoped
+    * ✅ FINISHED: Active tasks finished.
+    * 🆘 ERROR: Any tasks has an error.
 
     * PIPELINE-TO-TASK:
         * 🔁 CONNECT: Connect to given ZMQ push queue.
         * 🔀 DISCONNECT: Disconnect from the ZMQ push queue.
-        * ▶️ START: Change status to RUNNING.
-        * ⏸️ PAUSE: Change status to PAUSED.
-        * ⏹️ STOP: Change status to FINISHED.
+        * ▶️ START: Change status to ``RUNNING``.
+        * ⏸️ PAUSE: Change status to ``PAUSED``.
+        * ⏹️ STOP: Change status to ``DONE``.
         * ℹ️ CONFIGURE: Update parameters.
+        * ✅ FINISHED: Change status to ``FINISHED``.
     * TASK-TO-PIPELINE:
         * 🆗 REPORT: Transmit status to pipeline
         * 🔣 PRINT: Print to stdout/stderr.
@@ -48,7 +51,7 @@ class Pipeline:
     """
 
     def __init__(self):
-        self._status = Status.READY
+        self.status = Status.READY
         self.tasks_active = []
         self._tasks_all = {}
         self.reports = {}
@@ -61,8 +64,15 @@ class Pipeline:
         """
         Creates tasks using class names.
 
-        Parameter:
+        This method initializes tasks from ``Task.class_registry`, and adds them
+        to the pipeline pool, and starts them.
+
+        Parameters:
             name: Task class name.
+
+        Raises:
+            ValueError: Task already initialized, i.e. in ``_tasks_all``.
+            ValueError: Task not found, i.e. not in ``Task.class_registry``.
         """
 
         if name in self._tasks_all:
@@ -76,13 +86,43 @@ class Pipeline:
         task.address_router = self.address_router
         task.start()
 
+    def handle_error(self, err: Exception) -> None:
+        """
+        Handles errors.
+
+        The pipeline runtime calls this method if any task has the ``ERROR``
+        status.
+
+        Parameters:
+            err: The excpetion raised.
+        """
+
+        self.status = Status.ERROR
+        raise err
+
+    def handle_finished(self) -> None:
+        """
+        Handles complete pipelines.
+
+        The pipeline runtime calls this method if all active tasks have the
+        ``FINISHED`` status.
+        """
+
+        self.status = Status.FINISHED
+
     def handle_report(self, name: str, report: dict[str, typing.Any]) -> None:
         """
         Handles ``REPORT`` messages from some task.
 
+        This method overwrites the last report with the given report. So, the
+        pipeline only stores the last report recieved from each task.
+
         Parameters:
             name: Task name.
             report: Recieved report.
+
+        Raises:
+            ValueError: Task no found, i.e. not in ``_tasks_all``.
         """
 
         if name not in self._tasks_all:
@@ -94,10 +134,16 @@ class Pipeline:
         """
         Handles ``PRINT`` messages from some task.
 
+        This method prints non-empty writes to stdout and stderr. So, when
+        tasks write to standard streams, it gets printed by the pipeline.
+
         Parameters:
             name: Task name.
             stdout: Recieved stdout.
             stderr: Recieved stderr.
+
+        Raises:
+            ValueError: Task no found, i.e. not in ``_tasks_all``.
         """
 
         if name not in self._tasks_all:
@@ -108,28 +154,25 @@ class Pipeline:
         if stderr:
             print(stderr, end="")
 
-    def handle_error(self, err: Exception) -> None:
-        """
-        Handles errors condition.
-        """
-
-        self._status = Status.ERROR
-        raise err
-
-    def handle_finished(self) -> None:
-        """
-        Handles finished condition.
-        """
-
-        self._status = Status.FINISHED
-
-    def send_connect(self, name: str, address_pull: str, is_start: bool, is_final: bool) -> None:
+    def send_connect(
+        self, name: str, address_pull: str, is_start: bool, is_final: bool
+    ) -> None:
         """
         Sends ``CONNECT`` messages to tasks.
+
+        This method connects each task in the pipeline by sending the address
+        of the previous task's output and flags. The tasks handle this using
+        ``handle_connect``. This method blocks while waiting for a reponse,
+        namely a report.
 
         Parameters:
             name: Task name.
             address_pull: ZMQ pull socket address.
+            is_start: First task flag.
+            is_final: Last task flag.
+
+        Raises:
+            ValueError: Task no found, i.e. not in ``_tasks_all``.
         """
 
         if name not in self._tasks_all:
@@ -144,8 +187,16 @@ class Pipeline:
         """
         Sends ``DISCONNECT`` messages to tasks.
 
+        This method disconnect each task in the pipeline by telling them to
+        zero the address of previous task's output and the flags. The tasks
+        handle this using ``handle_disconnect``. This method blocks while
+        waiting for a reponse, namely a report.
+
         Parameters:
             name: Task name.
+
+        Raises:
+            ValueError: Task no found, i.e. not in ``_tasks_all``.
         """
 
         if name not in self._tasks_all:
@@ -160,8 +211,15 @@ class Pipeline:
         """
         Sends ``START`` messages to tasks.
 
+        This method starts each task in the pipeline, starting data processing
+        or collection. The tasks handle this using ``handle_start``. This
+        method blocks while waiting for a reponse, namely a report.
+
         Parameters:
             name: Task name.
+
+        Raises:
+            ValueError: Task no found, i.e. not in ``_tasks_all``.
         """
 
         if name not in self._tasks_all:
@@ -176,8 +234,15 @@ class Pipeline:
         """
         Sends ``PAUSE`` messages to tasks.
 
+        This method pauses each task in the pipeline, pausing data processing
+        or collection. The tasks handle this using ``handle_pause``. This
+        method blocks while waiting for a reponse, namely a report.
+
         Parameters:
             name: Task name.
+
+        Raises:
+            ValueError: Task no found, i.e. not in ``_tasks_all``.
         """
 
         if name not in self._tasks_all:
@@ -192,8 +257,15 @@ class Pipeline:
         """
         Sends ``STOP`` messages to tasks.
 
+        This method stops each task in the pipeline, pausing data processing
+        or collection. The tasks handle this using ``handle_stop``. This
+        method blocks while waiting for a reponse, namely a report.
+
         Parameters:
             name: Task name.
+
+        Raises:
+            ValueError: Task no found, i.e. not in ``_tasks_all``.
         """
 
         if name not in self._tasks_all:
@@ -208,9 +280,16 @@ class Pipeline:
         """
         Sends ``CONFIGURE`` messages to tasks.
 
+        This method configures or reconfigures each task in the pipeline. The
+        tasks handle this using ``do_configure`` and ``handle_configure``. This
+        method blocks while waiting for a reponse, namely a report.
+
         Parameters:
             name: Task name.
-            config: Recieved parameters.
+            config: Parameters to send.
+
+        Raises:
+            ValueError: Task no found, i.e. not in ``_tasks_all``.
         """
 
         if name not in self._tasks_all:
@@ -223,10 +302,18 @@ class Pipeline:
 
     def send_finished(self, name: str) -> None:
         """
-        Sends ``FINISHD`` messages to tasks.
+        Sends ``FINISHED`` messages to tasks.
+
+        This method shortcuts regular execution by sending the ``FINISED``
+        message to a task from the pipeline rather than the previous task. The
+        tasks handle this using ``handle_finished``. This method blocks while
+        waiting for a reponse, namely a report.
 
         Parameters:
             name: Task name.
+
+        Raises:
+            ValueError: Task no found, i.e. not in ``_tasks_all``.
         """
 
         if name not in self._tasks_all:
@@ -239,15 +326,18 @@ class Pipeline:
 
     def init(self, tasks_active: list[str]) -> None:
         """
-        Initialize the chain by pausing, disconnecting, and reconnecting
-        tasks.
+        Initialize active tasks.
+
+        This method sets the pipeline status to ``READY``, creates, pauses, or
+        disconnects tasks as needed, reconstitutes the active tasks by
+        connecting/reconnecting them.
 
         Parameters:
             tasks_active: Names of tasks to connect.
         """
 
-        # Clearing messages and updating state.
-        self._status = Status.READY
+        # Clearing messages and updating status.
+        self.status = Status.READY
 
         # Pausing & disconnecting old tasks.
         for name in [*self._tasks_all, *tasks_active]:
@@ -262,45 +352,65 @@ class Pipeline:
         # Connecting new tasks
         prev = None
         for name in tasks_active:
-            self.send_connect(name, self.reports[prev]['address_push'] if prev else None, self.tasks_active[0] == name, self.tasks_active[-1] == name)
+            self.send_connect(
+                name,
+                self.reports[prev]["address_push"] if prev else None,
+                self.tasks_active[0] == name,
+                self.tasks_active[-1] == name,
+            )
             prev = name
 
     def start(self) -> None:
         """
-        Starts the chain.
+        Starts the active tasks.
+
+        This method sets the pipleine status to ``RUNNING`` and starts all the
+        active tasks.
         """
 
-        # Clearing messages and updating state.
-        self._status = Status.RUNNING
+        # Clearing messages and updating status.
+        self.status = Status.RUNNING
 
         for name in self.tasks_active:
             self.send_start(name)
 
     def pause(self) -> None:
         """
-        Pauses the chain.
+        Pauses the active tasks.
+
+        This method sets the pipleine status to ``PAUSED`` and starts all the
+        active tasks.
         """
 
-        # Clearing messages and updating state.
-        self._status = Status.PAUSED
+        # Clearing messages and updating status.
+        self.status = Status.PAUSED
 
         for name in self.tasks_active:
             self.send_pause(name)
 
     def stop(self) -> None:
         """
-        Stops the chain.
+        Stops the active tasks.
+
+        This method sets the pipleine status to ``DONE`` and starts all the
+        active tasks.
         """
 
-        # Clearing messages and updating state.
-        self._status = Status.DONE
+        # Clearing messages and updating status.
+        self.status = Status.DONE
 
         for name in self._tasks_all:
             self.send_stop(name)
 
     def configure(self, config: dict[str, typing.Any]) -> None:
         """
-        Configures the chain.
+        Configures the active tasks.
+
+        This method configures or reconfigures the active tasks by sending the
+        given configuration.
+
+        Parameters:
+            config: Parameters to send.
         """
 
         for name in self.tasks_active:
@@ -308,9 +418,13 @@ class Pipeline:
 
     def poll(self, is_noblock: bool = True) -> None:
         """
-        Polls the pool, checking for and processing messages, without blocking.
+        Polls listens for and handles messages from the tasks.
 
-        Parameter:
+        This method listens for messages from the tasks and handles them using
+        the "handle" methods and updates the pipeline's status by calling other
+        "do" methods.
+
+        Parameters:
             is_noblock: Block/no block flag.
         """
 
@@ -336,7 +450,7 @@ class Pipeline:
             if self.reports[name]["status"] == Status.ERROR:
                 self.handle_error(self.reports[name]["error"])
 
-        if self._status != Status.READY:
+        if self.status != Status.READY:
             if (
                 not self.tasks_active
                 or self.reports[self.tasks_active[-1]]["status"] == Status.FINISHED

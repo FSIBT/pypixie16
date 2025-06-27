@@ -10,7 +10,7 @@ import pixie16
 
 
 class DummyTask(pixie16.pipeline.Task):
-    def do_work(self):
+    def do_work(self, value):
         if len(self.queue):
             self.queue.popleft()
 
@@ -106,13 +106,13 @@ class Test_Task:
 
     @staticmethod
     def test_do_work(task: pixie16.pipeline.Task):
-        task.do_work()
+        task.do_work(None)
 
     @staticmethod
     def test_handle_connect(task: pixie16.pipeline.Task, pull: tuple[str, zmq.Socket]):
         address_pull, socket_pull = pull
 
-        task.handle_connect(address_pull)
+        task.handle_connect(address_pull, False, False)
 
     @staticmethod
     def test_handle_disconnect_A(
@@ -128,7 +128,7 @@ class Test_Task:
     ):
         address_pull, socket_pull = pull
 
-        task.handle_connect(address_pull)
+        task.handle_connect(address_pull, False, False)
         task.handle_disconnect()
 
     @staticmethod

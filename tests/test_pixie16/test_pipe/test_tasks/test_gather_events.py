@@ -18,10 +18,10 @@ class Test_DummyData:
         while True:
             pipe.poll()
 
-            if pipe._status == pixie16.pipeline.Status.FINISHED:
+            if pipe.status == pixie16.pipeline.Status.FINISHED:
                 break
 
-            if pipe._status == pixie16.pipeline.Status.ERROR:
+            if pipe.status == pixie16.pipeline.Status.ERROR:
                 assert False
 
         pipe.stop()
