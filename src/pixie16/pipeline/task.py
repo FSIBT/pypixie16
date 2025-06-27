@@ -263,7 +263,15 @@ class Task(multiprocessing.Process, abc.ABC):
             This function runs in the subprocess.
         """
 
-        self.do_configure(config)
+        try:
+            with contextlib.redirect_stdout(io.StringIO()) as f:
+                with contextlib.redirect_stderr(io.StringIO()) as g:
+                    self.do_configure(config)
+                    self.send_print(f.get_value(), g.getvalue())
+        except Exception as err:
+            self.status = Status.ERROR
+            self.error = err
+
         self.config |= config
 
     def handle_data(self, data: typing.Any) -> None:
@@ -288,7 +296,10 @@ class Task(multiprocessing.Process, abc.ABC):
 
             try:
                 val = self.queue.popleft() if self.queue else None
-                ret = self.do_work(val)
+                with contextlib.redirect_stdout(io.StringIO()) as f:
+                    with contextlib.redirect_stderr(io.StringIO()) as g:
+                        ret = self.do_work(val)
+                        self.send_print(f.get_value(), g.getvalue())
                 self.send_data(ret)
             except Exception as err:
                 self.status = Status.ERROR
@@ -304,7 +315,15 @@ class Task(multiprocessing.Process, abc.ABC):
             This function runs in the subprocess.
         """
 
-        report = self.do_report()
+        try:
+            with contextlib.redirect_stdout(io.StringIO()) as f:
+                with contextlib.redirect_stderr(io.StringIO()) as g:
+                    report = self.do_report()
+                    self.send_print(f.get_value(), g.getvalue())
+        except Exception as err:
+            self.status = Status.ERROR
+            self.error = err
+
         report |= {
             "name": self.name,
             "error": self.error,
