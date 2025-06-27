@@ -149,18 +149,16 @@ class Task(multiprocessing.Process, abc.ABC):
 
         pass
 
-    def do_startup(self) -> dict:
+    def do_startup(self) -> None:
         """
         Called after initialization.
 
-        Returns:
-            Default initialized parameters.
 
         Note:
             This function runs in the subprocess, and ought to be overwritten.
         """
 
-        return {}
+        pass
 
     def do_cleanup(self) -> None:
         """
@@ -459,8 +457,7 @@ class Task(multiprocessing.Process, abc.ABC):
         try:
             with contextlib.redirect_stdout(io.StringIO()) as f:
                 with contextlib.redirect_stderr(io.StringIO()) as g:
-                    startup_config = self.do_startup() or {}
-                    self.config = startup_config | self.config
+                    self.do_startup()
                     self.send_print(f.getvalue(), g.getvalue())
         except Exception as err:
             self.status = Status.ERROR

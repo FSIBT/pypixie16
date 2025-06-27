@@ -69,7 +69,7 @@ class SortEvents(task.Task):
         self.report_time_queue = None
         self.number_of_resets = 0
 
-        return {
+        self.config = {
             "sort_size": 10_000,
             "sort_number_to_sort": 8_000,
             "sort_start_time": 0,

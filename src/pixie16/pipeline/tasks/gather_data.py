@@ -27,7 +27,7 @@ class GatherData(task.Task):
         self.data_queue = defaultdict(list)
         self.data_disk = defaultdict(list)
 
-        return {
+        self.config = {
             "binary_save_size": DEFAULT_BINARY_SAVE_SIZE,
             "binary_size": DEFAULT_BINARY_SIZE,
             "binary_save_path": DEFAULT_BINARY_SAVE_PATH,

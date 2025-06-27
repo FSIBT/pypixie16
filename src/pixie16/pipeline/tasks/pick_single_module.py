@@ -14,7 +14,7 @@ class PickSingleModule(task.Task):
     """
 
     def do_startup(self):
-        return {"pick_module": DEFAULT_PICK_MODULE}
+        self.config = {"pick_module": DEFAULT_PICK_MODULE}
 
     def do_configure(self, config: dict):
         self.pick_module = config.get("pick_module", self.config["pick_module"])

@@ -46,7 +46,7 @@ class DummyData(task.Task):
         self.time_start = time.time()
         self.data = np.fromfile(self.filename, dtype=np.uint8)
 
-        return {
+        self.config = {
             "modules": DEFAULT_MODULES,
             "runtime": DEFAULT_RUNTIME,
             "chunk_size": DEFAULT_CHUNK_SIZE,

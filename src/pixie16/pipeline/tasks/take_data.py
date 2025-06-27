@@ -37,7 +37,7 @@ class TakeData(task.Task):
 
         self.start_time = time.time()
 
-        return {
+        self.config = {
             "modules": DEFAULT_MODULES,
             "runtime": DEFAULT_RUNTIME,
         }

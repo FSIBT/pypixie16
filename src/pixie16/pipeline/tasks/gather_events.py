@@ -11,7 +11,7 @@ class GatherEvents(task.Task):
         self.nr = 0
         self.data = []
 
-        return {
+        self.config = {
             "size": DEFAULT_SIZE,
         }
 
