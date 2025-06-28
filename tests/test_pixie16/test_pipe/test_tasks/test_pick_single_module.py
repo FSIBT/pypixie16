@@ -3,7 +3,7 @@ import time
 import pixie16
 
 
-class Test_DummyData:
+class Test_PickSingleModule:
     @staticmethod
     def test():
         pipe = pixie16.pipeline.Pipeline()

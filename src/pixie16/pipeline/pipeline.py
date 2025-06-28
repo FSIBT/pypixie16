@@ -98,7 +98,6 @@ class Pipeline:
         """
 
         self.status = Status.ERROR
-        raise err
 
     def handle_finished(self) -> None:
         """
@@ -317,7 +316,7 @@ class Pipeline:
         """
 
         if name not in self._tasks_all:
-            raise ValueERror
+            raise ValueError
 
         msg = pickle.dumps(Message.FINISHED)
         self.socket_router.send_multipart([name.encode(), msg])

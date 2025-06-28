@@ -3,7 +3,7 @@ import time
 import pixie16
 
 
-class Test_DummyData:
+class Test_GatherEvents:
     @staticmethod
     def test():
         pipe = pixie16.pipeline.Pipeline()

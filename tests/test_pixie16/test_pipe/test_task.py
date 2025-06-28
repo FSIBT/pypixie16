@@ -2,6 +2,7 @@ import io
 import time
 import typing
 import pickle
+import collections
 
 import zmq
 import pytest
@@ -11,8 +12,24 @@ import pixie16
 
 class DummyTask(pixie16.pipeline.Task):
     def do_work(self, value):
-        if len(self.queue):
-            self.queue.popleft()
+        pass
+
+
+class ErrorTask(pixie16.pipeline.Task):
+    def do_cleanup(self):
+        raise Exception
+
+    def do_startup(self):
+        raise Exception
+
+    def do_report(self):
+        raise Exception
+
+    def do_configure(self):
+        raise Exception
+
+    def do_work(self, value):
+        raise Exception
 
 
 @pytest.fixture
@@ -69,7 +86,7 @@ def dealer(
 
 
 @pytest.fixture
-def task(
+def task_a(
     router: tuple[str, zmq.Socket],
     dealer: tuple[str, zmq.Socket],
     pull: tuple[str, zmq.Socket],
@@ -80,81 +97,198 @@ def task(
     address_pull, socket_pull = pull
     address_push, socket_push = push
 
-    task = DummyTask()
-    task.socket_dealer = socket_dealer
-    task.address_router = address_router
-    task.socket_pull = socket_pull
-    task.address_pull = address_pull
-    task.socket_push = socket_push
-    task.address_push = address_push
+    task_a = DummyTask()
 
-    return task
+    task_a.socket_dealer = socket_dealer
+    task_a.address_router = address_router
+    task_a.socket_pull = socket_pull
+    task_a.socket_push = socket_push
+    task_a.address_push = address_push
+
+    return task_a
+
+
+@pytest.fixture
+def task_b(
+    router: tuple[str, zmq.Socket],
+    dealer: tuple[str, zmq.Socket],
+    pull: tuple[str, zmq.Socket],
+    push: tuple[str, zmq.Socket],
+) -> pixie16.pipeline.Task:
+    address_router, socket_router = router
+    address_dealer, socket_dealer = dealer
+    address_pull, socket_pull = pull
+    address_push, socket_push = push
+
+    task_b = ErrorTask()
+
+    task_b.socket_dealer = socket_dealer
+    task_b.address_router = address_router
+    task_b.socket_pull = socket_pull
+    task_b.socket_push = socket_push
+    task_b.address_push = address_push
+
+    return task_b
 
 
 class Test_Task:
+    # @staticmethod
+    # def test___init_subclass__():
+    # pass
+
     @staticmethod
     def test___init__():
-        DummyTask()
+        task = DummyTask()
+        assert task.name == task.__class__.__name__
+        assert task.error is None
+        assert not task._kill
+        assert task.queue == collections.deque()
+        assert task.status == pixie16.pipeline.Status.READY
+        assert task.config == {}
+        assert not task.is_start
+        assert not task.is_final
+        assert task.context is None
+        assert task.socket_pull is None
+        assert task.socket_push is None
+        assert task.socket_dealer is None
+        assert task.address_pull is None
+        assert task.address_push is None
+        assert task.address_router is None
 
     @staticmethod
-    def test_do_startup(task: pixie16.pipeline.Task):
-        task.do_startup()
+    def test_do_report(task_a: pixie16.pipeline.Task):
+        task_a.do_report()
 
     @staticmethod
-    def test_do_cleanup(task: pixie16.pipeline.Task):
-        task.do_cleanup()
+    def test_do_configure(task_a: pixie16.pipeline.Task):
+        task_a.do_configure({})
 
     @staticmethod
-    def test_do_work(task: pixie16.pipeline.Task):
-        task.do_work(None)
+    def test_do_startup(task_a: pixie16.pipeline.Task):
+        task_a.do_startup()
 
     @staticmethod
-    def test_handle_connect(task: pixie16.pipeline.Task, pull: tuple[str, zmq.Socket]):
-        address_pull, socket_pull = pull
+    def test_do_cleanup(task_a: pixie16.pipeline.Task):
+        task_a.do_cleanup()
 
-        task.handle_connect(address_pull, False, False)
+    # @staticmethod
+    # def test_do_work(task_a: pixie16.pipeline.Task):
+    # task_a.do_work()
 
     @staticmethod
-    def test_handle_disconnect_A(
-        task: pixie16.pipeline.Task, pull: tuple[str, zmq.Socket]
+    def test_handle_connect_valid_A(
+        task_a: pixie16.pipeline.Task, push: tuple[str, zmq.Socket]
     ):
-        address_pull, socket_pull = pull
-
-        task.handle_disconnect()
+        address_push, socket_push = push
+        assert task_a.address_pull is None
+        assert not task_a.is_start
+        assert not task_a.is_final
+        task_a.handle_connect(address_push, True, True)
+        assert task_a.address_pull == address_push
+        assert task_a.is_start
+        assert task_a.is_final
 
     @staticmethod
-    def test_handle_disconnect_B(
-        task: pixie16.pipeline.Task, pull: tuple[str, zmq.Socket]
+    def test_handle_connect_valid_B(
+        task_a: pixie16.pipeline.Task, push: tuple[str, zmq.Socket]
     ):
-        address_pull, socket_pull = pull
-
-        task.handle_connect(address_pull, False, False)
-        task.handle_disconnect()
-
-    @staticmethod
-    def test_handle_start(task: pixie16.pipeline.Task):
-        task.handle_start()
-
-    @staticmethod
-    def test_handle_pause(task: pixie16.pipeline.Task):
-        task.handle_pause()
+        address_push, socket_push = push
+        assert task_a.address_pull is None
+        assert not task_a.is_start
+        assert not task_a.is_final
+        task_a.handle_connect(None, True, True)
+        assert task_a.address_pull is None
+        assert task_a.is_start
+        assert task_a.is_final
 
     @staticmethod
-    def test_handle_stop(task: pixie16.pipeline.Task):
-        task.handle_stop()
+    def test_handle_disconnect_valid_A(
+        task_a: pixie16.pipeline.Task, push: tuple[str, zmq.Socket]
+    ):
+        address_push, socket_push = push
+        task_a.handle_connect(address_push, True, True)
+        assert task_a.address_pull == address_push
+        assert task_a.is_start
+        assert task_a.is_final
+        task_a.handle_disconnect()
+        assert task_a.address_pull is None
+        assert not task_a.is_start
+        assert not task_a.is_final
 
     @staticmethod
-    def test_handle_configure(task: pixie16.pipeline.Task):
-        task.handle_configure({})
+    def test_handle_disconnect_valid_B(task_a: pixie16.pipeline.Task):
+        assert task_a.address_pull is None
+        assert not task_a.is_start
+        assert not task_a.is_final
+        task_a.handle_disconnect()
+        assert task_a.address_pull is None
+        assert not task_a.is_start
+        assert not task_a.is_final
+
+    @staticmethod
+    def test_handle_start(task_a: pixie16.pipeline.Task):
+        assert task_a.status == pixie16.pipeline.Status.READY
+        task_a.handle_start()
+        assert task_a.status == pixie16.pipeline.Status.RUNNING
+
+    @staticmethod
+    def test_handle_pause(task_a: pixie16.pipeline.Task):
+        assert task_a.status == pixie16.pipeline.Status.READY
+        task_a.handle_pause()
+        assert task_a.status == pixie16.pipeline.Status.PAUSED
+
+    @staticmethod
+    def test_handle_stop(task_a: pixie16.pipeline.Task):
+        assert not task_a._kill
+        task_a.handle_stop()
+        assert task_a._kill
+
+    @staticmethod
+    def test_handle_configure_valid_A(task_a: pixie16.pipeline.Task):
+        assert task_a.config == {}
+        task_a.handle_configure({"Hi": "Hello"})
+        assert task_a.config == {"Hi": "Hello"}
+
+    @staticmethod
+    def test_handle_configure_valid_B(task_b: pixie16.pipeline.Task):
+        assert task_b.status == pixie16.pipeline.Status.READY
+        assert task_b.error is None
+        assert task_b.config == {}
+        task_b.handle_configure({"Hi": "Hello"})
+        assert task_b.status == pixie16.pipeline.Status.ERROR
+        assert task_b.error is not None
+        assert task_b.config == {"Hi": "Hello"}
+
+    @staticmethod
+    def test_handle_data(task_a: pixie16.pipeline.Task):
+        assert len(task_a.queue) == 0
+        task_a.handle_data("Hi")
+        assert len(task_a.queue) == 1
 
     # @staticmethod
-    # def test_send_report(task: pixie16.pipeline.Task):
-    # task.send_report()
+    # def test_handle_finished(task_a: pixie16.pipeline.Task):
+    # task_a.handle_finished()
 
     # @staticmethod
-    # def test_send_print(task: pixie16.pipeline.Task):
-    # task.send_print('Hi', 'Hi')
+    # def test_send_report(task_a: pixie16.pipeline.Task):
+    # task_a.send_report()
 
     # @staticmethod
-    # def test_send_data(task: pixie16.pipeline.Task):
-    # task.send_data('Hi')
+    # def test_send_print(task_a: pixie16.pipeline.Task):
+    # task_a.send_print()
+
+    # @staticmethod
+    # def test_send_data(task_a: pixie16.pipeline.Task):
+    # task_a.send_data()
+
+    # @staticmethod
+    # def test_send_finished(task_a: pixie16.pipeline.Task):
+    # task_a.send_finished()
+
+    # @staticmethod
+    # def test_poll(task_a: pixie16.pipeline.Task):
+    # task_a.poll()
+
+    # @staticmethod
+    # def test_run(task_a: pixie16.pipeline.Task):
+    # task_a.run()

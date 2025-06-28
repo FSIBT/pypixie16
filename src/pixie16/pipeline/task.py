@@ -210,7 +210,7 @@ class Task(multiprocessing.Process, abc.ABC):
         pass
 
     @abc.abstractmethod
-    def do_work(self, value: typing.Any) -> typing.Any:
+    def do_work(self, value: typing.Any) -> typing.Any:  # pragma: no cover
         """
         Does stuff.
 
