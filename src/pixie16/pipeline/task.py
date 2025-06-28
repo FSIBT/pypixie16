@@ -398,7 +398,7 @@ class Task(multiprocessing.Process, abc.ABC):
 
         self.send_finished()
 
-    def send_report(self) -> None:
+    def send_report(self, report: dict|None = None ) -> None:
         """
         Sends ``REPORT`` messages to the pipeline.
 
@@ -412,35 +412,35 @@ class Task(multiprocessing.Process, abc.ABC):
 
             This method runs in subprocesses.
         """
+        if report is None: 
+            try:
+                with contextlib.redirect_stdout(io.StringIO()) as f:
+                    with contextlib.redirect_stderr(io.StringIO()) as g:
+                        report = self.do_report()
+                        self.send_print(f.getvalue(), g.getvalue())
+            except Exception as err:
+                self.status = Status.ERROR
+                self.error = err
 
-        try:
-            with contextlib.redirect_stdout(io.StringIO()) as f:
-                with contextlib.redirect_stderr(io.StringIO()) as g:
-                    report = self.do_report()
-                    self.send_print(f.getvalue(), g.getvalue())
-        except Exception as err:
-            self.status = Status.ERROR
-            self.error = err
-
-        report |= {
-            "name": self.name,
-            "error": self.error,
-            "config": self.config,
-            "status": self.status,
-            "address_pull": self.address_pull,
-            "address_push": self.address_push,
-            "address_router": self.address_router,
-            "is_start": self.is_start,
-            "is_final": self.is_final,
-            "sys_cpu_count": psutil.cpu_count(),
-            "sys_cpu_times": psutil.cpu_times(),
-            "sys_cpu_percent": psutil.cpu_percent(interval=0.1),
-            "sys_cpu_stats": psutil.cpu_stats(),
-            "sys_mem_virtual": psutil.virtual_memory(),
-            "sys_mem_swap": psutil.swap_memory(),
-            "ps": psutil.Process().as_dict(),
-            "queue": len(self.queue),
-        }
+            report |= {
+                "name": self.name,
+                "error": self.error,
+                "config": self.config,
+                "status": self.status,
+                "address_pull": self.address_pull,
+                "address_push": self.address_push,
+                "address_router": self.address_router,
+                "is_start": self.is_start,
+                "is_final": self.is_final,
+                "sys_cpu_count": psutil.cpu_count(),
+                "sys_cpu_times": psutil.cpu_times(),
+                "sys_cpu_percent": psutil.cpu_percent(interval=0.1),
+                "sys_cpu_stats": psutil.cpu_stats(),
+                "sys_mem_virtual": psutil.virtual_memory(),
+                "sys_mem_swap": psutil.swap_memory(),
+                "ps": psutil.Process().as_dict(),
+                "queue": len(self.queue),
+            }
 
         msg = pickle.dumps(Message.REPORT(report), protocol=pickle.HIGHEST_PROTOCOL)
         self.socket_dealer.send(msg)
