@@ -126,8 +126,11 @@ class Pipeline:
 
         if name not in self._tasks_all:
             raise ValueError
-
-        self.reports[name] = report
+    
+        if name in self.reports:
+            self.reports[name] |= report
+        else:
+            self.reports[name] = report
 
     def handle_print(self, name: str, stdout: str, stderr: str) -> None:
         """
