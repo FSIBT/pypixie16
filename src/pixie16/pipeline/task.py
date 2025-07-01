@@ -432,12 +432,6 @@ class Task(multiprocessing.Process, abc.ABC):
                 "address_router": self.address_router,
                 "is_start": self.is_start,
                 "is_final": self.is_final,
-                "sys_cpu_count": psutil.cpu_count(),
-                "sys_cpu_times": psutil.cpu_times(),
-                "sys_cpu_percent": psutil.cpu_percent(interval=0.1),
-                "sys_cpu_stats": psutil.cpu_stats(),
-                "sys_mem_virtual": psutil.virtual_memory(),
-                "sys_mem_swap": psutil.swap_memory(),
                 "ps": psutil.Process().as_dict(),
                 "queue": len(self.queue),
             }
