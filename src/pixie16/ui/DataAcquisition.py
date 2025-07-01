@@ -20,12 +20,10 @@ from PyQt6.QtWidgets import (
     QProgressBar,
 )
 from PyQt6 import QtCore
-import pyqtgraph as pg
-import psutil
+# import pyqtgraph as pg
+# import psutil
 
 from .. import pipeline
-
-# from ..pipeline.tasks import SetDefaults
 from ..config import LocalSettings
 
 
@@ -39,6 +37,10 @@ class DataAcquisition(QWidget):
         self.taskid_to_row = {}
         self.pipeline = pipeline.Pipeline()
         self.local_settings = LocalSettings()
+        
+        # Current pipeline configuration state
+        self.current_pipeline_config = {}
+        self.current_run_number = 1
 
         self.create_layout()
 
@@ -57,7 +59,56 @@ class DataAcquisition(QWidget):
 
     @property
     def modes(self):
+        """Override this in subclasses to provide different modes."""
         return ["DummyData"]
+    
+    def get_default_pipeline_for_mode(self, mode_name):
+        """Override this in subclasses to provide mode-specific pipelines."""
+        return ["DummyData", "PickSingleModule", "ConvertToEvents"]
+    
+    def get_default_config_for_mode(self, mode_name):
+        """Override this in subclasses to provide mode-specific configuration."""
+        return {
+            "mode": mode_name,
+            "detector_mode": mode_name,
+            "runtime": int(self.run_time_input.text()),
+            "modules": [2],
+            "channels": [(0, i) for i in range(16)],
+        }
+    
+    def configure_pipeline_for_mode(self, mode_name):
+        """Configure pipeline for the selected mode. Override in subclasses."""
+        pipeline_tasks = self.get_default_pipeline_for_mode(mode_name)
+        self.pipeline.init(pipeline_tasks)
+        
+        # Get base configuration
+        config = self.get_default_config_for_mode(mode_name)
+        
+        # Update with current settings
+        config.update(self.local_settings.to_dict())
+        
+        # Store current config and configure pipeline
+        self.current_pipeline_config = config
+        self.pipeline.configure(config)
+    
+    def get_acquisition_sequence(self):
+        """Get the sequence of acquisition types to run. Override in subclasses."""
+        sequence = []
+        
+        # Check if MCA is enabled
+        if hasattr(self, 'MCA_diagnostics') and self.MCA_diagnostics.isChecked():
+            sequence.append("mca")
+        elif hasattr(self, 'mca_enabled') and self.mca_enabled.isChecked():
+            sequence.append("mca")
+            
+        # Check if traces are enabled  
+        if self.traces_enabled.isChecked():
+            sequence.append("traces")
+            
+        # Always include listmode
+        sequence.append("listmode")
+        
+        return sequence
 
     def create_layout(self):
         style = self.app.style()
@@ -99,7 +150,6 @@ class DataAcquisition(QWidget):
         self.stop_button.setToolTip("Stop")
 
         self.traces_enabled = QCheckBox("Traces")
-        # self.help_button = QPushButton("Help")
         self.settings_text = QLabel("Settings Mode:")
         self.settings_text.setFixedWidth(100)
         self.settings_modes = QComboBox(self)
@@ -195,16 +245,14 @@ class DataAcquisition(QWidget):
         self.layout.addWidget(QLabel("Task Status"))
         self.layout.addWidget(self.task_table)
 
-        # Plot Area
-        self.plot_widget = pg.PlotWidget()
-        self.plot_widget.setTitle("Neutron rate (n/s)")  # "Resource Usage Over Time")
-        # self.plot_widget.setLabel('left', 'CPU %')
-        # self.plot_widget.setLabel('bottom', 'Time (s)')
-        self.cpu_plot = self.plot_widget.plot(pen="g")
-        self.cpu_data = []
-        self.time_data = []
-        self.time = 0
-        self.layout.addWidget(self.plot_widget)
+        # # Plot Area
+        # self.plot_widget = pg.PlotWidget()
+        # self.plot_widget.setTitle("Neutron rate (n/s)")
+        # self.cpu_plot = self.plot_widget.plot(pen="g")
+        # self.cpu_data = []
+        # self.time_data = []
+        # self.time = 0
+        # self.layout.addWidget(self.plot_widget)
 
         # Run status
         self.status_layout = QHBoxLayout()
@@ -232,7 +280,6 @@ class DataAcquisition(QWidget):
         self.status_layout.addWidget(self.current_task_status)
 
         self.layout.addLayout(self.status_layout)
-        # self.layout.addWidget(self.progress_bar)
 
         self.setLayout(self.layout)
 
@@ -242,21 +289,62 @@ class DataAcquisition(QWidget):
         self.MCA_set_time.editingFinished.connect(self.update_mca_time)
 
     def start_run(self):
+        """Start a run with the configured acquisition sequence."""
+        # Get the acquisition sequence
+        sequence = self.get_acquisition_sequence()
+        
+        # Build run configuration
+        run_config = self.current_pipeline_config.copy()
+        run_config.update({
+            "runtime": int(self.run_time_input.text()),
+            "run_nr": self.get_next_run_number(),
+            "acquisition_sequence": sequence,
+        })
+        
+        # Add acquisition-specific settings
+        if "mca" in sequence:
+            try:
+                run_config["mca_time"] = float(self.MCA_set_time.text())
+            except (ValueError, AttributeError):
+                run_config["mca_time"] = 30
+        
+        if "traces" in sequence:
+            try:
+                run_config["trace_time"] = float(self.traces_set_time.text())
+            except (ValueError, AttributeError):
+                run_config["trace_time"] = 5
+        
+        print(f"Starting run with config: {run_config}")
+        
+        # Configure and start pipeline
+        self.pipeline.configure(run_config)
         self.pipeline.start()
 
     def set_pixie_default(self):
         """Sets reasonable defaults for all parameters in the pixie16"""
-        # defaults_task = SetDefaults(self.pipeline.bind_address)
-        defaults_task.do_work(None)
+        # Override in subclasses to provide actual implementation
+        pass
 
     def on_mode_change(self, idx: int):
-        text = self.modes[idx]
-        print(f"selected {text}")
-        match text:
-            case "DummyData":
-                self.pipeline.init(["DummyData", "PickSingleModule", "ConvertToEvents"])
-            case _:
-                print("Should not happen")
+        """Handle mode changes - calls configure_pipeline_for_mode."""
+        if idx < 0 or idx >= len(self.modes):
+            return
+            
+        mode_name = self.modes[idx]
+        print(f"Selected mode: {mode_name}")
+        
+        try:
+            self.configure_pipeline_for_mode(mode_name)
+            print(f"Successfully configured pipeline for {mode_name}")
+        except Exception as e:
+            print(f"Error configuring pipeline for {mode_name}: {e}")
+            # Could fall back to DummyData or show error message
+
+    def get_next_run_number(self):
+        """Get the next run number and increment."""
+        current = self.current_run_number
+        self.current_run_number += 1
+        return current
 
     def set_runtime(self):
         runtime = self.run_time_input.text()
@@ -276,7 +364,7 @@ class DataAcquisition(QWidget):
                 return
         self.run_time_input.setText(str(runtime))
         self.progress_bar.setMaximum(runtime)
-        self.local_settings.runtime = runtime  # Update LocalSettings
+        self.local_settings.runtime = runtime
 
         if self.pipeline.current_pipeline:
             task_id = self.pipeline.current_pipeline[0]
@@ -363,12 +451,11 @@ class DataAcquisition(QWidget):
         """Handle App shutdown."""
         self.pipeline.end_tasks()
         self.pipeline.close()
-
         event.accept()
 
     def update_skip_mca(self, state):
         """Update skip_mca in LocalSettings when MCA_diagnostics checkbox is toggled."""
-        self.local_settings.skip_mca = bool(self.MCA_diagnostics.isChecked())
+        self.local_settings.skip_mca = not bool(self.MCA_diagnostics.isChecked())
 
     def update_traces_setting(self, state):
         """Update traces in LocalSettings when traces_enabled checkbox is toggled."""
@@ -379,10 +466,11 @@ class DataAcquisition(QWidget):
         try:
             value = float(self.traces_set_time.text())
             self.local_settings.trace_time = value
-            task_id = self.pipeline.current_pipeline[0]
-            conf = {"trace_time": value}
-            msg = {"type": pipeline.MessageType.CONFIGURE, "config": conf}
-            self.pipeline.send_command(task_id, msg)
+            if self.pipeline.current_pipeline and len(self.pipeline.current_pipeline) > 0:
+                task_id = self.pipeline.current_pipeline[0]
+                conf = {"trace_time": value}
+                msg = {"type": pipeline.MessageType.CONFIGURE, "config": conf}
+                self.pipeline.send_command(task_id, msg)
         except ValueError:
             pass
 
@@ -391,9 +479,10 @@ class DataAcquisition(QWidget):
         try:
             value = float(self.MCA_set_time.text())
             self.local_settings.mca_time = value
-            task_id = self.pipeline.current_pipeline[0]
-            conf = {"mca_time": value}
-            msg = {"type": pipeline.MessageType.CONFIGURE, "config": conf}
-            self.pipeline.send_command(task_id, msg)
+            if self.pipeline.current_pipeline and len(self.pipeline.current_pipeline) > 0:
+                task_id = self.pipeline.current_pipeline[0]
+                conf = {"mca_time": value}
+                msg = {"type": pipeline.MessageType.CONFIGURE, "config": conf}
+                self.pipeline.send_command(task_id, msg)
         except ValueError:
             pass
