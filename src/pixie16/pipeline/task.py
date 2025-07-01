@@ -398,7 +398,7 @@ class Task(multiprocessing.Process, abc.ABC):
 
         self.send_finished()
 
-    def send_report(self, report: dict|None = None ) -> None:
+    def send_report(self, report: dict | None = None) -> None:
         """
         Sends ``REPORT`` messages to the pipeline.
 
@@ -412,7 +412,7 @@ class Task(multiprocessing.Process, abc.ABC):
 
             This method runs in subprocesses.
         """
-        if report is None: 
+        if report is None:
             try:
                 with contextlib.redirect_stdout(io.StringIO()) as f:
                     with contextlib.redirect_stderr(io.StringIO()) as g:
@@ -422,7 +422,7 @@ class Task(multiprocessing.Process, abc.ABC):
                 self.status = Status.ERROR
                 self.error = err
 
-            report |= {
+            tmp = {
                 "name": self.name,
                 "error": self.error,
                 "config": self.config,
@@ -441,6 +441,10 @@ class Task(multiprocessing.Process, abc.ABC):
                 "ps": psutil.Process().as_dict(),
                 "queue": len(self.queue),
             }
+            if report is None:
+                report = tmp
+            else:
+                report |= tmp
 
         msg = pickle.dumps(Message.REPORT(report), protocol=pickle.HIGHEST_PROTOCOL)
         self.socket_dealer.send(msg)

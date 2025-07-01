@@ -182,9 +182,7 @@ class Pipeline:
 
         msg = pickle.dumps(Message.CONNECT(address_pull, is_start, is_final))
         self.socket_router.send_multipart([name.encode(), msg])
-
-        self.poll(is_noblock=False)
-
+        
     def send_disconnect(self, name: str) -> None:
         """
         Sends ``DISCONNECT`` messages to tasks.
@@ -207,7 +205,6 @@ class Pipeline:
         msg = pickle.dumps(Message.DISCONNECT)
         self.socket_router.send_multipart([name.encode(), msg])
 
-        self.poll(is_noblock=False)
 
     def send_start(self, name: str) -> None:
         """
@@ -350,6 +347,8 @@ class Pipeline:
             self.send_disconnect(name)
 
         self.tasks_active = tasks_active
+        while set(self.reports.keys()) != set(self.tasks_active):
+            self.poll()
 
         # Connecting new tasks
         prev = None
@@ -361,6 +360,12 @@ class Pipeline:
                 self.tasks_active[-1] == name,
             )
             prev = name
+        tmp_list = []
+
+        while set(tmp_list) != set(self.tasks_active):
+            tmp = self.poll()
+            if tmp is not None:
+                tmp_list.append(tmp)
 
     def start(self) -> None:
         """
@@ -448,13 +453,16 @@ class Pipeline:
         else:
             raise RuntimeError
 
-        for name in self.tasks_active:
-            if self.reports[name]["status"] == Status.ERROR:
-                self.handle_error(self.reports[name]["error"])
+        if self.reports[name]["status"] == Status.ERROR:
+            self.handle_error(self.reports[name]["error"])
 
         if self.status != Status.READY:
-            if (
-                not self.tasks_active
-                or self.reports[self.tasks_active[-1]]["status"] == Status.FINISHED
-            ):
-                self.handle_finished()
+            if self.tasks_active[-1] in self.reports:
+                if "status" in self.reports[self.tasks_active[-1]]:
+                    if (
+                        not self.tasks_active
+                        or self.reports[self.tasks_active[-1]]["status"] == Status.FINISHED
+                    ):
+                        self.handle_finished()
+
+        return name
