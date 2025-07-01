@@ -205,7 +205,6 @@ class Pipeline:
         msg = pickle.dumps(Message.DISCONNECT)
         self.socket_router.send_multipart([name.encode(), msg])
 
-
     def send_start(self, name: str) -> None:
         """
         Sends ``START`` messages to tasks.
@@ -227,7 +226,8 @@ class Pipeline:
         msg = pickle.dumps(Message.START)
         self.socket_router.send_multipart([name.encode(), msg])
 
-        self.poll(is_noblock=False)
+        while self.poll(is_block=True) != name:
+            pass
 
     def send_pause(self, name: str) -> None:
         """
@@ -250,7 +250,8 @@ class Pipeline:
         msg = pickle.dumps(Message.PAUSE)
         self.socket_router.send_multipart([name.encode(), msg])
 
-        self.poll(is_noblock=False)
+        while self.poll(is_block=True) != name:
+            pass
 
     def send_stop(self, name: str) -> None:
         """
@@ -273,7 +274,8 @@ class Pipeline:
         msg = pickle.dumps(Message.STOP)
         self.socket_router.send_multipart([name.encode(), msg])
 
-        self.poll(is_noblock=False)
+        while self.poll(is_block=True) != name:
+            pass
 
     def send_configure(self, name: str, config: dict[str, typing.Any]) -> None:
         """
@@ -297,7 +299,8 @@ class Pipeline:
         msg = pickle.dumps(Message.CONFIGURE(config))
         self.socket_router.send_multipart([name.encode(), msg])
 
-        self.poll(is_noblock=False)
+        while self.poll(is_block=True) != name:
+            pass
 
     def send_finished(self, name: str) -> None:
         """
@@ -321,7 +324,8 @@ class Pipeline:
         msg = pickle.dumps(Message.FINISHED)
         self.socket_router.send_multipart([name.encode(), msg])
 
-        self.poll(is_noblock=False)
+        while self.poll(is_block=True) != name:
+            pass
 
     def init(self, tasks_active: list[str]) -> None:
         """
@@ -337,6 +341,7 @@ class Pipeline:
 
         # Clearing messages and updating status.
         self.status = Status.READY
+        self.reports = {}
 
         # Pausing & disconnecting old tasks.
         for name in [*self._tasks_all, *tasks_active]:
@@ -346,6 +351,7 @@ class Pipeline:
                 self.send_pause(name)
             self.send_disconnect(name)
 
+        # Waiting for reinitialization reports.
         self.tasks_active = tasks_active
         while set(self.reports.keys()) != set(self.tasks_active):
             self.poll()
@@ -360,12 +366,12 @@ class Pipeline:
                 self.tasks_active[-1] == name,
             )
             prev = name
-        tmp_list = []
 
-        while set(tmp_list) != set(self.tasks_active):
-            tmp = self.poll()
-            if tmp is not None:
-                tmp_list.append(tmp)
+        # Waiting for connection reports.
+        names = set()
+        while names != set(self.tasks_active):
+            names.add(self.poll(is_block=True))
+        print(names, self.tasks_active)
 
     def start(self) -> None:
         """
@@ -423,7 +429,7 @@ class Pipeline:
         for name in self.tasks_active:
             self.send_configure(name, config)
 
-    def poll(self, is_noblock: bool = True) -> None:
+    def poll(self, is_block: bool = False) -> None:
         """
         Polls listens for and handles messages from the tasks.
 
@@ -432,7 +438,7 @@ class Pipeline:
         "do" methods.
 
         Parameters:
-            is_noblock: Block/no block flag.
+            is_block: Block/no block flag.
         """
 
         try:
@@ -453,16 +459,19 @@ class Pipeline:
         else:
             raise RuntimeError
 
-        if self.reports[name]["status"] == Status.ERROR:
+        if (
+            name in self.reports and
+            self.reports[name]["status"] == Status.ERROR
+        ):
             self.handle_error(self.reports[name]["error"])
 
-        if self.status != Status.READY:
-            if self.tasks_active[-1] in self.reports:
-                if "status" in self.reports[self.tasks_active[-1]]:
-                    if (
-                        not self.tasks_active
-                        or self.reports[self.tasks_active[-1]]["status"] == Status.FINISHED
-                    ):
-                        self.handle_finished()
+        if (
+            self.status != Status.READY and
+            self.tasks_active and
+            self.tasks_active[-1] in self.reports and
+            "status" in self.reports[self.tasks_active[-1]] and
+            self.reports[self.tasks_active[-1]]["status"] == Status.FINISHED
+        ):
+            self.handle_finished()
 
         return name

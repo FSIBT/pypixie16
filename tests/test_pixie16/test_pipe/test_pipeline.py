@@ -13,29 +13,11 @@ class DummyTask(pixie16.pipeline.Task):
 
 
 class ErrorTask(pixie16.pipeline.Task):
-    def do_cleanup(self):
-        raise Exception
-
-    def do_startup(self):
-        raise Exception
-
-    def do_configure(self, config):
-        raise Exception
-
     def do_work(self, value):
         raise Exception
 
 
 class PrintTask(pixie16.pipeline.Task):
-    def do_cleanup(self):
-        self.send_print("Hi", "Err")
-
-    def do_startup(self):
-        self.send_print("Hi", "Err")
-
-    def do_configure(self, config):
-        self.send_print("Hi", "Err")
-
     def do_work(self, value):
         self.send_print("Hi", "Err")
 
