@@ -63,7 +63,7 @@ logger = logging.getLogger(__name__)
 
 # Hardcoded paths for testing
 DUMMY_BINARY_FILE = "/home/jo/Documents/work/data/RUN-2025-06-05-00001/binary-data/RUN-2025-06-05-00001-mod0-1749144651-168324-00000.bin"
-DUMMY_NUMPY_FILE = "/home/jo/Downloads/RUN-2025-06-17-00000-mca-2025-06-17-09-21-48.npy"
+# DUMMY_NUMPY_FILE = "/home/jo/Downloads/RUN-2025-06-17-00000-mca-2025-06-17-09-21-48.npy"
 
 
 class PixieScopeApp(QMainWindow):
@@ -76,25 +76,22 @@ class PixieScopeApp(QMainWindow):
         self.dummy_mode = dummy_mode
         self.module_number = module_number
 
-        # Default to all 16 channels if none specified
         if channels is None:
             channels = list(range(16))
-        self.channels = [
-            (module_number, ch) for ch in channels
-        ]  # Convert to (module, channel) tuples
-        self.channel_numbers = channels  # Keep just the channel numbers for convenience
+        self.channels = [(module_number, ch) for ch in channels]
+        self.channel_numbers = channels
 
         self.live_reader = None
         self.data_source = None
         self.is_acquiring = False
-        self.current_mode = "mca_mode"  # Default mode
+        self.current_mode = "mca_mode"
         self.acquisition_timer = None
 
-        # Data storage for MCA mode
+        self.pixie_histogram_bins = 32768
+        self.enabled_channels = []
         self.mca_data = {}
         self.cumulative_mca_data = {}
 
-        # PIXIE-16 settings
         self.settings = {
             "channels": self.channels,
             "TRACE_LENGTH": 1.0,
@@ -109,42 +106,15 @@ class PixieScopeApp(QMainWindow):
             "EnableChannelVal": True,
         }
 
-        self.use_realtime_axis = True  # ON by default
-        self.trace_delay_ns = {}  # Per-channel delays from default.json
-        self.sampling_period_ns = 2.0  # 500 MSPS = 2ns per sample
-        self.alpha_channel = 9  # Alpha detector channel
+        self.use_realtime_axis = True
+        self.trace_delay_ns = {}
+        self.sampling_period_ns = 2.0
+        self.alpha_channel = 9
 
         self.load_pixie16_timing_settings()
-
         self.init_ui()
         self.init_pixie16()
         self.setup_timers()
-
-    def setup_dummy_timing(self):
-        """Fallback timing settings for dummy mode"""
-        self.sampling_period_ns = 2.0
-        # Use realistic values based on your default.json
-        dummy_delays = [
-            108,
-            108,
-            16,
-            176,
-            64,
-            324,
-            108,
-            108,
-            408,
-            24,
-            48,
-            16,
-            64,
-            64,
-            64,
-            64,
-        ]
-        for i in range(16):
-            self.trace_delay_ns[i] = dummy_delays[i]
-        print("Using dummy timing settings")
 
     def load_pixie16_timing_settings(self):
         """Load timing settings from your default.json file"""
@@ -165,7 +135,7 @@ class PixieScopeApp(QMainWindow):
 
             if not config_path:
                 print("default.json not found, using dummy timing settings")
-                self.setup_dummy_timing()
+                # self.setup_dummy_timing()
                 return
 
             print(f"Loading PIXIE-16 timing from: {config_path}")
@@ -523,16 +493,15 @@ class PixieScopeApp(QMainWindow):
         """Start MCA mode acquisition"""
         try:
             if not self.dummy_mode:
-                # Real hardware mode - apply settings and use px.control.take_MCA_spectra
+                # Real hardware mode
                 px.control.change_setting_from_dict(self.settings, call_pixie=True)
                 print(
-                    f"MCA acquisition starting for real hardware on channels: {self.channel_numbers}"
+                    f"MCA acquisition starting for real hardware on channels: {self.enabled_channels}"
                 )
             else:
-                # Dummy mode - use numpy file
-                print(
-                    f"MCA acquisition starting in DUMMY MODE using: {DUMMY_NUMPY_FILE}"
-                )
+                # Dummy mode - convert binary file to histograms
+                print(f"MCA acquisition starting in DUMMY MODE")
+                print(f"Will convert binary file to histograms: {DUMMY_BINARY_FILE}")
 
             # Start the MCA plotter's update timer
             if hasattr(self.spectrum_tab, "start_live_updates"):
@@ -541,11 +510,13 @@ class PixieScopeApp(QMainWindow):
             # Set up timer to read MCA data
             self.acquisition_timer = QTimer()
             self.acquisition_timer.timeout.connect(self.read_mca_data)
-            self.acquisition_timer.start(2000)  # Read every 2 seconds
+            self.acquisition_timer.start(
+                3000
+            )  # Read every 3 seconds (slower for binary processing)
 
             mode_status = "DUMMY MODE - " if self.dummy_mode else ""
             self.info_bar.setText(
-                f"{mode_status}MCA mode: Collecting histogram data..."
+                f"{mode_status}MCA mode: Converting binary data to histograms..."
             )
 
         except Exception as e:
@@ -678,31 +649,70 @@ class PixieScopeApp(QMainWindow):
             raise
 
     def read_dummy_mca_data(self):
-        if not Path(DUMMY_NUMPY_FILE).exists():
-            print(f"Dummy numpy file not found: {DUMMY_NUMPY_FILE}")
+        """Convert binary file to MCA histograms - much more realistic than numpy file"""
+        if not Path(DUMMY_BINARY_FILE).exists():
+            print(f"Dummy binary file not found: {DUMMY_BINARY_FILE}")
+            print("Generating synthetic MCA data instead...")
+            self.generate_synthetic_mca_data()
             return
 
-        mca_data = np.load(DUMMY_NUMPY_FILE)
-        print(f"Loaded MCA data from {DUMMY_NUMPY_FILE}, shape: {mca_data.shape}")
+        try:
+            # Read binary file and convert to events, then histogram
+            print(f"Converting binary file to MCA histograms: {DUMMY_BINARY_FILE}")
 
-        if len(mca_data.shape) == 2:
-            # Multiple channels in file - distribute to available channels
-            for i, channel in enumerate(self.channel_numbers):
-                if i < mca_data.shape[0]:
-                    fresh_data = mca_data[i, :].astype(np.int64)
-                    # Add some variation to make it look live
-                    noise = np.random.poisson(fresh_data * 0.01 + 1).astype(np.int64)
-                    self.accumulate_channel_data(channel, noise)
-        else:
-            # Single channel - give to first channel with some distribution
-            if self.channel_numbers:
-                fresh_data = mca_data.astype(np.int64)
-                for i, channel in enumerate(self.channel_numbers):
-                    # Scale data differently for each channel
-                    scale_factor = 0.5 + (i * 0.3)
-                    scaled_data = (fresh_data * scale_factor).astype(np.int64)
-                    noise = np.random.poisson(scaled_data * 0.01 + 1).astype(np.int64)
-                    self.accumulate_channel_data(channel, noise)
+            # Read a chunk of binary data (not the whole file to avoid memory issues)
+            binary_data = np.fromfile(DUMMY_BINARY_FILE, dtype=np.uint32, count=50000)
+            print(f"Loaded {len(binary_data)} words from binary file")
+
+            # Parse events from binary data
+            from pixie16.read.list_mode.list_mode_data_reader import (
+                StreamReader,
+                ListModeDataReader,
+            )
+
+            reader = StreamReader()
+            parser = ListModeDataReader(reader)
+            reader.put(binary_data)
+
+            # Extract events and build histograms
+            channel_histograms = {}
+            event_count = 0
+
+            try:
+                while True:
+                    event = parser.pop()
+                    event_count += 1
+
+                    channel = event.channel
+                    energy = event.energy
+
+                    # Initialize histogram for this channel if needed
+                    if channel not in channel_histograms:
+                        channel_histograms[channel] = np.zeros(
+                            self.pixie_histogram_bins, dtype=np.int64
+                        )
+
+                    # Add energy to histogram (with bounds checking)
+                    if 0 <= energy < self.pixie_histogram_bins:
+                        channel_histograms[channel][int(energy)] += 1
+
+            except Exception:
+                # End of data or parsing error - that's expected
+                pass
+
+            print(f"Parsed {event_count} events from binary data")
+            print(f"Found data for channels: {list(channel_histograms.keys())}")
+
+            # Accumulate the histograms into our MCA data
+            for channel, histogram in channel_histograms.items():
+                if channel in self.channel_numbers:
+                    total_counts = np.sum(histogram)
+                    if total_counts > 0:
+                        print(f"Channel {channel}: {total_counts} counts")
+                        self.accumulate_channel_data(channel, histogram)
+
+        except Exception as e:
+            print(f"Error parsing binary file: {e}")
 
     def read_mca_data(self):
         try:
@@ -710,21 +720,43 @@ class PixieScopeApp(QMainWindow):
                 self.read_dummy_mca_data()
                 return
 
+            enabled_channel_tuples = [
+                (self.module_number, ch) for ch in self.enabled_channels
+            ]
+
+            if not enabled_channel_tuples:
+                print("No enabled channels for MCA acquisition")
+                return
+
+            print(
+                f"Taking MCA spectra for {len(enabled_channel_tuples)} enabled channels"
+            )
+
             histogram_result = px.control.take_MCA_spectra(
-                channels=self.channels,
+                channels=enabled_channel_tuples,
                 duration=1.0,
                 verbose=False,
             )
 
             if isinstance(histogram_result | (list | np.ndarray)):
+                print(f"Received MCA data: {len(histogram_result)} histograms")
+
                 for i, fresh_histogram in enumerate(histogram_result):
-                    if i < len(self.channel_numbers):
-                        channel = self.channel_numbers[i]
+                    if i < len(self.enabled_channels):
+                        channel = self.enabled_channels[i]
                         fresh_data = np.array(fresh_histogram, dtype=np.int64)
+
+                        print(
+                            f"Channel {channel}: received {len(fresh_data)} bins, sum={np.sum(fresh_data)}"
+                        )
                         self.accumulate_channel_data(channel, fresh_data)
+                    else:
+                        print(f"Warning: Extra histogram data at index {i} - ignoring")
+            else:
+                print(f"Unexpected MCA result type: {type(histogram_result)}")
 
         except Exception as e:
-            print(f"Error in read_mca_data: {e}")
+            print(f"Error in take_MCA_spectra: {e}")
 
     def start_dummy_list_mode_data(self):
         def dummy_list_mode_reader():
@@ -832,26 +864,48 @@ class PixieScopeApp(QMainWindow):
 
     def accumulate_channel_data(self, channel, fresh_data):
         try:
-            data_size = len(fresh_data)
+            if channel not in self.enabled_channels:
+                print(
+                    f"Warning: Received data for non-enabled channel {channel} - skipping"
+                )
+                return
 
-            # Initialize arrays based on incoming data size
+            expected_size = self.pixie_histogram_bins
+            actual_size = len(fresh_data)
+
+            if actual_size != expected_size:
+                print(
+                    f"Channel {channel}: Size mismatch - expected {expected_size}, got {actual_size}"
+                )
+
+                if actual_size > expected_size:
+                    fresh_data = fresh_data[:expected_size]
+                    print(f"  -> Truncated to {expected_size} bins")
+                else:
+                    padded_data = np.zeros(expected_size, dtype=fresh_data.dtype)
+                    padded_data[:actual_size] = fresh_data
+                    fresh_data = padded_data
+                    print(f"  -> Padded to {expected_size} bins")
+
             if channel not in self.cumulative_mca_data:
-                self.cumulative_mca_data[channel] = np.zeros(data_size, dtype=np.int64)
-                self.mca_data[channel] = np.zeros(data_size, dtype=np.int32)
-                print(f"Initialized channel {channel} with {data_size} bins")
-            elif len(self.cumulative_mca_data[channel]) != data_size:
-                # Data size changed, reinitialize
-                self.cumulative_mca_data[channel] = np.zeros(data_size, dtype=np.int64)
-                self.mca_data[channel] = np.zeros(data_size, dtype=np.int32)
-                print(f"Resized channel {channel} to {data_size} bins")
+                print(f"Late initialization for channel {channel}")
+                self.cumulative_mca_data[channel] = np.zeros(
+                    expected_size, dtype=np.int64
+                )
+                self.mca_data[channel] = np.zeros(expected_size, dtype=np.int32)
 
-            self.cumulative_mca_data[channel] += fresh_data
+            self.cumulative_mca_data[channel] += fresh_data.astype(np.int64)
+
             self.mca_data[channel] = np.clip(
                 self.cumulative_mca_data[channel], 0, np.iinfo(np.int32).max
             ).astype(np.int32)
 
             if hasattr(self.spectrum_tab, "update_mca_histogram"):
                 self.spectrum_tab.update_mca_histogram(channel, self.mca_data[channel])
+
+            total_counts = int(np.sum(self.mca_data[channel]))
+            if total_counts > 0:
+                print(f"Channel {channel}: {total_counts:,} total counts")
 
         except Exception as e:
             print(f"Error accumulating data for channel {channel}: {e}")
@@ -908,23 +962,24 @@ class PixieScopeApp(QMainWindow):
             print(f"Error processing traces event: {e}")
 
     def update_mca_channel_stats(self):
-        """Update channel statistics for MCA mode"""
         try:
             channel_stats = {}
 
-            # Get statistics from accumulated MCA data
-            for channel in self.channel_numbers:
-                if channel in self.mca_data:
+            for channel in self.enabled_channels:
+                if channel in self.mca_data and len(self.mca_data[channel]) > 0:
                     total_counts = int(np.sum(self.mca_data[channel]))
                     channel_stats[channel] = total_counts
                 else:
                     channel_stats[channel] = 0
 
-            # Update the channel controls
             if hasattr(self, "channel_controls"):
                 self.channel_controls.update_channel_statistics(channel_stats)
 
-            print(f"MCA Stats updated: {channel_stats}")
+            active_stats = {
+                ch: count for ch, count in channel_stats.items() if count > 0
+            }
+            if active_stats:
+                print(f"MCA Stats: {active_stats}")
 
         except Exception as e:
             print(f"Error updating MCA channel stats: {e}")
@@ -1000,53 +1055,63 @@ class PixieScopeApp(QMainWindow):
             print(f"Error reading PIXIE data: {e}")
 
     def clear_data(self):
-        """Clear all data"""
         if self.current_mode == "mca_mode":
-            # Reset cumulative MCA data
-            for channel in self.channel_numbers:
-                self.cumulative_mca_data[channel].fill(0)
-                self.mca_data[channel].fill(0)
+            for channel in self.enabled_channels:
+                if channel in self.cumulative_mca_data:
+                    self.cumulative_mca_data[channel].fill(0)
+                if channel in self.mca_data:
+                    self.mca_data[channel].fill(0)
 
-        # Clear plotter data
         if hasattr(self.spectrum_tab, "clear_data"):
             self.spectrum_tab.clear_data()
 
         mode_status = "DUMMY MODE - " if self.dummy_mode else ""
-        self.info_bar.setText(f"{mode_status}All data cleared")
+        enabled_info = (
+            f" ({len(self.enabled_channels)} enabled channels)"
+            if hasattr(self, "enabled_channels")
+            else ""
+        )
+        self.info_bar.setText(f"{mode_status}All data cleared{enabled_info}")
 
     def update_display_channels(self, selected_channels):
-        print(f"Scope: channels changed to {selected_channels}")
-        print(f"Scope: current mode is {self.current_mode}")
-
         try:
-            # Update the spectrum plotter's display channels
+            if hasattr(self, "enabled_channels"):
+                valid_channels = [
+                    ch for ch in selected_channels if ch in self.enabled_channels
+                ]
+                if len(valid_channels) != len(selected_channels):
+                    disabled_channels = [
+                        ch
+                        for ch in selected_channels
+                        if ch not in self.enabled_channels
+                    ]
+                    print(
+                        f"Warning: Channels {disabled_channels} are not enabled - excluding from display"
+                    )
+                    selected_channels = valid_channels
+
+            print(f"Scope: channels changed to {selected_channels}")
+
             if hasattr(self.spectrum_tab, "set_display_channels"):
-                print(f"Calling set_display_channels with {selected_channels}")
                 self.spectrum_tab.set_display_channels(selected_channels)
             elif hasattr(self.spectrum_tab, "set_channels"):
-                print(f"Calling set_channels with {selected_channels}")
                 self.spectrum_tab.set_channels(selected_channels)
-            else:
-                print(f"ERROR: spectrum_tab doesn't have display channel methods")
-                print(f"spectrum_tab type: {type(self.spectrum_tab)}")
-                print(
-                    f"spectrum_tab methods: {[m for m in dir(self.spectrum_tab) if not m.startswith('_')]}"
-                )
 
-            # Update status message
             if selected_channels:
                 mode_status = "DUMMY MODE - " if self.dummy_mode else ""
+                enabled_info = (
+                    f" (from {len(self.enabled_channels)} enabled)"
+                    if hasattr(self, "enabled_channels")
+                    else ""
+                )
                 self.info_bar.setText(
-                    f"{mode_status}Displaying {len(selected_channels)} channels: {selected_channels}"
+                    f"{mode_status}Displaying {len(selected_channels)} channels: {selected_channels}{enabled_info}"
                 )
             else:
-                self.info_bar.setText("No channels selected for display")
+                self.info_bar.setText("No valid enabled channels selected for display")
 
         except Exception as e:
             print(f"ERROR in update_display_channels: {e}")
-            import traceback
-
-            traceback.print_exc()
 
     def handle_parameter_change(self, param_name, value, module, channel):
         """Handle parameter changes from the UI"""
@@ -1092,13 +1157,49 @@ class PixieScopeApp(QMainWindow):
         try:
             if not self.dummy_mode:
                 print("Booting PIXIE-16...")
-                available_modules = [self.module_number]  # Convert to list
+                available_modules = [self.module_number]
                 px.control.init_and_boot(modules=available_modules)
+
+                self.enabled_channels = []
+                for ch in self.channel_numbers:
+                    try:
+                        good_channel = px.control.set_channel_parameter(
+                            "GoodChannel", None, 0, ch
+                        )
+                        if good_channel:
+                            self.enabled_channels.append(ch)
+                            print(f"Channel {ch}: ENABLED")
+                        else:
+                            print(f"Channel {ch}: disabled")
+                    except:
+                        print(f"Channel {ch}: not accessible")
+
+                print(
+                    f"Discovered {len(self.enabled_channels)} enabled channels: {self.enabled_channels}"
+                )
+
+                for ch in self.enabled_channels:
+                    self.cumulative_mca_data[ch] = np.zeros(
+                        self.pixie_histogram_bins, dtype=np.int64
+                    )
+                    self.mca_data[ch] = np.zeros(
+                        self.pixie_histogram_bins, dtype=np.int32
+                    )
+
                 self.info_bar.setText(
-                    f"PIXIE-16 Module {self.module_number} initialized"
+                    f"PIXIE-16 Module {self.module_number} initialized - {len(self.enabled_channels)} active channels"
                 )
             else:
+                self.enabled_channels = self.channel_numbers.copy()
+                for ch in self.enabled_channels:
+                    self.cumulative_mca_data[ch] = np.zeros(
+                        self.pixie_histogram_bins, dtype=np.int64
+                    )
+                    self.mca_data[ch] = np.zeros(
+                        self.pixie_histogram_bins, dtype=np.int32
+                    )
                 self.info_bar.setText("DUMMY MODE - No hardware initialization")
+
         except Exception as e:
             if "invalid module count" in str(e):
                 error_msg = f"Module {self.module_number} not available. Check hardware connections."
@@ -1241,7 +1342,7 @@ def main():
     # Print startup info
     if dummy_mode:
         print("Starting Pixie16 Scope in DUMMY MODE")
-        print(f"  - MCA data source: {DUMMY_NUMPY_FILE}")
+        # print(f"  - MCA data source: {DUMMY_NUMPY_FILE}")
         print(f"  - Binary data source: {DUMMY_BINARY_FILE}")
     else:
         print("Starting Pixie16 Scope with REAL HARDWARE")
