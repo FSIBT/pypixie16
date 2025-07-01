@@ -509,17 +509,17 @@ class Task(multiprocessing.Process, abc.ABC):
         if not self.is_final:
             self.socket_push.send_pyobj(msg)
 
-    def poll(self, is_noblock: bool = True) -> None:
+    def poll(self, is_block: bool = False) -> None:
         """
         Polls the sockets for messages from other the pipeline and other tasks.
 
         This method handles messages by calling the "handle" methods. The
-        ``is_noblock`` flag determines if/if not this method block to wait for
+        ``is_block`` flag determines if/if not this method block to wait for
         some message from the pipeline. If this tasks recieves a message from
         the pipeline or the previous task, it sends a report to the pipeline.
 
         Parameters:
-            is_noblock: Block/no block flag.
+            is_block: Block/no block flag.
 
         Notes:
             This method runs in subprocesses.
@@ -527,10 +527,10 @@ class Task(multiprocessing.Process, abc.ABC):
 
         # Processing messages from pipeline.
         try:
-            if is_noblock:
-                msg = self.socket_dealer.recv(flags=zmq.NOBLOCK)
-            else:
+            if is_block:
                 msg = self.socket_dealer.recv()
+            else:
+                msg = self.socket_dealer.recv(flags=zmq.NOBLOCK)
 
             msg = pickle.loads(msg)
 

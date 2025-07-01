@@ -295,12 +295,12 @@ class Test_Pipeline:
 
     @staticmethod
     def test_poll_dummy(pipeline_dummy: pixie16.pipeline.Pipeline):
-        pipeline_dummy.poll(is_noblock=True)
+        pipeline_dummy.poll(is_block=False)
 
     @staticmethod
     def test_poll_print(pipeline_print: pixie16.pipeline.Pipeline):
-        pipeline_print.poll(is_noblock=True)
+        pipeline_print.poll(is_block=False)
 
     # @staticmethod
     # def test_poll_error(pipeline_error: pixie16.pipeline.Pipeline):
-    # pipeline_error.poll(is_noblock=True)
+    # pipeline_error.poll(is_block=False)

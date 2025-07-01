@@ -436,10 +436,10 @@ class Pipeline:
         """
 
         try:
-            if is_noblock:
-                name, msg = self.socket_router.recv_multipart(flags=zmq.NOBLOCK)
-            else:
+            if is_block:
                 name, msg = self.socket_router.recv_multipart()
+            else:
+                name, msg = self.socket_router.recv_multipart(flags=zmq.NOBLOCK)
         except zmq.Again:
             return
 
