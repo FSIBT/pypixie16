@@ -256,6 +256,7 @@ class Task(multiprocessing.Process, abc.ABC):
         """
 
         self.status = Status.RUNNING
+        self.send_report({"status": self.status})
 
     def handle_quit(self) -> None:
         """
@@ -269,6 +270,7 @@ class Task(multiprocessing.Process, abc.ABC):
         """
 
         self.status = Status.DYING
+        self.send_report({"status": self.status})
 
     def handle_configure(self, config: dict) -> None:
         """
@@ -298,6 +300,7 @@ class Task(multiprocessing.Process, abc.ABC):
             self.send_report({"status": self.status, "error": err})
 
         self.config |= config
+        self.send_report({"config": self.status})
 
     def handle_data(self, data: typing.Any) -> None:
         """
@@ -323,27 +326,24 @@ class Task(multiprocessing.Process, abc.ABC):
         tasks call this method.
         """
 
-        self.send_report()
-
         while self.queue:
             self.poll()
             self.exec()
 
         self.send_stop()
 
-    def send_report(self, report: dict = None) -> None:
+    def send_report(self, report: dict) -> None:
         """
         Sends ``REPORT`` messages to the pipeline.
 
         This method transfers the dictionary returned from ``do_report``
         updated with default information to the pipeline. The pipeline handles
         this using ``handle_report``.
+
+        Parameters:
+            report: Report to send.
         """
 
-        report = report or {
-            "status": self.status,
-            "queue": len(self.queue),
-        }
         msg = pickle.dumps(Message.REPORT(report), protocol=pickle.HIGHEST_PROTOCOL)
         self.socket_dealer.send(msg)
 
@@ -355,7 +355,7 @@ class Task(multiprocessing.Process, abc.ABC):
         The next task in the pipeline handles this using ``handle_data``.
 
         Parameters:
-            data: Sent data.
+            data: Data to send.
         """
 
         if not self.is_final and data:
@@ -376,7 +376,7 @@ class Task(multiprocessing.Process, abc.ABC):
         """
 
         self.status = Status.WAITING
-        self.send_report()
+        self.send_report({"status": self.status})
 
         if not self.is_final:
             msg = Message.STOP
@@ -385,11 +385,12 @@ class Task(multiprocessing.Process, abc.ABC):
     def exec(self) -> None:
         try:
             val = self.queue.popleft() if self.queue else None
-            with contextlib.redirect_stdout(io.StringIO()) as out:
-                if ret := self.do_work(val):
-                    self.send_data(ret)
-                if out := out.getvalue():
-                    self.send_report({"print": out})
+            if val or self.is_start:
+                with contextlib.redirect_stdout(io.StringIO()) as out:
+                    if ret := self.do_work(val):
+                        self.send_data(ret)
+                    if out := out.getvalue():
+                        self.send_report({"print": out})
         except Exception as err:
             self.status = Status.PANICKING
             self.send_report({"status": self.status, "error": err})
@@ -502,7 +503,13 @@ class Task(multiprocessing.Process, abc.ABC):
             else:
                 assert False
 
-        self.send_report()
+        self.send_report(
+            {
+                "status": self.status,
+                "address_push": self.address_push,
+                "address_router": self.address_router,
+            }
+        )
 
         # Doing cleanup and collecting stdout/stderr
         try:
