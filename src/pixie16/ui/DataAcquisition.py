@@ -302,6 +302,11 @@ class DataAcquisition(QWidget):
         self.enable_ui_for_new_run()
 
     def on_mode_change(self, idx: int):
+        # Clear table state
+        self.task_table.clearContents()
+        self.task_table.setRowCount(0)
+        self.taskid_to_row.clear()
+
         text = self.modes[idx]
         print(f"selected {text}")
         match text:
@@ -339,9 +344,9 @@ class DataAcquisition(QWidget):
         for i in range(10):
             self.pipeline.poll()
 
-        keys = set()
-        for t, status in self.pipeline.reports.items():
-            keys.update(status.keys())
+        current_time = time.time()
+        if not hasattr(self, "last_report_time"):
+            self.last_report_time = {}
 
         ordered_keys = [
             "name",
@@ -353,65 +358,123 @@ class DataAcquisition(QWidget):
             "Extra Info",
         ]
 
-        self.task_table.setColumnCount(len(ordered_keys))
-        self.task_table.setHorizontalHeaderLabels(ordered_keys)
+        if self.task_table.columnCount() != len(ordered_keys):  # Add this check
+            self.task_table.setColumnCount(len(ordered_keys))
+            self.task_table.setHorizontalHeaderLabels(ordered_keys)
 
-        key_to_pos = {k: i for i, k in enumerate(ordered_keys)}
-        header = self.task_table.horizontalHeader()
-        header.setSectionResizeMode(
-            key_to_pos["Extra Info"], QHeaderView.ResizeMode.Stretch
-        )
-
+            self.key_to_pos = {
+                k: i for i, k in enumerate(ordered_keys)
+            }  # Store in self for access
+            # Set header resize mode (only if header is new or changed)
+            header = self.task_table.horizontalHeader()
+            header.setSectionResizeMode(
+                self.key_to_pos["Extra Info"], QHeaderView.ResizeMode.Stretch
+            )
         for t in self.pipeline.tasks_active:
-            if t in self.taskid_to_row:
-                continue
-            row = self.task_table.rowCount()
-            self.task_table.insertRow(row)
-            self.taskid_to_row[t] = row
+            if t not in self.taskid_to_row:
+                row = self.task_table.rowCount()
+                self.task_table.insertRow(row)
+                self.taskid_to_row[t] = row
 
+        # Update Task table
         for t, status in self.pipeline.reports.items():
+            # Check if task is active
+            self.last_report_time[t] = current_time
+
             extra_info = []
+            row = self.taskid_to_row[t]  # Get row once per task
+
+            # Handle 'name' and 'status'
+            name_value = status.get("name", t)  # t is the task class name
+            name_item = QTableWidgetItem(str(name_value))
+            self.task_table.setItem(row, self.key_to_pos["name"], name_item)
+
+            status_item = QTableWidgetItem(
+                self.format_value("status", status.get("status", "N/A"))
+            )
+            self.task_table.setItem(row, self.key_to_pos["status"], status_item)
+
+            # Set CPU Percent
+            ps_data = status.get("ps", {})
+            cpu_percent = ps_data.get("cpu_percent", "N/A")
+            cpu_item = QTableWidgetItem(self.format_value("cpu percent", cpu_percent))
+            self.task_table.setItem(row, self.key_to_pos["cpu percent"], cpu_item)
+
+            # Extract and set Memory (RSS)
+            memory_info = ps_data.get("memory_info", {})
+            memory_rss = 0
+            if hasattr(memory_info, "rss"):
+                memory_rss = memory_info.rss
+            memory_item = QTableWidgetItem(self.format_value("memory", memory_rss))
+            self.task_table.setItem(row, self.key_to_pos["memory"], memory_item)
+
+            # Set Queue Length
+            queue_length = status.get("queue", 0)
+            queue_item = QTableWidgetItem(
+                self.format_value("queue length", queue_length)
+            )
+            self.task_table.setItem(row, self.key_to_pos["queue length"], queue_item)
+
+            # Set Activity using tracked time
+            activity_item = QTableWidgetItem(
+                self.format_value("activity", current_time)
+            )
+            self.task_table.setItem(row, self.key_to_pos["activity"], activity_item)
+
+            # Other keys for "Extra Info"
             for key, val in status.items():
-                if key == "time done":
-                    self.progress_bar.setValue(int(val))
+                if key in ["name", "status", "ps", "queue", "activity", "time done"]:
+                    if key == "time done":
+                        self.progress_bar.setValue(int(val))
                     continue
+
                 display_value = self.format_value(key, val)
-                if key in ordered_keys:
-                    item = QTableWidgetItem(display_value)
-                    row = self.taskid_to_row[t]
-                    self.task_table.setItem(row, key_to_pos[key], item)
-                else:
-                    extra_info.append(f"{key}={display_value}")
+                extra_info.append(f"{key}={display_value}")
+
             item = QTableWidgetItem(" ".join(extra_info))
-            row = self.taskid_to_row[t]
-            self.task_table.setItem(row, key_to_pos["Extra Info"], item)
+            self.task_table.setItem(row, self.key_to_pos["Extra Info"], item)
 
     def format_value(self, key, value):
         if isinstance(value, Enum):
             return str(value.value)
 
-        if key == "memory" and isinstance(value, float | int):
-            mb = float(value) / (1024**2)
-            return f"{mb:.1f} MB"
+        if key == "memory":
+            if isinstance(value, float | int):
+                mb = float(value) / (1024**2)
+                return f"{mb:.1f} MB"
+            # If it's ps data from task reports, extract memory info
+            elif isinstance(value, dict) and "memory_info" in value:
+                memory_info = value["memory_info"]
+                if memory_info and "rss" in memory_info:
+                    mb = memory_info["rss"] / (1024**2)
+                    return f"{mb:.1f} MB"
 
-        if key == "cpu percent" and isinstance(value, float | int):
-            return f"{value:.1f} %"
+        if key == "cpu percent":
+            if isinstance(value, float | int):
+                return f"{value:.1f} %"
+            # If it's ps data from task reports, extract cpu percent
+            elif isinstance(value, dict) and "cpu_percent" in value:
+                cpu_val = value["cpu_percent"]
+                if cpu_val is not None:
+                    return f"{cpu_val:.1f} %"
+
+        if key == "queue length":
+            if isinstance(value, int | float):
+                return str(int(value))
 
         if key == "activity":
-            dt = time.time() - value
-            if dt <= 5:
-                return "🟢"
-            elif dt <= 60:
-                return "🟡"
-            else:
-                return "⚪"
-
-        return str(value)
+            if isinstance(value, int | float):
+                dt = time.time() - value
+                if dt <= 5:
+                    return "🟢"
+                elif dt <= 60:
+                    return "🟡"
+                else:
+                    return "⚪"
 
     def closeEvent(self, event: QtCore.QEvent):
         """Handle App shutdown."""
-        self.pipeline.end_tasks()
-        self.pipeline.close()
+        self.pipeline.stop()
         event.accept()
 
     def update_skip_mca(self, state):
