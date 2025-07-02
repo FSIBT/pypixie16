@@ -395,19 +395,14 @@ class DataAcquisition(QWidget):
             self.task_table.setItem(row, self.key_to_pos["status"], status_item)
 
             # Set CPU Percent
-            ps_data = status.get("ps", {})
-            cpu_percent = ps_data.get("cpu_percent", "N/A")
+            cpu_percent = status.get("cpu", "N/A")
             cpu_item = QTableWidgetItem(self.format_value("cpu percent", cpu_percent))
             self.task_table.setItem(row, self.key_to_pos["cpu percent"], cpu_item)
 
-            # Extract and set Memory (RSS)
-            memory_info = ps_data.get("memory_info", {})
-            memory_rss = 0
-            if hasattr(memory_info, "rss"):
-                memory_rss = memory_info.rss
-            memory_item = QTableWidgetItem(self.format_value("memory", memory_rss))
+            # Extract and set Memory (Percentage)
+            memory_percent = status.get("memory", 0)
+            memory_item = QTableWidgetItem(self.format_value("memory", memory_percent))
             self.task_table.setItem(row, self.key_to_pos["memory"], memory_item)
-
             # Set Queue Length
             queue_length = status.get("queue", 0)
             queue_item = QTableWidgetItem(
@@ -442,21 +437,10 @@ class DataAcquisition(QWidget):
             if isinstance(value, float | int):
                 mb = float(value) / (1024**2)
                 return f"{mb:.1f} MB"
-            # If it's ps data from task reports, extract memory info
-            elif isinstance(value, dict) and "memory_info" in value:
-                memory_info = value["memory_info"]
-                if memory_info and "rss" in memory_info:
-                    mb = memory_info["rss"] / (1024**2)
-                    return f"{mb:.1f} MB"
 
         if key == "cpu percent":
             if isinstance(value, float | int):
                 return f"{value:.1f} %"
-            # If it's ps data from task reports, extract cpu percent
-            elif isinstance(value, dict) and "cpu_percent" in value:
-                cpu_val = value["cpu_percent"]
-                if cpu_val is not None:
-                    return f"{cpu_val:.1f} %"
 
         if key == "queue length":
             if isinstance(value, int | float):
@@ -471,6 +455,8 @@ class DataAcquisition(QWidget):
                     return "🟡"
                 else:
                     return "⚪"
+
+        return str(value)
 
     def closeEvent(self, event: QtCore.QEvent):
         """Handle App shutdown."""

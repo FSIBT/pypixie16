@@ -127,6 +127,8 @@ class Task(multiprocessing.Process, abc.ABC):
         self.address_push: str = None
         self.address_router: str = None
 
+        self._ps_process: psutil.Process = None
+
     def do_report(self) -> dict:
         """
         Reports to the pipeline.
@@ -424,7 +426,7 @@ class Task(multiprocessing.Process, abc.ABC):
                 self.status = Status.ERROR
                 self.error = err
 
-            ps_data = psutil.Process(self.pid)
+            ps_data = self._ps_process
 
             tmp = {
                 "name": self.name,
@@ -586,6 +588,10 @@ class Task(multiprocessing.Process, abc.ABC):
         self.socket_dealer.connect(self.address_router)
         self.address_push = self.socket_push.bind_to_random_port("tcp://127.0.0.1")
         self.address_push = f"tcp://127.0.0.1:{self.address_push}"
+
+        # Initialize psutil.Process to get CPU and memory usage
+        self._ps_process = psutil.Process(self.pid)
+        _ = self._ps_process.cpu_percent()
 
         # Doing startup and collecting stdout/stderr
         try:
