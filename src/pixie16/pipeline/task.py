@@ -259,6 +259,14 @@ class Task(multiprocessing.Process, abc.ABC):
         self.address_pull = address_pull
         self.is_start = is_start
         self.is_final = is_final
+        self.send_report(
+            {
+                "name": self.name,
+                "address_pull": self.address_pull,
+                "is_start": self.is_start,
+                "is_final": self.is_final,
+            }
+        )
         self.handle_configure({})
 
     def handle_disconnect(self) -> None:
@@ -278,6 +286,14 @@ class Task(multiprocessing.Process, abc.ABC):
         self.address_pull = None
         self.is_start = False
         self.is_final = False
+        self.send_report(
+            {
+                "name": self.name,
+                "address_pull": self.address_pull,
+                "is_start": self.is_start,
+                "is_final": self.is_final,
+            }
+        )
 
     def handle_start(self) -> None:
         """
@@ -406,17 +422,14 @@ class Task(multiprocessing.Process, abc.ABC):
                 self.status = Status.ERROR
                 self.error = err
 
+            ps_data = psutil.Process(self.pid)
+
             tmp = {
                 "name": self.name,
                 "error": self.error,
-                "config": self.config,
                 "status": self.status,
-                "address_pull": self.address_pull,
-                "address_push": self.address_push,
-                "address_router": self.address_router,
-                "is_start": self.is_start,
-                "is_final": self.is_final,
-                "ps": psutil.Process().as_dict(),
+                "cpu": ps_data.cpu_percent(),
+                "memory": ps_data.memory_percent(),
                 "queue": len(self.queue),
             }
             if report is None:
@@ -581,7 +594,15 @@ class Task(multiprocessing.Process, abc.ABC):
             self.status = Status.ERROR
             self.error = err
 
-        self.send_report()
+        self.send_report(
+            {
+                "name": self.name,
+                "status": self.status,
+                "error": self.error,
+                "address_push": self.address_push,
+                "address_router": self.address_router,
+            }
+        )
 
         while not self._kill:
             self.poll()
