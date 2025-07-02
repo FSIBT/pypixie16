@@ -42,15 +42,16 @@ class DataAcquisition(QWidget):
         self.local_settings = LocalSettings()
 
         self.create_layout()
+        self.enable_ui_for_new_run()
 
         self.start_button.clicked.connect(self.start_run)
-        self.stop_button.clicked.connect(self.pipeline.stop)
+        self.stop_button.clicked.connect(self.stop_run)
         self.run_time_input.editingFinished.connect(self.set_runtime)
 
         # Timer to update table and plot
         self.timer = QtCore.QTimer()
         self.timer.timeout.connect(self.update_status)
-        self.timer.start(100)
+        self.timer.start(250)
 
         # select a default mode
         self.on_mode_change(self.settings_modes.currentIndex())
@@ -243,6 +244,16 @@ class DataAcquisition(QWidget):
         self.time = 0
         self.layout.addWidget(self.plot_widget)
 
+    def enable_ui_for_new_run(self):
+        self.start_button.setEnabled(True)
+        self.stop_button.setEnabled(False)
+        self.settings_modes.setEnabled(True)
+
+    def enable_ui_for_stopping_run(self):
+        self.start_button.setEnabled(False)
+        self.stop_button.setEnabled(True)
+        self.settings_modes.setEnabled(False)
+
     def get_acquisition_sequence(self):
         """Build acquisition sequence based on enabled checkboxes."""
         sequence = []
@@ -284,6 +295,11 @@ class DataAcquisition(QWidget):
 
         # Start the pipeline
         self.pipeline.start()
+        self.enable_ui_for_stopping_run()
+
+    def stop_run(self):
+        self.pipeline.stop()
+        self.enable_ui_for_new_run()
 
     def on_mode_change(self, idx: int):
         text = self.modes[idx]
