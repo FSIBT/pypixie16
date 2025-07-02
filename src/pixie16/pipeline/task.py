@@ -290,6 +290,8 @@ class Task(multiprocessing.Process, abc.ABC):
             {
                 "name": self.name,
                 "address_pull": self.address_pull,
+                "address_push": self.address_push,
+                "address_router": self.address_router,
                 "is_start": self.is_start,
                 "is_final": self.is_final,
             }
@@ -500,7 +502,7 @@ class Task(multiprocessing.Process, abc.ABC):
         if not self.is_final:
             self.socket_push.send_pyobj(msg)
 
-    def poll(self, is_block: bool = False) -> None:
+    def poll(self) -> None:
         """
         Polls the sockets for messages from other the pipeline and other tasks.
 
@@ -518,10 +520,7 @@ class Task(multiprocessing.Process, abc.ABC):
 
         # Processing messages from pipeline.
         try:
-            if is_block:
-                msg = self.socket_dealer.recv()
-            else:
-                msg = self.socket_dealer.recv(flags=zmq.NOBLOCK)
+            msg = self.socket_dealer.recv(flags=zmq.NOBLOCK)
 
             msg = pickle.loads(msg)
 
