@@ -34,7 +34,6 @@ class Task(multiprocessing.Process, abc.ABC):
 
     * PIPELINE-TO-TASK:
         * 🔁 CONNECT: Connect to given ZMQ push queue.
-        * 🔀 DISCONNECT: Disconnect from the ZMQ push queue.
         * ▶️ START: Change status to ``RUNNING``.
         * ⏹️ STOP: Change status to ``FINISHED``.
         * ℹ️ CONFIGURE: Update parameters.
@@ -256,46 +255,21 @@ class Task(multiprocessing.Process, abc.ABC):
 
         if address_pull:
             self.socket_pull.connect(address_pull)
+        elif self.address_pull:
+            self.socket_pull.disconnect(self.address_pull)
+
         self.address_pull = address_pull
         self.is_start = is_start
         self.is_final = is_final
+
         self.send_report(
             {
-                "name": self.name,
                 "address_pull": self.address_pull,
                 "is_start": self.is_start,
                 "is_final": self.is_final,
             }
         )
         self.handle_configure({})
-
-    def handle_disconnect(self) -> None:
-        """
-        Handles ``DISCONNECT`` messages from the pipeline.
-
-        This method disconnects the ZMQ pull sockect and resets the start/final
-        flags to ``False``. So, after calling this message, the task will not
-        communicate with other tasks.
-
-        Notes:
-            This method runs in subprocesses.
-        """
-
-        if self.address_pull:
-            self.socket_pull.disconnect(self.address_pull)
-        self.address_pull = None
-        self.is_start = False
-        self.is_final = False
-        self.send_report(
-            {
-                "name": self.name,
-                "address_pull": self.address_pull,
-                "address_push": self.address_push,
-                "address_router": self.address_router,
-                "is_start": self.is_start,
-                "is_final": self.is_final,
-            }
-        )
 
     def handle_start(self) -> None:
         """
@@ -521,21 +495,18 @@ class Task(multiprocessing.Process, abc.ABC):
         # Processing messages from pipeline.
         try:
             msg = self.socket_dealer.recv(flags=zmq.NOBLOCK)
-
             msg = pickle.loads(msg)
 
             if type(msg) == Message.CONNECT:
                 self.handle_connect(*msg())
-            elif msg == Message.DISCONNECT:
-                self.handle_disconnect()
+            elif type(msg) == Message.CONFIGURE:
+                self.handle_configure(*msg())
             elif msg == Message.START:
                 self.handle_start()
             elif msg == Message.STOP:
                 self.handle_stop()
             elif msg == Message.FINISHED:
                 self.handle_finished()
-            elif type(msg) == Message.CONFIGURE:
-                self.handle_configure(*msg())
             else:
                 assert False
 

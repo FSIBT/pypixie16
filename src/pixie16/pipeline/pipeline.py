@@ -181,28 +181,6 @@ class Pipeline:
         msg = pickle.dumps(Message.CONNECT(address_pull, is_start, is_final))
         self.socket_router.send_multipart([name.encode(), msg])
 
-    def send_disconnect(self, name: str) -> None:
-        """
-        Sends ``DISCONNECT`` messages to tasks.
-
-        This method disconnect each task in the pipeline by telling them to
-        zero the address of previous task's output and the flags. The tasks
-        handle this using ``handle_disconnect``. This method blocks while
-        waiting for a reponse, namely a report.
-
-        Parameters:
-            name: Task name.
-
-        Raises:
-            ValueError: Task no found, i.e. not in ``_tasks_all``.
-        """
-
-        if name not in self._tasks_all:
-            raise ValueError
-
-        msg = pickle.dumps(Message.DISCONNECT)
-        self.socket_router.send_multipart([name.encode(), msg])
-
     def send_start(self, name: str) -> None:
         """
         Sends ``START`` messages to tasks.
@@ -323,7 +301,7 @@ class Pipeline:
                 self.create_task(name)
             except ValueError:
                 pass
-            self.send_disconnect(name)
+            self.send_connect(name, None, False, False)
 
         # Waiting for reinitialization reports.
         self.tasks_active = tasks_active

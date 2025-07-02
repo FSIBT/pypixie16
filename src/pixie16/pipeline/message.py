@@ -25,7 +25,6 @@ class Message:
     """
 
     # Pipeline-to-Task
-    DISCONNECT = "🔀"
     START = "▶️"
     PAUSE = "⏸️"
     STOP = "⏹️"
