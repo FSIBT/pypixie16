@@ -125,27 +125,6 @@ class Task(multiprocessing.Process, abc.ABC):
         self.address_push: str = None
         self.address_router: str = None
 
-    def do_report(self) -> dict:
-        """
-        Reports to the pipeline.
-
-        Ths task runtime calls this method when handling report generation.
-
-        Returns:
-            Dictionary to send a report to the pipeline.
-
-        Notes:
-            The task runtime captures prints to stdout/stderr and sends them to
-            the pipeline's ``handle_print`` method.
-
-            The task runtime captures errors, updates it status to ``ERROR``
-            and stores the latest error in the ``error`` field.
-
-            This method runs in subprocesses, and it can be overwritten.
-        """
-
-        return {}
-
     def do_configure(self, config: dict) -> None:
         """
         Configures/reconfigures tasks.
@@ -373,7 +352,7 @@ class Task(multiprocessing.Process, abc.ABC):
 
         self.send_finished()
 
-    def send_report(self, report: dict | None = None) -> None:
+    def send_report(self, report: dict = None) -> None:
         """
         Sends ``REPORT`` messages to the pipeline.
 
@@ -387,31 +366,12 @@ class Task(multiprocessing.Process, abc.ABC):
 
             This method runs in subprocesses.
         """
-        if report is None:
-            try:
-                with contextlib.redirect_stdout(io.StringIO()) as out:
-                    report = self.do_report()
-                    if out := out.getvalue():
-                        self.send_report({"print": out})
-            except Exception as err:
-                self.status = Status.ERROR
-                self.error = err
 
-            ps_data = psutil.Process(self.pid)
-
-            tmp = {
-                "name": self.name,
-                "error": self.error,
-                "status": self.status,
-                "cpu": ps_data.cpu_percent(),
-                "memory": ps_data.memory_percent(),
-                "queue": len(self.queue),
-            }
-            if report is None:
-                report = tmp
-            else:
-                report |= tmp
-
+        report = report or {
+            "error": self.error,
+            "status": self.status,
+            "queue": len(self.queue),
+        }
         msg = pickle.dumps(Message.REPORT(report), protocol=pickle.HIGHEST_PROTOCOL)
         self.socket_dealer.send(msg)
 
@@ -429,8 +389,8 @@ class Task(multiprocessing.Process, abc.ABC):
             This method runs in subprocesses.
         """
 
-        msg = Message.DATA(data)
         if not self.is_final and data:
+            msg = Message.DATA(data)
             self.socket_push.send_pyobj(msg)
 
     def send_finished(self) -> None:
@@ -449,8 +409,8 @@ class Task(multiprocessing.Process, abc.ABC):
         self.status = Status.FINISHED
         self.send_report()
 
-        msg = Message.FINISHED
         if not self.is_final:
+            msg = Message.FINISHED
             self.socket_push.send_pyobj(msg)
 
     def poll(self) -> None:
@@ -539,7 +499,6 @@ class Task(multiprocessing.Process, abc.ABC):
 
         self.send_report(
             {
-                "name": self.name,
                 "status": self.status,
                 "error": self.error,
                 "address_push": self.address_push,
