@@ -148,9 +148,9 @@ class Test_Pipeline:
         assert pipeline_base.status == pixie16.pipeline.Status.PANICKING
 
     @staticmethod
-    def test_handle_finished(pipeline_base: pixie16.pipeline.Pipeline):
+    def test_handle_stop(pipeline_base: pixie16.pipeline.Pipeline):
         assert pipeline_base.status == pixie16.pipeline.Status.WAITING
-        pipeline_base.handle_finished()
+        pipeline_base.handle_stop()
         assert pipeline_base.status == pixie16.pipeline.Status.WAITING
 
     @staticmethod
@@ -229,13 +229,13 @@ class Test_Pipeline:
             pipeline_base.send_configure("DummyTask", {})
 
     @staticmethod
-    def test_send_finished_valid(pipeline_created: pixie16.pipeline.Pipeline):
-        pipeline_created.send_finished("DummyTask")
+    def test_send_stop_valid(pipeline_created: pixie16.pipeline.Pipeline):
+        pipeline_created.send_stop("DummyTask")
 
     @staticmethod
-    def test_send_finished_invalid(pipeline_base: pixie16.pipeline.Pipeline):
+    def test_send_stop_invalid(pipeline_base: pixie16.pipeline.Pipeline):
         with pytest.raises(ValueError):
-            pipeline_base.send_finished("DummyTask")
+            pipeline_base.send_stop("DummyTask")
 
     @staticmethod
     def test_init_edge(pipeline_base: pixie16.pipeline.Pipeline):

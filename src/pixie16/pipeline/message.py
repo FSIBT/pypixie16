@@ -24,10 +24,9 @@ class Message:
     Stores pipelines messages.
     """
 
-    # Pipeline-to-Task
     START = "▶️"
-    PAUSE = "⏸️"
-    QUIT = "⏏️"  # "⏹️"
+    STOP = "⏹️"
+    QUIT = "⏏️"
 
     class CONNECT(_Message[str]):  # "🔁"
         pass
@@ -35,13 +34,8 @@ class Message:
     class CONFIGURE(_Message[dict]):  # "ℹ️"
         pass
 
-    # Task-to-Pipeline
     class REPORT(_Message[dict]):  # "🆗"
         pass
 
-    # Task-to-Task
     class DATA(_Message[typing.Any]):  # "📶"
         pass
-
-    # All-to-Task
-    FINISHED = "✅"

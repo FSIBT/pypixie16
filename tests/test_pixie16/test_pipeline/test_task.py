@@ -260,8 +260,8 @@ class Test_Task:
         assert len(task_a.queue) == 1
 
     # @staticmethod
-    # def test_handle_finished(task_a: pixie16.pipeline.Task):
-    # task_a.handle_finished()
+    # def test_handle_stop(task_a: pixie16.pipeline.Task):
+    # task_a.handle_stop()
 
     # @staticmethod
     # def test_send_report(task_a: pixie16.pipeline.Task):
@@ -276,8 +276,8 @@ class Test_Task:
     # task_a.send_data()
 
     # @staticmethod
-    # def test_send_finished(task_a: pixie16.pipeline.Task):
-    # task_a.send_finished()
+    # def test_send_stop(task_a: pixie16.pipeline.Task):
+    # task_a.send_stop()
 
     # @staticmethod
     # def test_poll(task_a: pixie16.pipeline.Task):

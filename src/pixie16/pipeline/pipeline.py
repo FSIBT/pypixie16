@@ -15,8 +15,6 @@ class Pipeline:
     """
     Represents linear daisychain of ``Tasks``.
 
-    Pipelines uses ZMQ Push/Pull sockets to get and send messages to tasks.
-    Pipeliens send and recieve the following kinds of messages to tasks:
 
     Pipelines use the following status to transition between initialization,
     running, pausing, and stoping:
@@ -26,15 +24,17 @@ class Pipeline:
     * ⏏️ DYING: All tasks dying.
     * 🆘 PANICKING: Any task panicking.
 
-    * PIPELINE-TO-TASK:
-        * 🔁 CONNECT: Connect to given ZMQ push queue.
-        * 🔀 DISCONNECT: Disconnect from the ZMQ push queue.
-        * ▶️ START: Change status to ``RUNNING``.
-        * ⏹️ QUIT: Change status to ``DYING``.
-        * ℹ️ CONFIGURE: Update parameters.
-        * ✅ FINISHED: Change status to ``FINISHED``.
-    * TASK-TO-PIPELINE:
+    Pipelines uses ZMQ Push/Pull sockets to get and send messages to tasks.
+    Pipeliens send and recieve the following kinds of messages to tasks:
+
+    * TO PIPELINE:
         * 🆗 REPORT: Transmit status to pipeline
+    * FROM PIPELINE:
+        * ℹ️ CONFIGURE: Update user parameters.
+        * 🔁 CONNECT: Update system parameters.
+        * ▶️ START: Change status to ``RUNNING``.
+        * ⏹️ STOP: Change status to ``WAITING``.
+        * ⏏️ QUIT: Change status to ``DYING``.
 
     Attributes:
         tasks_active: Names of active tasks.
@@ -43,7 +43,6 @@ class Pipeline:
         context: ZMQ context.
         socket_router: ZMQ pull socket.
         address_router: ZMQ pull socket address.
-        poller: ZMQ poller.
     """
 
     def __init__(self):
@@ -219,13 +218,13 @@ class Pipeline:
         while self.poll(is_block=True) != name:
             pass
 
-    def send_finished(self, name: str) -> None:
+    def send_stop(self, name: str) -> None:
         """
-        Sends ``FINISHED`` messages to tasks.
+        Sends ``STOP`` messages to tasks.
 
-        This method shortcuts regular execution by sending the ``FINISED``
+        This method shortcuts regular execution by sending the ``STOP``
         message to a task from the pipeline rather than the previous task. The
-        tasks handle this using ``handle_finished``. This method blocks while
+        tasks handle this using ``handle_stop``. This method blocks while
         waiting for a reponse, namely a report.
 
         Parameters:
@@ -238,7 +237,7 @@ class Pipeline:
         if name not in self._tasks_all:
             raise ValueError
 
-        msg = pickle.dumps(Message.FINISHED)
+        msg = pickle.dumps(Message.STOP)
         self.socket_router.send_multipart([name.encode(), msg])
 
         while self.poll(is_block=True) != name:

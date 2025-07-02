@@ -61,7 +61,8 @@ class DummyData(task.Task):
         # Checking runtime.
         self.time_done = time.time() - self.time_start
         if self.time_done >= self.runtime:
-            self.send_finished()
+            self.handle_stop()
+            return
 
         time.sleep(WORK_PAUSE)
 

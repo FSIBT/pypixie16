@@ -31,17 +31,15 @@ class Task(multiprocessing.Process, abc.ABC):
     tasks and the pipeline. Tasks send and recieve the following kinds of
     messages between themselves and the pipeline.
 
-    * PIPELINE-TO-TASK:
-        * 🔁 CONNECT: Connect to given ZMQ push queue.
+    * TO TASK:
+        * ℹ️ CONFIGURE: Update user parameters.
+        * 🔁 CONNECT: Update system parameters.
         * ▶️ START: Change status to ``RUNNING``.
+        * ⏹️ STOP: Change status to ``WAITING``.
         * ⏏️ QUIT: Change status to ``DYING``.
-        * ℹ️ CONFIGURE: Update parameters.
-        * ✅ FINISHED: Change status to ``FINISHED``.
-    * TASK-TO-PIPELINE:
-        * 🆗 REPORT: Transmit status to pipeline.
-    * TASK-TO-TASK:
         * 📶 DATA: Transmit data to next task.
-        * ✅ FINISHED: Change status to ``FINISHED``.
+    * FROM TASK:
+        * 🆗 REPORT: Transmit info to pipeline.
 
     Since ``Task`` extends ``abc.ABC``, it has methods that must be
     overwritten, i.e. the "do" methods:
@@ -189,7 +187,7 @@ class Task(multiprocessing.Process, abc.ABC):
         The task runtime calls this method when in the ``RUNNING`` status and
         the task is first in the pipeline or has data in its input queue.
 
-        When finished, call the ``send_finished``. To pause, call the
+        When finished, call the ``send_stop``. To pause, call the
         ``send_pause`` method. To quit, call the ``send_quit`` method. To
         handle and error, raise it. Finally, return the data to send it to the
         next task in the pipeline; if this method returns ``None`` it will not
@@ -310,25 +308,19 @@ class Task(multiprocessing.Process, abc.ABC):
 
         Parameters:
             data: Recieved data.
-
-        Notes:
-            This method runs in subprocesses.
         """
 
         self.queue.append(data)
         self.send_report({"queue": len(self.queue)})
 
-    def handle_finished(self) -> None:
+    def handle_stop(self) -> None:
         """
-        Handles ``FINISHED`` messages from the previous task.
+        Handles ``STOP`` messages from the previous task.
 
         This method calls ``do_work`` until this tasks finishes, and it calls
-        ``send_finished`` to cascade the ``FINISHED`` message through the
-        pipeline. So, as ``FINISHED`` messages cascade through the pipeline,
+        ``send_stop`` to cascade the ``STOP`` message through the
+        pipeline. So, as ``STOP`` messages cascade through the pipeline,
         tasks call this method.
-
-        Notes:
-            This method runs in subprocesses.
         """
 
         self.send_report()
@@ -337,7 +329,7 @@ class Task(multiprocessing.Process, abc.ABC):
             self.poll()
             self.exec()
 
-        self.send_finished()
+        self.send_stop()
 
     def send_report(self, report: dict = None) -> None:
         """
@@ -346,12 +338,6 @@ class Task(multiprocessing.Process, abc.ABC):
         This method transfers the dictionary returned from ``do_report``
         updated with default information to the pipeline. The pipeline handles
         this using ``handle_report``.
-
-        Notes:
-            Instead of overriding this function, use ``do_report`` to
-            prevent issues.
-
-            This method runs in subprocesses.
         """
 
         report = report or {
@@ -370,23 +356,20 @@ class Task(multiprocessing.Process, abc.ABC):
 
         Parameters:
             data: Sent data.
-
-        Notes:
-            This method runs in subprocesses.
         """
 
         if not self.is_final and data:
             msg = Message.DATA(data)
             self.socket_push.send_pyobj(msg)
 
-    def send_finished(self) -> None:
+    def send_stop(self) -> None:
         """
-        Sends ``FINISHED`` messages to the next task.
+        Sends ``STOP`` messages to the next task.
 
-        This method changes this task's status to ``FINISHED`` and it cascades
-        the ``FINISHED`` message through the pipeline if its not the final
+        This method changes this task's status to ``STOP`` and it cascades
+        the ``STOP`` message through the pipeline if its not the final
         task in the pipeline. The next task in the pipeline handles this using
-        ``handle_finished``.
+        ``handle_stop``.
 
         Notes:
             This method runs in subprocesses.
@@ -396,7 +379,7 @@ class Task(multiprocessing.Process, abc.ABC):
         self.send_report()
 
         if not self.is_final:
-            msg = Message.FINISHED
+            msg = Message.STOP
             self.socket_push.send_pyobj(msg)
 
     def exec(self) -> None:
@@ -438,10 +421,10 @@ class Task(multiprocessing.Process, abc.ABC):
                 self.handle_configure(*msg())
             elif msg == Message.START:
                 self.handle_start()
+            elif msg == Message.STOP:
+                self.handle_stop()
             elif msg == Message.QUIT:
                 self.handle_quit()
-            elif msg == Message.FINISHED:
-                self.handle_finished()
             else:
                 assert False
         except zmq.Again:
@@ -453,8 +436,8 @@ class Task(multiprocessing.Process, abc.ABC):
 
             if type(msg) == Message.DATA:
                 self.handle_data(*msg())
-            elif msg == Message.FINISHED:
-                self.handle_finished()
+            elif msg == Message.STOP:
+                self.handle_stop()
             else:
                 assert False
         except zmq.Again:
