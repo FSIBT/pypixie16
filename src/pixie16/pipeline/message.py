@@ -27,7 +27,7 @@ class Message:
     # Pipeline-to-Task
     START = "▶️"
     PAUSE = "⏸️"
-    QUIT = "⏏️" # "⏹️"
+    QUIT = "⏏️"  # "⏹️"
 
     class CONNECT(_Message[str]):  # "🔁"
         pass
@@ -37,9 +37,6 @@ class Message:
 
     # Task-to-Pipeline
     class REPORT(_Message[dict]):  # "🆗"
-        pass
-
-    class PRINT(_Message[dict]):  # "🔣"
         pass
 
     # Task-to-Task

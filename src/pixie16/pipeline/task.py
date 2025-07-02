@@ -40,7 +40,6 @@ class Task(multiprocessing.Process, abc.ABC):
         * ✅ FINISHED: Change status to ``FINISHED``.
     * TASK-TO-PIPELINE:
         * 🆗 REPORT: Transmit status to pipeline.
-        * 🔣 PRINT: Print to stdout/stderr.
     * TASK-TO-TASK:
         * 📶 DATA: Transmit data to next task.
         * ✅ FINISHED: Change status to ``FINISHED``.
@@ -317,10 +316,10 @@ class Task(multiprocessing.Process, abc.ABC):
         """
 
         try:
-            with contextlib.redirect_stdout(io.StringIO()) as f:
-                with contextlib.redirect_stderr(io.StringIO()) as g:
-                    self.do_configure(config)
-                    self.send_print(f.getvalue(), g.getvalue())
+            with contextlib.redirect_stdout(io.StringIO()) as out:
+                self.do_configure(config)
+                if out := out.getvalue():
+                    self.send_report({"print": out})
         except Exception as err:
             self.status = Status.ERROR
             self.error = err
@@ -363,11 +362,11 @@ class Task(multiprocessing.Process, abc.ABC):
 
             try:
                 val = self.queue.popleft() if self.queue else None
-                with contextlib.redirect_stdout(io.StringIO()) as f:
-                    with contextlib.redirect_stderr(io.StringIO()) as g:
-                        ret = self.do_work(val)
-                        self.send_print(f.getvalue(), g.getvalue())
-                self.send_data(ret)
+                with contextlib.redirect_stdout(io.StringIO()) as out:
+                    if ret := self.do_work(val):
+                        self.send_data(ret)
+                    if out := out.getvalue():
+                        self.send_report({"print": out})
             except Exception as err:
                 self.status = Status.ERROR
                 self.error = err
@@ -390,10 +389,10 @@ class Task(multiprocessing.Process, abc.ABC):
         """
         if report is None:
             try:
-                with contextlib.redirect_stdout(io.StringIO()) as f:
-                    with contextlib.redirect_stderr(io.StringIO()) as g:
-                        report = self.do_report()
-                        self.send_print(f.getvalue(), g.getvalue())
+                with contextlib.redirect_stdout(io.StringIO()) as out:
+                    report = self.do_report()
+                    if out := out.getvalue():
+                        self.send_report({"print": out})
             except Exception as err:
                 self.status = Status.ERROR
                 self.error = err
@@ -415,28 +414,6 @@ class Task(multiprocessing.Process, abc.ABC):
 
         msg = pickle.dumps(Message.REPORT(report), protocol=pickle.HIGHEST_PROTOCOL)
         self.socket_dealer.send(msg)
-
-    def send_print(self, stdout: str, stderr: str) -> None:
-        """
-        Sends ``PRINT`` messages to the pipeline.
-
-        This method transfers captured stdout and stderr data if anything was
-        written to the streams to the pipeline. The pipeline handles this using
-        ``handle_print``.
-
-        Parameters:
-            stdout: Captured stdout to send.
-            stderr: Captured stderr to send.
-
-        Notes:
-            This method runs in subprocesses.
-        """
-
-        if stdout or stderr:
-            msg = pickle.dumps(
-                Message.PRINT(stdout, stderr), protocol=pickle.HIGHEST_PROTOCOL
-            )
-            self.socket_dealer.send(msg)
 
     def send_data(self, data: typing.Any) -> None:
         """
@@ -509,8 +486,6 @@ class Task(multiprocessing.Process, abc.ABC):
                 self.handle_finished()
             else:
                 assert False
-
-            self.send_report()
         except zmq.Again:
             pass
 
@@ -524,8 +499,6 @@ class Task(multiprocessing.Process, abc.ABC):
                 self.handle_finished()
             else:
                 assert False
-
-            self.send_report()
         except zmq.Again:
             pass
 
@@ -556,10 +529,10 @@ class Task(multiprocessing.Process, abc.ABC):
 
         # Doing startup and collecting stdout/stderr
         try:
-            with contextlib.redirect_stdout(io.StringIO()) as f:
-                with contextlib.redirect_stderr(io.StringIO()) as g:
-                    self.do_startup()
-                    self.send_print(f.getvalue(), g.getvalue())
+            with contextlib.redirect_stdout(io.StringIO()) as out:
+                self.do_startup()
+                if out := out.getvalue():
+                    self.send_report({"print": out})
         except Exception as err:
             self.status = Status.ERROR
             self.error = err
@@ -581,10 +554,11 @@ class Task(multiprocessing.Process, abc.ABC):
                 if self.status == Status.RUNNING:
                     if self.queue or self.is_start:
                         val = self.queue.popleft() if self.queue else None
-                        with contextlib.redirect_stdout(io.StringIO()) as f:
-                            with contextlib.redirect_stderr(io.StringIO()) as g:
-                                ret = self.do_work(val)
-                                self.send_print(f.getvalue(), g.getvalue())
+                        with contextlib.redirect_stdout(io.StringIO()) as out:
+                            if ret := self.do_work(val):
+                                self.send_data(ret)
+                            if out := out.getvalue():
+                                self.send_report({"print": out})
                         self.send_data(ret)
                     else:
                         continue
@@ -604,10 +578,10 @@ class Task(multiprocessing.Process, abc.ABC):
 
         # Doing cleanup and collecting stdout/stderr
         try:
-            with contextlib.redirect_stdout(io.StringIO()) as f:
-                with contextlib.redirect_stderr(io.StringIO()) as g:
-                    self.do_cleanup()
-                    self.send_print(f.getvalue(), g.getvalue())
+            with contextlib.redirect_stdout(io.StringIO()) as out:
+                self.do_cleanup()
+                if out := out.getvalue():
+                    self.send_report({"print": out})
         except Exception as err:
             self.status = Status.ERROR
             self.error = err

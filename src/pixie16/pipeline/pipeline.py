@@ -36,7 +36,6 @@ class Pipeline:
         * ✅ FINISHED: Change status to ``FINISHED``.
     * TASK-TO-PIPELINE:
         * 🆗 REPORT: Transmit status to pipeline
-        * 🔣 PRINT: Print to stdout/stderr.
 
     Attributes:
         tasks_active: Names of active tasks.
@@ -130,29 +129,8 @@ class Pipeline:
         else:
             self.reports[name] = report
 
-    def handle_print(self, name: str, stdout: str, stderr: str) -> None:
-        """
-        Handles ``PRINT`` messages from some task.
-
-        This method prints non-empty writes to stdout and stderr. So, when
-        tasks write to standard streams, it gets printed by the pipeline.
-
-        Parameters:
-            name: Task name.
-            stdout: Recieved stdout.
-            stderr: Recieved stderr.
-
-        Raises:
-            ValueError: Task no found, i.e. not in ``_tasks_all``.
-        """
-
-        if name not in self._tasks_all:
-            raise ValueError
-
-        if stdout:
-            print(stdout, end="")
-        if stderr:
-            print(stderr, end="")
+        if "print" in report:
+            print(report["print"], end="")
 
     def send_connect(
         self, name: str, address_pull: str, is_start: bool, is_final: bool
@@ -391,8 +369,6 @@ class Pipeline:
 
         if type(msg) == Message.REPORT:
             self.handle_report(name, *msg())
-        elif type(msg) == Message.PRINT:
-            self.handle_print(name, *msg())
         else:
             raise RuntimeError
 
