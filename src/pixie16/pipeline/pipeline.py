@@ -322,7 +322,7 @@ class Pipeline:
             try:
                 self.create_task(name)
             except ValueError:
-                self.send_finished(name)
+                pass
             self.send_disconnect(name)
 
         # Waiting for reinitialization reports.
