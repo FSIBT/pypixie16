@@ -301,11 +301,14 @@ class DataAcquisition(QWidget):
         self.pipeline.stop()
         self.enable_ui_for_new_run()
 
-    def on_mode_change(self, idx: int):
-        # Clear table state
+    def clear_table(self):
         self.task_table.clearContents()
         self.task_table.setRowCount(0)
         self.taskid_to_row.clear()
+
+    def on_mode_change(self, idx: int):
+        # Clear table state
+        self.clear_table()
 
         text = self.modes[idx]
         print(f"selected {text}")
