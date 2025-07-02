@@ -169,15 +169,11 @@ class DataAcquisition(QWidget):
         self.traces_layout.addWidget(self.traces_set_time)
 
         self.Pixie_reboot = QPushButton("Reboot Pixie")
-        self.Pixie_default = QPushButton("Set Pixie default")
-        self.Pixie_default.clicked.connect(
-            self.on_set_pixie_default
-        )  # Changed to overridable method
 
         self.diagnostics_layout.addWidget(self.mca_group_box)
         self.diagnostics_layout.addWidget(self.traces_group_box)
         self.diagnostics_layout.addWidget(self.Pixie_reboot)
-        self.diagnostics_layout.addWidget(self.Pixie_default)
+        self.add_extra_buttons()
 
         self.actions_layout.addLayout(self.run_layout)
         self.actions_layout.addLayout(self.diagnostics_layout)
@@ -225,6 +221,17 @@ class DataAcquisition(QWidget):
         self.traces_enabled.stateChanged.connect(self.update_traces_setting)
         self.traces_set_time.editingFinished.connect(self.update_trace_time)
         self.MCA_set_time.editingFinished.connect(self.update_mca_time)
+
+    def add_extra_buttons(self):
+        self.Pixie_default = QPushButton("Set Pixie default")
+        self.Pixie_default.clicked.connect(self.set_pixie_default)
+        self.diagnostics_layout.addWidget(self.Pixie_default)
+
+    def set_pixie_default(self):
+        """Sets reasonable defaults for all parameters in the pixie16"""
+        # defaults_task = SetDefaults(self.pipeline.bind_address)
+        # defaults_task.do_work(None)
+        pass
 
     def create_plot_area(self):
         """Create plot area - override this method in subclasses."""
@@ -277,16 +284,6 @@ class DataAcquisition(QWidget):
 
         # Start the pipeline
         self.pipeline.start()
-
-    def on_set_pixie_default(self):
-        """Handle Set Pixie Default button - override this method in subclasses."""
-        self.set_pixie_default()
-
-    def set_pixie_default(self):
-        """Sets reasonable defaults for all parameters in the pixie16"""
-        # defaults_task = SetDefaults(self.pipeline.bind_address)
-        # defaults_task.do_work(None)
-        pass
 
     def on_mode_change(self, idx: int):
         text = self.modes[idx]
