@@ -44,7 +44,6 @@ class DataAcquisition(QWidget):
         self.create_layout()
 
         self.start_button.clicked.connect(self.start_run)
-        self.pause_button.clicked.connect(self.pipeline.pause)
         self.stop_button.clicked.connect(self.pipeline.stop)
         self.run_time_input.editingFinished.connect(self.set_runtime)
 
@@ -85,13 +84,6 @@ class DataAcquisition(QWidget):
         self.run_time_input.setText("60")
         self.run_time_input.setFixedWidth(60)
 
-        pause_icon = style.standardIcon(QStyle.StandardPixmap.SP_MediaPause)
-        self.pause_button = QPushButton()
-        self.pause_button.setIcon(pause_icon)
-        self.pause_button.setIconSize(QtCore.QSize(24, 24))
-        self.pause_button.setFixedSize(QtCore.QSize(40, 40))
-        self.pause_button.setToolTip("Pause")
-
         stop_icon = style.standardIcon(QStyle.StandardPixmap.SP_MediaStop)
         self.stop_button = QPushButton()
         self.stop_button.setIcon(stop_icon)
@@ -109,7 +101,6 @@ class DataAcquisition(QWidget):
         self.settings_modes.currentIndexChanged.connect(self.on_mode_change)
 
         self.run_layout.addWidget(self.start_button)
-        self.run_layout.addWidget(self.pause_button)
         self.run_layout.addWidget(self.stop_button)
         self.run_layout.addWidget(self.run_time_text)
         self.run_layout.addWidget(self.run_time_input)
