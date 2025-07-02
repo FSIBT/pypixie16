@@ -393,7 +393,7 @@ class Task(multiprocessing.Process, abc.ABC):
             This method runs in subprocesses.
         """
 
-        self.status = Status.FINISHED
+        self.status = Status.READY
         self.send_report()
 
         if not self.is_final:
@@ -513,7 +513,7 @@ class Task(multiprocessing.Process, abc.ABC):
                 time.sleep(0.1)
             elif self.status == Status.ERROR:
                 time.sleep(1)
-            elif self.status == Status.FINISHED:
+            elif self.status == Status.READY:
                 time.sleep(0.1)
             elif self.status == Status.DYING:
                 break

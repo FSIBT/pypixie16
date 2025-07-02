@@ -151,7 +151,7 @@ class Test_Pipeline:
     def test_handle_finished(pipeline_base: pixie16.pipeline.Pipeline):
         assert pipeline_base.status == pixie16.pipeline.Status.READY
         pipeline_base.handle_finished()
-        assert pipeline_base.status == pixie16.pipeline.Status.FINISHED
+        assert pipeline_base.status == pixie16.pipeline.Status.READY
 
     @staticmethod
     def test_handle_report_valid(pipeline_created: pixie16.pipeline.Pipeline):

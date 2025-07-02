@@ -18,7 +18,7 @@ class Test_GatherEvents:
         while True:
             pipe.poll()
 
-            if pipe.status == pixie16.pipeline.Status.FINISHED:
+            if pipe.status == pixie16.pipeline.Status.READY:
                 break
 
             if pipe.status == pixie16.pipeline.Status.ERROR:

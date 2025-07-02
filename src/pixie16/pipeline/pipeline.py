@@ -24,7 +24,6 @@ class Pipeline:
     * ⏸️ READY: Active tasks waiting.
     * ▶️ RUNNING: Active tasks running.
     * ⏏️ DYING: All tasks stoped
-    * ✅ FINISHED: Active tasks finished.
     * 🆘 ERROR: Any tasks has an error.
 
     * PIPELINE-TO-TASK:

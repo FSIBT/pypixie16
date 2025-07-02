@@ -13,7 +13,7 @@ class Test_PickSingleModule:
         while True:
             pipe.poll()
 
-            if pipe.status == pixie16.pipeline.Status.FINISHED:
+            if pipe.status == pixie16.pipeline.Status.WAITING:
                 break
 
             if pipe.status == pixie16.pipeline.Status.ERROR:
