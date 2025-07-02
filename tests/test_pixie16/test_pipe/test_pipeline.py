@@ -211,15 +211,6 @@ class Test_Pipeline:
             pipeline_base.send_start("DummyTask")
 
     @staticmethod
-    def test_send_pause_valid(pipeline_created: pixie16.pipeline.Pipeline):
-        pipeline_created.send_pause("DummyTask")
-
-    @staticmethod
-    def test_send_pause_invalid(pipeline_base: pixie16.pipeline.Pipeline):
-        with pytest.raises(ValueError):
-            pipeline_base.send_pause("DummyTask")
-
-    @staticmethod
     def test_send_stop_valid(pipeline_created: pixie16.pipeline.Pipeline):
         pipeline_created.send_stop("DummyTask")
 
@@ -262,10 +253,6 @@ class Test_Pipeline:
     @staticmethod
     def test_start(pipeline_dummy: pixie16.pipeline.Pipeline):
         pipeline_dummy.start()
-
-    @staticmethod
-    def test_pause(pipeline_dummy: pixie16.pipeline.Pipeline):
-        pipeline_dummy.pause()
 
     @staticmethod
     def test_stop(pipeline_dummy: pixie16.pipeline.Pipeline):

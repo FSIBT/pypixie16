@@ -232,12 +232,6 @@ class Test_Task:
         assert task_a.status == pixie16.pipeline.Status.RUNNING
 
     @staticmethod
-    def test_handle_pause(task_a: pixie16.pipeline.Task):
-        assert task_a.status == pixie16.pipeline.Status.READY
-        task_a.handle_pause()
-        assert task_a.status == pixie16.pipeline.Status.PAUSED
-
-    @staticmethod
     def test_handle_stop(task_a: pixie16.pipeline.Task):
         assert not task_a._kill
         task_a.handle_stop()

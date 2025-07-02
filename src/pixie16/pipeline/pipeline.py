@@ -21,9 +21,8 @@ class Pipeline:
     Pipelines use the following status to transition between initialization,
     running, pausing, and stoping:
 
-    * 🆕 READY: Active tasks initialized.
+    * ⏸️ READY: Active tasks waiting.
     * ▶️ RUNNING: Active tasks running.
-    * ⏸️ PAUSED: Active tasks waiting.
     * 🆒 DONE: All tasks stoped
     * ✅ FINISHED: Active tasks finished.
     * 🆘 ERROR: Any tasks has an error.
@@ -32,7 +31,6 @@ class Pipeline:
         * 🔁 CONNECT: Connect to given ZMQ push queue.
         * 🔀 DISCONNECT: Disconnect from the ZMQ push queue.
         * ▶️ START: Change status to ``RUNNING``.
-        * ⏸️ PAUSE: Change status to ``PAUSED``.
         * ⏹️ STOP: Change status to ``DONE``.
         * ℹ️ CONFIGURE: Update parameters.
         * ✅ FINISHED: Change status to ``FINISHED``.
@@ -229,30 +227,6 @@ class Pipeline:
         while self.poll(is_block=True) != name:
             pass
 
-    def send_pause(self, name: str) -> None:
-        """
-        Sends ``PAUSE`` messages to tasks.
-
-        This method pauses each task in the pipeline, pausing data processing
-        or collection. The tasks handle this using ``handle_pause``. This
-        method blocks while waiting for a reponse, namely a report.
-
-        Parameters:
-            name: Task name.
-
-        Raises:
-            ValueError: Task no found, i.e. not in ``_tasks_all``.
-        """
-
-        if name not in self._tasks_all:
-            raise ValueError
-
-        msg = pickle.dumps(Message.PAUSE)
-        self.socket_router.send_multipart([name.encode(), msg])
-
-        while self.poll(is_block=True) != name:
-            pass
-
     def send_stop(self, name: str) -> None:
         """
         Sends ``STOP`` messages to tasks.
@@ -348,7 +322,7 @@ class Pipeline:
             try:
                 self.create_task(name)
             except ValueError:
-                self.send_pause(name)
+                self.send_finished(name)
             self.send_disconnect(name)
 
         # Waiting for reinitialization reports.
@@ -386,20 +360,6 @@ class Pipeline:
 
         for name in self.tasks_active:
             self.send_start(name)
-
-    def pause(self) -> None:
-        """
-        Pauses the active tasks.
-
-        This method sets the pipleine status to ``PAUSED`` and starts all the
-        active tasks.
-        """
-
-        # Clearing messages and updating status.
-        self.status = Status.PAUSED
-
-        for name in self.tasks_active:
-            self.send_pause(name)
 
     def stop(self) -> None:
         """

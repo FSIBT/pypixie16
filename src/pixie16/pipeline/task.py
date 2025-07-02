@@ -22,9 +22,8 @@ class Task(multiprocessing.Process, abc.ABC):
     Since ``Task`` extends ``multiprocessing.Process``, tasks behave like state
     machines. They have the following statues:
 
-    * 🆕 READY: Task initialized but not started.
+    * ⏸️ READY: Task waiting.
     * ▶️ RUNNING: Task processing data.
-    * ⏸️ PAUSED: Task waiting.
     * 🆒 DONE: Task done.
     * ✅ FINISHED: Task finished and waiting.
     * 🆘 ERROR: Task waiting with error.
@@ -37,7 +36,6 @@ class Task(multiprocessing.Process, abc.ABC):
         * 🔁 CONNECT: Connect to given ZMQ push queue.
         * 🔀 DISCONNECT: Disconnect from the ZMQ push queue.
         * ▶️ START: Change status to ``RUNNING``.
-        * ⏸️ PAUSE: Change status to ``PAUSED``.
         * ⏹️ STOP: Change status to ``FINISHED``.
         * ℹ️ CONFIGURE: Update parameters.
         * ✅ FINISHED: Change status to ``FINISHED``.
@@ -295,20 +293,6 @@ class Task(multiprocessing.Process, abc.ABC):
 
         self.status = Status.RUNNING
 
-    def handle_pause(self) -> None:
-        """
-        Handles ``PAUSE`` messages from the pipeline.
-
-        This method changes task's status to ``PAUSED``. So, the task will
-        still poll and handle message but not call ``do_work`` after getting
-        the ``PAUSE`` message.
-
-        Notes:
-            This method runs in subprocesses.
-        """
-
-        self.status = Status.PAUSED
-
     def handle_stop(self) -> None:
         """
         Handles ``STOP`` messages from the pipeline.
@@ -534,8 +518,6 @@ class Task(multiprocessing.Process, abc.ABC):
                 self.handle_disconnect()
             elif msg == Message.START:
                 self.handle_start()
-            elif msg == Message.PAUSE:
-                self.handle_pause()
             elif msg == Message.STOP:
                 self.handle_stop()
             elif msg == Message.FINISHED:
@@ -577,7 +559,7 @@ class Task(multiprocessing.Process, abc.ABC):
             This method is subprocesses' runtime.
         """
 
-        self.status = Status.PAUSED
+        self.status = Status.READY
 
         # Opening ZMQ sockets.
         self.context = zmq.Context()
@@ -615,7 +597,7 @@ class Task(multiprocessing.Process, abc.ABC):
                         self.send_data(ret)
                     else:
                         continue
-                elif self.status == Status.PAUSED:
+                elif self.status == Status.READY:
                     time.sleep(0.1)
                 elif self.status == Status.ERROR:
                     time.sleep(1)
