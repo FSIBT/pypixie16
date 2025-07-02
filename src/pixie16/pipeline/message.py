@@ -27,7 +27,7 @@ class Message:
     # Pipeline-to-Task
     START = "▶️"
     PAUSE = "⏸️"
-    STOP = "⏹️"
+    QUIT = "⏏️" # "⏹️"
 
     class CONNECT(_Message[str]):  # "🔁"
         pass

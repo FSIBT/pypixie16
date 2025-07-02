@@ -10,4 +10,4 @@ class Test_PrintData:
         pipe.init(["PrintData"])
         pipe.start()
         pipe.poll()
-        pipe.stop()
+        pipe.quit()

@@ -24,4 +24,4 @@ class Test_GatherEvents:
             if pipe.status == pixie16.pipeline.Status.ERROR:
                 assert False
 
-        pipe.stop()
+        pipe.quit()

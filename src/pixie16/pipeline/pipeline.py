@@ -23,7 +23,7 @@ class Pipeline:
 
     * ⏸️ READY: Active tasks waiting.
     * ▶️ RUNNING: Active tasks running.
-    * 🆒 DONE: All tasks stoped
+    * ⏏️ DYING: All tasks stoped
     * ✅ FINISHED: Active tasks finished.
     * 🆘 ERROR: Any tasks has an error.
 
@@ -31,7 +31,7 @@ class Pipeline:
         * 🔁 CONNECT: Connect to given ZMQ push queue.
         * 🔀 DISCONNECT: Disconnect from the ZMQ push queue.
         * ▶️ START: Change status to ``RUNNING``.
-        * ⏹️ STOP: Change status to ``DONE``.
+        * ⏹️ QUIT: Change status to ``DYING``.
         * ℹ️ CONFIGURE: Update parameters.
         * ✅ FINISHED: Change status to ``FINISHED``.
     * TASK-TO-PIPELINE:
@@ -205,9 +205,9 @@ class Pipeline:
         while self.poll(is_block=True) != name:
             pass
 
-    def send_stop(self, name: str) -> None:
+    def send_quit(self, name: str) -> None:
         """
-        Sends ``STOP`` messages to tasks.
+        Sends ``QUIT`` messages to tasks.
 
         This method stops each task in the pipeline, pausing data processing
         or collection. The tasks handle this using ``handle_stop``. This
@@ -223,7 +223,7 @@ class Pipeline:
         if name not in self._tasks_all:
             raise ValueError
 
-        msg = pickle.dumps(Message.STOP)
+        msg = pickle.dumps(Message.QUIT)
         self.socket_router.send_multipart([name.encode(), msg])
 
         while self.poll(is_block=True) != name:
@@ -338,19 +338,19 @@ class Pipeline:
         for name in self.tasks_active:
             self.send_start(name)
 
-    def stop(self) -> None:
+    def quit(self) -> None:
         """
         Stops the active tasks.
 
-        This method sets the pipleine status to ``DONE`` and starts all the
+        This method sets the pipleine status to ``DYING`` and starts all the
         active tasks.
         """
 
-        # Clearing messages and updating status.
-        self.status = Status.DONE
+        self.status = Status.DYING
 
+        # Clearing messages and updating status.
         for name in self._tasks_all:
-            self.send_stop(name)
+            self.send_quit(name)
 
     def configure(self, config: dict[str, typing.Any]) -> None:
         """

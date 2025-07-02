@@ -24,7 +24,7 @@ class Task(multiprocessing.Process, abc.ABC):
 
     * ⏸️ READY: Task waiting.
     * ▶️ RUNNING: Task processing data.
-    * 🆒 DONE: Task done.
+    * ⏏️ DYING: All tasks stoped
     * ✅ FINISHED: Task finished and waiting.
     * 🆘 ERROR: Task waiting with error.
 
@@ -35,7 +35,7 @@ class Task(multiprocessing.Process, abc.ABC):
     * PIPELINE-TO-TASK:
         * 🔁 CONNECT: Connect to given ZMQ push queue.
         * ▶️ START: Change status to ``RUNNING``.
-        * ⏹️ STOP: Change status to ``FINISHED``.
+        * ⏏️ QUIT: Change status to ``DYING``.
         * ℹ️ CONFIGURE: Update parameters.
         * ✅ FINISHED: Change status to ``FINISHED``.
     * TASK-TO-PIPELINE:
@@ -191,7 +191,7 @@ class Task(multiprocessing.Process, abc.ABC):
         """
         Deinitializes task runtimes.
 
-        The task runtime calls this method after recieving the ``STOP`` message
+        The task runtime calls this method after recieving the ``QUIT`` message
         before closing.
 
         Notes:
@@ -215,7 +215,7 @@ class Task(multiprocessing.Process, abc.ABC):
         the task is first in the pipeline or has data in its input queue.
 
         When finished, call the ``send_finished``. To pause, call the
-        ``send_pause`` method. To stop, call the ``send_stop`` method. To
+        ``send_pause`` method. To quit, call the ``send_quit`` method. To
         handle and error, raise it. Finally, return the data to send it to the
         next task in the pipeline; if this method returns ``None`` it will not
         send to the next task.
@@ -225,7 +225,6 @@ class Task(multiprocessing.Process, abc.ABC):
 
         Return:
             Data to send to the next task in the pipeline.
-
 
         Notes:
             The task runtime captures prints to stdout/stderr and sends them to
@@ -285,18 +284,19 @@ class Task(multiprocessing.Process, abc.ABC):
 
         self.status = Status.RUNNING
 
-    def handle_stop(self) -> None:
+    def handle_quit(self) -> None:
         """
-        Handles ``STOP`` messages from the pipeline.
+        Handles ``QUIT`` messages from the pipeline.
 
         This method causes the tasks to quit and call ``do_cleanup``. So, the
-        tasks will close after getting the ``STOP`` message.
+        tasks will close after getting the ``QUIT`` message.
 
         Notes:
             This method runs in subprocesses.
         """
 
         self._kill = True
+        self.status = Status.DYING
 
     def handle_configure(self, config: dict) -> None:
         """
@@ -503,8 +503,8 @@ class Task(multiprocessing.Process, abc.ABC):
                 self.handle_configure(*msg())
             elif msg == Message.START:
                 self.handle_start()
-            elif msg == Message.STOP:
-                self.handle_stop()
+            elif msg == Message.QUIT:
+                self.handle_quit()
             elif msg == Message.FINISHED:
                 self.handle_finished()
             else:
@@ -611,9 +611,6 @@ class Task(multiprocessing.Process, abc.ABC):
         except Exception as err:
             self.status = Status.ERROR
             self.error = err
-
-        self.status = Status.DONE
-        self.send_report()
 
         # Closing ZMQ sockets.
         if self.socket_pull:
