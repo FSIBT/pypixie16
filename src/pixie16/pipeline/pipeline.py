@@ -345,7 +345,6 @@ class Pipeline:
         names = set()
         while names != set(self.tasks_active):
             names.add(self.poll(is_block=True))
-        print(names, self.tasks_active)
 
     def start(self) -> None:
         """
