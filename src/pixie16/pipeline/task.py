@@ -573,6 +573,10 @@ class Task(multiprocessing.Process, abc.ABC):
 
         self.status = Status.READY
 
+        if self.address_router is None:
+            print(f"ERROR no router address given for {self.name}")
+            sys.exit(1)
+
         # Opening ZMQ sockets.
         self.context = zmq.Context()
         self.socket_dealer = self.context.socket(zmq.DEALER)

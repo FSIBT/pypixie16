@@ -56,8 +56,8 @@ class Pipeline:
         self.reports = {}
         self.context = zmq.Context()
         self.socket_router = self.context.socket(zmq.ROUTER)
-        self.address_router = self.socket_router.bind_to_random_port("tcp://127.0.0.1")
-        self.address_router = f"tcp://127.0.0.1:{self.address_router}"
+        port = self.socket_router.bind_to_random_port("tcp://127.0.0.1")
+        self.address_router = f"tcp://127.0.0.1:{port}"
 
     def create_task(self, name: str):
         """
