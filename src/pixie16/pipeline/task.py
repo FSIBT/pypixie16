@@ -108,8 +108,6 @@ class Task(multiprocessing.Process, abc.ABC):
 
         # Regular fields.
         self.name: str = self.__class__.__name__
-        self.error: Exception = None
-        self._kill: bool = False
         self.queue: collections.deque = collections.deque()
         self.status: Status = Status.READY
         self.config: dict = {}
@@ -273,7 +271,6 @@ class Task(multiprocessing.Process, abc.ABC):
             This method runs in subprocesses.
         """
 
-        self._kill = True
         self.status = Status.DYING
 
     def handle_configure(self, config: dict) -> None:
@@ -301,7 +298,7 @@ class Task(multiprocessing.Process, abc.ABC):
                     self.send_report({"print": out})
         except Exception as err:
             self.status = Status.ERROR
-            self.error = err
+            self.send_report({"status": self.status, "error": err})
 
         self.config |= config
 
@@ -320,6 +317,7 @@ class Task(multiprocessing.Process, abc.ABC):
         """
 
         self.queue.append(data)
+        self.send_report({"queue": len(self.queue)})
 
     def handle_finished(self) -> None:
         """
@@ -358,7 +356,6 @@ class Task(multiprocessing.Process, abc.ABC):
         """
 
         report = report or {
-            "error": self.error,
             "status": self.status,
             "queue": len(self.queue),
         }
@@ -413,7 +410,7 @@ class Task(multiprocessing.Process, abc.ABC):
                     self.send_report({"print": out})
         except Exception as err:
             self.status = Status.ERROR
-            self.error = err
+            self.send_report({"status": self.status, "error": err})
 
     def poll(self) -> None:
         """
@@ -497,18 +494,17 @@ class Task(multiprocessing.Process, abc.ABC):
                     self.send_report({"print": out})
         except Exception as err:
             self.status = Status.ERROR
-            self.error = err
+            self.send_report({"status": self.status, "error": err})
 
         self.send_report(
             {
                 "status": self.status,
-                "error": self.error,
                 "address_push": self.address_push,
                 "address_router": self.address_router,
             }
         )
 
-        while not self._kill:
+        while True:
             self.poll()
 
             if self.status == Status.RUNNING:
@@ -534,7 +530,7 @@ class Task(multiprocessing.Process, abc.ABC):
                     self.send_report({"print": out})
         except Exception as err:
             self.status = Status.ERROR
-            self.error = err
+            self.send_report({"status": self.status, "error": err})
 
         # Closing ZMQ sockets.
         if self.socket_pull:

@@ -132,6 +132,17 @@ class Pipeline:
         if "print" in report:
             print(report["print"], end="")
 
+        if "error" in report:
+            self.status = Status.ERROR
+            raise RuntimeError(report["error"])
+
+        if (
+            "status" in report
+            and report["status"] == Status.READY
+            and name == self.tasks_active[-1]
+        ):
+            self.status = Status.READY
+
     def send_connect(
         self, name: str, address_pull: str, is_start: bool, is_final: bool
     ) -> None:
@@ -371,13 +382,6 @@ class Pipeline:
             self.handle_report(name, *msg())
         else:
             raise RuntimeError
-
-        if (
-            name in self.reports
-            and "status" in self.reports[name]
-            and self.reports[name]["status"] == Status.ERROR
-        ):
-            self.handle_error(self.reports[name]["error"])
 
         if (
             self.status != Status.READY
