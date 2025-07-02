@@ -22,11 +22,10 @@ class Task(multiprocessing.Process, abc.ABC):
     Since ``Task`` extends ``multiprocessing.Process``, tasks behave like state
     machines. They have the following statues:
 
-    * ⏸️ READY: Task waiting.
-    * ▶️ RUNNING: Task processing data.
-    * ⏏️ DYING: All tasks stoped
-    * ✅ FINISHED: Task finished and waiting.
-    * 🆘 ERROR: Task waiting with error.
+    * ⏸️ WAITING: Task waiting.
+    * ▶️ RUNNING: Task running.
+    * ⏏️ DYING: Tasks dying.
+    * 🆘 PANICKING: Task panicking.
 
     Tasks uses ZMQ Push/Pull sockets to get and send messages between other
     tasks and the pipeline. Tasks send and recieve the following kinds of
@@ -109,7 +108,7 @@ class Task(multiprocessing.Process, abc.ABC):
         # Regular fields.
         self.name: str = self.__class__.__name__
         self.queue: collections.deque = collections.deque()
-        self.status: Status = Status.READY
+        self.status: Status = Status.WAITING
         self.config: dict = {}
         self.is_start: bool = False
         self.is_final: bool = False
@@ -136,7 +135,7 @@ class Task(multiprocessing.Process, abc.ABC):
             The task runtime captures prints to stdout/stderr and sends them to
             the pipeline's ``handle_print`` method.
 
-            The task runtime captures errors, updates it status to ``ERROR``
+            The task runtime captures errors, updates it status to ``PANICKING``
             and stores the latest error in the ``error`` field.
 
             This method runs in subprocesses, and it can be overwritten.
@@ -155,7 +154,7 @@ class Task(multiprocessing.Process, abc.ABC):
             The task runtime captures prints to stdout/stderr and sends them to
             the pipeline's ``handle_print`` method.
 
-            The task runtime captures errors, updates it status to ``ERROR``
+            The task runtime captures errors, updates it status to ``PANICKING``
             and stores the latest error in the ``error`` field.
 
             This method runs in subprocesses, and it can be overwritten.
@@ -174,7 +173,7 @@ class Task(multiprocessing.Process, abc.ABC):
             The task runtime captures prints to stdout/stderr and sends them to
             the pipeline's ``handle_print`` method.
 
-            The task runtime captures errors, updates it status to ``ERROR``
+            The task runtime captures errors, updates it status to ``PANICKING``
             and stores the latest error in the ``error`` field.
 
             This method runs in subprocesses, and it can be overwritten.
@@ -206,7 +205,7 @@ class Task(multiprocessing.Process, abc.ABC):
             The task runtime captures prints to stdout/stderr and sends them to
             the pipeline's ``handle_print`` method.
 
-            The task runtime captures errors, updates it status to ``ERROR``
+            The task runtime captures errors, updates it status to ``PANICKING``
             and stores the latest error in the ``error`` field.
 
             This method runs in subprocesses, and it must be overwritten.
@@ -297,7 +296,7 @@ class Task(multiprocessing.Process, abc.ABC):
                 if out := out.getvalue():
                     self.send_report({"print": out})
         except Exception as err:
-            self.status = Status.ERROR
+            self.status = Status.PANICKING
             self.send_report({"status": self.status, "error": err})
 
         self.config |= config
@@ -393,7 +392,7 @@ class Task(multiprocessing.Process, abc.ABC):
             This method runs in subprocesses.
         """
 
-        self.status = Status.READY
+        self.status = Status.WAITING
         self.send_report()
 
         if not self.is_final:
@@ -409,7 +408,7 @@ class Task(multiprocessing.Process, abc.ABC):
                 if out := out.getvalue():
                     self.send_report({"print": out})
         except Exception as err:
-            self.status = Status.ERROR
+            self.status = Status.PANICKING
             self.send_report({"status": self.status, "error": err})
 
     def poll(self) -> None:
@@ -474,7 +473,7 @@ class Task(multiprocessing.Process, abc.ABC):
             This method is subprocesses' runtime.
         """
 
-        self.status = Status.READY
+        self.status = Status.WAITING
 
         # Opening ZMQ sockets.
         self.context = zmq.Context()
@@ -493,7 +492,7 @@ class Task(multiprocessing.Process, abc.ABC):
                 if out := out.getvalue():
                     self.send_report({"print": out})
         except Exception as err:
-            self.status = Status.ERROR
+            self.status = Status.PANICKING
             self.send_report({"status": self.status, "error": err})
 
         self.send_report(
@@ -509,11 +508,11 @@ class Task(multiprocessing.Process, abc.ABC):
 
             if self.status == Status.RUNNING:
                 self.exec()
-            elif self.status == Status.READY:
+            elif self.status == Status.WAITING:
                 time.sleep(0.1)
-            elif self.status == Status.ERROR:
+            elif self.status == Status.PANICKING:
                 time.sleep(1)
-            elif self.status == Status.READY:
+            elif self.status == Status.WAITING:
                 time.sleep(0.1)
             elif self.status == Status.DYING:
                 break
@@ -529,7 +528,7 @@ class Task(multiprocessing.Process, abc.ABC):
                 if out := out.getvalue():
                     self.send_report({"print": out})
         except Exception as err:
-            self.status = Status.ERROR
+            self.status = Status.PANICKING
             self.send_report({"status": self.status, "error": err})
 
         # Closing ZMQ sockets.

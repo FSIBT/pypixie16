@@ -16,7 +16,7 @@ class Test_PickSingleModule:
             if pipe.status == pixie16.pipeline.Status.WAITING:
                 break
 
-            if pipe.status == pixie16.pipeline.Status.ERROR:
+            if pipe.status == pixie16.pipeline.Status.PANICKING:
                 assert False
 
         pipe.quit()

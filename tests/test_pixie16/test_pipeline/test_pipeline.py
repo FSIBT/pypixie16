@@ -115,7 +115,7 @@ class Test_Pipeline:
     @staticmethod
     def test___init__():
         pipe = pixie16.pipeline.Pipeline()
-        assert pipe.status == pixie16.pipeline.Status.READY
+        assert pipe.status == pixie16.pipeline.Status.WAITING
         assert pipe.tasks_active == []
         assert pipe._tasks_all == {}
         assert pipe.reports == {}
@@ -143,15 +143,15 @@ class Test_Pipeline:
 
     @staticmethod
     def test_handle_error(pipeline_base: pixie16.pipeline.Pipeline):
-        assert pipeline_base.status == pixie16.pipeline.Status.READY
+        assert pipeline_base.status == pixie16.pipeline.Status.WAITING
         pipeline_base.handle_error(Exception)
-        assert pipeline_base.status == pixie16.pipeline.Status.ERROR
+        assert pipeline_base.status == pixie16.pipeline.Status.PANICKING
 
     @staticmethod
     def test_handle_finished(pipeline_base: pixie16.pipeline.Pipeline):
-        assert pipeline_base.status == pixie16.pipeline.Status.READY
+        assert pipeline_base.status == pixie16.pipeline.Status.WAITING
         pipeline_base.handle_finished()
-        assert pipeline_base.status == pixie16.pipeline.Status.READY
+        assert pipeline_base.status == pixie16.pipeline.Status.WAITING
 
     @staticmethod
     def test_handle_report_valid(pipeline_created: pixie16.pipeline.Pipeline):

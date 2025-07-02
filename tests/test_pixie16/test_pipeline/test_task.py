@@ -143,7 +143,7 @@ class Test_Task:
         assert task.error is None
         assert not task._kill
         assert task.queue == collections.deque()
-        assert task.status == pixie16.pipeline.Status.READY
+        assert task.status == pixie16.pipeline.Status.WAITING
         assert task.config == {}
         assert not task.is_start
         assert not task.is_final
@@ -227,7 +227,7 @@ class Test_Task:
 
     @staticmethod
     def test_handle_start(task_a: pixie16.pipeline.Task):
-        assert task_a.status == pixie16.pipeline.Status.READY
+        assert task_a.status == pixie16.pipeline.Status.WAITING
         task_a.handle_start()
         assert task_a.status == pixie16.pipeline.Status.RUNNING
 
@@ -245,11 +245,11 @@ class Test_Task:
 
     @staticmethod
     def test_handle_configure_valid_B(task_b: pixie16.pipeline.Task):
-        assert task_b.status == pixie16.pipeline.Status.READY
+        assert task_b.status == pixie16.pipeline.Status.WAITING
         assert task_b.error is None
         assert task_b.config == {}
         task_b.handle_configure({"Hi": "Hello"})
-        assert task_b.status == pixie16.pipeline.Status.ERROR
+        assert task_b.status == pixie16.pipeline.Status.PANICKING
         assert task_b.error is not None
         assert task_b.config == {"Hi": "Hello"}
 

@@ -21,10 +21,10 @@ class Pipeline:
     Pipelines use the following status to transition between initialization,
     running, pausing, and stoping:
 
-    * ⏸️ READY: Active tasks waiting.
+    * ⏸️ WAITING: Active tasks waiting.
     * ▶️ RUNNING: Active tasks running.
-    * ⏏️ DYING: All tasks stoped
-    * 🆘 ERROR: Any tasks has an error.
+    * ⏏️ DYING: All tasks dying.
+    * 🆘 PANICKING: Any task panicking.
 
     * PIPELINE-TO-TASK:
         * 🔁 CONNECT: Connect to given ZMQ push queue.
@@ -47,7 +47,7 @@ class Pipeline:
     """
 
     def __init__(self):
-        self.status = Status.READY
+        self.status = Status.WAITING
         self.tasks_active = []
         self._tasks_all = {}
         self.reports = {}
@@ -72,10 +72,10 @@ class Pipeline:
         """
 
         if name in self._tasks_all:
-            raise ValueError(f"ERROR task already initialized")
+            raise ValueError(f"PANICKING task already initialized")
 
         if name not in Task.class_registry:
-            raise ValueError(f"ERROR cannot find pypixie16 task '{name}'")
+            raise ValueError(f"PANICKING cannot find pypixie16 task '{name}'")
 
         task = Task.class_registry[name]()
         self._tasks_all[name] = task
@@ -109,15 +109,15 @@ class Pipeline:
             print(report["print"], end="")
 
         if "error" in report:
-            self.status = Status.ERROR
+            self.status = Status.PANICKING
             raise RuntimeError(report["error"])
 
         if (
             "status" in report
-            and report["status"] == Status.READY
+            and report["status"] == Status.WAITING
             and name == self.tasks_active[-1]
         ):
-            self.status = Status.READY
+            self.status = Status.WAITING
 
     def send_connect(
         self, name: str, address_pull: str, is_start: bool, is_final: bool
@@ -248,7 +248,7 @@ class Pipeline:
         """
         Initialize active tasks.
 
-        This method sets the pipeline status to ``READY``, creates, pauses, or
+        This method sets the pipeline status to ``WAITING``, creates, pauses, or
         disconnects tasks as needed, reconstitutes the active tasks by
         connecting/reconnecting them.
 
@@ -257,7 +257,7 @@ class Pipeline:
         """
 
         # Clearing messages and updating status.
-        self.status = Status.READY
+        self.status = Status.WAITING
         self.reports = {}
 
         # Pausing & disconnecting old tasks.
