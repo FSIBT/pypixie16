@@ -351,7 +351,7 @@ class DataAcquisition(QWidget):
         ordered_keys = [
             "name",
             "status",
-            "cpu",
+            "cpu percent",
             "memory",
             "queue length",
             "activity",
