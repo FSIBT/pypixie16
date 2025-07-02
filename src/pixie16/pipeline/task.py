@@ -338,17 +338,7 @@ class Task(multiprocessing.Process, abc.ABC):
 
         while self.queue:
             self.poll()
-
-            try:
-                val = self.queue.popleft() if self.queue else None
-                with contextlib.redirect_stdout(io.StringIO()) as out:
-                    if ret := self.do_work(val):
-                        self.send_data(ret)
-                    if out := out.getvalue():
-                        self.send_report({"print": out})
-            except Exception as err:
-                self.status = Status.ERROR
-                self.error = err
+            self.exec()
 
         self.send_finished()
 
@@ -412,6 +402,18 @@ class Task(multiprocessing.Process, abc.ABC):
         if not self.is_final:
             msg = Message.FINISHED
             self.socket_push.send_pyobj(msg)
+
+    def exec(self) -> None:
+        try:
+            val = self.queue.popleft() if self.queue else None
+            with contextlib.redirect_stdout(io.StringIO()) as out:
+                if ret := self.do_work(val):
+                    self.send_data(ret)
+                if out := out.getvalue():
+                    self.send_report({"print": out})
+        except Exception as err:
+            self.status = Status.ERROR
+            self.error = err
 
     def poll(self) -> None:
         """
@@ -509,29 +511,18 @@ class Task(multiprocessing.Process, abc.ABC):
         while not self._kill:
             self.poll()
 
-            try:
-                if self.status == Status.RUNNING:
-                    if self.queue or self.is_start:
-                        val = self.queue.popleft() if self.queue else None
-                        with contextlib.redirect_stdout(io.StringIO()) as out:
-                            if ret := self.do_work(val):
-                                self.send_data(ret)
-                            if out := out.getvalue():
-                                self.send_report({"print": out})
-                        self.send_data(ret)
-                    else:
-                        continue
-                elif self.status == Status.READY:
-                    time.sleep(0.1)
-                elif self.status == Status.ERROR:
-                    time.sleep(1)
-                elif self.status == Status.FINISHED:
-                    time.sleep(0.1)
-                else:
-                    raise RuntimeError
-            except Exception as err:
-                self.status = Status.ERROR
-                self.error = err
+            if self.status == Status.RUNNING:
+                self.exec()
+            elif self.status == Status.READY:
+                time.sleep(0.1)
+            elif self.status == Status.ERROR:
+                time.sleep(1)
+            elif self.status == Status.FINISHED:
+                time.sleep(0.1)
+            elif self.status == Status.DYING:
+                break
+            else:
+                assert False
 
         self.send_report()
 
