@@ -1,6 +1,7 @@
 from .. import task
 import time
 
+
 class SortEvents(task.Task):
     """Task to sort events by timestamp.
 

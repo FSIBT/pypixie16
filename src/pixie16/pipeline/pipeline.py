@@ -126,7 +126,7 @@ class Pipeline:
 
         if name not in self._tasks_all:
             raise ValueError
-    
+
         if name in self.reports:
             self.reports[name] |= report
         else:
@@ -182,7 +182,7 @@ class Pipeline:
 
         msg = pickle.dumps(Message.CONNECT(address_pull, is_start, is_final))
         self.socket_router.send_multipart([name.encode(), msg])
-        
+
     def send_disconnect(self, name: str) -> None:
         """
         Sends ``DISCONNECT`` messages to tasks.
@@ -459,18 +459,15 @@ class Pipeline:
         else:
             raise RuntimeError
 
-        if (
-            name in self.reports and
-            self.reports[name]["status"] == Status.ERROR
-        ):
+        if name in self.reports and self.reports[name]["status"] == Status.ERROR:
             self.handle_error(self.reports[name]["error"])
 
         if (
-            self.status != Status.READY and
-            self.tasks_active and
-            self.tasks_active[-1] in self.reports and
-            "status" in self.reports[self.tasks_active[-1]] and
-            self.reports[self.tasks_active[-1]]["status"] == Status.FINISHED
+            self.status != Status.READY
+            and self.tasks_active
+            and self.tasks_active[-1] in self.reports
+            and "status" in self.reports[self.tasks_active[-1]]
+            and self.reports[self.tasks_active[-1]]["status"] == Status.FINISHED
         ):
             self.handle_finished()
 
