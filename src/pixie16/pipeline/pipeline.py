@@ -418,7 +418,11 @@ class Pipeline:
         else:
             raise RuntimeError
 
-        if name in self.reports and self.reports[name]["status"] == Status.ERROR:
+        if (
+            name in self.reports
+            and "status" in self.reports[name]
+            and self.reports[name]["status"] == Status.ERROR
+        ):
             self.handle_error(self.reports[name]["error"])
 
         if (
