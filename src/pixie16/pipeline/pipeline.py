@@ -83,29 +83,6 @@ class Pipeline:
         task.address_router = self.address_router
         task.start()
 
-    def handle_error(self, err: Exception) -> None:
-        """
-        Handles errors.
-
-        The pipeline runtime calls this method if any task has the ``ERROR``
-        status.
-
-        Parameters:
-            err: The excpetion raised.
-        """
-
-        self.status = Status.ERROR
-
-    def handle_finished(self) -> None:
-        """
-        Handles complete pipelines.
-
-        The pipeline runtime calls this method if all active tasks have the
-        ``FINISHED`` status.
-        """
-
-        self.status = Status.FINISHED
-
     def handle_report(self, name: str, report: dict[str, typing.Any]) -> None:
         """
         Handles ``REPORT`` messages from some task.
@@ -382,14 +359,5 @@ class Pipeline:
             self.handle_report(name, *msg())
         else:
             raise RuntimeError
-
-        if (
-            self.status != Status.READY
-            and self.tasks_active
-            and self.tasks_active[-1] in self.reports
-            and "status" in self.reports[self.tasks_active[-1]]
-            and self.reports[self.tasks_active[-1]]["status"] == Status.FINISHED
-        ):
-            self.handle_finished()
 
         return name
