@@ -1,5 +1,6 @@
 import sys
 import copy
+import time
 import typing
 import pickle
 import itertools
@@ -46,8 +47,8 @@ class Pipeline:
         self.reports = {}
         self.context = zmq.Context()
         self.socket_router = self.context.socket(zmq.ROUTER)
-        self.address_router = self.socket_router.bind_to_random_port("tcp://127.0.0.1")
-        self.address_router = f"tcp://127.0.0.1:{self.address_router}"
+        port = self.socket_router.bind_to_random_port("tcp://127.0.0.1")
+        self.address_router = f"tcp://127.0.0.1:{port}"
 
     # Special
 
@@ -222,6 +223,8 @@ class Pipeline:
         self.status = Status.WAITING
         self.reports = {}
 
+        now = time.time()
+
         # Pausing & disconnecting old tasks.
         for name in [*self._tasks_all, *tasks_active]:
             try:
@@ -234,6 +237,11 @@ class Pipeline:
         self.tasks_active = tasks_active
         while set(self.reports.keys()) != set(self.tasks_active):
             self.poll()
+            if time.time() - now > 30:
+                print("ERROR could not get a response from all tasks")
+                print(f"      got {self.reports.keys()}")
+                print(f"      expected {self.tasks_active}")
+                sys.exit(1)
 
         # Connecting new tasks
         prev = None
