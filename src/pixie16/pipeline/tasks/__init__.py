@@ -1,12 +1,12 @@
-from .gather_data import GatherData
-from .pick_single_module import PickSingleModule
-from .convert_to_events import ConvertToEvents
-from .gather_events import GatherEvents
-from .dummy_data import DummyData
-from .print_data import PrintData
-from .load_files import LoadFiles
-from .sort_events import SortEvents
-from .take_data import TakeData
+from .GatherData import GatherData
+from .PickSingleModule import PickSingleModule
+from .ConvertToEvents import ConvertToEvents
+from .GatherEvents import GatherEvents
+from .DummyData import DummyData
+from .PrintData import PrintData
+from .LoadFiles import LoadFiles
+from .SortEvents import SortEvents
+from .TakeData import TakeData
 
 __all__ = [
     "GatherData",

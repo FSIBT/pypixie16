@@ -22,7 +22,7 @@ class TakeData(task.Task):
     there perhaps another task can convert to pandas.
     """
 
-    def do_startup(self) -> None:
+    def do_init(self) -> None:
         """
         Initializes and boots the FPGA.
         """

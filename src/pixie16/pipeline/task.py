@@ -15,79 +15,46 @@ from .status import Status
 from .message import Message
 
 
-class Task(multiprocessing.Process, abc.ABC):
+SECONDS_WAIT = 0.1
+
+
+class Task(multiprocessing.Process):
     """
-    Represents pausable, custom processes that intergrate into ``Pipeline``.
+    Represents jobs.
 
-    Since ``Task`` extends ``multiprocessing.Process``, tasks behave like state
-    machines. They have the following statues:
+    This class as four sets of methods: callbacks, handlers, senders, and
+    actions. Handlers address incoming messages, senders dispatch outgoing
+    messages, and actions provides the user interface. Callbacks facilliate
+    subclassing.
 
-    * ⏸️ WAITING: Task waiting.
-    * ▶️ RUNNING: Task running.
-    * ⏏️ DYING: Tasks dying.
-    * 🆘 PANICKING: Task panicking.
+    This class uses the following states:
+        * ⏸️ WAITING: Task waiting.
+        * ▶️ RUNNING: Task running.
+        * ⏏️ DYING: Task dying.
+        * 🆘 PANICKING: Task panicking.
 
-    Tasks uses ZMQ Push/Pull sockets to get and send messages between other
-    tasks and the pipeline. Tasks send and recieve the following kinds of
-    messages between themselves and the pipeline.
-
-    * TO TASK:
+    This class send or handles the following messages:
         * ℹ️ CONFIGURE: Update user parameters.
         * 🔁 CONNECT: Update system parameters.
-        * ▶️ START: Change status to ``RUNNING``.
-        * ⏹️ STOP: Change status to ``WAITING``.
-        * ⏏️ QUIT: Change status to ``DYING``.
-        * 📶 DATA: Transmit data to next task.
-    * FROM TASK:
-        * 🆗 REPORT: Transmit info to pipeline.
-
-    Since ``Task`` extends ``abc.ABC``, it has methods that must be
-    overwritten, i.e. the "do" methods:
-
-    * ``do_work``: Tasks call this function continuously in RUNNING status when
-    there the queue has data. This method runs in a parallel subthread.
-    * ``do_startup``: Before running and initializing the ZMQ sockets, tasks
-    call this function to open files, call ``init_and_boot``.
-    * ``do_cleanup``: Before sending their final report, tasks call this
-    function to close files, etc.
-
-    Tasks are meant to be created at the beginning of a program and then
-    re-used.  You can daisychain them together in different ways for
-    each run by reassigning the push/pull connections.
-
-    Attributes:
-        name: Task alias.
-        queue: Task buffer.
-        config: Task parameters.
-        status: Task state.
-        context: ZMQ context.
-        is_start: First task flag.
-        is_final: Last task flag.
-        socket_pull: ZMQ pull socket.
-        socket_push: ZMQ push socket.
-        socket_dealer: ZMQ dealer socket.
-        address_pull: ZMQ pull socket address.
-        address_push: ZMQ push socket address.
-        address_router: ZMQ dealer socket address.
-        class_registry: Registry of subclasses.
-
-    Notes:
-        The ``tasks`` subpackage contains specific, concrete, generic tasks,
-        such as ``GatherData`` and ``DummyData``.
-
-        Tasks caputre output to ``sys.stdout`` or ``sys.stderr`` in
-        ``do_work``, ``startup``, and ``cleanup`` and PRINT messages them to
-        the pipeline.
+        * ▶️ START: Begin starting.
+        * ⏹️ STOP: Begin waiting.
+        * ⏏️ QUIT: Begin dying.
+        * 📶 DATA: Transmit data.
+        * 🆗 REPORT: Transmit info.
+        * 🔣 PRINT: Transmit print.
+        * 🆘 ERROR: Transmit error.
     """
+
+    # Dunders
 
     class_registry = {}
 
     def __init_subclass__(cls, **kwargs):
         """
-        Stores subclasses in ``class_registry``.
-
-        Notes:
-            This method runs in the main process.
+        Saves ``Task`` subclasses.
+        
+        Parameters:
+            kwargs: Initialization parameters.
         """
 
         super().__init_subclass__(**kwargs)
@@ -98,322 +65,416 @@ class Task(multiprocessing.Process, abc.ABC):
         Initializes ``Task``.
 
         Notes:
-            This method runs in the main process.
+            Called by ``Pipeline.create_task``.
         """
 
         super().__init__()
 
-        # Regular fields.
-        self.name: str = self.__class__.__name__
-        self.queue: collections.deque = collections.deque()
-        self.status: Status = Status.WAITING
-        self.config: dict = {}
-        self.is_start: bool = False
-        self.is_final: bool = False
+        self.name = self.__class__.__name__
+        self._config = {}
+        self._queue = collections.deque()
 
-        # ZMQ fields.
-        self.context: zmq.Context = None
-        self.socket_pull: zmq.Socket = None
-        self.socket_push: zmq.Socket = None
-        self.socket_dealer: zmq.Socket = None
-        self.address_pull: str = None
-        self.address_push: str = None
-        self.address_router: str = None
+        self._context = None
+        self._socket_push = None
+        self._socket_pull = None
+        self._socket_dealer = None
+        self._address_push = None
+        self._address_pull = None
+        self._address_dealer = None
 
-    def do_configure(self, config: dict) -> None:
+    # Callbacks
+
+    def do_init(self) -> None:
         """
-        Configures/reconfigures tasks.
-
-        Ths task runtime calls this method when handling configuration.
-
-        Parameters:
-            config: New configuration.
-
-        Notes:
-            The task runtime captures prints to stdout/stderr and sends them to
-            the pipeline's ``handle_print`` method.
-
-            The task runtime captures errors, updates it status to ``PANICKING``
-            and stores the latest error in the ``error`` field.
-
-            This method runs in subprocesses, and it can be overwritten.
+        ``init`` callback.
         """
 
         pass
 
-    def do_startup(self) -> None:
+    def do_start(self) -> None:
         """
-        Initializes task runtimes.
-
-        The task runtime calls this method after starting but before recieving
-        the ``START`` message.
-
-        Notes:
-            The task runtime captures prints to stdout/stderr and sends them to
-            the pipeline's ``handle_print`` method.
-
-            The task runtime captures errors, updates it status to ``PANICKING``
-            and stores the latest error in the ``error`` field.
-
-            This method runs in subprocesses, and it can be overwritten.
+        ``start`` callback.
         """
 
         pass
 
-    def do_cleanup(self) -> None:
+    def do_stop(self) -> None:
         """
-        Deinitializes task runtimes.
-
-        The task runtime calls this method after recieving the ``QUIT`` message
-        before closing.
-
-        Notes:
-            The task runtime captures prints to stdout/stderr and sends them to
-            the pipeline's ``handle_print`` method.
-
-            The task runtime captures errors, updates it status to ``PANICKING``
-            and stores the latest error in the ``error`` field.
-
-            This method runs in subprocesses, and it can be overwritten.
+        ``stop`` callback.
         """
 
         pass
 
-    @abc.abstractmethod
-    def do_work(self, value: typing.Any) -> typing.Any:  # pragma: no cover
+    def do_quit(self) -> None:
         """
-        Does stuff.
+        ``quit`` callback.
+        """
 
-        The task runtime calls this method when in the ``RUNNING`` status and
-        the task is first in the pipeline or has data in its input queue.
+        pass
 
-        When finished, call the ``send_stop``. To pause, call the
-        ``send_pause`` method. To quit, call the ``send_quit`` method. To
-        handle and error, raise it. Finally, return the data to send it to the
-        next task in the pipeline; if this method returns ``None`` it will not
-        send to the next task.
+    def do_connect(self, address_pull: str, is_start: bool, is_final: bool) -> None:
+        """
+        ``connect`` callback.
 
         Parameters:
-            value: Data recieved from the previous task in the pipeline.
-
-        Return:
-            Data to send to the next task in the pipeline.
-
-        Notes:
-            The task runtime captures prints to stdout/stderr and sends them to
-            the pipeline's ``handle_print`` method.
-
-            The task runtime captures errors, updates it status to ``PANICKING``
-            and stores the latest error in the ``error`` field.
-
-            This method runs in subprocesses, and it must be overwritten.
-        """
-
-        raise NotImplementedError
-
-    def handle_connect(self, address_pull: str, is_start: bool, is_final: bool) -> None:
-        """
-        Handles ``CONNECT`` messages from the pipeline.
-
-        This method connects the ZMQ pull sockect and setes the start/final
-        flags. So, after calling this message, the task will communicate with
-        other tasks.
-
-        Parameters:
-            address_pull: ZMQ pull socket address.
+            address_pull: ZMQ pll address.
             is_start: First task flag.
             is_final: Last task flag.
         """
 
-        if address_pull:
-            self.socket_pull.connect(address_pull)
-        elif self.address_pull:
-            self.socket_pull.disconnect(self.address_pull)
+        pass
 
-        self.address_pull = address_pull
-        self.is_start = is_start
-        self.is_final = is_final
+    def do_configure(self, config: dict) -> None:
+        """
+        ``configure`` callback.
 
-        self.send_report(
-            {
-                "address_pull": self.address_pull,
-                "is_start": self.is_start,
-                "is_final": self.is_final,
-            }
-        )
-        self.handle_configure({})
+        Parameters:
+            config: Configuration for configuring.
+        """
+
+        pass
+
+    def do_wait(self) -> None:
+        """
+        ``wait`` callback.
+        """
+
+        pass
+
+    def do_work(self, datum: typing.Any) -> None:
+        """
+        ``work`` callback.
+
+        Parameters:
+            datum: Data for working.
+        """
+
+        pass
+
+    # Handlers
 
     def handle_start(self) -> None:
         """
-        Handles ``START`` messages from the pipeline.
-
-        This method changes task's status to ``RUNNING``. So, the task will
-        still poll and handle message before calling ``do_work`` after getting
-        the ``START`` message.
-
-        Notes:
-            This method runs in subprocesses.
+        Handles ``Message.START``.
         """
 
-        self.status = Status.RUNNING
-        self.send_report({"status": self.status})
-
-    def handle_quit(self) -> None:
-        """
-        Handles ``QUIT`` messages from the pipeline.
-
-        This method causes the tasks to quit and call ``do_cleanup``. So, the
-        tasks will close after getting the ``QUIT`` message.
-
-        Notes:
-            This method runs in subprocesses.
-        """
-
-        self.status = Status.DYING
-        self.send_report({"status": self.status})
-
-    def handle_configure(self, config: dict) -> None:
-        """
-        Handles ``CONFIGURE`` messages from the pipeline.
-
-        This method calls ``do_configure`` to enable user configuration and
-        on-the-fly reconfiguration of tasks. So, to minimize memory usage,
-        incoming configurations update, not replace, the current configuration.
-
-        Parameters:
-            config: Recieved parameters.
-
-        Notes:
-            Instead of overriding this function, use ``do_configure`` to
-            prevent issues.
-
-            This method runs in subprocesses.
-        """
-
-        try:
-            with contextlib.redirect_stdout(io.StringIO()) as out:
-                self.do_configure(config)
-                if out := out.getvalue():
-                    self.send_report({"print": out})
-        except Exception as err:
-            self.status = Status.PANICKING
-            self.send_report({"status": self.status, "error": err})
-
-        self.config |= config
-        self.send_report({"config": self.status})
-
-    def handle_data(self, data: typing.Any) -> None:
-        """
-        Handles ``DATA`` message from the pervious task.
-
-        This method appends incoming data to the end of the queue. So, tasks
-        store their incoming data in their runtime.
-
-        Parameters:
-            data: Recieved data.
-        """
-
-        self.queue.append(data)
-        self.send_report({"queue": len(self.queue)})
+        self.begin()
 
     def handle_stop(self) -> None:
         """
-        Handles ``STOP`` messages from the previous task.
-
-        This method calls ``do_work`` until this tasks finishes, and it calls
-        ``send_stop`` to cascade the ``STOP`` message through the
-        pipeline. So, as ``STOP`` messages cascade through the pipeline,
-        tasks call this method.
+        Handles ``Message.STOP``.
         """
 
-        while self.queue:
+        while self._queue:
             self.poll()
-            self.exec()
+            self.work()
 
-        self.send_stop()
+        self.stop()
 
-    def send_report(self, report: dict) -> None:
+    def handle_quit(self) -> None:
         """
-        Sends ``REPORT`` messages to the pipeline.
+        Handles ``Message.QUIT``.
+        """
 
-        This method transfers the dictionary returned from ``do_report``
-        updated with default information to the pipeline. The pipeline handles
-        this using ``handle_report``.
+        self.status = Status.DYING
+
+    def handle_connect(self, address_pull: str, is_start: bool, is_final: bool) -> None:
+        """
+        Handles ``Message.CONNECT``.
 
         Parameters:
-            report: Report to send.
+            address_pull: ZMQ pll address.
+            is_start: First task flag.
+            is_final: Last task flag.
         """
 
-        msg = pickle.dumps(Message.REPORT(report), protocol=pickle.HIGHEST_PROTOCOL)
-        self.socket_dealer.send(msg)
+        self.connect(address_pull, is_start, is_final)
+
+    def handle_configure(self, config: dict) -> None:
+        """
+        Handles ``Message.CONFIGURE``.
+
+        Parameters:
+            config: Configuration recieved.
+        """
+
+        self.configure(config)
+
+    def handle_data(self, data: typing.Any) -> None:
+        """
+        Handles ``Message.DATA``.
+
+        Parameters:
+            data: Data recieved.
+        """
+
+        self._queue.append(data)
+        self.report({"queue": len(self._queue)})
+
+    # Senders
+
+    def send_stop(self) -> None:
+        """
+        Sends ``Message.STOP``.
+        """
+
+        if not self._is_final:
+            msg = Message.STOP
+            self._socket_push.send_pyobj(msg)
 
     def send_data(self, data: typing.Any) -> None:
         """
-        Sends ``DATA`` messages to the next task.
-
-        This transfering data through the pipeline if its not the final task.
-        The next task in the pipeline handles this using ``handle_data``.
+        Sends ``Message.DATA``.
 
         Parameters:
             data: Data to send.
         """
 
-        if not self.is_final and data:
+        if data and not self._is_final:
             msg = Message.DATA(data)
-            self.socket_push.send_pyobj(msg)
+            self._socket_push.send_pyobj(msg)
 
-    def send_stop(self) -> None:
+    def send_report(self, report: dict) -> None:
         """
-        Sends ``STOP`` messages to the next task.
+        Sends ``Message.REPORT``.
 
-        This method changes this task's status to ``STOP`` and it cascades
-        the ``STOP`` message through the pipeline if its not the final
-        task in the pipeline. The next task in the pipeline handles this using
-        ``handle_stop``.
+        Parameters:
+            report: Report to send.
+        """
 
-        Notes:
-            This method runs in subprocesses.
+        if report:
+            msg = pickle.dumps(Message.REPORT(report), protocol=pickle.HIGHEST_PROTOCOL)
+            self._socket_dealer.send(msg)
+
+    def send_print(self, string: str) -> None:
+        """
+        Sends ``Message.PRINT``.
+
+        Parameters:
+            string: String to send.
+        """
+
+        if string:
+            msg = pickle.dumps(Message.PRINT(string), protocol=pickle.HIGHEST_PROTOCOL)
+            self._socket_dealer.send(msg)
+
+    def send_error(self, error: Exception) -> None:
+        """
+        Sends ``Message.ERROR``.
+
+        Parameters:
+            error: Error to send.
+        """
+
+        if error:
+            msg = pickle.dumps(Message.ERROR(error), protocol=pickle.HIGHEST_PROTOCOL)
+            self._socket_dealer.send(msg)
+
+    # Actions
+
+    def init(self):
+        """
+        Initializes the task.
         """
 
         self.status = Status.WAITING
-        self.send_report({"status": self.status})
+        self._context = zmq.Context()
+        self._socket_dealer = self._context.socket(zmq.DEALER)
+        self._socket_push = self._context.socket(zmq.PUSH)
+        self._socket_pull = self._context.socket(zmq.PULL)
+        self._socket_dealer.setsockopt(zmq.IDENTITY, self.name.encode())
+        self._socket_dealer.connect(self._address_router)
+        self._address_push = self._socket_push.bind_to_random_port("tcp://127.0.0.1")
+        self._address_push = f"tcp://127.0.0.1:{self._address_push}"
 
-        if not self.is_final:
-            msg = Message.STOP
-            self.socket_push.send_pyobj(msg)
-
-    def exec(self) -> None:
         try:
-            val = self.queue.popleft() if self.queue else None
-            if val or self.is_start:
-                with contextlib.redirect_stdout(io.StringIO()) as out:
-                    if ret := self.do_work(val):
-                        self.send_data(ret)
-                    if out := out.getvalue():
-                        self.send_report({"print": out})
+            with contextlib.redirect_stdout(io.StringIO()) as out:
+                self.do_init()
+                self.print(out.getvalue())
         except Exception as err:
-            self.status = Status.PANICKING
-            self.send_report({"status": self.status, "error": err})
+            self.panic(err)
 
-    def poll(self) -> None:
+        self.report({"status": self.status, "address_push": self._address_push})
+
+    def begin(self):
         """
-        Polls the sockets for messages from other the pipeline and other tasks.
+        Starts the task.
+        """
 
-        This method handles messages by calling the "handle" methods. The
-        ``is_block`` flag determines if/if not this method block to wait for
-        some message from the pipeline. If this tasks recieves a message from
-        the pipeline or the previous task, it sends a report to the pipeline.
+        try:
+            with contextlib.redirect_stdout(io.StringIO()) as out:
+                self.do_start()
+                self.print(out.getvalue())
+        except Exception as err:
+            self.panic(err)
+
+        self.status = Status.RUNNING
+        self.report({"status": self.status})
+
+    def stop(self):
+        """
+        Stops the task.
+        """
+        
+        try:
+            with contextlib.redirect_stdout(io.StringIO()) as out:
+                self.do_stop()
+                self.print(out.getvalue())
+        except Exception as err:
+            self.panic(err)
+
+        self.status = Status.WAITING
+        self.report({"status": self.status})
+        self.send_stop()
+
+    def quit(self):
+        """
+        Quits the task.
+        """
+
+        if self.status != Status.WAITING:
+            self.stop()
+        
+        try:
+            with contextlib.redirect_stdout(io.StringIO()) as out:
+                self.do_quit()
+                self.print(out.getvalue())
+        except Exception as err:
+            self.panic(err)
+
+        self.status = Status.DYING
+        self.report({"status": self.status})
+
+        if self._socket_pull:
+            self._socket_pull.setsockopt(zmq.LINGER, 0)
+            self._socket_pull.close()
+        if self._socket_push:
+            self._socket_push.setsockopt(zmq.LINGER, 0)
+            self._socket_push.close()
+        if self._socket_dealer:
+            self._socket_dealer.setsockopt(zmq.LINGER, 0)
+            self._socket_dealer.close()
+        if self._context:
+            self._context.term()
+
+    def connect(self, address_pull: str, is_start: bool, is_final: bool):
+        """
+        Connects the task.
 
         Parameters:
-            is_block: Block/no block flag.
+            address_pull: ZMQ pll address.
+            is_start: First task flag.
+            is_final: Last task flag.
+        """
+        
+        try:
+            with contextlib.redirect_stdout(io.StringIO()) as out:
+                self.do_connect(address_pull, is_start, is_final)
+                self.print(out.getvalue())
+        except Exception as err:
+            self.panic(err)
 
-        Notes:
-            This method runs in subprocesses.
+        if address_pull:
+            self._socket_pull.connect(address_pull)
+        elif self._address_pull:
+            self._socket_pull.disconnect(self._address_pull)
+
+        self._address_pull = address_pull
+        self._is_start = is_start
+        self._is_final = is_final
+        self.send_report(
+            {
+                "address_pull": self._address_pull,
+                "is_start": self._is_start,
+                "is_final": self._is_final,
+            }
+        )
+
+    def configure(self, config: dict):
+        """
+        Configures the task.
+
+        Parameters:
+            config: Configuration for configuring.
+        """
+        
+        try:
+            with contextlib.redirect_stdout(io.StringIO()) as out:
+                self.do_configure(config)
+                self.print(out.getvalue())
+        except Exception as err:
+            self.panic(err)
+
+        self._config |= config
+
+    def panic(self, error: Exception):
+        """
+        Panics for the task.
+
+        Parameters:
+            error: Error for panicking.
         """
 
-        # Processing messages from pipeline.
+        self.status = Status.PANICKING
+        self.send_error(error)
+        self.report({"status": self.status})
+
+    def wait(self):
+        """
+        Waits for the task.
+        """
+        
         try:
-            msg = self.socket_dealer.recv(flags=zmq.NOBLOCK)
+            with contextlib.redirect_stdout(io.StringIO()) as out:
+                self.do_wait()
+                self.print(out.getvalue())
+        except Exception as err:
+            self.panic(err)
+
+        time.sleep(SECONDS_WAIT)
+
+    def work(self) -> None:
+        """
+        Works for the task.
+        """
+
+        val = self._queue.popleft() if self._queue else None
+
+        if val or self._is_start:
+            try:
+                with contextlib.redirect_stdout(io.StringIO()) as out:
+                    self.send_data(self.do_work(val))
+                    self.print(out.getvalue())
+            except Exception as err:
+                self.panic(err)
+
+    def report(self, report: dict) -> None:
+        """
+        Reports for the task.
+
+        Parameters:
+            report: Report to report.
+        """
+
+        self.send_report(report)
+
+    def print(self, string: str) -> None:
+        """
+        Prints for the task.
+
+        Parameters:
+            string: String to print.
+        """
+
+        self.send_print(string)
+
+    def poll(self):
+        """
+        Listens to sockets for the task.
+        """
+
+        try:
+            msg = self._socket_dealer.recv(flags=zmq.NOBLOCK)
             msg = pickle.loads(msg)
 
             if type(msg) == Message.CONNECT:
@@ -431,9 +492,8 @@ class Task(multiprocessing.Process, abc.ABC):
         except zmq.Again:
             pass
 
-        # Processing messages from tasks.
         try:
-            msg = self.socket_pull.recv_pyobj(flags=zmq.NOBLOCK)
+            msg = self._socket_pull.recv_pyobj(flags=zmq.NOBLOCK)
 
             if type(msg) == Message.DATA:
                 self.handle_data(*msg())
@@ -446,90 +506,21 @@ class Task(multiprocessing.Process, abc.ABC):
 
     def run(self):
         """
-        Runs the process.
-
-        This method initializes ZMQ sockets, listens for and handles
-        interprocess communication using the ``poll` method and the "handle"
-        methods, implements the state machine, and calls the user-implemented
-        "do" methods.
-
-        Notes:
-            This method is subprocesses' runtime.
+        Represents the task.
         """
 
-        self.status = Status.WAITING
-
-        # Opening ZMQ sockets.
-        self.context = zmq.Context()
-        self.socket_dealer = self.context.socket(zmq.DEALER)
-        self.socket_push = self.context.socket(zmq.PUSH)
-        self.socket_pull = self.context.socket(zmq.PULL)
-        self.socket_dealer.setsockopt(zmq.IDENTITY, self.name.encode())
-        self.socket_dealer.connect(self.address_router)
-        self.address_push = self.socket_push.bind_to_random_port("tcp://127.0.0.1")
-        self.address_push = f"tcp://127.0.0.1:{self.address_push}"
-
-        # Doing startup and collecting stdout/stderr
-        try:
-            with contextlib.redirect_stdout(io.StringIO()) as out:
-                self.do_startup()
-                if out := out.getvalue():
-                    self.send_report({"print": out})
-        except Exception as err:
-            self.status = Status.PANICKING
-            self.send_report({"status": self.status, "error": err})
-
-        self.send_report(
-            {
-                "status": self.status,
-                "address_push": self.address_push,
-                "address_router": self.address_router,
-            }
-        )
+        self.init()
 
         while True:
             self.poll()
 
             if self.status == Status.RUNNING:
-                self.exec()
+                self.work()
             elif self.status == Status.WAITING:
-                time.sleep(0.1)
+                self.wait()
             elif self.status == Status.PANICKING:
-                time.sleep(1)
-            elif self.status == Status.WAITING:
-                time.sleep(0.1)
+                self.wait()
             elif self.status == Status.DYING:
                 break
             else:
                 assert False
-
-        self.send_report(
-            {
-                "status": self.status,
-                "address_push": self.address_push,
-                "address_router": self.address_router,
-            }
-        )
-
-        # Doing cleanup and collecting stdout/stderr
-        try:
-            with contextlib.redirect_stdout(io.StringIO()) as out:
-                self.do_cleanup()
-                if out := out.getvalue():
-                    self.send_report({"print": out})
-        except Exception as err:
-            self.status = Status.PANICKING
-            self.send_report({"status": self.status, "error": err})
-
-        # Closing ZMQ sockets.
-        if self.socket_pull:
-            self.socket_pull.setsockopt(zmq.LINGER, 0)
-            self.socket_pull.close()
-        if self.socket_push:
-            self.socket_push.setsockopt(zmq.LINGER, 0)
-            self.socket_push.close()
-        if self.socket_dealer:
-            self.socket_dealer.setsockopt(zmq.LINGER, 0)
-            self.socket_dealer.close()
-        if self.context:
-            self.context.term()

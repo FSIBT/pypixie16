@@ -37,5 +37,11 @@ class Message:
     class REPORT(_Message[dict]):  # "🆗"
         pass
 
+    class PRINT(_Message[dict]):  # "🔣"
+        pass
+
+    class ERROR(_Message[dict]):  # "🆘"
+        pass
+
     class DATA(_Message[typing.Any]):  # "📶"
         pass

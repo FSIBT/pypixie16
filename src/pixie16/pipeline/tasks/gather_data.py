@@ -5,6 +5,7 @@ import datetime
 from collections import defaultdict
 import numpy as np
 
+
 DEFAULT_BINARY_SAVE_SIZE = None
 DEFAULT_BINARY_SIZE = 50e6
 DEFAULT_BINARY_SAVE_PATH = None
@@ -18,7 +19,7 @@ class GatherData(task.Task):
     and one for saving data to disk.
     """
 
-    def do_startup(self):
+    def do_init(self):
         self.mycounter = 0
         self.file_counter = 0
         self.path = pathlib.Path(self.config.get("binary_save_path", "."))

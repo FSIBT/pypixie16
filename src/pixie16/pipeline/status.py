@@ -8,5 +8,5 @@ class Status(enum.Enum):
 
     WAITING = "⏸️"
     RUNNING = "▶️"
-    PANICKING = "🆘"
     DYING = "⏏️"
+    PANICKING = "🆘"

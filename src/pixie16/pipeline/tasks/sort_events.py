@@ -56,7 +56,7 @@ class SortEvents(task.Task):
 
     """
 
-    def do_startup(self):
+    def do_init(self):
         self.data = []
 
         self.nr_sorted = 0

@@ -7,7 +7,7 @@ class Test_GatherEvents:
     @staticmethod
     def test():
         pipe = pixie16.pipeline.Pipeline()
-        pipe.init(["DummyData", "GatherEvents", "PrintData"])
+        pipe.connect(["DummyData", "GatherEvents", "PrintData"])
         pipe.configure(
             {
                 "size": 1,

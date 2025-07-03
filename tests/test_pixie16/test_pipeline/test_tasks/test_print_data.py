@@ -7,7 +7,7 @@ class Test_PrintData:
     @staticmethod
     def test():
         pipe = pixie16.pipeline.Pipeline()
-        pipe.init(["PrintData"])
+        pipe.connect(["PrintData"])
         pipe.start()
         pipe.poll()
         pipe.quit()

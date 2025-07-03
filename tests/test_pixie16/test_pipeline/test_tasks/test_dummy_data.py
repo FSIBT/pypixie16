@@ -7,7 +7,7 @@ class Test_DummyData:
     @staticmethod
     def test():
         pipe = pixie16.pipeline.Pipeline()
-        pipe.init(["DummyData", "PrintData"])
+        pipe.connect(["DummyData", "PrintData"])
         pipe.start()
 
         while True:

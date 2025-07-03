@@ -7,7 +7,7 @@ class Test_PickSingleModule:
     @staticmethod
     def test():
         pipe = pixie16.pipeline.Pipeline()
-        pipe.init(["DummyData", "PickSingleModule", "PrintData"])
+        pipe.connect(["DummyData", "PickSingleModule", "PrintData"])
         pipe.start()
 
         while True:

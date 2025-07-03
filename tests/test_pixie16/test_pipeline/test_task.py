@@ -19,7 +19,7 @@ class ErrorTask(pixie16.pipeline.Task):
     def do_cleanup(self):
         raise Exception
 
-    def do_startup(self):
+    def do_init(self):
         raise Exception
 
     def do_report(self):
@@ -164,8 +164,8 @@ class Test_Task:
         task_a.do_configure({})
 
     @staticmethod
-    def test_do_startup(task_a: pixie16.pipeline.Task):
-        task_a.do_startup()
+    def test_do_init(task_a: pixie16.pipeline.Task):
+        task_a.do_init()
 
     @staticmethod
     def test_do_cleanup(task_a: pixie16.pipeline.Task):

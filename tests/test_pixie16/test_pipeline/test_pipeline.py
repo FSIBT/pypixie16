@@ -85,7 +85,7 @@ def pipeline_created() -> pixie16.pipeline.Pipeline:
 def pipeline_dummy() -> pixie16.pipeline.Pipeline:
     pipe = pixie16.pipeline.Pipeline()
     pipe.create_task("DummyTask")
-    pipe.init(["DummyTask"])
+    pipe.connect(["DummyTask"])
     yield pipe
     for task in pipe._tasks_all.values():
         task.kill()
@@ -95,7 +95,7 @@ def pipeline_dummy() -> pixie16.pipeline.Pipeline:
 def pipeline_print() -> pixie16.pipeline.Pipeline:
     pipe = pixie16.pipeline.Pipeline()
     pipe.create_task("PrintTask")
-    pipe.init(["PrintTask"])
+    pipe.connect(["PrintTask"])
     yield pipe
     for task in pipe._tasks_all.values():
         task.kill()
@@ -105,7 +105,7 @@ def pipeline_print() -> pixie16.pipeline.Pipeline:
 def pipeline_error() -> pixie16.pipeline.Pipeline:
     pipe = pixie16.pipeline.Pipeline()
     pipe.create_task("ErrorTask")
-    pipe.init(["ErrorTask"])
+    pipe.connect(["ErrorTask"])
     yield pipe
     for task in pipe._tasks_all.values():
         task.kill()
