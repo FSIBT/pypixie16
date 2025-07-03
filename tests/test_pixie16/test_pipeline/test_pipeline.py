@@ -9,7 +9,7 @@ import pixie16
 
 class DummyTask(pixie16.pipeline.Task):
     def do_work(self, value):
-        self.send_report({})
+        self.report({})
 
 
 class ErrorTask(pixie16.pipeline.Task):

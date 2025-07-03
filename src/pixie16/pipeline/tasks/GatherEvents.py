@@ -77,7 +77,7 @@ class GatherEvents(task.Task):
         """
 
         if self.queue:
-            self.send_data(self.queue)
+            self.send(self.queue)
             self.report(
                 {
                     "gathered data": self.count,

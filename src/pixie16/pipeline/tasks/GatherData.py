@@ -133,7 +133,7 @@ class GatherData(task.Task):
         out_queue = {k: np.concatenate(v) for k, v in self.data_queue.items() if v}
         out_disk = {k: np.concatenate(v) for k, v in self.data_disk.items() if v}
         if not self.is_final:
-            self.send_data(out_queue)
+            self.send(out_queue)
         if out_disk:
             if self.config["binary_save_data"]:
                 self.save_data(out_disk)

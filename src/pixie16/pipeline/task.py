@@ -153,14 +153,14 @@ class Task(multiprocessing.Process):
 
     # Handlers
 
-    def handle_start(self) -> None:
+    def _handle_start(self) -> None:
         """
         Handles ``Message.START``.
         """
 
         self.begin()
 
-    def handle_stop(self) -> None:
+    def _handle_stop(self) -> None:
         """
         Handles ``Message.STOP``.
         """
@@ -171,14 +171,14 @@ class Task(multiprocessing.Process):
 
         self.stop()
 
-    def handle_quit(self) -> None:
+    def _handle_quit(self) -> None:
         """
         Handles ``Message.QUIT``.
         """
 
         self.status = Status.DYING
 
-    def handle_connect(self, address_pull: str, is_start: bool, is_final: bool) -> None:
+    def _handle_connect(self, address_pull: str, is_start: bool, is_final: bool) -> None:
         """
         Handles ``Message.CONNECT``.
 
@@ -190,7 +190,7 @@ class Task(multiprocessing.Process):
 
         self.connect(address_pull, is_start, is_final)
 
-    def handle_configure(self, config: dict) -> None:
+    def _handle_configure(self, config: dict) -> None:
         """
         Handles ``Message.CONFIGURE``.
 
@@ -200,7 +200,7 @@ class Task(multiprocessing.Process):
 
         self.configure(config)
 
-    def handle_data(self, data: typing.Any) -> None:
+    def _handle_data(self, data: typing.Any) -> None:
         """
         Handles ``Message.DATA``.
 
@@ -213,7 +213,7 @@ class Task(multiprocessing.Process):
 
     # Senders
 
-    def send_stop(self) -> None:
+    def _send_stop(self) -> None:
         """
         Sends ``Message.STOP``.
         """
@@ -222,7 +222,7 @@ class Task(multiprocessing.Process):
             msg = Message.STOP
             self._socket_push.send_pyobj(msg)
 
-    def send_data(self, data: typing.Any) -> None:
+    def _send_data(self, data: typing.Any) -> None:
         """
         Sends ``Message.DATA``.
 
@@ -234,7 +234,7 @@ class Task(multiprocessing.Process):
             msg = Message.DATA(data)
             self._socket_push.send_pyobj(msg)
 
-    def send_report(self, report: dict) -> None:
+    def _send_report(self, report: dict) -> None:
         """
         Sends ``Message.REPORT``.
 
@@ -246,7 +246,7 @@ class Task(multiprocessing.Process):
             msg = pickle.dumps(Message.REPORT(report), protocol=pickle.HIGHEST_PROTOCOL)
             self._socket_dealer.send(msg)
 
-    def send_print(self, string: str) -> None:
+    def _send_print(self, string: str) -> None:
         """
         Sends ``Message.PRINT``.
 
@@ -258,7 +258,7 @@ class Task(multiprocessing.Process):
             msg = pickle.dumps(Message.PRINT(string), protocol=pickle.HIGHEST_PROTOCOL)
             self._socket_dealer.send(msg)
 
-    def send_error(self, error: Exception) -> None:
+    def _send_error(self, error: Exception) -> None:
         """
         Sends ``Message.ERROR``.
 
@@ -325,7 +325,7 @@ class Task(multiprocessing.Process):
 
         self.status = Status.WAITING
         self.report({"status": self.status})
-        self.send_stop()
+        self._send_stop()
 
     def quit(self):
         """
@@ -382,7 +382,7 @@ class Task(multiprocessing.Process):
         self._address_pull = address_pull
         self._is_start = is_start
         self._is_final = is_final
-        self.send_report(
+        self._send_report(
             {
                 "address_pull": self._address_pull,
                 "is_start": self._is_start,
@@ -416,7 +416,7 @@ class Task(multiprocessing.Process):
         """
 
         self.status = Status.PANICKING
-        self.send_error(error)
+        self._send_error(error)
         self.report({"status": self.status})
 
     def wait(self):
@@ -443,7 +443,7 @@ class Task(multiprocessing.Process):
         if val or self._is_start:
             try:
                 with contextlib.redirect_stdout(io.StringIO()) as out:
-                    self.send_data(self.do_work(val))
+                    self._send_data(self.do_work(val))
                     self.print(out.getvalue())
             except Exception as err:
                 self.panic(err)
@@ -456,7 +456,7 @@ class Task(multiprocessing.Process):
             report: Report to report.
         """
 
-        self.send_report(report)
+        self._send_report(report)
 
     def print(self, string: str) -> None:
         """
@@ -466,7 +466,17 @@ class Task(multiprocessing.Process):
             string: String to print.
         """
 
-        self.send_print(string)
+        self._send_print(string)
+
+    def send(self, datum: typing.Any) -> None:
+        """
+        Reports for the task.
+
+        Parameters:
+            data: Data to send.
+        """
+
+        self._send_data(report)
 
     def poll(self):
         """
@@ -478,15 +488,15 @@ class Task(multiprocessing.Process):
             msg = pickle.loads(msg)
 
             if type(msg) == Message.CONNECT:
-                self.handle_connect(*msg())
+                self._handle_connect(*msg())
             elif type(msg) == Message.CONFIGURE:
-                self.handle_configure(*msg())
+                self._handle_configure(*msg())
             elif msg == Message.START:
-                self.handle_start()
+                self._handle_start()
             elif msg == Message.STOP:
-                self.handle_stop()
+                self._handle_stop()
             elif msg == Message.QUIT:
-                self.handle_quit()
+                self._handle_quit()
             else:
                 assert False
         except zmq.Again:
@@ -496,9 +506,9 @@ class Task(multiprocessing.Process):
             msg = self._socket_pull.recv_pyobj(flags=zmq.NOBLOCK)
 
             if type(msg) == Message.DATA:
-                self.handle_data(*msg())
+                self._handle_data(*msg())
             elif msg == Message.STOP:
-                self.handle_stop()
+                self._handle_stop()
             else:
                 assert False
         except zmq.Again:
