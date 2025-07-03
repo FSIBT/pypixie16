@@ -3,7 +3,7 @@ import typing
 from .. import task
 
 
-DEFAULT_MODULE = 2
+DEFAULT_MODULE: int = 2
 
 
 class PickSingleModule(task.Task):

@@ -1,5 +1,12 @@
-from .. import task
 import time
+
+from .. import task
+
+
+DEFAULT_SORT_SIZE: int = 10_000
+DEFAULT_SORT_NUMBER_TO_SORT: int = 8_000
+DEFAULT_SORT_START_TIME: int = 0
+DEFAULT_SORT_ALL_START_TIME: list[int] = None
 
 
 class SortEvents(task.Task):
@@ -57,31 +64,37 @@ class SortEvents(task.Task):
     """
 
     def do_init(self):
+        """
+        Initializes the task.
+
+        Notes:
+            This methods extends ``Task.do_work``.
+        """
+
         self.data = []
 
-        self.nr_sorted = 0
-        self.N_to_sort = 8_000
-        self.sort_size = 10_000
-        self.start_time = 0
+        self.count = 0
         self.first_event_timestamp = None
         self.last_event_timestamp = 0
-        self.all_start_times = None
         self.report_times = [0]  # Initialize with start_time
         self.report_time_queue = None
         self.number_of_resets = 0
 
         self.config = {
-            "sort_size": 10_000,
-            "sort_number_to_sort": 8_000,
-            "sort_start_time": 0,
-            "sort_all_start_time": None,
+            "sort_size": DEFAULT_SORT_SIZE,
+            "sort_number_to_sort": DEFAULT_SORT_NUMBER_TO_SORT,
+            "sort_start_time": DEFAULT_SORT_START_TIME,
+            "sort_all_start_time": DEFAULT_SORT_ALL_START_TIME,
         }
 
-    def do_report(self):
-        return {"sorted blocks": self.nr_sorted}
-
     def do_configure(self, config_dict: dict):
-        # Update configuration values
+        """
+        Configures the task.
+
+        Notes:
+            This methods extends ``Task.do_work``.
+        """
+
         self.N_to_sort = config_dict.get(
             "sort_number_to_sort", self.config["sort_number_to_sort"]
         )
@@ -93,19 +106,24 @@ class SortEvents(task.Task):
             "sort_all_start_time", self.config["sort_all_start_time"]
         )
 
-        # Update report_times if start_time changed
         if "sort_start_time" in config_dict:
             self.report_times = [self.start_time]
 
     def do_work(self, events_lst):
-        """Does the sorting, time reset recognition and handling.
+        """
+        Works for the task.
+
+        This method does sorting, time reset recognition, and handling.
 
         Whenever we reach `self.sort_size` events, sort them by time and
         pass the first `self.N_to_sort` events to the next `Task`. We keep
         the a few events behind, since they might need to be sorted with
         the next incoming batch.
 
+        Notes:
+            This methods extends ``Task.do_work``.
         """
+
         new_events_lst = []
         if self.first_event_timestamp is None and events_lst:
             self.first_event_timestamp = events_lst[0].timestamp * 1e-9
@@ -149,9 +167,16 @@ class SortEvents(task.Task):
             self.data = self.data[self.N_to_sort :]
             if not self.is_final:
                 self.send_data(out)
-                self.nr_sorted += 1
+                self.count += 1
 
-    def cleanup(self):
+    def do_quit(self):
+        """
+        Quits the task.
+
+        Notes:
+            This methods extends ``Task.do_quit``.
+        """
+
         self.data.sort(key=lambda x: x.chunk_timestamp)
         if not self.is_final:
             self.send_data(self.data)

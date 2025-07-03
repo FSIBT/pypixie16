@@ -57,8 +57,8 @@ class Pipeline:
 
         Parameters:
             name: Task class name.
-        
-        Raises:    
+
+        Raises:
             ValueError: Task not found, i.e. not in ``Task.class_registry``.
         """
 
@@ -92,10 +92,7 @@ class Pipeline:
         else:
             self.reports[name] = report
 
-        if (
-            "status" in report
-            and report["status"] == Status.PANICKING
-        ):
+        if "status" in report and report["status"] == Status.PANICKING:
             self.status = Status.PANICKING
 
         if (
@@ -117,7 +114,7 @@ class Pipeline:
         if name not in self._tasks_all:
             raise ValueError
 
-        print(string, end='')
+        print(string, end="")
 
     def handle_error(self, name: str, err: Exception) -> None:
         """

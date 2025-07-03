@@ -52,7 +52,7 @@ class Task(multiprocessing.Process):
     def __init_subclass__(cls, **kwargs):
         """
         Saves ``Task`` subclasses.
-        
+
         Parameters:
             kwargs: Initialization parameters.
         """
@@ -315,7 +315,7 @@ class Task(multiprocessing.Process):
         """
         Stops the task.
         """
-        
+
         try:
             with contextlib.redirect_stdout(io.StringIO()) as out:
                 self.do_stop()
@@ -334,7 +334,7 @@ class Task(multiprocessing.Process):
 
         if self.status != Status.WAITING:
             self.stop()
-        
+
         try:
             with contextlib.redirect_stdout(io.StringIO()) as out:
                 self.do_quit()
@@ -366,7 +366,7 @@ class Task(multiprocessing.Process):
             is_start: First task flag.
             is_final: Last task flag.
         """
-        
+
         try:
             with contextlib.redirect_stdout(io.StringIO()) as out:
                 self.do_connect(address_pull, is_start, is_final)
@@ -397,7 +397,7 @@ class Task(multiprocessing.Process):
         Parameters:
             config: Configuration for configuring.
         """
-        
+
         try:
             with contextlib.redirect_stdout(io.StringIO()) as out:
                 self.do_configure(config)
@@ -423,7 +423,7 @@ class Task(multiprocessing.Process):
         """
         Waits for the task.
         """
-        
+
         try:
             with contextlib.redirect_stdout(io.StringIO()) as out:
                 self.do_wait()

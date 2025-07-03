@@ -3,12 +3,12 @@ import typing
 from .. import task
 
 
-DEFAULT_SIZE = 1_000_000
+DEFAULT_SIZE: int = 1_000_000
 
 
 class GatherEvents(task.Task):
     """
-    Represents tasks that chuck data.
+    Chuncks data.
     """
 
     def do_init(self):
@@ -52,17 +52,19 @@ class GatherEvents(task.Task):
             This method extends ``Task.do_work``.
         """
 
-        self.queue.append(datum)
+        self.queue.extend(datum)
 
         if len(self.queue) >= self.size:
             out = self.queue
             self.queue = []
             self.count += 1
 
-            self.send_report({
-                "gathered data": self.count,
-                "gathered queue": len(self.queue),
-            })
+            self.report(
+                {
+                    "gathered data": self.count,
+                    "gathered queue": len(self.queue),
+                }
+            )
 
             return out
 
@@ -76,7 +78,9 @@ class GatherEvents(task.Task):
 
         if self.queue:
             self.send_data(self.queue)
-            self.send_report({
-                "gathered data": self.count,
-                "gathered queue": len(self.queue),
-            })
+            self.report(
+                {
+                    "gathered data": self.count,
+                    "gathered queue": len(self.queue),
+                }
+            )
