@@ -3,9 +3,6 @@ import typing
 from .. import task
 
 
-DEFAULT_MODULE: int = 2
-
-
 class PickSingleModule(task.Task):
     """Task to pick events from a single module.
 
@@ -21,7 +18,7 @@ class PickSingleModule(task.Task):
             This method extends ``Task.do_init``.
         """
 
-        self.config = {"module": DEFAULT_PICK_MODULE}
+        self.config = {"module": 2}
 
     def do_configure(self, config: dict):
         """

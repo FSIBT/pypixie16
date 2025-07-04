@@ -6,12 +6,6 @@ from collections import defaultdict
 import numpy as np
 
 
-DEFAULT_BINARY_SAVE_SIZE: str = None
-DEFAULT_BINARY_SIZE: int = 50e6
-DEFAULT_BINARY_SAVE_PATH: str = None
-DEFAULT_BINARY_SAVE_DATA: bool = True
-
-
 class GatherData(task.Task):
     """
     Creates larger data buckets out of the data directly from the FPGA.
@@ -48,18 +42,18 @@ class GatherData(task.Task):
 
         self.mycounter = 0
         self.file_counter = 0
-        self.path = pathlib.Path(self.config.get("binary_save_path", "."))
 
         # Initialize data structures here instead of in do_configure
         self.data_queue = defaultdict(list)
         self.data_disk = defaultdict(list)
 
         self.config = {
-            "binary_save_size": DEFAULT_BINARY_SAVE_SIZE,
-            "binary_size": DEFAULT_BINARY_SIZE,
-            "binary_save_path": DEFAULT_BINARY_SAVE_PATH,
-            "binary_save_data": DEFAULT_BINARY_SAVE_DATA,
+            "binary_save_size": 50e6,  # file size
+            "binary_size": 5e6,  # to next Task
+            "binary_save_path": pathlib.Path("."),
+            "binary_save_data": True,
         }
+        self.path = pathlib.Path(self.config.get("binary_save_path", "."))
 
     def do_configure(self, config: dict):
         """

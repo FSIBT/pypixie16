@@ -71,7 +71,7 @@ class Task(multiprocessing.Process):
         super().__init__()
 
         self.name = self.__class__.__name__
-        self._config = {}
+        self.config = {}
         self._queue = collections.deque()
 
         self._context = None
@@ -178,7 +178,9 @@ class Task(multiprocessing.Process):
 
         self.status = Status.DYING
 
-    def _handle_connect(self, address_pull: str, is_start: bool, is_final: bool) -> None:
+    def _handle_connect(
+        self, address_pull: str, is_start: bool, is_final: bool
+    ) -> None:
         """
         Handles ``Message.CONNECT``.
 
@@ -405,7 +407,7 @@ class Task(multiprocessing.Process):
         except Exception as err:
             self.panic(err)
 
-        self._config |= config
+        self.config |= config
 
     def panic(self, error: Exception):
         """
