@@ -79,12 +79,6 @@ class DataAcquisition(QWidget):
         self.start_button.setFixedSize(QtCore.QSize(40, 40))
         self.start_button.setToolTip("Play")
 
-        self.run_time_text = QLabel("Run time :")
-        self.run_time_text.setFixedWidth(70)
-        self.run_time_input = QLineEdit()
-        self.run_time_input.setText("60")
-        self.run_time_input.setFixedWidth(60)
-
         stop_icon = style.standardIcon(QStyle.StandardPixmap.SP_MediaStop)
         self.stop_button = QPushButton()
         self.stop_button.setIcon(stop_icon)
@@ -92,92 +86,39 @@ class DataAcquisition(QWidget):
         self.stop_button.setFixedSize(QtCore.QSize(40, 40))
         self.stop_button.setToolTip("Stop")
 
-        self.traces_enabled = QCheckBox("Traces")
+        self.run_time_text = QLabel("Run time :")
+        self.run_time_text.setFixedWidth(70)
+        self.run_time_input = QLineEdit()
+        self.run_time_input.setText("60")
+        self.run_time_input.setFixedWidth(60)
+
+        self.MCA_set_time_text = QLabel("MCA Time [s] (0=skip):")
+        self.MCA_set_time_text.setFixedWidth(130)
+        self.MCA_set_time = QLineEdit()
+        self.MCA_set_time.setText("0")
+        self.MCA_set_time.setFixedWidth(60)
+
+        self.traces_set_time_text = QLabel("Traces Time [s] (0=skip):")
+        self.traces_set_time_text.setFixedWidth(140)
+        self.traces_set_time = QLineEdit()
+        self.traces_set_time.setText("0")
+        self.traces_set_time.setFixedWidth(60)
+
         # self.help_button = QPushButton("Help")
         self.settings_text = QLabel("Settings Mode:")
         self.settings_text.setFixedWidth(100)
         self.settings_modes = QComboBox(self)
-
         self.settings_modes.addItems(self.modes)
+        self.settings_modes.setFixedWidth(100)
         self.settings_modes.currentIndexChanged.connect(self.on_mode_change)
 
-        self.run_layout.addWidget(self.start_button)
-        self.run_layout.addWidget(self.stop_button)
-        self.run_layout.addWidget(self.run_time_text)
-        self.run_layout.addWidget(self.run_time_input)
-        self.run_layout.addWidget(self.traces_enabled)
-        self.run_layout.addWidget(self.settings_text)
-        self.run_layout.addWidget(self.settings_modes)
-
-        # Diagnostics tools
-        self.mca_group_box = QGroupBox("MCA Diagnostics")
-        self.mca_layout = QHBoxLayout()
-        self.mca_group_box.setLayout(self.mca_layout)
-        self.mca_group_box.setSizePolicy(
-            QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Minimum
-        )
-
-        self.diagnostics_layout = QHBoxLayout()
-        self.MCA_diagnostics = QCheckBox("Enable")
-        self.MCA_set_time_text = QLabel("Time [s]:")
-        self.MCA_set_time = QLineEdit()
-        self.MCA_set_time.setText("30")
-
-        self.MCA_diagnostics.setSizePolicy(
-            QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Fixed
-        )
-
-        self.MCA_set_time_text.setSizePolicy(
-            QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed
-        )
-
-        self.MCA_set_time.setFixedWidth(60)
-        self.MCA_set_time.setSizePolicy(
-            QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed
-        )
-
-        self.mca_layout.addWidget(self.MCA_diagnostics)
-        self.mca_layout.addWidget(self.MCA_set_time_text)
-        self.mca_layout.addWidget(self.MCA_set_time)
-
-        self.traces_group_box = QGroupBox("Traces Diagnostics")
-        self.traces_layout = QHBoxLayout()
-        self.traces_group_box.setLayout(self.traces_layout)
-        self.traces_group_box.setSizePolicy(
-            QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Minimum
-        )
-
-        self.traces_diagnostics = QCheckBox("Enable")
-        self.traces_set_time_text = QLabel("Time[s]:")
-        self.traces_set_time = QLineEdit()
-        self.traces_set_time.setText("5")
-
-        self.traces_diagnostics.setSizePolicy(
-            QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Fixed
-        )
-
-        self.traces_set_time_text.setSizePolicy(
-            QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed
-        )
-
-        self.traces_set_time.setFixedWidth(60)
-        self.traces_set_time.setSizePolicy(
-            QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed
-        )
-
-        self.traces_layout.addWidget(self.traces_diagnostics)
-        self.traces_layout.addWidget(self.traces_set_time_text)
-        self.traces_layout.addWidget(self.traces_set_time)
-
         self.Pixie_reboot = QPushButton("Reboot Pixie")
+        self.Pixie_reboot.setFixedWidth(90)
 
-        self.diagnostics_layout.addWidget(self.mca_group_box)
-        self.diagnostics_layout.addWidget(self.traces_group_box)
-        self.diagnostics_layout.addWidget(self.Pixie_reboot)
-        self.add_extra_buttons()
+        self.add_main_controls()
 
         self.actions_layout.addLayout(self.run_layout)
-        self.actions_layout.addLayout(self.diagnostics_layout)
+        # self.actions_layout.addLayout(self.diagnostics_layout)
 
         self.layout.addLayout(self.actions_layout)
 
@@ -199,7 +140,7 @@ class DataAcquisition(QWidget):
         self.progress_bar.setValue(0)
         self.progress_bar.setFixedWidth(800)
         self.run_time_progress_text = QLabel(
-            '<span style="color:yellow;">0:00:10</span>'
+            '<span style="color:black;">0:00:10</span>'
         )
         self.run_time_progress_text.setFixedWidth(50)
         self.run_time_left_text = QLabel('<span style="color:purple;">0:02:10</span>')
@@ -218,15 +159,31 @@ class DataAcquisition(QWidget):
 
         self.setLayout(self.layout)
 
-        self.MCA_diagnostics.stateChanged.connect(self.update_skip_mca)
-        self.traces_enabled.stateChanged.connect(self.update_traces_setting)
         self.traces_set_time.editingFinished.connect(self.update_trace_time)
         self.MCA_set_time.editingFinished.connect(self.update_mca_time)
 
+    def add_main_controls(self):
+        """Add main control widgets to run_layout - override this to customize UI."""
+        self.run_layout.addWidget(self.start_button)
+        self.run_layout.addWidget(self.stop_button)
+        self.run_layout.addWidget(self.run_time_text)
+        self.run_layout.addWidget(self.run_time_input)
+        self.run_layout.addWidget(self.MCA_set_time_text)
+        self.run_layout.addWidget(self.MCA_set_time)
+        self.run_layout.addWidget(self.traces_set_time_text)
+        self.run_layout.addWidget(self.traces_set_time)
+        self.run_layout.addWidget(self.settings_text)
+        self.run_layout.addWidget(self.settings_modes)
+        self.run_layout.addWidget(self.Pixie_reboot)
+
+        # Add stretch to push everything to the left
+        self.run_layout.addStretch()
+
     def add_extra_buttons(self):
-        self.Pixie_default = QPushButton("Set Pixie default")
-        self.Pixie_default.clicked.connect(self.set_pixie_default)
-        self.diagnostics_layout.addWidget(self.Pixie_default)
+        # self.Pixie_default = QPushButton("Set Pixie default")
+        # self.Pixie_default.clicked.connect(self.set_pixie_default)
+        # self.diagnostics_layout.addWidget(self.Pixie_default)
+        pass
 
     def set_pixie_default(self):
         """Sets reasonable defaults for all parameters in the pixie16"""
@@ -258,13 +215,19 @@ class DataAcquisition(QWidget):
         """Build acquisition sequence based on enabled checkboxes."""
         sequence = []
 
-        # Add MCA if enabled
-        if self.MCA_diagnostics.isChecked():
-            sequence.append("mca")
+        try:
+            mca_time = float(self.MCA_set_time.text())
+            if mca_time > 0:  # Add MCA if time > 0
+                sequence.append("mca")
+        except ValueError:
+            pass
 
-        # Add traces if enabled
-        if self.traces_diagnostics.isChecked():
-            sequence.append("traces")
+        try:
+            trace_time = float(self.traces_set_time.text())
+            if trace_time > 0:  # Add traces if time > 0
+                sequence.append("traces")
+        except ValueError:
+            pass
 
         # Always add listmode at the end
         sequence.append("listmode")
@@ -478,21 +441,14 @@ class DataAcquisition(QWidget):
         self.pipeline.stop()
         event.accept()
 
-    def update_skip_mca(self, state):
-        """Update skip_mca in LocalSettings when MCA_diagnostics checkbox is toggled."""
-        self.local_settings.skip_mca = not bool(self.MCA_diagnostics.isChecked())
-
-    def update_traces_setting(self, state):
-        """Update traces in LocalSettings when traces_enabled checkbox is toggled."""
-        self.local_settings.traces = bool(self.traces_enabled.isChecked())
-
     def update_trace_time(self):
         """Update trace_time in LocalSettings when traces_set_time QLineEdit is changed."""
         try:
             value = float(self.traces_set_time.text())
             self.local_settings.trace_time = value
+            self.local_settings.traces = value > 0  # Use 'traces', not 'skip_traces'
             if self.pipeline.tasks_active:
-                self.pipeline.configure({"trace_time": value})
+                self.pipeline.configure({"trace_time": value, "traces": value > 0})
         except ValueError:
             pass
 
@@ -501,7 +457,8 @@ class DataAcquisition(QWidget):
         try:
             value = float(self.MCA_set_time.text())
             self.local_settings.mca_time = value
+            self.local_settings.skip_mca = value <= 0
             if self.pipeline.tasks_active:
-                self.pipeline.configure({"mca_time": value})
+                self.pipeline.configure({"mca_time": value, "skip_mca": value <= 0})
         except ValueError:
             pass
