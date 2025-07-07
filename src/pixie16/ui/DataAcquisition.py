@@ -421,7 +421,19 @@ class DataAcquisition(QWidget):
 
             # Other keys for "Extra Info"
             for key, val in status.items():
-                if key in ["name", "status", "ps", "queue", "activity", "time done"]:
+                if key in [
+                    "name",
+                    "status",
+                    "ps",
+                    "queue",
+                    "activity",
+                    "time done",
+                    "address_push",
+                    "address_pull",
+                    "is_start",
+                    "is_end",
+                    "is_final",
+                ]:
                     if key == "time done":
                         self.progress_bar.setValue(int(val))
                     continue
