@@ -86,23 +86,23 @@ class DataAcquisition(QWidget):
         self.stop_button.setFixedSize(QtCore.QSize(40, 40))
         self.stop_button.setToolTip("Stop")
 
-        self.run_time_text = QLabel("Run time :")
-        self.run_time_text.setFixedWidth(70)
+        self.run_time_text = QLabel("Run time (s):")
+        self.run_time_text.setFixedWidth(100)
         self.run_time_input = QLineEdit()
         self.run_time_input.setText("60")
-        self.run_time_input.setFixedWidth(60)
+        self.run_time_input.setFixedWidth(80)
 
-        self.MCA_set_time_text = QLabel("MCA Time [s] (0=skip):")
-        self.MCA_set_time_text.setFixedWidth(130)
+        self.MCA_set_time_text = QLabel("MCA Time (s):")
+        self.MCA_set_time_text.setFixedWidth(100)
         self.MCA_set_time = QLineEdit()
         self.MCA_set_time.setText("0")
-        self.MCA_set_time.setFixedWidth(60)
+        self.MCA_set_time.setFixedWidth(80)
 
-        self.traces_set_time_text = QLabel("Traces Time [s] (0=skip):")
-        self.traces_set_time_text.setFixedWidth(140)
+        self.traces_set_time_text = QLabel("Traces Time (s):")
+        self.traces_set_time_text.setFixedWidth(100)
         self.traces_set_time = QLineEdit()
         self.traces_set_time.setText("0")
-        self.traces_set_time.setFixedWidth(60)
+        self.traces_set_time.setFixedWidth(80)
 
         # self.help_button = QPushButton("Help")
         self.settings_text = QLabel("Settings Mode:")
@@ -113,7 +113,7 @@ class DataAcquisition(QWidget):
         self.settings_modes.currentIndexChanged.connect(self.on_mode_change)
 
         self.Pixie_reboot = QPushButton("Reboot Pixie")
-        self.Pixie_reboot.setFixedWidth(90)
+        self.Pixie_reboot.setFixedWidth(100)
 
         self.add_main_controls()
 
@@ -446,7 +446,7 @@ class DataAcquisition(QWidget):
         try:
             value = float(self.traces_set_time.text())
             self.local_settings.trace_time = value
-            self.local_settings.traces = value > 0  # Use 'traces', not 'skip_traces'
+            self.local_settings.traces = value > 0
             if self.pipeline.tasks_active:
                 self.pipeline.configure({"trace_time": value, "traces": value > 0})
         except ValueError:
