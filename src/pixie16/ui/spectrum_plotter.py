@@ -62,22 +62,22 @@ class ContinuousSpectrumPlotter(QWidget):
 
         # Channel colors
         self.channel_colors = [
-            (31, 119, 180),  # Blue
-            (255, 127, 14),  # Orange
-            (44, 160, 44),  # Green
-            (214, 39, 40),  # Red
-            (148, 103, 189),  # Purple
-            (140, 86, 75),  # Brown
-            (227, 119, 194),  # Pink
-            (127, 127, 127),  # Gray
-            (188, 189, 34),  # Olive
-            (23, 190, 207),  # Cyan
-            (174, 199, 232),  # Light Blue
-            (255, 187, 120),  # Light Orange
-            (152, 223, 138),  # Light Green
-            (255, 152, 150),  # Light Red
-            (197, 176, 213),  # Light Purple
-            (196, 156, 148),  # Light Brown
+            "#1f77b4",
+            "#ff7f0e",
+            "#2ca02c",
+            "#d62728",
+            "#9467bd",
+            "#8c564b",
+            "#e377c2",
+            "#7f7f7f",
+            "#bcbd22",
+            "#17becf",
+            "#aec7e8",
+            "#ffbb78",
+            "#98df8a",
+            "#ff9896",
+            "#c5b0d5",
+            "#c49c94",
         ]
 
         self.setWindowTitle(display_name)
