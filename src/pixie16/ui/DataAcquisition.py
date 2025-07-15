@@ -60,6 +60,24 @@ class DataAcquisition(QWidget):
     def modes(self):
         return ["DummyData"]
 
+    def _enable_mock_mode(self):
+        """Enable pixie16 mock mode - add this method to DataAcquisition class"""
+        try:
+            # Import here to avoid circular imports
+            from .. import enable_mock_mode
+
+            enable_mock_mode()
+            print("INFO: pixie16.control successfully mocked")
+            return True
+        except Exception as e:
+            print(f"WARNING: Failed to enable mock mode: {e}")
+            print("INFO: Continuing without mock - some functions may fail")
+            return False
+
+    def _check_dummy_mode(self, app):
+        """Check if dummy mode is enabled - add this method to DataAcquisition class"""
+        return getattr(app, "dummy", False) or "--dummy" in sys.argv
+
     def create_layout(self):
         style = self.app.style()
 
@@ -156,6 +174,13 @@ class DataAcquisition(QWidget):
         self.status_layout.addWidget(self.current_task_status)
 
         self.layout.addLayout(self.status_layout)
+
+        if self._check_dummy_mode(self.app):
+            self.mock_status_label = QLabel("Mock Status: Ready")
+            self.mock_status_label.setStyleSheet(
+                "color: blue; font-family: monospace; background-color: #f0f0f0; padding: 5px;"
+            )
+            self.layout.addWidget(self.mock_status_label)
 
         self.setLayout(self.layout)
 
@@ -304,6 +329,43 @@ class DataAcquisition(QWidget):
         if self.pipeline.tasks_active:
             self.pipeline.configure({"runtime": runtime})
 
+    def update_mock_calls_in_ui(self):
+        """Display mock function calls in the Extra Info column for debugging"""
+        # Check if we're in dummy mode
+        dummy_mode = self._check_dummy_mode(self.app)
+        if not dummy_mode:
+            return
+
+        try:
+            import pixie16 as px
+
+            if hasattr(px, "mock_control") and hasattr(px.mock_control, "get_call_log"):
+                recent_calls = px.mock_control.get_call_log()[-3:]  # Last 3 calls
+                if recent_calls:
+                    # Get just the function names for cleaner display
+                    call_names = [
+                        call.split(".")[-1].split("(")[0] for call in recent_calls
+                    ]
+                    call_text = " → ".join(call_names)
+
+                    # Add to the first task's extra info
+                    if self.pipeline.tasks_active and hasattr(self, "key_to_pos"):
+                        first_task = list(self.pipeline.tasks_active)[0]
+                        if first_task in self.taskid_to_row:
+                            row = self.taskid_to_row[first_task]
+                            current_item = self.task_table.item(
+                                row, self.key_to_pos["Extra Info"]
+                            )
+                            current_text = current_item.text() if current_item else ""
+                            new_text = f"{current_text} | MOCK: {call_text}"
+                            self.task_table.setItem(
+                                row,
+                                self.key_to_pos["Extra Info"],
+                                QTableWidgetItem(new_text),
+                            )
+        except Exception as e:
+            print(f"DEBUG: Failed to update mock calls: {e}")
+
     def update_status(self):
         """Get information from processes."""
 
@@ -324,7 +386,7 @@ class DataAcquisition(QWidget):
             "Extra Info",
         ]
 
-        if self.task_table.columnCount() != len(ordered_keys):  # Add this check
+        if self.task_table.columnCount() != len(ordered_keys):
             self.task_table.setColumnCount(len(ordered_keys))
             self.task_table.setHorizontalHeaderLabels(ordered_keys)
 
@@ -406,6 +468,48 @@ class DataAcquisition(QWidget):
 
             item = QTableWidgetItem(" ".join(extra_info))
             self.task_table.setItem(row, self.key_to_pos["Extra Info"], item)
+
+        # Update mock status
+        if hasattr(self, "mock_status_label"):
+            try:
+                import pixie16 as px
+
+                if hasattr(px, "mock_control") and hasattr(
+                    px.mock_control, "get_call_log"
+                ):
+                    calls = px.mock_control.get_call_log()
+                    if calls:
+                        # Show last 2 full function calls
+                        recent_calls = calls[-2:] if len(calls) >= 2 else calls
+                        # Just show the function name and main parameters
+                        formatted_calls = []
+                        for call in recent_calls:
+                            # Extract just the function and first few parameters
+                            if "(" in call:
+                                func_part = call.split("(")[0].split(".")[
+                                    -1
+                                ]  # Just function name
+                                param_part = call.split("(")[1].split(")")[
+                                    0
+                                ]  # Parameters
+                                # Truncate long parameters
+                                if len(param_part) > 30:
+                                    param_part = param_part[:30] + "..."
+                                formatted_calls.append(f"{func_part}({param_part})")
+                            else:
+                                formatted_calls.append(call.split(".")[-1])
+
+                        status_text = (
+                            f"Mock: {' → '.join(formatted_calls)} | Total: {len(calls)}"
+                        )
+                    else:
+                        status_text = "Mock Status: No calls yet"
+                    self.mock_status_label.setText(status_text)
+                else:
+                    self.mock_status_label.setText("Mock Status: Mock system not found")
+            except Exception as e:
+                self.mock_status_label.setText(f"Mock Status: Error - {str(e)}")
+        self.update_mock_calls_in_ui()
 
     def format_value(self, key, value):
         if isinstance(value, Enum):
