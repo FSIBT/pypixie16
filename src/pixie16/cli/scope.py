@@ -51,6 +51,8 @@ except ImportError as e:
     print("Make sure pypixie16 is properly installed")
     px = None
 
+from .binary_loader import BinaryFileLoader
+
 # Import the plotting modules
 from pixie16.ui.mca_spectrum_plotter import MCASpectrumPlotter
 from pixie16.ui.spectrum_plotter import ContinuousSpectrumPlotter
@@ -504,6 +506,9 @@ class CompletePixieScopeApp(QMainWindow):
         right_layout = QVBoxLayout(right_widget)
         right_layout.setContentsMargins(5, 5, 5, 5)
 
+        self.binary_loader = BinaryFileLoader(parent_scope=self)
+        right_layout.addWidget(self.binary_loader)
+
         # Create channel controls (using logical module 0)
         self.channel_controls = ChannelDisplayControls(
             channels=[(0, ch) for ch in self.channel_numbers], title="Channels"
@@ -639,12 +644,31 @@ class CompletePixieScopeApp(QMainWindow):
         try:
             success = False
 
-            if self.current_mode == "mca_mode":
-                success = self.start_mca_acquisition()
-            elif self.current_mode == "list_mode":
-                success = self.start_list_mode_acquisition()
-            elif self.current_mode == "traces_mode":
-                success = self.start_traces_acquisition()
+            # Check if we should use binary replay instead of live acquisition
+            if (
+                hasattr(self, "binary_loader")
+                and self.binary_loader.is_using_binary_data()
+            ):
+                print("Using binary file replay instead of live acquisition")
+
+                # Start binary replay
+                success = self.binary_loader.start_replay()
+
+                if success:
+                    # Start the spectrum plotter updates
+                    if hasattr(self.spectrum_tab, "start_live_updates"):
+                        self.spectrum_tab.start_live_updates()
+
+                    data_source = self.binary_loader.get_data_source_info()
+                    self.info_bar.setText(f"Replaying: {data_source}")
+            else:
+                # Regular live acquisition
+                if self.current_mode == "mca_mode":
+                    success = self.start_mca_acquisition()
+                elif self.current_mode == "list_mode":
+                    success = self.start_list_mode_acquisition()
+                elif self.current_mode == "traces_mode":
+                    success = self.start_traces_acquisition()
 
             if success:
                 self.is_acquiring = True
@@ -747,6 +771,8 @@ class CompletePixieScopeApp(QMainWindow):
             self.live_reader = LiveDataReader()
             self.data_source = LiveDataSourceInterface(self.live_reader)
             self.live_reader.add_event_callback(self.process_traces_event)
+
+            # self.binary_loader.set_live_data_source(self.data_source)
 
             if self.dummy_mode:
                 self.start_binary_file_reader()
@@ -881,35 +907,39 @@ class CompletePixieScopeApp(QMainWindow):
             channel = getattr(event, "channel", 0)
             energy = getattr(event, "energy", 0)
 
-            # Debug: Print some events to verify we're getting data
+            # Debug counter
             if not hasattr(self, "_event_debug_counter"):
                 self._event_debug_counter = 0
 
             self._event_debug_counter += 1
-            if self._event_debug_counter % 1000 == 0:  # Print every 1000 events
+
+            # Show data source info periodically
+            if self._event_debug_counter % 1000 == 0:
+                data_source = (
+                    "BINARY FILE"
+                    if (
+                        hasattr(self, "binary_loader")
+                        and self.binary_loader.is_using_binary_data()
+                    )
+                    else "DUMMY DATA"
+                )
                 print(
-                    f"List Mode: Processed {self._event_debug_counter} events, latest: Ch{channel} E={energy}"
+                    f"List Mode ({data_source}): Processed {self._event_debug_counter} events, latest: Ch{channel} E={energy}"
                 )
 
             if channel in self.channel_numbers:
-                # Feed data to the ContinuousSpectrumPlotter using its proper method
+                # Feed data to the spectrum plotter
                 if hasattr(self.spectrum_tab, "add_energy_event"):
                     self.spectrum_tab.add_energy_event(channel, energy)
                 elif hasattr(self.spectrum_tab, "energy_data"):
-                    # Fallback to direct access
                     if channel not in self.spectrum_tab.energy_data:
                         from collections import deque
 
                         self.spectrum_tab.energy_data[channel] = deque(maxlen=50000)
                     self.spectrum_tab.energy_data[channel].append(energy)
-                else:
-                    print(f"Warning: Spectrum tab has no energy data storage method")
 
         except Exception as e:
             print(f"Error processing list mode event: {e}")
-            import traceback
-
-            traceback.print_exc()
 
     def process_traces_event(self, event):
         """Process traces events"""
@@ -917,9 +947,32 @@ class CompletePixieScopeApp(QMainWindow):
             channel = getattr(event, "channel", 0)
             trace = getattr(event, "trace", None)
 
+            # Debug counter for traces
+            if not hasattr(self, "_trace_debug_counter"):
+                self._trace_debug_counter = 0
+
+            self._trace_debug_counter += 1
+
+            # Show data source info periodically
+            if self._trace_debug_counter % 100 == 0:
+                data_source = (
+                    "BINARY FILE"
+                    if (
+                        hasattr(self, "binary_loader")
+                        and self.binary_loader.is_using_binary_data()
+                    )
+                    else "DUMMY DATA"
+                )
+                print(
+                    f"Traces Mode ({data_source}): Processed {self._trace_debug_counter} traces, latest: Ch{channel} trace_len={len(trace) if trace else 0}"
+                )
+
             if channel in self.channel_numbers and trace is not None and len(trace) > 0:
-                # Pass trace to spectrum tab for processing
-                if hasattr(self.spectrum_tab, "add_trace"):
+                # For coincidence analysis, feed event + trace to enhanced plotter
+                if hasattr(self.spectrum_tab, "add_event_with_trace"):
+                    self.spectrum_tab.add_event_with_trace(event, trace)
+                # Fallback to regular trace processing
+                elif hasattr(self.spectrum_tab, "add_trace"):
                     self.spectrum_tab.add_trace(channel, trace)
                 elif hasattr(self.spectrum_tab, "trace_data"):
                     if channel not in self.spectrum_tab.trace_data:
@@ -938,6 +991,13 @@ class CompletePixieScopeApp(QMainWindow):
 
         try:
             print("Stopping acquisition...")
+
+            # Stop binary replay if running
+            if (
+                hasattr(self, "binary_loader")
+                and self.binary_loader.is_using_binary_data()
+            ):
+                self.binary_loader.stop_replay()
 
             # Stop timers first
             if hasattr(self, "acquisition_timer") and self.acquisition_timer:
