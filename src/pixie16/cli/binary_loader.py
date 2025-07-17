@@ -71,7 +71,18 @@ class BinaryReplayThread(QThread):
                     if self.parent_scope.current_mode == "list_mode":
                         self.parent_scope.process_list_mode_event(event)
                     elif self.parent_scope.current_mode == "traces_mode":
-                        self.parent_scope.process_traces_event(event)
+                        trace_data = getattr(event, "trace", np.random.random(100))
+
+                        # Check if spectrum_tab has coincidence-aware method
+                        if hasattr(
+                            self.parent_scope.spectrum_tab, "add_event_with_trace"
+                        ):
+                            self.parent_scope.spectrum_tab.add_event_with_trace(
+                                event, trace_data
+                            )
+                        else:
+                            # Fallback to old method
+                            self.parent_scope.process_traces_event(event)
 
                 except Exception as e:
                     print(f"Error processing event {i}: {e}")
