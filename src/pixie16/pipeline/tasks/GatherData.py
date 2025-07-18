@@ -26,7 +26,20 @@ class GatherData(task.Task):
         for data_list in data.values():
             size = 0
             for element in data_list:
-                size += element.nbytes
+                # Handle different data types safely
+                if hasattr(element, "nbytes"):
+                    size += element.nbytes
+                elif np.isscalar(element):
+                    # For scalar values, estimate size
+                    size += 8  # Assume 8 bytes for a scalar
+                elif isinstance(element, (int, float)):
+                    size += 8  # 8 bytes for numeric types
+                else:
+                    # For other types, try to get size or use a default
+                    try:
+                        size += len(element) * 8  # Estimate
+                    except:
+                        size += 8  # Default fallback
             out.append(size)
         if out:
             return max(out)
@@ -100,7 +113,9 @@ class GatherData(task.Task):
         data_size = self.get_size(self.data_disk)
         if data_size:
             if data_size > self.config["binary_save_size"]:
-                out = {k: np.concatenate(v) for k, v in self.data_disk.items() if v}
+                out = {
+                    k: self.safe_concatenate(v) for k, v in self.data_disk.items() if v
+                }
                 if self.config["binary_save_data"]:
                     self.save_data(out)
                 self.data_disk = defaultdict(list)
@@ -112,7 +127,7 @@ class GatherData(task.Task):
             return
 
         if data_size > self.config.get("binary_size"):
-            out = {k: np.concatenate(v) for k, v in self.data_queue.items() if v}
+            out = {k: self.safe_concatenate(v) for k, v in self.data_queue.items() if v}
             self.data_queue = defaultdict(list)
             return out
 
@@ -124,10 +139,28 @@ class GatherData(task.Task):
             This method extends ``Task.do_stop``.
         """
 
-        out_queue = {k: np.concatenate(v) for k, v in self.data_queue.items() if v}
-        out_disk = {k: np.concatenate(v) for k, v in self.data_disk.items() if v}
-        if not self.is_final:
+        out_queue = {
+            k: self.safe_concatenate(v) for k, v in self.data_queue.items() if v
+        }
+        out_disk = {k: self.safe_concatenate(v) for k, v in self.data_disk.items() if v}
+        if not self._is_final:
             self.send(out_queue)
         if out_disk:
             if self.config["binary_save_data"]:
                 self.save_data(out_disk)
+
+    def safe_concatenate(self, arrays):  # Add 'self' parameter
+        """Safely concatenate arrays, handling zero-dimensional arrays."""
+        if not arrays:
+            return np.array([])
+
+        safe_arrays = []
+        for arr in arrays:
+            if np.isscalar(arr):
+                safe_arrays.append(np.array([arr]))
+            elif isinstance(arr, np.ndarray) and arr.ndim == 0:
+                safe_arrays.append(np.array([arr.item()]))
+            else:
+                safe_arrays.append(arr)
+
+        return np.concatenate(safe_arrays)

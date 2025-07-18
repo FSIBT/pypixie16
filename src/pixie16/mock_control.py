@@ -284,6 +284,13 @@ def read_list_mode_fifo(
     return output
 
 
+def change_raw_setting_from_dict(settings: dict, call_pixie: bool | None = True):
+    """Modify the raw settings on the pixie."""
+    mock = get_mock_instance()
+    mock._log_call("change_raw_setting_from_dict", settings, call_pixie=call_pixie)
+    return MagicMock()
+
+
 def take_list_mode_data(
     duration: float,
     modules: Iterable[int] | None = None,
@@ -476,6 +483,26 @@ def read_settings():
 def write_settings(data):
     mock = get_mock_instance()
     mock._log_call("write_settings", data)
+
+
+def write_settings_from_file(filename):
+    """Load settings from a file."""
+    mock = get_mock_instance()
+    mock._log_call("write_settings_from_file", filename)
+
+
+def read_settings_from_json(filename):
+    """Reads the settings from a new-style json settings file."""
+    mock = get_mock_instance()
+    mock._log_call("read_settings_from_json", filename)
+    # Return a dummy dict
+    return {"mock": "settings"}
+
+
+def run_list_mode(filename: str | None = None, runtime: int = 5):
+    """Run the pixie16 in list mode."""
+    mock = get_mock_instance()
+    mock._log_call("run_list_mode", filename=filename, runtime=runtime)
 
 
 @contextmanager

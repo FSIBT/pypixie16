@@ -470,7 +470,7 @@ class Task(multiprocessing.Process):
 
         self._send_print(string)
 
-    def send(self, datum: typing.Any) -> None:
+    def send(self, report: typing.Any) -> None:
         """
         Reports for the task.
 
