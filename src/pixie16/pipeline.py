@@ -210,6 +210,7 @@ class Pipeline:
         self.runtime = None
         self.queues = {}
         self.name = name
+        self.total = 0
 
         # we'll use a single event for all tasks
         self.stop_event = multiprocessing.Event()
@@ -305,6 +306,7 @@ class Pipeline:
         The run can be interruptted using Ctrl-C.
         """
         try:
+            self.total = total
             with Progress(
                 f"[green]{self.name}",
                 BarColumn(
