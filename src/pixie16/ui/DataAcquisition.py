@@ -304,7 +304,7 @@ class DataAcquisition(QWidget):
         print(f"selected {text}")
         match text:
             case "DummyData":
-                self.pipeline.init(["DummyData", "PickSingleModule", "ConvertToEvents"])
+                self.pipeline.connect(["DummyData", "PickSingleModule", "ConvertToEvents"])
             case _:
                 print("Should not happen")
 

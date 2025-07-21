@@ -11,6 +11,8 @@ from pathlib import Path
 from collections.abc import Iterable
 from contextlib import contextmanager
 import json
+import tempfile
+import os
 
 
 class MockPixieControl:
@@ -79,15 +81,15 @@ class MockPixieControl:
         )
 
     def _log_call(self, func_name, *args, **kwargs):
-        """Log function calls for debugging"""
         arg_str = ", ".join([str(arg) for arg in args])
         kwarg_str = ", ".join([f"{k}={v}" for k, v in kwargs.items()])
         all_args = ", ".join(filter(None, [arg_str, kwarg_str]))
 
         call_info = f"pixie16.control.{func_name}({all_args})"
         self.call_log.append(call_info)
-        print(f"MOCK: {call_info}")
-
+        
+        # Save to shared file for cross-process access
+        _save_call_log_to_file(self.call_log)
         return call_info
 
     def get_dummy_data_chunk(self, chunk_size=20000):
@@ -118,21 +120,57 @@ class MockPixieControl:
 
 # Global mock instance
 _mock_instance = None
-
+_call_log_file = Path(tempfile.gettempdir()) / "pixie16_mock_calls.json"
 
 def get_mock_instance():
     """Get or create the global mock instance"""
     global _mock_instance
     if _mock_instance is None:
         _mock_instance = MockPixieControl()
+    #    print(f"MOCK: Created instance {id(_mock_instance)} (PID: {os.getpid()})")
+    # else:
+    #     print(f"MOCK: Using instance {id(_mock_instance)} (PID: {os.getpid()})")
     return _mock_instance
-
 
 def set_mock_data_file(filepath: str):
     """Set which binary file to use for mock data"""
     mock = get_mock_instance()
     mock.set_dummy_data_file(filepath)
 
+def _save_call_log_to_file(call_log):
+    try:
+        with open(_call_log_file, 'w') as f:
+            json.dump(call_log, f)
+        print(f"MOCK: Saved {len(call_log)} calls to {_call_log_file} (PID: {os.getpid()})")
+    except Exception as e:
+        print(f"MOCK: Error saving call log: {e}")
+
+def _load_call_log_from_file():
+    try:
+        if _call_log_file.exists():
+            with open(_call_log_file, 'r') as f:
+                data = json.load(f)
+            print(f"MOCK: Loaded {len(data)} calls from {_call_log_file} (PID: {os.getpid()})")
+            return data
+        else:
+            print(f"MOCK: File {_call_log_file} does not exist (PID: {os.getpid()})")
+    except Exception as e:
+        print(f"MOCK: Error loading call log: {e}")
+    return []
+
+def get_call_log():
+    return _load_call_log_from_file()
+
+def clear_call_log():
+    global _mock_instance
+    if _mock_instance:
+        _mock_instance.call_log.clear()
+    # Also clear the shared file
+    try:
+        if _call_log_file.exists():
+            _call_log_file.unlink()
+    except Exception as e:
+        print(f"MOCK: Error clearing call log file: {e}")
 
 module_list = [2]
 
