@@ -338,7 +338,8 @@ class DataAcquisition(QWidget):
             self.run_time_input.setText(self.run_time)
             return
 
-        self.progress_bar.setMaximum(value)
+        if value > 0:
+            self.progress_bar.setMaximum(value)
         self.local_settings.runtime = value
 
     def update_status(self):
