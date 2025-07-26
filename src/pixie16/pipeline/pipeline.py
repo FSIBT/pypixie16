@@ -75,9 +75,79 @@ class Pipeline:
         task._address_router = self.address_router
         task.start()
 
+    # Callbacks
+
+    def do_connect(self, tasks_active: list[str]) -> None:
+        """
+        ``connect`` callback.
+
+        Parameters:
+            tasks_active: Names of tasks to connect.
+        """
+
+        pass
+
+    def do_start(self) -> None:
+        """
+        ``start`` callback.
+        """
+
+        pass
+
+    def do_stop(self) -> None:
+        """
+        ``stop`` callback.
+        """
+
+        pass
+
+    def do_quit(self) -> None:
+        """
+        ``quit`` callback.
+        """
+
+        pass
+
+    def do_configure(self, config: dict[str, typing.Any]) -> None:
+        """
+        ``configure`` callback.
+
+        Parameters:
+            config: Parameters to send.
+        """
+
+        pass
+
+    def do_poll(self) -> None:
+        """
+        ``poll`` callback.
+        """
+
+        pass
+
+    def do_error(self, err: Exception) -> None:
+        """
+        ``error`` callback.
+
+        Parameters:
+            err: Recieved error.
+        """
+
+        print(err)
+
+    def do_print(self) -> None:
+        """
+        ``print`` callback.
+
+        Parameters:
+            string: Recieved stdout.
+        """
+
+        print(string, end="")
+
     # Handlers
 
-    def handle_report(self, name: str, report: dict[str, typing.Any]) -> None:
+    def _handle_report(self, name: str, report: dict[str, typing.Any]) -> None:
         """
         Handles ``Message.REPORT``.
 
@@ -104,37 +174,37 @@ class Pipeline:
         ):
             self.status = Status.WAITING
 
-    def handle_print(self, name: str, string: str) -> None:
+    def _handle_print(self, name: str, string: str) -> None:
         """
         Handles ``Message.PRINT``.
 
         Parameters:
             name: Task name.
-            string: String recieved.
+            string: Recieved string.
         """
 
         if name not in self._tasks_all:
             raise ValueError
 
-        print(string, end="")
+        self.do_print(string)
 
-    def handle_error(self, name: str, err: Exception) -> None:
+    def _handle_error(self, name: str, err: Exception) -> None:
         """
         Handles ``Message.ERROR``.
 
         Parameters:
             name: Task name.
-            err: String recieved.
+            err: Recieved error.
         """
 
         if name not in self._tasks_all:
             raise ValueError
 
-        print(err)
+        self.do_error(err)
 
     # Senders
 
-    def send_connect(
+    def _send_connect(
         self, name: str, address_pull: str, is_start: bool, is_final: bool
     ) -> None:
         """
@@ -153,7 +223,7 @@ class Pipeline:
         msg = pickle.dumps(Message.CONNECT(address_pull, is_start, is_final))
         self.socket_router.send_multipart([name.encode(), msg])
 
-    def send_start(self, name: str) -> None:
+    def _send_start(self, name: str) -> None:
         """
         Sends ``Message.START``.
 
@@ -167,7 +237,7 @@ class Pipeline:
         msg = pickle.dumps(Message.START)
         self.socket_router.send_multipart([name.encode(), msg])
 
-    def send_quit(self, name: str) -> None:
+    def _send_quit(self, name: str) -> None:
         """
         Sends ``Message.QUIT``.
 
@@ -181,7 +251,7 @@ class Pipeline:
         msg = pickle.dumps(Message.QUIT)
         self.socket_router.send_multipart([name.encode(), msg])
 
-    def send_configure(self, name: str, config: dict[str, typing.Any]) -> None:
+    def _send_configure(self, name: str, config: dict[str, typing.Any]) -> None:
         """
         Sends ``Message.CONFIGURE``.
 
@@ -196,7 +266,7 @@ class Pipeline:
         msg = pickle.dumps(Message.CONFIGURE(config))
         self.socket_router.send_multipart([name.encode(), msg])
 
-    def send_stop(self, name: str) -> None:
+    def _send_stop(self, name: str) -> None:
         """
         Sends ``Message.STOP``.
 
@@ -220,6 +290,8 @@ class Pipeline:
             tasks_active: Names of tasks to connect.
         """
 
+        self.do_connect(tasks_active)
+
         # Clearing messages and updating status.
         self.status = Status.WAITING
         self.reports = {}
@@ -232,7 +304,7 @@ class Pipeline:
                 self.create_task(name)
             except ValueError:
                 pass
-            self.send_connect(name, None, False, False)
+            self._send_connect(name, None, False, False)
 
         # Waiting for reinitialization reports.
         self.tasks_active = tasks_active
@@ -247,7 +319,7 @@ class Pipeline:
         # Connecting new tasks
         prev = None
         for name in tasks_active:
-            self.send_connect(
+            self._send_connect(
                 name,
                 self.reports[prev]["address_push"] if prev else None,
                 self.tasks_active[0] == name,
@@ -262,30 +334,33 @@ class Pipeline:
         Does starting.
         """
 
+        self.do_start()
         self.status = Status.RUNNING
 
         for name in self.tasks_active:
-            self.send_start(name)
+            self._send_start(name)
 
     def stop(self) -> None:
         """
         Does starting.
         """
 
+        self.do_stop()
         self.status = Status.WAITING
 
         for name in self.tasks_active:
-            self.send_stop(name)
+            self._send_stop(name)
 
     def quit(self) -> None:
         """
         Does quitting.
         """
 
+        self.do_quit()
         self.status = Status.DYING
 
         for name in self._tasks_all:
-            self.send_quit(name)
+            self._send_quit(name)
 
     def configure(self, config: dict[str, typing.Any]) -> None:
         """
@@ -295,8 +370,10 @@ class Pipeline:
             config: Parameters to send.
         """
 
+        self.do_config(config)
+
         for name in self.tasks_active:
-            self.send_configure(name, config)
+            self._send_configure(name, config)
 
     def poll(self) -> None:
         """
@@ -312,10 +389,10 @@ class Pipeline:
         msg = pickle.loads(msg)
 
         if type(msg) == Message.REPORT:
-            self.handle_report(name, *msg())
+            self._handle_report(name, *msg())
         elif type(msg) == Message.ERROR:
-            self.handle_error(name, *msg())
+            self._handle_error(name, *msg())
         elif type(msg) == Message.PRINT:
-            self.handle_print(name, *msg())
+            self._handle_print(name, *msg())
         else:
             assert False
