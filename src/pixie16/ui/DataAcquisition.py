@@ -33,7 +33,10 @@ from ..config import LocalSettings
 
 
 class DataAcquisition(QWidget):
-    """App to acquire data using Pixie 16."""
+    """App to acquire data using Pixie 16.
+
+    Note: when closing the window/app where this is used, self.pipeline.quit() needs to be called
+    """
 
     def __init__(self, app, init_modes):
         super().__init__()
@@ -470,13 +473,6 @@ class DataAcquisition(QWidget):
                     return "⚪"
 
         return str(value)
-
-    def closeEvent(self, event: QtCore.QEvent):
-        """Handle App shutdown."""
-
-        print("got close event... shutting down", flush=True)
-        self.pipeline.quit()
-        event.accept()
 
     def update_trace_time(self):
         """Update trace_time in LocalSettings when traces_set_time QLineEdit is changed."""

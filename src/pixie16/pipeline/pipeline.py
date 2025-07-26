@@ -413,6 +413,9 @@ class Pipeline:
         for task in self._tasks_all.values():
             task.kill()
 
+        for task in self._tasks_all.values():
+            task.join()
+
     def configure(self, config: dict[str, typing.Any]) -> None:
         """
         Does configuring.
