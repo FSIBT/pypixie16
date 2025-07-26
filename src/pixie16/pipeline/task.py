@@ -70,11 +70,11 @@ class Task(multiprocessing.Process):
 
         super().__init__()
 
-        self.name = self.__class__.__name__
-        self.config = {}
-        self.kwargs = kwargs
+        self._kwargs = kwargs
+        self._name = self.__class__.__name__
+        self._config = {}
+        self._status = None
         self._queue = collections.deque()
-
         self._context = None
         self._socket_push = None
         self._socket_pull = None
@@ -83,7 +83,7 @@ class Task(multiprocessing.Process):
         self._address_pull = None
         self._address_dealer = None
 
-        self.heart_beat_timestamp = 0
+        self._heart_beat_timestamp = 0
 
     def do_init(self) -> None:
         """
@@ -177,7 +177,7 @@ class Task(multiprocessing.Process):
         Handles ``Message.QUIT``.
         """
 
-        self.status = Status.DYING
+        self._status = Status.DYING
 
     def _handle_connect(
         self, address_pull: str, is_start: bool, is_final: bool
@@ -280,7 +280,7 @@ class Task(multiprocessing.Process):
         Initializes the task.
         """
 
-        self.status = Status.WAITING
+        self._status = Status.WAITING
         self._context = zmq.Context()
         self._socket_dealer = self._context.socket(zmq.DEALER)
         self._socket_push = self._context.socket(zmq.PUSH)
@@ -297,7 +297,7 @@ class Task(multiprocessing.Process):
         except Exception as err:
             self.panic(err)
 
-        self.report({"status": self.status, "address_push": self._address_push})
+        self.report({"status": self._status, "address_push": self._address_push})
 
     def begin(self):
         """
@@ -311,8 +311,8 @@ class Task(multiprocessing.Process):
         except Exception as err:
             self.panic(err)
 
-        self.status = Status.RUNNING
-        self.report({"status": self.status})
+        self._status = Status.RUNNING
+        self.report({"status": self._status})
 
     def stop(self):
         """
@@ -326,8 +326,8 @@ class Task(multiprocessing.Process):
         except Exception as err:
             self.panic(err)
 
-        self.status = Status.WAITING
-        self.report({"status": self.status})
+        self._status = Status.WAITING
+        self.report({"status": self._status})
         self._send_stop()
 
     def quit(self):
@@ -335,7 +335,7 @@ class Task(multiprocessing.Process):
         Quits the task.
         """
 
-        if self.status != Status.WAITING:
+        if self._status != Status.WAITING:
             self.stop()
 
         try:
@@ -345,8 +345,8 @@ class Task(multiprocessing.Process):
         except Exception as err:
             self.panic(err)
 
-        self.status = Status.DYING
-        self.report({"status": self.status})
+        self._status = Status.DYING
+        self.report({"status": self._status})
 
         if self._socket_pull:
             self._socket_pull.setsockopt(zmq.LINGER, 0)
@@ -408,7 +408,7 @@ class Task(multiprocessing.Process):
         except Exception as err:
             self.panic(err)
 
-        self.config |= config
+        self._config |= config
 
     def panic(self, error: Exception):
         """
@@ -418,9 +418,9 @@ class Task(multiprocessing.Process):
             error: Error for panicking.
         """
 
-        self.status = Status.PANICKING
+        self._status = Status.PANICKING
         self._send_error(error)
-        self.report({"status": self.status})
+        self.report({"status": self._status})
 
     def wait(self):
         """
@@ -446,8 +446,9 @@ class Task(multiprocessing.Process):
         if val or self._is_start:
             try:
                 with contextlib.redirect_stdout(io.StringIO()) as out:
-                    self._send_data(self.do_work(val))
-                    self.print(out.getvalue())
+                    ret = self.do_work(val)
+                    self._send_data(ret)
+                self.print(out.getvalue())
             except Exception as err:
                 self.panic(err)
 
@@ -500,7 +501,7 @@ class Task(multiprocessing.Process):
                 self._handle_stop()
             elif msg == Message.QUIT:
                 self._handle_quit()
-            else:
+            else:  # pragma: no cover
                 assert False
         except zmq.Again:
             pass
@@ -512,7 +513,7 @@ class Task(multiprocessing.Process):
                 self._handle_data(*msg())
             elif msg == Message.STOP:
                 self._handle_stop()
-            else:
+            else:  # pragma: no cover
                 assert False
         except zmq.Again:
             pass
@@ -520,7 +521,7 @@ class Task(multiprocessing.Process):
     def send_heart_beat(self):
         "send a heart beat every second"
         now = time.time()
-        if now - self.heart_beat_timestamp > 2:
+        if now - self._heart_beat_timestamp > 2:
             ps_data = psutil.Process(self.pid)
 
             tmp = {
@@ -533,7 +534,7 @@ class Task(multiprocessing.Process):
 
             self._send_report(tmp)
 
-            self.heart_beat_timestamp = now
+            self._heart_beat_timestamp = now
 
     def run(self):
         """
@@ -545,15 +546,33 @@ class Task(multiprocessing.Process):
         while True:
             self.poll()
 
-            if self.status == Status.RUNNING:
+            if self._status == Status.RUNNING:
                 self.work()
-            elif self.status == Status.WAITING:
+            elif self._status == Status.WAITING:
                 self.wait()
-            elif self.status == Status.PANICKING:
+            elif self._status == Status.PANICKING:
                 self.wait()
-            elif self.status == Status.DYING:
+            elif self._status == Status.DYING:
                 break
             else:
                 assert False
 
             self.send_heart_beat()
+
+    # Properties
+
+    @property
+    def name(self) -> str:
+        return self._name
+
+    @property
+    def status(self) -> Status:
+        return self._status
+
+    @property
+    def kwargs(self) -> Status:
+        return self._status
+
+    @property
+    def config(self) -> dict[str, typing.Any]:
+        return self._config
