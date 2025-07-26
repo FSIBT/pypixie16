@@ -72,7 +72,7 @@ def load_config(section_name: str) -> list[Path]:
     """
     section = f"Firmware.{section_name}"
     if section not in config.sections():
-        print("Error: cannot find section {section} in the config file {inifile}")
+        print(f"Error: cannot find section {section} in the config file {inifile}")
         sys.exit(1)
     # load new path to firmware
     firmware_com = config_get_parameters(section, "ComFPGAConfigFile")
