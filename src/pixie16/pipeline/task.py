@@ -570,8 +570,8 @@ class Task(multiprocessing.Process):
         return self._status
 
     @property
-    def kwargs(self) -> Status:
-        return self._status
+    def kwargs(self) -> dict:
+        return self._kwargs
 
     @property
     def config(self) -> dict[str, typing.Any]:
