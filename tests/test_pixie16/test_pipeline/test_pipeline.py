@@ -1,4 +1,5 @@
 import io
+import os
 import time
 
 import zmq
@@ -10,266 +11,498 @@ import pixie16
 class DummyTask(pixie16.pipeline.Task):
     def do_work(self, value):
         self.report({})
-
-
-class ErrorTask(pixie16.pipeline.Task):
-    def do_work(self, value):
+        self.print("HI")
         raise Exception
 
 
-class PrintTask(pixie16.pipeline.Task):
-    def do_work(self, value):
-        self.send_print("Hi", "Err")
-
-
 @pytest.fixture
-def context() -> zmq.Context:
-    context = zmq.Context()
-    yield context
-    context.term()
-
-
-@pytest.fixture
-def router(context: zmq.Context) -> tuple[str, zmq.Socket]:
-    socket = context.socket(zmq.PAIR)
-    address = socket.bind_to_random_port("tcp://127.0.0.1")
-    address = f"tcp://127.0.0.1:{address}"
-
-    yield address, socket
-
-    socket.close()
-
-
-@pytest.fixture
-def dealer(
-    context: zmq.Context, router: tuple[str, zmq.Socket]
-) -> tuple[str, zmq.Socket]:
-    socket = context.socket(zmq.PAIR)
-    address = socket.bind_to_random_port("tcp://127.0.0.1")
-    address = f"tcp://127.0.0.1:{address}"
-
-    yield address, socket
-
-    socket.close()
-
-
-@pytest.fixture
-def push(context: zmq.Context) -> tuple[str, zmq.Socket]:
-    socket = context.socket(zmq.PAIR)
-    address = socket.bind_to_random_port("tcp://127.0.0.1")
-    address = f"tcp://127.0.0.1:{address}"
-
-    yield address, socket
-
-    socket.close()
-
-
-@pytest.fixture
-def pipeline_base() -> pixie16.pipeline.Pipeline:
+def pipeline_i() -> pixie16.pipeline.Pipeline:
     pipe = pixie16.pipeline.Pipeline()
     yield pipe
-    for task in pipe._tasks_all.values():
-        task.kill()
+    pipe.kill()
 
 
 @pytest.fixture
-def pipeline_created() -> pixie16.pipeline.Pipeline:
+def pipeline_ic() -> pixie16.pipeline.Pipeline:
     pipe = pixie16.pipeline.Pipeline()
-    pipe.create_task("DummyTask")
-    yield pipe
-    for task in pipe._tasks_all.values():
-        task.kill()
-
-
-@pytest.fixture
-def pipeline_dummy() -> pixie16.pipeline.Pipeline:
-    pipe = pixie16.pipeline.Pipeline()
-    pipe.create_task("DummyTask")
     pipe.connect(["DummyTask"])
     yield pipe
-    for task in pipe._tasks_all.values():
-        task.kill()
+    pipe.kill()
 
 
 @pytest.fixture
-def pipeline_print() -> pixie16.pipeline.Pipeline:
+def pipeline_is() -> pixie16.pipeline.Pipeline:
     pipe = pixie16.pipeline.Pipeline()
-    pipe.create_task("PrintTask")
-    pipe.connect(["PrintTask"])
+    pipe.start()
     yield pipe
-    for task in pipe._tasks_all.values():
-        task.kill()
+    pipe.kill()
 
 
 @pytest.fixture
-def pipeline_error() -> pixie16.pipeline.Pipeline:
+def pipeline_it() -> pixie16.pipeline.Pipeline:
     pipe = pixie16.pipeline.Pipeline()
-    pipe.create_task("ErrorTask")
-    pipe.connect(["ErrorTask"])
+    pipe.stop()
     yield pipe
-    for task in pipe._tasks_all.values():
-        task.kill()
+    pipe.kill()
+
+
+@pytest.fixture
+def pipeline_iq() -> pixie16.pipeline.Pipeline:
+    pipe = pixie16.pipeline.Pipeline()
+    pipe.quit()
+    yield pipe
+    pipe.kill()
+
+
+@pytest.fixture
+def pipeline_ik() -> pixie16.pipeline.Pipeline:
+    pipe = pixie16.pipeline.Pipeline()
+    pipe.kill()
+    yield pipe
+    pipe.kill()
+
+
+@pytest.fixture
+def pipeline_ics() -> pixie16.pipeline.Pipeline:
+    pipe = pixie16.pipeline.Pipeline()
+    pipe.connect(["DummyTask"])
+    pipe.start()
+    yield pipe
+    pipe.kill()
+
+
+@pytest.fixture
+def pipeline_ict() -> pixie16.pipeline.Pipeline:
+    pipe = pixie16.pipeline.Pipeline()
+    pipe.connect(["DummyTask"])
+    pipe.stop()
+    yield pipe
+    pipe.kill()
+
+
+@pytest.fixture
+def pipeline_icq() -> pixie16.pipeline.Pipeline:
+    pipe = pixie16.pipeline.Pipeline()
+    pipe.connect(["DummyTask"])
+    pipe.stop()
+    yield pipe
+    pipe.kill()
+
+
+@pytest.fixture
+def pipeline_ick() -> pixie16.pipeline.Pipeline:
+    pipe = pixie16.pipeline.Pipeline()
+    pipe.connect(["DummyTask"])
+    pipe.kill()
+    yield pipe
+    pipe.kill()
+
+
+@pytest.fixture
+def pipeline_icst() -> pixie16.pipeline.Pipeline:
+    pipe = pixie16.pipeline.Pipeline()
+    pipe.connect(["DummyTask"])
+    pipe.start()
+    pipe.stop()
+    yield pipe
+    pipe.kill()
+
+
+@pytest.fixture
+def pipeline_icsq() -> pixie16.pipeline.Pipeline:
+    pipe = pixie16.pipeline.Pipeline()
+    pipe.connect(["DummyTask"])
+    pipe.start()
+    pipe.quit()
+    yield pipe
+    pipe.kill()
+
+
+@pytest.fixture
+def pipeline_icsqk() -> pixie16.pipeline.Pipeline:
+    pipe = pixie16.pipeline.Pipeline()
+    pipe.connect(["DummyTask"])
+    pipe.start()
+    pipe.quit()
+    pipe.kill()
+    yield pipe
+    pipe.kill()
+
+
+@pytest.fixture
+def pipeline_icstq() -> pixie16.pipeline.Pipeline:
+    pipe = pixie16.pipeline.Pipeline()
+    pipe.connect(["DummyTask"])
+    pipe.start()
+    pipe.stop()
+    pipe.quit()
+    yield pipe
+    pipe.kill()
+
+
+@pytest.fixture
+def pipeline_icstqk() -> pixie16.pipeline.Pipeline:
+    pipe = pixie16.pipeline.Pipeline()
+    pipe.connect(["DummyTask"])
+    pipe.start()
+    pipe.stop()
+    pipe.quit()
+    pipe.kill()
+    yield pipe
+    pipe.kill()
 
 
 class Test_Pipeline:
-    @staticmethod
-    def test___init__():
-        pipe = pixie16.pipeline.Pipeline()
-        assert pipe.status == pixie16.pipeline.Status.WAITING
-        assert pipe.tasks_active == []
-        assert pipe._tasks_all == {}
-        assert pipe.reports == {}
-        assert pipe.context is not None
-        assert pipe.socket_router is not None
-        assert pipe.address_router is not None
-        assert pipe.address_router is not None
+    def test___init___(self):
+        pixie16.pipeline.Pipeline()
 
-    @staticmethod
-    def test_create_task_valid(pipeline_base: pixie16.pipeline.Pipeline):
-        assert pipeline_base._tasks_all == {}
-        pipeline_base.create_task("DummyTask")
-        assert "DummyTask" in pipeline_base._tasks_all
-
-    @staticmethod
-    def test_create_task_invalid_A(pipeline_base: pixie16.pipeline.Pipeline):
-        with pytest.raises(ValueError):
-            pipeline_base.create_task(" ")
-
-    @staticmethod
-    def test_create_task_invalid_B(pipeline_base: pixie16.pipeline.Pipeline):
-        pipeline_base.create_task("DummyTask")
-        with pytest.raises(ValueError):
-            pipeline_base.create_task("DummyTask")
-
-    @staticmethod
-    def test_handle_error(pipeline_base: pixie16.pipeline.Pipeline):
-        assert pipeline_base.status == pixie16.pipeline.Status.WAITING
-        pipeline_base.handle_error(Exception)
-        assert pipeline_base.status == pixie16.pipeline.Status.PANICKING
-
-    @staticmethod
-    def test_handle_stop(pipeline_base: pixie16.pipeline.Pipeline):
-        assert pipeline_base.status == pixie16.pipeline.Status.WAITING
-        pipeline_base.handle_stop()
-        assert pipeline_base.status == pixie16.pipeline.Status.WAITING
-
-    @staticmethod
-    def test_handle_report_valid(pipeline_created: pixie16.pipeline.Pipeline):
-        assert "DummyTask" not in pipeline_created.reports
-        pipeline_created.handle_report("DummyTask", {})
-        assert "DummyTask" in pipeline_created.reports
-
-    @staticmethod
-    def test_handle_report_invalid(pipeline_base: pixie16.pipeline.Pipeline):
-        with pytest.raises(ValueError):
-            pipeline_base.handle_report("DummyTask", {})
-
-    @staticmethod
-    def test_handle_print_edge(pipeline_created: pixie16.pipeline.Pipeline):
-        pipeline_created.handle_print("DummyTask", "", "")
-
-    @staticmethod
-    def test_handle_print_valid(pipeline_created: pixie16.pipeline.Pipeline):
-        pipeline_created.handle_print("DummyTask", "A", "B")
-
-    @staticmethod
-    def test_handle_print_invalid(pipeline_base: pixie16.pipeline.Pipeline):
-        with pytest.raises(ValueError):
-            pipeline_base.handle_print("DummyTask", "", "")
-
-    @staticmethod
-    def test_send_connect_valid(
-        pipeline_created: pixie16.pipeline.Pipeline, push: tuple[str, zmq.Socket]
+    def test_connect_valid(
+        self,
+        pipeline_i: pixie16.pipeline.Pipeline,
+        pipeline_ic: pixie16.pipeline.Pipeline,
+        pipeline_is: pixie16.pipeline.Pipeline,
+        pipeline_it: pixie16.pipeline.Pipeline,
+        pipeline_iq: pixie16.pipeline.Pipeline,
+        pipeline_ik: pixie16.pipeline.Pipeline,
+        pipeline_ics: pixie16.pipeline.Pipeline,
+        pipeline_ict: pixie16.pipeline.Pipeline,
+        pipeline_icq: pixie16.pipeline.Pipeline,
+        pipeline_ick: pixie16.pipeline.Pipeline,
+        pipeline_icst: pixie16.pipeline.Pipeline,
+        pipeline_icsq: pixie16.pipeline.Pipeline,
+        pipeline_icsqk: pixie16.pipeline.Pipeline,
+        pipeline_icstq: pixie16.pipeline.Pipeline,
+        pipeline_icstqk: pixie16.pipeline.Pipeline,
     ):
-        address_push, socket_push = push
-        pipeline_created.send_connect("DummyTask", address_push, False, False)
+        pipeline_i.connect(["DummyTask"])
+        pipeline_ic.connect(["DummyTask"])
+        pipeline_is.connect(["DummyTask"])
+        pipeline_it.connect(["DummyTask"])
+        pipeline_iq.connect(["DummyTask"])
+        pipeline_ik.connect(["DummyTask"])
+        pipeline_ics.connect(["DummyTask"])
+        pipeline_ict.connect(["DummyTask"])
+        pipeline_icq.connect(["DummyTask"])
+        pipeline_icst.connect(["DummyTask"])
+        pipeline_icsq.connect(["DummyTask"])
+        pipeline_icstq.connect(["DummyTask"])
 
-    @staticmethod
-    def test_send_connect_invalid(
-        pipeline_base: pixie16.pipeline.Pipeline, push: tuple[str, zmq.Socket]
+    def test_connect_invalid(
+        self,
+        pipeline_i: pixie16.pipeline.Pipeline,
+        pipeline_ic: pixie16.pipeline.Pipeline,
+        pipeline_is: pixie16.pipeline.Pipeline,
+        pipeline_it: pixie16.pipeline.Pipeline,
+        pipeline_iq: pixie16.pipeline.Pipeline,
+        pipeline_ik: pixie16.pipeline.Pipeline,
+        pipeline_ics: pixie16.pipeline.Pipeline,
+        pipeline_ict: pixie16.pipeline.Pipeline,
+        pipeline_icq: pixie16.pipeline.Pipeline,
+        pipeline_ick: pixie16.pipeline.Pipeline,
+        pipeline_icst: pixie16.pipeline.Pipeline,
+        pipeline_icsq: pixie16.pipeline.Pipeline,
+        pipeline_icsqk: pixie16.pipeline.Pipeline,
+        pipeline_icstq: pixie16.pipeline.Pipeline,
+        pipeline_icstqk: pixie16.pipeline.Pipeline,
     ):
-        address_push, socket_push = push
         with pytest.raises(ValueError):
-            pipeline_base.send_connect("DummyTask", address_push, False, False)
-
-    @staticmethod
-    def test_send_disconnect_valid(pipeline_created: pixie16.pipeline.Pipeline):
-        pipeline_created.send_disconnect("DummyTask")
-
-    @staticmethod
-    def test_send_disconnect_invalid(pipeline_base: pixie16.pipeline.Pipeline):
+            pipeline_i.connect([""])
         with pytest.raises(ValueError):
-            pipeline_base.send_disconnect("DummyTask")
-
-    @staticmethod
-    def test_send_start_valid(pipeline_created: pixie16.pipeline.Pipeline):
-        pipeline_created.send_start("DummyTask")
-
-    @staticmethod
-    def test_send_start_invalid(pipeline_base: pixie16.pipeline.Pipeline):
+            pipeline_ic.connect([""])
         with pytest.raises(ValueError):
-            pipeline_base.send_start("DummyTask")
-
-    @staticmethod
-    def test_send_stop_valid(pipeline_created: pixie16.pipeline.Pipeline):
-        pipeline_created.send_stop("DummyTask")
-
-    @staticmethod
-    def test_send_stop_invalid(pipeline_base: pixie16.pipeline.Pipeline):
+            pipeline_is.connect([""])
         with pytest.raises(ValueError):
-            pipeline_base.send_stop("DummyTask")
-
-    @staticmethod
-    def test_send_configure_valid(pipeline_created: pixie16.pipeline.Pipeline):
-        pipeline_created.send_configure("DummyTask", {})
-
-    @staticmethod
-    def test_send_configure_invalid(pipeline_base: pixie16.pipeline.Pipeline):
+            pipeline_it.connect([""])
         with pytest.raises(ValueError):
-            pipeline_base.send_configure("DummyTask", {})
-
-    @staticmethod
-    def test_send_stop_valid(pipeline_created: pixie16.pipeline.Pipeline):
-        pipeline_created.send_stop("DummyTask")
-
-    @staticmethod
-    def test_send_stop_invalid(pipeline_base: pixie16.pipeline.Pipeline):
+            pipeline_iq.connect([""])
         with pytest.raises(ValueError):
-            pipeline_base.send_stop("DummyTask")
-
-    @staticmethod
-    def test_init_edge(pipeline_base: pixie16.pipeline.Pipeline):
-        pipeline_base.init([])
-
-    @staticmethod
-    def test_init_valid(pipeline_created: pixie16.pipeline.Pipeline):
-        pipeline_created.init(["DummyTask"])
-
-    @staticmethod
-    def test_init_invalid(pipeline_base: pixie16.pipeline.Pipeline):
+            pipeline_ik.connect([""])
         with pytest.raises(ValueError):
-            pipeline_base.init([" "])
+            pipeline_ics.connect([""])
+        with pytest.raises(ValueError):
+            pipeline_ict.connect([""])
+        with pytest.raises(ValueError):
+            pipeline_icq.connect([""])
+        with pytest.raises(ValueError):
+            pipeline_ick.connect([""])
+        with pytest.raises(ValueError):
+            pipeline_icst.connect([""])
+        with pytest.raises(ValueError):
+            pipeline_icsq.connect([""])
+        with pytest.raises(ValueError):
+            pipeline_icsqk.connect([""])
+        with pytest.raises(ValueError):
+            pipeline_icstq.connect([""])
+        with pytest.raises(ValueError):
+            pipeline_icstqk.connect([""])
 
-    @staticmethod
-    def test_start(pipeline_dummy: pixie16.pipeline.Pipeline):
-        pipeline_dummy.start()
+        with pytest.raises(RuntimeError):
+            pipeline_ick.connect(["DummyTask"])
+        with pytest.raises(RuntimeError):
+            pipeline_icsqk.connect(["DummyTask"])
+        with pytest.raises(RuntimeError):
+            pipeline_icstqk.connect(["DummyTask"])
 
-    @staticmethod
-    def test_stop(pipeline_dummy: pixie16.pipeline.Pipeline):
-        pipeline_dummy.stop()
+    def test_start(
+        self,
+        pipeline_i: pixie16.pipeline.Pipeline,
+        pipeline_ic: pixie16.pipeline.Pipeline,
+        pipeline_is: pixie16.pipeline.Pipeline,
+        pipeline_it: pixie16.pipeline.Pipeline,
+        pipeline_iq: pixie16.pipeline.Pipeline,
+        pipeline_ik: pixie16.pipeline.Pipeline,
+        pipeline_ics: pixie16.pipeline.Pipeline,
+        pipeline_ict: pixie16.pipeline.Pipeline,
+        pipeline_icq: pixie16.pipeline.Pipeline,
+        pipeline_ick: pixie16.pipeline.Pipeline,
+        pipeline_icst: pixie16.pipeline.Pipeline,
+        pipeline_icsq: pixie16.pipeline.Pipeline,
+        pipeline_icsqk: pixie16.pipeline.Pipeline,
+        pipeline_icstq: pixie16.pipeline.Pipeline,
+        pipeline_icstqk: pixie16.pipeline.Pipeline,
+    ):
+        pipeline_i.start()
+        pipeline_ic.start()
+        pipeline_is.start()
+        pipeline_it.start()
+        pipeline_iq.start()
+        pipeline_ik.start()
+        pipeline_ics.start()
+        pipeline_ict.start()
+        pipeline_icq.start()
+        pipeline_ick.start()
+        pipeline_icst.start()
+        pipeline_icsq.start()
+        pipeline_icsqk.start()
+        pipeline_icstq.start()
+        pipeline_icstqk.start()
 
-    @staticmethod
-    def test_configure(pipeline_dummy: pixie16.pipeline.Pipeline):
-        pipeline_dummy.configure({})
+    def test_stop(
+        self,
+        pipeline_i: pixie16.pipeline.Pipeline,
+        pipeline_ic: pixie16.pipeline.Pipeline,
+        pipeline_is: pixie16.pipeline.Pipeline,
+        pipeline_it: pixie16.pipeline.Pipeline,
+        pipeline_iq: pixie16.pipeline.Pipeline,
+        pipeline_ik: pixie16.pipeline.Pipeline,
+        pipeline_ics: pixie16.pipeline.Pipeline,
+        pipeline_ict: pixie16.pipeline.Pipeline,
+        pipeline_icq: pixie16.pipeline.Pipeline,
+        pipeline_ick: pixie16.pipeline.Pipeline,
+        pipeline_icst: pixie16.pipeline.Pipeline,
+        pipeline_icsq: pixie16.pipeline.Pipeline,
+        pipeline_icsqk: pixie16.pipeline.Pipeline,
+        pipeline_icstq: pixie16.pipeline.Pipeline,
+        pipeline_icstqk: pixie16.pipeline.Pipeline,
+    ):
+        pipeline_i.stop()
+        pipeline_ic.stop()
+        pipeline_is.stop()
+        pipeline_it.stop()
+        pipeline_iq.stop()
+        pipeline_ik.stop()
+        pipeline_ics.stop()
+        pipeline_ict.stop()
+        pipeline_icq.stop()
+        pipeline_ick.stop()
+        pipeline_icst.stop()
+        pipeline_icsq.stop()
+        pipeline_icsqk.stop()
+        pipeline_icstq.stop()
+        pipeline_icstqk.stop()
 
-    @staticmethod
-    def test_poll_dummy(pipeline_dummy: pixie16.pipeline.Pipeline):
-        pipeline_dummy.poll(is_block=False)
+    def test_quit(
+        self,
+        pipeline_i: pixie16.pipeline.Pipeline,
+        pipeline_ic: pixie16.pipeline.Pipeline,
+        pipeline_is: pixie16.pipeline.Pipeline,
+        pipeline_it: pixie16.pipeline.Pipeline,
+        pipeline_iq: pixie16.pipeline.Pipeline,
+        pipeline_ik: pixie16.pipeline.Pipeline,
+        pipeline_ics: pixie16.pipeline.Pipeline,
+        pipeline_ict: pixie16.pipeline.Pipeline,
+        pipeline_icq: pixie16.pipeline.Pipeline,
+        pipeline_ick: pixie16.pipeline.Pipeline,
+        pipeline_icst: pixie16.pipeline.Pipeline,
+        pipeline_icsq: pixie16.pipeline.Pipeline,
+        pipeline_icsqk: pixie16.pipeline.Pipeline,
+        pipeline_icstq: pixie16.pipeline.Pipeline,
+        pipeline_icstqk: pixie16.pipeline.Pipeline,
+    ):
+        pipeline_i.quit()
+        pipeline_ic.quit()
+        pipeline_is.quit()
+        pipeline_it.quit()
+        pipeline_iq.quit()
+        pipeline_ik.quit()
+        pipeline_ics.quit()
+        pipeline_ict.quit()
+        pipeline_icq.quit()
+        pipeline_ick.quit()
+        pipeline_icst.quit()
+        pipeline_icsq.quit()
+        pipeline_icsqk.quit()
+        pipeline_icstq.quit()
+        pipeline_icstqk.quit()
 
-    @staticmethod
-    def test_poll_print(pipeline_print: pixie16.pipeline.Pipeline):
-        pipeline_print.poll(is_block=False)
+    def test_kill(
+        self,
+        pipeline_i: pixie16.pipeline.Pipeline,
+        pipeline_ic: pixie16.pipeline.Pipeline,
+        pipeline_is: pixie16.pipeline.Pipeline,
+        pipeline_it: pixie16.pipeline.Pipeline,
+        pipeline_iq: pixie16.pipeline.Pipeline,
+        pipeline_ik: pixie16.pipeline.Pipeline,
+        pipeline_ics: pixie16.pipeline.Pipeline,
+        pipeline_ict: pixie16.pipeline.Pipeline,
+        pipeline_icq: pixie16.pipeline.Pipeline,
+        pipeline_ick: pixie16.pipeline.Pipeline,
+        pipeline_icst: pixie16.pipeline.Pipeline,
+        pipeline_icsq: pixie16.pipeline.Pipeline,
+        pipeline_icsqk: pixie16.pipeline.Pipeline,
+        pipeline_icstq: pixie16.pipeline.Pipeline,
+        pipeline_icstqk: pixie16.pipeline.Pipeline,
+    ):
+        pipeline_i.kill()
+        pipeline_ic.kill()
+        pipeline_is.kill()
+        pipeline_it.kill()
+        pipeline_iq.kill()
+        pipeline_ik.kill()
+        pipeline_ics.kill()
+        pipeline_ict.kill()
+        pipeline_icq.kill()
+        pipeline_ick.kill()
+        pipeline_icst.kill()
+        pipeline_icsq.kill()
+        pipeline_icsqk.kill()
+        pipeline_icstq.kill()
+        pipeline_icstqk.kill()
 
-    # @staticmethod
-    # def test_poll_error(pipeline_error: pixie16.pipeline.Pipeline):
-    # pipeline_error.poll(is_block=False)
+    def test_configure(
+        self,
+        pipeline_i: pixie16.pipeline.Pipeline,
+        pipeline_ic: pixie16.pipeline.Pipeline,
+        pipeline_is: pixie16.pipeline.Pipeline,
+        pipeline_it: pixie16.pipeline.Pipeline,
+        pipeline_iq: pixie16.pipeline.Pipeline,
+        pipeline_ik: pixie16.pipeline.Pipeline,
+        pipeline_ics: pixie16.pipeline.Pipeline,
+        pipeline_ict: pixie16.pipeline.Pipeline,
+        pipeline_icq: pixie16.pipeline.Pipeline,
+        pipeline_ick: pixie16.pipeline.Pipeline,
+        pipeline_icst: pixie16.pipeline.Pipeline,
+        pipeline_icsq: pixie16.pipeline.Pipeline,
+        pipeline_icsqk: pixie16.pipeline.Pipeline,
+        pipeline_icstq: pixie16.pipeline.Pipeline,
+        pipeline_icstqk: pixie16.pipeline.Pipeline,
+    ):
+        pipeline_i.configure({"hello": "hello"})
+        pipeline_ic.configure({"hello": "hello"})
+        pipeline_is.configure({"hello": "hello"})
+        pipeline_it.configure({"hello": "hello"})
+        pipeline_iq.configure({"hello": "hello"})
+        pipeline_ik.configure({"hello": "hello"})
+        pipeline_ics.configure({"hello": "hello"})
+        pipeline_ict.configure({"hello": "hello"})
+        pipeline_icq.configure({"hello": "hello"})
+        pipeline_ick.configure({"hello": "hello"})
+        pipeline_icst.configure({"hello": "hello"})
+        pipeline_icsq.configure({"hello": "hello"})
+        pipeline_icsqk.configure({"hello": "hello"})
+        pipeline_icstq.configure({"hello": "hello"})
+        pipeline_icstqk.configure({"hello": "hello"})
+
+    def test_poll(
+        self,
+        pipeline_i: pixie16.pipeline.Pipeline,
+        pipeline_ic: pixie16.pipeline.Pipeline,
+        pipeline_is: pixie16.pipeline.Pipeline,
+        pipeline_it: pixie16.pipeline.Pipeline,
+        pipeline_iq: pixie16.pipeline.Pipeline,
+        pipeline_ik: pixie16.pipeline.Pipeline,
+        pipeline_ics: pixie16.pipeline.Pipeline,
+        pipeline_ict: pixie16.pipeline.Pipeline,
+        pipeline_icq: pixie16.pipeline.Pipeline,
+        pipeline_ick: pixie16.pipeline.Pipeline,
+        pipeline_icst: pixie16.pipeline.Pipeline,
+        pipeline_icsq: pixie16.pipeline.Pipeline,
+        pipeline_icsqk: pixie16.pipeline.Pipeline,
+        pipeline_icstq: pixie16.pipeline.Pipeline,
+        pipeline_icstqk: pixie16.pipeline.Pipeline,
+    ):
+        pipeline_i.poll()
+        pipeline_ic.poll()
+        pipeline_is.poll()
+        pipeline_it.poll()
+        pipeline_iq.poll()
+        pipeline_ik.poll()
+        pipeline_ics.poll()
+        pipeline_ict.poll()
+        pipeline_icq.poll()
+        pipeline_ick.poll()
+        pipeline_icst.poll()
+        pipeline_icsq.poll()
+        pipeline_icsqk.poll()
+        pipeline_icstq.poll()
+        pipeline_icstqk.poll()
+        pipeline_i.poll()
+        pipeline_ic.poll()
+        pipeline_is.poll()
+        pipeline_it.poll()
+        pipeline_iq.poll()
+        pipeline_ik.poll()
+        pipeline_ics.poll()
+        pipeline_ict.poll()
+        pipeline_icq.poll()
+        pipeline_ick.poll()
+        pipeline_icst.poll()
+        pipeline_icsq.poll()
+        pipeline_icsqk.poll()
+        pipeline_icstq.poll()
+        pipeline_icstqk.poll()
+        pipeline_i.poll()
+        pipeline_ic.poll()
+        pipeline_is.poll()
+        pipeline_it.poll()
+        pipeline_iq.poll()
+        pipeline_ik.poll()
+        pipeline_ics.poll()
+        pipeline_ict.poll()
+        pipeline_icq.poll()
+        pipeline_ick.poll()
+        pipeline_icst.poll()
+        pipeline_icsq.poll()
+        pipeline_icsqk.poll()
+        pipeline_icstq.poll()
+        pipeline_icstqk.poll()
+        pipeline_i.poll()
+        pipeline_ic.poll()
+        pipeline_is.poll()
+        pipeline_it.poll()
+        pipeline_iq.poll()
+        pipeline_ik.poll()
+        pipeline_ics.poll()
+        pipeline_ict.poll()
+        pipeline_icq.poll()
+        pipeline_ick.poll()
+        pipeline_icst.poll()
+        pipeline_icsq.poll()
+        pipeline_icsqk.poll()
+        pipeline_icstq.poll()
+        pipeline_icstqk.poll()
+        pipeline_i.poll()
+        pipeline_ic.poll()
+        pipeline_is.poll()
+        pipeline_it.poll()
+        pipeline_iq.poll()
+        pipeline_ik.poll()
+        pipeline_ics.poll()
+        pipeline_ict.poll()
+        pipeline_icq.poll()
+        pipeline_ick.poll()
+        pipeline_icst.poll()
+        pipeline_icsq.poll()
+        pipeline_icsqk.poll()
+        pipeline_icstq.poll()
+        pipeline_icstqk.poll()
