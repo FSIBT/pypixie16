@@ -60,7 +60,7 @@ class Task(multiprocessing.Process):
         super().__init_subclass__(**kwargs)
         Task.class_registry[cls.__name__] = cls
 
-    def __init__(self):
+    def __init__(self, **kwargs):
         """
         Initializes ``Task``.
 
@@ -72,6 +72,7 @@ class Task(multiprocessing.Process):
 
         self.name = self.__class__.__name__
         self.config = {}
+        self.kwargs = kwargs
         self._queue = collections.deque()
 
         self._context = None

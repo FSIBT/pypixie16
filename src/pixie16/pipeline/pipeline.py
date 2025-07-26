@@ -11,6 +11,8 @@ from .task import Task
 from .status import Status
 from .message import Message
 
+from rich import print
+
 
 class Pipeline:
     """
@@ -40,17 +42,16 @@ class Pipeline:
 
     # Dunders
 
-    def __init__(self):
+    def __init__(self, task_kwargs=None):
         self.status = Status.WAITING
         self.tasks_active = []
         self._tasks_all = {}
         self.reports = {}
+        self.task_kwargs = task_kwargs or {}
         self.context = zmq.Context()
         self.socket_router = self.context.socket(zmq.ROUTER)
         port = self.socket_router.bind_to_random_port("tcp://127.0.0.1")
         self.address_router = f"tcp://127.0.0.1:{port}"
-
-    # Special
 
     def create_task(self, name: str):
         """
@@ -69,7 +70,7 @@ class Pipeline:
         if name not in Task.class_registry:
             raise ValueError(f"PANICKING cannot find pypixie16 task '{name}'")
 
-        task = Task.class_registry[name]()
+        task = Task.class_registry[name](**self.task_kwargs)
         self._tasks_all[name] = task
         task._address_router = self.address_router
         task.start()
