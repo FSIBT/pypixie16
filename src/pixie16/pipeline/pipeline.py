@@ -239,7 +239,7 @@ class Pipeline:
         while set(self.reports.keys()) != set(self.tasks_active):
             self.poll()
             if time.time() - now > 30:
-                print("ERROR could not get a response from all tasks")
+                print("[red]ERROR[/] could not get a response from all tasks")
                 print(f"      got {self.reports.keys()}")
                 print(f"      expected {self.tasks_active}")
                 sys.exit(1)

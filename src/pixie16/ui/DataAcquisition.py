@@ -1,7 +1,8 @@
+import copy
 from enum import Enum
 import time
 
-import dateutil
+import dateutil.parser
 from PyQt6.QtWidgets import (
     QWidget,
     QCheckBox,
@@ -23,6 +24,7 @@ from PyQt6.QtWidgets import (
 from PyQt6 import QtCore
 import pyqtgraph as pg
 import psutil
+
 
 from .. import pipeline
 
@@ -371,7 +373,8 @@ class DataAcquisition(QWidget):
                 self.taskid_to_row[t] = row
 
         # Update Task table
-        for t, status in self.pipeline.reports.items():
+        for t, status_tmp in self.pipeline.reports.items():
+            status = copy.deepcopy(status_tmp)
             # Check if task is active
             self.last_report_time[t] = current_time
 
@@ -379,7 +382,7 @@ class DataAcquisition(QWidget):
             row = self.taskid_to_row[t]  # Get row once per task
 
             # Handle 'name' and 'status'
-            name_value = status.get("name", t)  # t is the task class name
+            name_value = status.pop("name", t)  # t is the task class name
             name_item = QTableWidgetItem(str(name_value))
             self.task_table.setItem(row, self.key_to_pos["name"], name_item)
 
@@ -389,17 +392,17 @@ class DataAcquisition(QWidget):
             self.task_table.setItem(row, self.key_to_pos["status"], status_item)
 
             # Set CPU Percent
-            cpu_percent = status.get("cpu", "N/A")
+            cpu_percent = status.pop("cpu", "N/A")
             cpu_item = QTableWidgetItem(self.format_value("cpu percent", cpu_percent))
             self.task_table.setItem(row, self.key_to_pos["cpu percent"], cpu_item)
 
             # Extract and set Memory (Percentage)
-            memory_percent = status.get("memory", 0)
+            memory_percent = status.pop("memory", 0)
             memory_item = QTableWidgetItem(self.format_value("memory", memory_percent))
             self.task_table.setItem(row, self.key_to_pos["memory"], memory_item)
 
             # Set Queue Length
-            queue_length = status.get("queue", 0)
+            queue_length = status.pop("queue", 0)
             queue_item = QTableWidgetItem(
                 self.format_value("queue length", queue_length)
             )
@@ -414,10 +417,8 @@ class DataAcquisition(QWidget):
             # Other keys for "Extra Info"
             for key, val in status.items():
                 if key in [
-                    "name",
                     "status",
                     "ps",
-                    "queue",
                     "activity",
                     "time done",
                     "address_push",

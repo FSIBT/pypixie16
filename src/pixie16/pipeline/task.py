@@ -83,7 +83,7 @@ class Task(multiprocessing.Process):
         self._address_pull = None
         self._address_dealer = None
 
-    # Callbacks
+        self.heart_beat_timestamp = 0
 
     def do_init(self) -> None:
         """
@@ -517,6 +517,24 @@ class Task(multiprocessing.Process):
         except zmq.Again:
             pass
 
+    def send_heart_beat(self):
+        "send a heart beat every second"
+        now = time.time()
+        if now - self.heart_beat_timestamp > 2:
+            ps_data = psutil.Process(self.pid)
+
+            tmp = {
+                "name": self.name,
+                "status": self.status,
+                "cpu": ps_data.cpu_percent(),
+                "memory": ps_data.memory_percent(),
+                "queue": len(self._queue),
+            }
+
+            self._send_report(tmp)
+
+            self.heart_beat_timestamp = now
+
     def run(self):
         """
         Represents the task.
@@ -537,3 +555,5 @@ class Task(multiprocessing.Process):
                 break
             else:
                 assert False
+
+            self.send_heart_beat()
