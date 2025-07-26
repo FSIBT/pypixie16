@@ -35,13 +35,20 @@ from ..config import LocalSettings
 class DataAcquisition(QWidget):
     """App to acquire data using Pixie 16."""
 
-    def __init__(self, app):
+    def __init__(self, app, init_modes):
         super().__init__()
 
         self.app = app
         self.taskid_to_row = {}
         self.pipeline = pipeline.Pipeline()
         self.local_settings = LocalSettings()
+        if init_modes:
+            self.modes = ["DummyData"]
+
+        # these need to be valid string (either int() or dateutil.parse must accept these
+        self.run_time = "1m"
+        self.mca_time = "1m"
+        self.trace_time = "5"
 
         self.create_layout()
         self.enable_ui_for_new_run()
@@ -49,6 +56,8 @@ class DataAcquisition(QWidget):
         self.start_button.clicked.connect(self.start_run)
         self.stop_button.clicked.connect(self.stop_run)
         self.run_time_input.editingFinished.connect(self.set_runtime)
+        self.traces_set_time.editingFinished.connect(self.update_trace_time)
+        self.MCA_set_time.editingFinished.connect(self.update_mca_time)
 
         # Timer to update table and plot
         self.timer = QtCore.QTimer()
@@ -56,25 +65,26 @@ class DataAcquisition(QWidget):
         self.timer.start(250)
 
         # select a default mode
-        self.on_mode_change(self.settings_modes.currentIndex())
+        if init_modes:
+            self.on_mode_change(self.settings_modes.currentIndex())
 
-    @property
-    def modes(self):
-        return ["DummyData"]
-
-    def _enable_mock_mode(self):
-        """Enable pixie16 mock mode - add this method to DataAcquisition class"""
+    def parse_runtime(self, time_string: str) -> int:
+        """Parse strings like 1h, 1h5m, 25s into seconds as integer."""
+        if not time_string:
+            return 0
         try:
-            # Import here to avoid circular imports
-            from .. import enable_mock_mode
-
-            enable_mock_mode()
-            print("INFO: pixie16.control successfully mocked")
-            return True
-        except Exception as e:
-            print(f"WARNING: Failed to enable mock mode: {e}")
-            print("INFO: Continuing without mock - some functions may fail")
-            return False
+            # already in seconds
+            return int(time_string)
+        except ValueError:
+            try:
+                s = dateutil.parser.parse(time_string) - dateutil.parser.parse("0s")
+                return int(s.total_seconds())
+            except dateutil.parser.ParserError as e:
+                print(
+                    "[red]ERROR[/] wrong format, e.g. minutes cannot be larger than 59",
+                    e,
+                )
+                raise ValueError
 
     def _check_dummy_mode(self, app):
         """Check if dummy mode is enabled - add this method to DataAcquisition class"""
@@ -111,19 +121,19 @@ class DataAcquisition(QWidget):
         self.run_time_text = QLabel("Run time (s):")
         self.run_time_text.setFixedWidth(100)
         self.run_time_input = QLineEdit()
-        self.run_time_input.setText("60")
+        self.run_time_input.setText(f"{self.run_time}")
         self.run_time_input.setFixedWidth(80)
 
         self.MCA_set_time_text = QLabel("MCA Time (s):")
         self.MCA_set_time_text.setFixedWidth(100)
         self.MCA_set_time = QLineEdit()
-        self.MCA_set_time.setText("0")
+        self.MCA_set_time.setText(f"{self.mca_time}")
         self.MCA_set_time.setFixedWidth(80)
 
         self.traces_set_time_text = QLabel("Traces Time (s):")
         self.traces_set_time_text.setFixedWidth(100)
         self.traces_set_time = QLineEdit()
-        self.traces_set_time.setText("0")
+        self.traces_set_time.setText(f"{self.trace_time}")
         self.traces_set_time.setFixedWidth(80)
 
         # self.help_button = QPushButton("Help")
@@ -179,17 +189,7 @@ class DataAcquisition(QWidget):
 
         self.layout.addLayout(self.status_layout)
 
-        if self._check_dummy_mode(self.app):
-            self.mock_status_label = QLabel("Mock Status: Ready")
-            self.mock_status_label.setStyleSheet(
-                "color: blue; font-family: monospace; background-color: #f0f0f0; padding: 5px;"
-            )
-            self.layout.addWidget(self.mock_status_label)
-
         self.setLayout(self.layout)
-
-        self.traces_set_time.editingFinished.connect(self.update_trace_time)
-        self.MCA_set_time.editingFinished.connect(self.update_mca_time)
 
     def add_main_controls(self):
         """Add main control widgets to run_layout - override this to customize UI."""
@@ -306,32 +306,37 @@ class DataAcquisition(QWidget):
         print(f"selected {text}")
         match text:
             case "DummyData":
-                self.pipeline.connect(["DummyData", "PickSingleModule", "ConvertToEvents"])
+                self.pipeline.connect(
+                    ["DummyData", "PickSingleModule", "ConvertToEvents"]
+                )
             case _:
                 print("Should not happen")
 
+    def error_popup(self, title: str, message: str):
+        msg = QMessageBox()
+        msg.setIcon(QMessageBox.Icon.Warning)
+        msg.setWindowTitle(title)
+        msg.setText(message)
+        msg.setStandardButtons(QMessageBox.StandardButton.Ok)
+        msg.exec()
+
     def set_runtime(self):
         runtime = self.run_time_input.text()
-        try:
-            runtime = int(runtime)
-        except ValueError:
-            try:
-                s = dateutil.parser.parse(runtime) - dateutil.parser.parse("0s")
-                runtime = int(s.total_seconds())
-            except dateutil.parser.ParserError as e:
-                msg = QMessageBox(self)
-                msg.setIcon(QMessageBox.Icon.Warning)
-                msg.setWindowTitle("Wrong time format")
-                msg.setText("Wrong format, e.g. minutes cannot be larger than 59")
-                msg.setStandardButtons(QMessageBox.StandardButton.Ok)
-                msg.exec()
-                return
-        self.run_time_input.setText(str(runtime))
-        self.progress_bar.setMaximum(runtime)
-        self.local_settings.runtime = runtime
 
-        if self.pipeline.tasks_active:
-            self.pipeline.configure({"runtime": runtime})
+        try:
+            value = self.parse_runtime(runtime)
+            self.run_time_input.setText(runtime)
+            self.run_time = runtime
+        except ValueError:
+            self.error_popup(
+                title="Wrong time format",
+                message="Wrong format, e.g. minutes cannot be larger than 59",
+            )
+            self.run_time_input.setText(self.run_time)
+            return
+
+        self.progress_bar.setMaximum(value)
+        self.local_settings.runtime = value
 
     def update_status(self):
         """Get information from processes."""
@@ -437,72 +442,6 @@ class DataAcquisition(QWidget):
             item = QTableWidgetItem(" ".join(extra_info))
             self.task_table.setItem(row, self.key_to_pos["Extra Info"], item)
 
-        self.update_mock_status()
-
-    def update_mock_status(self):
-        """Update mock status display with function calls and call count"""
-        if hasattr(self, "mock_status_label"):
-            try:
-                import pixie16 as px
-
-                if hasattr(px, "is_mock_enabled") and px.is_mock_enabled():
-                    mock_instance = px.mock_control.get_mock_instance()
-                    call_count = len(mock_instance.call_log)
-
-                    if call_count == 0:
-                        status_text = "Mock Status: Active - No calls yet"
-                        color = "blue"
-                    else:
-                        # Get recent function calls (last 3) and their names only
-                        recent_calls = (
-                            mock_instance.call_log[-3:]
-                            if mock_instance.call_log
-                            else []
-                        )
-                        recent_functions = []
-                        for call in recent_calls:
-                            # Extract just the function name from "pixie16.control.function_name(args)"
-                            func_name = call.split(".")[-1].split("(")[0]
-                            recent_functions.append(func_name)
-
-                        # Get function call counts for summary
-                        call_counts = {}
-                        for call in mock_instance.call_log:
-                            func_name = call.split(".")[-1].split("(")[0]
-                            call_counts[func_name] = call_counts.get(func_name, 0) + 1
-
-                        # Show both total count and recent function calls
-                        recent_str = (
-                            " → ".join(recent_functions) if recent_functions else "none"
-                        )
-
-                        # Show top 2 most called functions with counts
-                        top_calls = sorted(
-                            call_counts.items(), key=lambda x: x[1], reverse=True
-                        )[:2]
-                        top_summary = ", ".join(
-                            [f"{name}({count})" for name, count in top_calls]
-                        )
-
-                        status_text = f"Mock Status: {call_count} calls | Recent: {recent_str} | Top: {top_summary}"
-                        color = "green"
-
-                    self.mock_status_label.setText(status_text)
-                    self.mock_status_label.setStyleSheet(
-                        f"color: {color}; font-family: monospace; background-color: #f0f0f0; padding: 5px; border: 1px solid #ccc;"
-                    )
-                else:
-                    self.mock_status_label.setText("Mock Status: Disabled")
-                    self.mock_status_label.setStyleSheet(
-                        "color: gray; font-family: monospace; background-color: #f0f0f0; padding: 5px;"
-                    )
-
-            except Exception as e:
-                self.mock_status_label.setText(f"Mock Status: Error - {str(e)[:50]}")
-                self.mock_status_label.setStyleSheet(
-                    "color: red; font-family: monospace; background-color: #f0f0f0; padding: 5px;"
-                )
-
     def format_value(self, key, value):
         if isinstance(value, Enum):
             return str(value.value)
@@ -534,27 +473,43 @@ class DataAcquisition(QWidget):
 
     def closeEvent(self, event: QtCore.QEvent):
         """Handle App shutdown."""
-        self.pipeline.stop()
+
+        print("got close event... shutting down", flush=True)
+        self.pipeline.quit()
         event.accept()
 
     def update_trace_time(self):
         """Update trace_time in LocalSettings when traces_set_time QLineEdit is changed."""
+        runtime = self.traces_set_time.text()
         try:
-            value = float(self.traces_set_time.text())
-            self.local_settings.trace_time = value
-            self.local_settings.traces = value > 0
-            if self.pipeline.tasks_active:
-                self.pipeline.configure({"trace_time": value, "traces": value > 0})
+            value = self.parse_runtime(runtime)
+            self.traces_set_time.setText(runtime)
+            self.trace_time = runtime
         except ValueError:
-            pass
+            self.error_popup(
+                title="Wrong time format",
+                message="Wrong format, e.g. minutes cannot be larger than 59",
+            )
+            self.traces_set_time.setText(self.trace_time)
+            return
+
+        self.local_settings.trace_time = value
+        self.local_settings.traces = value > 0
 
     def update_mca_time(self):
         """Update mca_time in LocalSettings when MCA_set_time QLineEdit is changed."""
+        runtime = self.MCA_set_time.text()
         try:
-            value = float(self.MCA_set_time.text())
-            self.local_settings.mca_time = value
-            self.local_settings.skip_mca = value <= 0
-            if self.pipeline.tasks_active:
-                self.pipeline.configure({"mca_time": value, "skip_mca": value <= 0})
+            value = self.parse_runtime(runtime)
+            self.MCA_set_time.setText(runtime)
+            self.mca_time = runtime
         except ValueError:
-            pass
+            self.error_popup(
+                title="Wrong time format",
+                message="Wrong format, e.g. minutes cannot be larger than 59",
+            )
+            self.MCA_set_time.setText(self.mca_time)
+            return
+
+        self.local_settings.mca_time = value
+        self.local_settings.skip_mca = value <= 0
