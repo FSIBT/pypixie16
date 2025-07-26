@@ -120,6 +120,13 @@ class Pipeline:
 
         pass
 
+    def do_kill(self) -> None:
+        """
+        ``kill`` callback.
+        """
+
+        pass
+
     def do_configure(self, config: dict[str, typing.Any]) -> None:
         """
         ``configure`` callback.
@@ -394,6 +401,17 @@ class Pipeline:
 
         for name in self._tasks_all:
             self._send_quit(name)
+
+    def kill(self) -> None:
+        """
+        Does killing.
+        """
+
+        self.do_kill()
+        self._status = None
+
+        for task in self._tasks_all.values():
+            task.kill()
 
     def configure(self, config: dict[str, typing.Any]) -> None:
         """
