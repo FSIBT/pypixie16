@@ -21,7 +21,7 @@ from PyQt6.QtWidgets import (
     QProgressBar,
     QMessageBox,
 )
-from PyQt6 import QtCore
+from PyQt6 import QtCore, QtGui
 import pyqtgraph as pg
 import psutil
 
@@ -412,9 +412,9 @@ class DataAcquisition(QWidget):
             self.task_table.setItem(row, self.key_to_pos["queue length"], queue_item)
 
             # Set Activity using tracked time
-            activity_item = QTableWidgetItem(
-                self.format_value("activity", current_time)
-            )
+            activity_text, color = self.format_value("activity", current_time)
+            activity_item = QTableWidgetItem(activity_text)
+            activity_item.setForeground(QtGui.QColor(color))
             self.task_table.setItem(row, self.key_to_pos["activity"], activity_item)
 
             # Other keys for "Extra Info"
@@ -441,6 +441,11 @@ class DataAcquisition(QWidget):
             self.task_table.setItem(row, self.key_to_pos["Extra Info"], item)
 
     def format_value(self, key, value):
+        """Format some table values better or replace with emoji.
+
+        On some system the colors for emojis (e.g. for activity) does not work,
+        so we need to explicity set it.
+        """
         if isinstance(value, Enum):
             return str(value.value)
 
@@ -461,11 +466,11 @@ class DataAcquisition(QWidget):
             if isinstance(value, int | float):
                 dt = time.time() - value
                 if dt <= 5:
-                    return "🟢"
+                    return "🟢", "green"
                 elif dt <= 60:
-                    return "🟡"
+                    return "🟡", "yellow"
                 else:
-                    return "⚪"
+                    return "⚪", "gray"
 
         return str(value)
 
