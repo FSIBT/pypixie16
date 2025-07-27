@@ -70,10 +70,10 @@ class Task(multiprocessing.Process):
 
         super().__init__()
 
-        self._kwargs = kwargs
-        self._name = self.__class__.__name__
-        self._config = {}
-        self._status = None
+        self.kwargs = kwargs
+        self.name = self.__class__.__name__
+        self.config = {}
+        self.status = None
         self._queue = collections.deque()
         self._context = None
         self._socket_push = None
@@ -82,6 +82,9 @@ class Task(multiprocessing.Process):
         self._address_push = None
         self._address_pull = None
         self._address_dealer = None
+
+        # get's set in pipeline before starting the task
+        self.address_router = None
 
         self._heart_beat_timestamp = 0
 
@@ -177,7 +180,7 @@ class Task(multiprocessing.Process):
         Handles ``Message.QUIT``.
         """
 
-        self._status = Status.DYING
+        self.status = Status.DYING
 
     def _handle_connect(
         self, address_pull: str, is_start: bool, is_final: bool
@@ -276,17 +279,16 @@ class Task(multiprocessing.Process):
     # Actions
 
     def init(self):
-        """
-        Initializes the task.
-        """
+        if self.address_router is None:
+            print(f"ERROR  no router address given in {self.name}!")
 
-        self._status = Status.WAITING
+        self.status = Status.WAITING
         self._context = zmq.Context()
         self._socket_dealer = self._context.socket(zmq.DEALER)
         self._socket_push = self._context.socket(zmq.PUSH)
         self._socket_pull = self._context.socket(zmq.PULL)
         self._socket_dealer.setsockopt(zmq.IDENTITY, self.name.encode())
-        self._socket_dealer.connect(self._address_router)
+        self._socket_dealer.connect(self.address_router)
         self._address_push = self._socket_push.bind_to_random_port("tcp://127.0.0.1")
         self._address_push = f"tcp://127.0.0.1:{self._address_push}"
 
@@ -297,7 +299,7 @@ class Task(multiprocessing.Process):
         except Exception as err:
             self.panic(err)
 
-        self.report({"status": self._status, "address_push": self._address_push})
+        self.report({"status": self.status, "address_push": self._address_push})
 
     def begin(self):
         """
@@ -311,8 +313,8 @@ class Task(multiprocessing.Process):
         except Exception as err:
             self.panic(err)
 
-        self._status = Status.RUNNING
-        self.report({"status": self._status})
+        self.status = Status.RUNNING
+        self.report({"status": self.status})
 
     def stop(self):
         """
@@ -326,8 +328,8 @@ class Task(multiprocessing.Process):
         except Exception as err:
             self.panic(err)
 
-        self._status = Status.WAITING
-        self.report({"status": self._status})
+        self.status = Status.WAITING
+        self.report({"status": self.status})
         self._send_stop()
 
     def quit(self):
@@ -335,7 +337,7 @@ class Task(multiprocessing.Process):
         Quits the task.
         """
 
-        if self._status != Status.WAITING:
+        if self.status != Status.WAITING:
             self.stop()
 
         try:
@@ -345,8 +347,8 @@ class Task(multiprocessing.Process):
         except Exception as err:
             self.panic(err)
 
-        self._status = Status.DYING
-        self.report({"status": self._status})
+        self.status = Status.DYING
+        self.report({"status": self.status})
 
         if self._socket_pull:
             self._socket_pull.setsockopt(zmq.LINGER, 0)
@@ -388,6 +390,7 @@ class Task(multiprocessing.Process):
         self._send_report(
             {
                 "address_pull": self._address_pull,
+                "address_push": self._address_push,
                 "is_start": self._is_start,
                 "is_final": self._is_final,
             }
@@ -408,7 +411,7 @@ class Task(multiprocessing.Process):
         except Exception as err:
             self.panic(err)
 
-        self._config |= config
+        self.config |= config
 
     def panic(self, error: Exception):
         """
@@ -418,9 +421,9 @@ class Task(multiprocessing.Process):
             error: Error for panicking.
         """
 
-        self._status = Status.PANICKING
+        self.status = Status.PANICKING
         self._send_error(error)
-        self.report({"status": self._status})
+        self.report({"status": self.status})
 
     def wait(self):
         """
@@ -524,15 +527,16 @@ class Task(multiprocessing.Process):
         if now - self._heart_beat_timestamp > 2:
             ps_data = psutil.Process(self.pid)
 
-            tmp = {
-                "name": self.name,
-                "status": self.status,
-                "cpu": ps_data.cpu_percent(),
-                "memory": ps_data.memory_percent(),
-                "queue": len(self._queue),
-            }
-
-            self._send_report(tmp)
+            self._send_report(
+                {
+                    "name": self.name,
+                    "status": self.status,
+                    "cpu": ps_data.cpu_percent(),
+                    "memory": ps_data.memory_percent(),
+                    "queue": len(self._queue),
+                    "activity": now,
+                }
+            )
 
             self._heart_beat_timestamp = now
 
@@ -546,33 +550,15 @@ class Task(multiprocessing.Process):
         while True:
             self.poll()
 
-            if self._status == Status.RUNNING:
+            if self.status == Status.RUNNING:
                 self.work()
-            elif self._status == Status.WAITING:
+            elif self.status == Status.WAITING:
                 self.wait()
-            elif self._status == Status.PANICKING:
+            elif self.status == Status.PANICKING:
                 self.wait()
-            elif self._status == Status.DYING:
+            elif self.status == Status.DYING:
                 break
             else:
                 assert False
 
             self.send_heart_beat()
-
-    # Properties
-
-    @property
-    def name(self) -> str:
-        return self._name
-
-    @property
-    def status(self) -> Status:
-        return self._status
-
-    @property
-    def kwargs(self) -> dict:
-        return self._kwargs
-
-    @property
-    def config(self) -> dict[str, typing.Any]:
-        return self._config
