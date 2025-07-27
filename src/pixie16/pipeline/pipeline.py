@@ -46,7 +46,7 @@ class Pipeline:
     def __init__(self, task_kwargs=None):
         self.status = Status.WAITING
         self.tasks_active = []
-        self._tasks_all = {}
+        self.tasks_all = {}
         self.reports = {}
         self.task_kwargs = task_kwargs or {}
         self.context = zmq.Context()
@@ -65,133 +65,18 @@ class Pipeline:
             ValueError: Task not found, i.e. not in ``Task.class_registry``.
         """
 
-        if name in self._tasks_all:
-            raise ValueError(f"PANICKING task already initialized")
+        if name in self.tasks_all:
+            return
 
         if name not in Task.class_registry:
-            raise ValueError(f"PANICKING cannot find pypixie16 task '{name}'")
+            raise ValueError(f"PANICKING cannot find task '{name}'")
 
         task = Task.class_registry[name](**self.task_kwargs)
-        self._tasks_all[name] = task
-        task._address_router = self.address_router
+        self.tasks_all[name] = task
+        task.address_router = self.address_router
         task.start()
 
-    def __init__(self, task_kwargs=None):
-        self._task_kwargs = task_kwargs or {}
-        self._status = Status.WAITING
-        self._tasks_active = []
-        self._tasks_all = {}
-        self._reports = {}
-        self._context = zmq.Context()
-        self._socket_router = self._context.socket(zmq.ROUTER)
-        self._port_router = self._socket_router.bind_to_random_port("tcp://127.0.0.1")
-        self._address_router = f"tcp://127.0.0.1:{self._port_router}"
-
-    # Callbacks
-
-    def do_connect(self, _tasks_active: list[str]) -> None:
-        """
-        ``connect`` callback.
-
-        Parameters:
-            _tasks_active: Names of tasks to connect.
-        """
-
-        pass
-
-    def do_start(self) -> None:
-        """
-        ``start`` callback.
-        """
-
-        pass
-
-    def do_stop(self) -> None:
-        """
-        ``stop`` callback.
-        """
-
-        pass
-
-    def do_quit(self) -> None:
-        """
-        ``quit`` callback.
-        """
-
-        pass
-
-    def do_kill(self) -> None:
-        """
-        ``kill`` callback.
-        """
-
-        pass
-
-    def do_configure(self, config: dict[str, typing.Any]) -> None:
-        """
-        ``configure`` callback.
-
-        Parameters:
-            config: Parameters to send.
-        """
-
-        pass
-
-    def do_poll(self) -> None:
-        """
-        ``poll`` callback.
-        """
-
-        pass
-
-    def do_error(self, err: Exception) -> None:
-        """
-        ``error`` callback.
-
-        Parameters:
-            err: Recieved error.
-        """
-
-        print(err)
-
-    def do_print(self, string: str) -> None:
-        """
-        ``print`` callback.
-
-        Parameters:
-            string: Recieved stdout.
-        """
-
-        print(string, end="")
-
-    # Special
-
-    def _create_task(self, name: str):
-        """
-        Creates tasks using class names.
-
-        Parameters:
-            name: Task class name.
-
-        Raises:
-            ValueError: Task already initialized.
-            ValueError: Task not found.
-        """
-
-        if name in self._tasks_all:
-            raise ValueError(f"ERROR: Task already initialized.")
-
-        if name not in Task.class_registry:
-            raise ValueError(f"ERROR: Task not found: '{name}'.")
-
-        task = Task.class_registry[name]()
-        task._address_router = self._address_router
-        task.start()
-        self._tasks_all[name] = task
-
-    # Handlers
-
-    def _handle_report(self, name: str, report: dict[str, typing.Any]) -> None:
+    def handle_report(self, name: str, report: dict[str, typing.Any]) -> None:
         """
         Handles ``Message.REPORT``.
 
@@ -200,24 +85,25 @@ class Pipeline:
             report: Recieved report.
         """
 
-        assert name in self._tasks_all
+        if name not in self.tasks_all:
+            print("ERROR: pipeline got a message from a non-active task")
 
-        if name in self._reports:
-            self._reports[name] |= report
+        if name in self.reports:
+            self.reports[name] |= report
         else:
-            self._reports[name] = report
+            self.reports[name] = report
 
         if "status" in report and report["status"] == Status.PANICKING:
-            self._status = Status.PANICKING
+            self.status = Status.PANICKING
 
         if (
             "status" in report
             and report["status"] == Status.WAITING
-            and name == self._tasks_active[-1]
+            and name == self.tasks_active[-1]
         ):
-            self._status = Status.WAITING
+            self.status = Status.WAITING
 
-    def _handle_print(self, name: str, string: str) -> None:
+    def handle_print(self, name: str, string: str) -> None:
         """
         Handles ``Message.PRINT``.
 
@@ -226,11 +112,10 @@ class Pipeline:
             string: Recieved string.
         """
 
-        assert name in self._tasks_all
+        assert name in self.tasks_all
+        print(string, end="")
 
-        self.do_print(string)
-
-    def _handle_error(self, name: str, err: Exception) -> None:
+    def handle_error(self, name: str, err: Exception) -> None:
         """
         Handles ``Message.ERROR``.
 
@@ -239,14 +124,17 @@ class Pipeline:
             err: Recieved error.
         """
 
-        assert name in self._tasks_all
+        assert name in self.tasks_all
 
-        self._status = Status.PANICKING
-        self.do_error(err)
+        self.status = Status.PANICKING
+        print(err)
 
-    # Senders
+    def update_active_tasks_status(self, msg_type: Message):
+        for name in self.tasks_active:
+            msg = pickle.dumps(msg_type)
+            self.socket_router.send_multipart([name.encode(), msg])
 
-    def _send_connect(
+    def send_connect(
         self, name: str, address_pull: str, is_start: bool, is_final: bool
     ) -> None:
         """
@@ -259,185 +147,99 @@ class Pipeline:
             is_final: Last task flag.
         """
 
-        if name not in self._tasks_all:
+        if name not in self.tasks_all:
             raise ValueError
 
         msg = pickle.dumps(Message.CONNECT(address_pull, is_start, is_final))
-        self._socket_router.send_multipart([name.encode(), msg])
-
-    def _send_start(self, name: str) -> None:
-        """
-        Sends ``Message.START``.
-
-        Parameters:
-            name: Task name.
-        """
-
-        assert name in self._tasks_all
-
-        msg = pickle.dumps(Message.START)
-        self._socket_router.send_multipart([name.encode(), msg])
-
-    def _send_quit(self, name: str) -> None:
-        """
-        Sends ``Message.QUIT``.
-
-        Parameters:
-            name: Task name.
-        """
-
-        assert name in self._tasks_all
-
-        msg = pickle.dumps(Message.QUIT)
-        self._socket_router.send_multipart([name.encode(), msg])
-
-    def _send_configure(self, name: str, config: dict[str, typing.Any]) -> None:
-        """
-        Sends ``Message.CONFIGURE``.
-
-        Parameters:
-            name: Task name.
-            config: Parameters to send.
-        """
-
-        assert name in self._tasks_all
-
-        msg = pickle.dumps(Message.CONFIGURE(config))
-        self._socket_router.send_multipart([name.encode(), msg])
-
-    def _send_stop(self, name: str) -> None:
-        """
-        Sends ``Message.STOP``.
-
-        Parameters:
-            name: Task name.
-        """
-
-        assert name in self._tasks_all
-
-        msg = pickle.dumps(Message.STOP)
-        self._socket_router.send_multipart([name.encode(), msg])
+        self.socket_router.send_multipart([name.encode(), msg])
 
     # Actions
 
-    def connect(self, _tasks_active: list[str]) -> None:
+    def connect(self, tasks_active: list[str]) -> None:
         """
         Does connecting.
 
         Parameters:
-            _tasks_active: Names of tasks to connect.
+            tasks_active: Names of tasks to connect.
 
         Raises:
             RuntimeError: Not all tasks responding.
         """
 
-        self.do_connect(_tasks_active)
-
         # Clearing messages and updating status.
-        self._status = Status.WAITING
-        self._reports = {}
+        self.status = Status.WAITING
+        self.reports = {}
 
         now = time.time()
 
         # Pausing & disconnecting old tasks.
-        for name in [*self._tasks_all, *_tasks_active]:
-            try:
-                self._create_task(name)
-            except ValueError:
-                pass
-            self._send_connect(name, None, False, False)
+        for name in [*self.tasks_all, *tasks_active]:
+            self.create_task(name)
+            self.send_connect(name, None, False, False)
 
         # Waiting for reinitialization reports.
-        self._tasks_active = _tasks_active
-        while set(self._reports.keys()) != set(self._tasks_active):
+        self.tasks_active = tasks_active
+        while set(self.reports.keys()) != set(self.tasks_active):
             self.poll()
             if time.time() - now > 30:
                 raise RuntimeError(
-                    f"ERROR: Not all tasks responding: got {self._reports.keys()}, expected {self._tasks_active}"
+                    f"ERROR: Not all tasks responding: got {self.reports.keys()}, expected {self.tasks_active}"
                 )
 
         # Connecting new tasks
         prev = None
-        for name in _tasks_active:
-            self._send_connect(
+        for name in tasks_active:
+            self.send_connect(
                 name,
-                self._reports[prev]["address_push"] if prev else None,
-                self._tasks_active[0] == name,
-                self._tasks_active[-1] == name,
+                self.reports[prev]["address_push"] if prev else None,
+                self.tasks_active[0] == name,
+                self.tasks_active[-1] == name,
             )
             prev = name
 
         self.configure({})
 
     def start(self) -> None:
-        """
-        Does starting.
-        """
-
-        self.do_start()
-        self._status = Status.RUNNING
-
-        for name in self._tasks_active:
-            self._send_start(name)
+        self.status = Status.RUNNING
+        self.update_active_tasks_status(Message.START)
 
     def stop(self) -> None:
-        """
-        Does starting.
-        """
-
-        self.do_stop()
-        self._status = Status.WAITING
-
-        for name in self._tasks_active:
-            self._send_stop(name)
+        self.status = Status.WAITING
+        self.update_active_tasks_status(Message.STOP)
 
     def quit(self) -> None:
-        """
-        Does quitting.
-        """
+        self.status = Status.DYING
+        self.update_active_tasks_status(Message.QUIT)
 
-        self.do_quit()
-        self._status = Status.DYING
-
-        for name in self._tasks_all:
-            self._send_quit(name)
+        for task in self.tasks_all.values():
+            task.join()
 
     def kill(self) -> None:
-        """
-        Does killing.
-        """
+        self.status = None
 
-        self.do_kill()
-        self._status = None
-
-        for task in self._tasks_all.values():
+        for task in self.tasks_all.values():
             task.kill()
 
-        for task in self._tasks_all.values():
+        for task in self.tasks_all.values():
             task.join()
 
     def configure(self, config: dict[str, typing.Any]) -> None:
         """
-        Does configuring.
+        Configures all task by sending the `config` dictionary to all tasks
 
         Parameters:
             config: Parameters to send.
         """
 
-        self.do_configure(config)
-
-        for name in self._tasks_active:
-            self._send_configure(name, config)
+        self.update_active_tasks_status(Message.CONFIGURE(config))
 
     def poll(self) -> None:
         """
         Does listening.
         """
 
-        self.do_poll()
-
         try:
-            name, msg = self._socket_router.recv_multipart(flags=zmq.NOBLOCK)
+            name, msg = self.socket_router.recv_multipart(flags=zmq.NOBLOCK)
         except zmq.Again:
             return
 
@@ -445,32 +247,10 @@ class Pipeline:
         msg = pickle.loads(msg)
 
         if type(msg) == Message.REPORT:
-            self._handle_report(name, *msg())
+            self.handle_report(name, *msg())
         elif type(msg) == Message.ERROR:
-            self._handle_error(name, *msg())
+            self.handle_error(name, *msg())
         elif type(msg) == Message.PRINT:
-            self._handle_print(name, *msg())
+            self.handle_print(name, *msg())
         else:  # pragma: no cover
             assert False
-
-    # Properties
-
-    @property
-    def status(self) -> Status:  # pragma: no cover
-        return self._status
-
-    @property
-    def tasks_active(self) -> list[str]:  # pragma: no cover
-        return self._tasks_active
-
-    @property
-    def tasks_active(self) -> list[str]:  # pragma: no cover
-        return self._task_kwargs
-
-    @property
-    def tasks_all(self) -> dict[str, Task]:  # pragma: no cover
-        return self._tasks_all
-
-    @property
-    def reports(self) -> dict[str, dict[str, typing.Any]]:  # pragma: no cover
-        return self._reports
