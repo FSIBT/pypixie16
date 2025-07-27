@@ -89,12 +89,6 @@ class DataAcquisition(QWidget):
                 )
                 raise ValueError
 
-    def _check_dummy_mode(self, app):
-        """Check if dummy mode is enabled - add this method to DataAcquisition class"""
-        import sys
-
-        return getattr(app, "dummy", False) or "--dummy" in sys.argv
-
     def create_layout(self):
         style = self.app.style()
 
