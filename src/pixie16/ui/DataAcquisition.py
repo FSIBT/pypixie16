@@ -116,33 +116,27 @@ class DataAcquisition(QWidget):
         self.stop_button.setToolTip("Stop")
 
         self.run_time_text = QLabel("Run time (s):")
-        self.run_time_text.setFixedWidth(100)
         self.run_time_input = QLineEdit()
+        self.run_time_input.setFixedWidth(100)
         self.run_time_input.setText(f"{self.run_time}")
-        self.run_time_input.setFixedWidth(80)
 
         self.MCA_set_time_text = QLabel("MCA Time (s):")
-        self.MCA_set_time_text.setFixedWidth(100)
         self.MCA_set_time = QLineEdit()
+        self.MCA_set_time.setFixedWidth(100)
         self.MCA_set_time.setText(f"{self.mca_time}")
-        self.MCA_set_time.setFixedWidth(80)
 
         self.traces_set_time_text = QLabel("Traces Time (s):")
-        self.traces_set_time_text.setFixedWidth(100)
         self.traces_set_time = QLineEdit()
+        self.traces_set_time.setFixedWidth(100)
         self.traces_set_time.setText(f"{self.trace_time}")
-        self.traces_set_time.setFixedWidth(80)
 
         # self.help_button = QPushButton("Help")
         self.settings_text = QLabel("Settings Mode:")
-        self.settings_text.setFixedWidth(100)
         self.settings_modes = QComboBox(self)
         self.settings_modes.addItems(self.modes)
-        self.settings_modes.setFixedWidth(100)
         self.settings_modes.currentIndexChanged.connect(self.on_mode_change)
 
         self.Pixie_reboot = QPushButton("Reboot Pixie")
-        self.Pixie_reboot.setFixedWidth(100)
 
         self.add_main_controls()
 
@@ -162,7 +156,6 @@ class DataAcquisition(QWidget):
         # Run status
         self.status_layout = QHBoxLayout()
         self.task_running = QLabel('<span style="color:green;">TRACES</span>')
-        self.task_running.setFixedWidth(50)
         self.progress_bar = QProgressBar()
         self.progress_bar.setMinimum(0)
         self.progress_bar.setMaximum(100)
@@ -171,9 +164,7 @@ class DataAcquisition(QWidget):
         self.run_time_progress_text = QLabel(
             '<span style="color:black;">0:00:10</span>'
         )
-        self.run_time_progress_text.setFixedWidth(50)
         self.run_time_left_text = QLabel('<span style="color:purple;">0:02:10</span>')
-        self.run_time_left_text.setFixedWidth(50)
         self.current_task_status = QLabel(
             "Current task status (i.e. Setting up process pipeline)"
         )
@@ -183,6 +174,7 @@ class DataAcquisition(QWidget):
         self.status_layout.addWidget(self.run_time_progress_text)
         self.status_layout.addWidget(self.run_time_left_text)
         self.status_layout.addWidget(self.current_task_status)
+        self.status_layout.addStretch(1)
 
         self.layout.addLayout(self.status_layout)
 
@@ -390,12 +382,12 @@ class DataAcquisition(QWidget):
             self.task_table.setItem(row, self.key_to_pos["name"], name_item)
 
             status_item = QTableWidgetItem(
-                self.format_value("status", status.get("status", "N/A"))
+                self.format_value("status", status.get("status", "n/a"))
             )
             self.task_table.setItem(row, self.key_to_pos["status"], status_item)
 
             # Set CPU Percent
-            cpu_percent = status.pop("cpu", "N/A")
+            cpu_percent = status.pop("cpu", "n/a")
             cpu_item = QTableWidgetItem(self.format_value("cpu percent", cpu_percent))
             self.task_table.setItem(row, self.key_to_pos["cpu percent"], cpu_item)
 
