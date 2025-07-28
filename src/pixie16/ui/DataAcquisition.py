@@ -1,5 +1,6 @@
 import copy
 from enum import Enum
+import datetime
 import time
 
 import dateutil.parser
@@ -155,25 +156,19 @@ class DataAcquisition(QWidget):
 
         # Run status
         self.status_layout = QHBoxLayout()
-        self.task_running = QLabel('<span style="color:green;">TRACES</span>')
+        self.task_running = QLabel("Progress")
         self.progress_bar = QProgressBar()
         self.progress_bar.setMinimum(0)
         self.progress_bar.setMaximum(100)
         self.progress_bar.setValue(0)
         self.progress_bar.setFixedWidth(800)
-        self.run_time_progress_text = QLabel(
-            '<span style="color:black;">0:00:10</span>'
-        )
-        self.run_time_left_text = QLabel('<span style="color:purple;">0:02:10</span>')
-        self.current_task_status = QLabel(
-            "Current task status (i.e. Setting up process pipeline)"
-        )
+        self.run_time_progress_text = QLabel("00:00:00")
+        self.run_time_left_text = QLabel("00:00:00")
 
         self.status_layout.addWidget(self.task_running)
         self.status_layout.addWidget(self.progress_bar)
         self.status_layout.addWidget(self.run_time_progress_text)
         self.status_layout.addWidget(self.run_time_left_text)
-        self.status_layout.addWidget(self.current_task_status)
         self.status_layout.addStretch(1)
 
         self.layout.addLayout(self.status_layout)
@@ -424,7 +419,12 @@ class DataAcquisition(QWidget):
                     "task finished",
                 ]:
                     if key == "runtime":
+                        max_val = self.progress_bar.maximum()
                         self.progress_bar.setValue(int(val))
+                        formatted = str(datetime.timedelta(seconds=val))
+                        self.run_time_progress_text.setText(formatted)
+                        formatted = str(datetime.timedelta(seconds=max_val - val))
+                        self.run_time_left_text.setText(formatted)
                     continue
                 if key.startswith("meta-"):
                     continue
