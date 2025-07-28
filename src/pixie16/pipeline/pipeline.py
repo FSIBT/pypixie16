@@ -96,12 +96,8 @@ class Pipeline:
         if "status" in report and report["status"] == Status.PANICKING:
             self.status = Status.PANICKING
 
-        if (
-            "status" in report
-            and report["status"] == Status.WAITING
-            and name == self.tasks_active[-1]
-        ):
-            self.status = Status.WAITING
+        if "task finished" in report and name == self.tasks_active[-1]:
+            self.status = Status.FINISHED
 
     def handle_print(self, name: str, string: str) -> None:
         """
@@ -185,6 +181,10 @@ class Pipeline:
                 raise RuntimeError(
                     f"ERROR: Not all tasks responding: got {self.reports.keys()}, expected {self.tasks_active}"
                 )
+
+        for i in range(10 * len(self.tasks_active)):
+            self.poll()
+            time.sleep(0.01)
 
         # Connecting new tasks
         prev = None

@@ -27,6 +27,7 @@ class Message:
     START = "▶️"
     STOP = "⏹️"
     QUIT = "⏏️"
+    FINISHED = "🏁"
 
     class CONNECT(_Message[str]):  # "🔁"
         pass

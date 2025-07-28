@@ -409,21 +409,24 @@ class DataAcquisition(QWidget):
             activity_item.setForeground(QtGui.QColor(color))
             self.task_table.setItem(row, self.key_to_pos["activity"], activity_item)
 
-            # Other keys for "Extra Info"
+            # Other keys for "Extra Info" and skip several keys
             for key, val in status.items():
                 if key in [
                     "status",
                     "ps",
                     "activity",
-                    "time done",
+                    "runtime",
                     "address_push",
                     "address_pull",
                     "is_start",
                     "is_end",
                     "is_final",
+                    "task finished",
                 ]:
-                    if key == "time done":
+                    if key == "runtime":
                         self.progress_bar.setValue(int(val))
+                    continue
+                if key.startswith("meta-"):
                     continue
 
                 display_value = self.format_value(key, val)

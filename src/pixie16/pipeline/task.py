@@ -30,6 +30,7 @@ class Task(multiprocessing.Process):
     This class uses the following states:
         * ⏸️ WAITING: Task waiting.
         * ▶️ RUNNING: Task running.
+        * 🏁 FINISHED: Task finished
         * ⏏️ DYING: Task dying.
         * 🆘 PANICKING: Task panicking.
 
@@ -228,7 +229,19 @@ class Task(multiprocessing.Process):
             msg = Message.STOP
             self._socket_push.send_pyobj(msg)
 
-    def _send_data(self, data: typing.Any) -> None:
+    def send_finished(self) -> None:
+        """
+        Sends ``Message.FINISHED``.
+        """
+        self.status = Status.FINISHED
+
+        if not self._is_final:
+            msg = Message.FINISHED
+            self._socket_push.send_pyobj(msg)
+        else:
+            self.send_report({"task finished": True})
+
+    def send_data(self, data: typing.Any) -> None:
         """
         Sends ``Message.DATA``.
 
@@ -240,7 +253,7 @@ class Task(multiprocessing.Process):
             msg = Message.DATA(data)
             self._socket_push.send_pyobj(msg)
 
-    def _send_report(self, report: dict) -> None:
+    def send_report(self, report: dict) -> None:
         """
         Sends ``Message.REPORT``.
 
@@ -387,7 +400,7 @@ class Task(multiprocessing.Process):
         self._address_pull = address_pull
         self._is_start = is_start
         self._is_final = is_final
-        self._send_report(
+        self.send_report(
             {
                 "address_pull": self._address_pull,
                 "address_push": self._address_push,
@@ -403,6 +416,9 @@ class Task(multiprocessing.Process):
         Parameters:
             config: Configuration for configuring.
         """
+
+        if not config:
+            return
 
         try:
             with contextlib.redirect_stdout(io.StringIO()) as out:
@@ -447,11 +463,18 @@ class Task(multiprocessing.Process):
         val = self._queue.popleft() if self._queue else None
 
         if val or self._is_start:
+            if val is Message.FINISHED:
+                self.send_finished()
+                return
+
             try:
-                with contextlib.redirect_stdout(io.StringIO()) as out:
-                    ret = self.do_work(val)
-                    self._send_data(ret)
-                self.print(out.getvalue())
+                # with contextlib.redirect_stdout(io.StringIO()) as out:
+                #     ret = self.do_work(val)
+                #     self._send_data(ret)
+                # self.print(out.getvalue())
+                ret = self.do_work(val)
+                if ret is not None:
+                    self.send_data(ret)
             except Exception as err:
                 self.panic(err)
 
@@ -463,7 +486,7 @@ class Task(multiprocessing.Process):
             report: Report to report.
         """
 
-        self._send_report(report)
+        self.send_report(report)
 
     def print(self, string: str) -> None:
         """
@@ -483,7 +506,7 @@ class Task(multiprocessing.Process):
             data: Data to send.
         """
 
-        self._send_data(report)
+        self.send_data(report)
 
     def poll(self):
         """
@@ -505,6 +528,7 @@ class Task(multiprocessing.Process):
             elif msg == Message.QUIT:
                 self._handle_quit()
             else:  # pragma: no cover
+                print(f"Error to unhandled message 1 {msg}")
                 assert False
         except zmq.Again:
             pass
@@ -516,7 +540,10 @@ class Task(multiprocessing.Process):
                 self._handle_data(*msg())
             elif msg == Message.STOP:
                 self._handle_stop()
+            elif msg == Message.FINISHED:
+                self.send_finished()
             else:  # pragma: no cover
+                print(f"Error to unhandled message 2 {msg}")
                 assert False
         except zmq.Again:
             pass
@@ -524,10 +551,10 @@ class Task(multiprocessing.Process):
     def send_heart_beat(self):
         "send a heart beat every second"
         now = time.time()
-        if now - self._heart_beat_timestamp > 2:
+        if now - self._heart_beat_timestamp > 0.5:  # TODO: slow down later
             ps_data = psutil.Process(self.pid)
 
-            self._send_report(
+            self.send_report(
                 {
                     "name": self.name,
                     "status": self.status,
@@ -554,11 +581,15 @@ class Task(multiprocessing.Process):
                 self.work()
             elif self.status == Status.WAITING:
                 self.wait()
+            elif self.status == Status.FINISHED:
+                self.wait()
             elif self.status == Status.PANICKING:
                 self.wait()
             elif self.status == Status.DYING:
                 break
             else:
+                print(f"Error unhandled run status {self.status}")
+
                 assert False
 
             self.send_heart_beat()
