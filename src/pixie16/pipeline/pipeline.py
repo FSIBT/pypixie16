@@ -8,6 +8,7 @@ import itertools
 import zmq
 
 from .task import Task
+from .error import Error
 from .status import Status
 from .message import Message
 
@@ -111,7 +112,7 @@ class Pipeline:
         assert name in self.tasks_all
         print(string, end="")
 
-    def handle_error(self, name: str, err: Exception) -> None:
+    def handle_error(self, name: str, err: Error) -> None:
         """
         Handles ``Message.ERROR``.
 

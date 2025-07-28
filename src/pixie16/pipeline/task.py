@@ -11,6 +11,7 @@ import multiprocessing
 import zmq
 import psutil
 
+from .error import Error
 from .status import Status
 from .message import Message
 
@@ -277,7 +278,7 @@ class Task(multiprocessing.Process):
             msg = pickle.dumps(Message.PRINT(string), protocol=pickle.HIGHEST_PROTOCOL)
             self._socket_dealer.send(msg)
 
-    def _send_error(self, error: Exception) -> None:
+    def _send_error(self, error: Error) -> None:
         """
         Sends ``Message.ERROR``.
 
@@ -310,7 +311,8 @@ class Task(multiprocessing.Process):
                 self.do_init()
                 self.print(out.getvalue())
         except Exception as err:
-            self.panic(err)
+            exc_type, exc_obj, exc_tb = sys.exc_info()
+            self.panic(Error(exc_type, str(err), exc_tb.tb_lineno))
 
         self.report({"status": self.status, "address_push": self._address_push})
 
@@ -324,7 +326,8 @@ class Task(multiprocessing.Process):
                 self.do_start()
                 self.print(out.getvalue())
         except Exception as err:
-            self.panic(err)
+            exc_type, exc_obj, exc_tb = sys.exc_info()
+            self.panic(Error(exc_type, str(err), exc_tb.tb_lineno))
 
         self.status = Status.RUNNING
         self.report({"status": self.status})
@@ -339,7 +342,8 @@ class Task(multiprocessing.Process):
                 self.do_stop()
                 self.print(out.getvalue())
         except Exception as err:
-            self.panic(err)
+            exc_type, exc_obj, exc_tb = sys.exc_info()
+            self.panic(Error(exc_type, str(err), exc_tb.tb_lineno))
 
         self.status = Status.WAITING
         self.report({"status": self.status})
@@ -358,7 +362,8 @@ class Task(multiprocessing.Process):
                 self.do_quit()
                 self.print(out.getvalue())
         except Exception as err:
-            self.panic(err)
+            exc_type, exc_obj, exc_tb = sys.exc_info()
+            self.panic(Error(exc_type, str(err), exc_tb.tb_lineno))
 
         self.status = Status.DYING
         self.report({"status": self.status})
@@ -390,7 +395,8 @@ class Task(multiprocessing.Process):
                 self.do_connect(address_pull, is_start, is_final)
                 self.print(out.getvalue())
         except Exception as err:
-            self.panic(err)
+            exc_type, exc_obj, exc_tb = sys.exc_info()
+            self.panic(Error(exc_type, str(err), exc_tb.tb_lineno))
 
         if address_pull:
             self._socket_pull.connect(address_pull)
@@ -425,11 +431,12 @@ class Task(multiprocessing.Process):
                 self.do_configure(config)
                 self.print(out.getvalue())
         except Exception as err:
-            self.panic(err)
+            exc_type, exc_obj, exc_tb = sys.exc_info()
+            self.panic(Error(exc_type, str(err), exc_tb.tb_lineno))
 
         self.config |= config
 
-    def panic(self, error: Exception):
+    def panic(self, error: Error):
         """
         Panics for the task.
 
@@ -451,7 +458,8 @@ class Task(multiprocessing.Process):
                 self.do_wait()
                 self.print(out.getvalue())
         except Exception as err:
-            self.panic(err)
+            exc_type, exc_obj, exc_tb = sys.exc_info()
+            self.panic(Error(exc_type, str(err), exc_tb.tb_lineno))
 
         time.sleep(SECONDS_WAIT)
 
@@ -476,7 +484,8 @@ class Task(multiprocessing.Process):
                 if ret is not None:
                     self.send_data(ret)
             except Exception as err:
-                self.panic(err)
+                exc_type, exc_obj, exc_tb = sys.exc_info()
+                self.panic(Error(exc_type, str(err), exc_tb.tb_lineno))
 
     def report(self, report: dict) -> None:
         """
