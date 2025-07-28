@@ -364,6 +364,8 @@ class DataAcquisition(QWidget):
 
         # Update Task table
         for t, status_tmp in self.pipeline.reports.items():
+            if t not in self.pipeline.tasks_active:
+                continue
             status = copy.deepcopy(status_tmp)
             # Check if task is active
             self.last_report_time[t] = current_time

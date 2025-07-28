@@ -175,7 +175,7 @@ class Pipeline:
 
         # Waiting for reinitialization reports.
         self.tasks_active = tasks_active
-        while set(self.reports.keys()) != set(self.tasks_active):
+        while not set(self.tasks_active).issubset(set(self.reports.keys())):
             self.poll()
             if time.time() - now > 30:
                 raise RuntimeError(
@@ -185,6 +185,11 @@ class Pipeline:
         for i in range(10 * len(self.tasks_active)):
             self.poll()
             time.sleep(0.01)
+
+        # delete disconnect messages
+        for t in self.tasks_all:
+            if t not in self.tasks_active and t in self.reports:
+                del self.reports[t]
 
         # Connecting new tasks
         prev = None
