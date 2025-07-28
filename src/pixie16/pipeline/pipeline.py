@@ -219,14 +219,26 @@ class Pipeline:
         for task in self.tasks_all.values():
             task.join()
 
+    def send_kill(self, name: str):
+        """
+        Kills the given task.
+
+        Parameters:
+            name: Task to kill.
+        """
+
+        self.tasks_all[name].kill()
+        self.tasks_all[name].join()
+
     def kill(self) -> None:
+        """
+        Kills all tasks.
+        """
+
         self.status = None
 
-        for task in self.tasks_all.values():
-            task.kill()
-
-        for task in self.tasks_all.values():
-            task.join()
+        for name in self.tasks_all:
+            self.send_kill(name)
 
     def configure(self, config: dict[str, typing.Any]) -> None:
         """
