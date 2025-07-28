@@ -5,10 +5,4 @@ from .error import Error
 from .task import Task
 from . import tasks
 
-__all__ = [
-    "Message",
-    "Pipeline",
-    "Status",
-    "Task",
-    "Error"
-]
+__all__ = ["Message", "Pipeline", "Status", "Task", "Error"]

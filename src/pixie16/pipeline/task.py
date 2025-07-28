@@ -4,6 +4,7 @@ import sys
 import time
 import typing
 import pickle
+import traceback
 import contextlib
 import collections
 import multiprocessing
@@ -311,8 +312,7 @@ class Task(multiprocessing.Process):
                 self.do_init()
                 self.print(out.getvalue())
         except Exception as err:
-            exc_type, exc_obj, exc_tb = sys.exc_info()
-            self.panic(Error(exc_type, str(err), exc_tb.tb_lineno))
+            self.panic(Error(traceback.format_exc()))
 
         self.report({"status": self.status, "address_push": self._address_push})
 
@@ -326,8 +326,7 @@ class Task(multiprocessing.Process):
                 self.do_start()
                 self.print(out.getvalue())
         except Exception as err:
-            exc_type, exc_obj, exc_tb = sys.exc_info()
-            self.panic(Error(exc_type, str(err), exc_tb.tb_lineno))
+            self.panic(Error(traceback.format_exc()))
 
         self.status = Status.RUNNING
         self.report({"status": self.status})
@@ -342,8 +341,7 @@ class Task(multiprocessing.Process):
                 self.do_stop()
                 self.print(out.getvalue())
         except Exception as err:
-            exc_type, exc_obj, exc_tb = sys.exc_info()
-            self.panic(Error(exc_type, str(err), exc_tb.tb_lineno))
+            self.panic(Error(traceback.format_exc()))
 
         self.status = Status.WAITING
         self.report({"status": self.status})
@@ -362,8 +360,7 @@ class Task(multiprocessing.Process):
                 self.do_quit()
                 self.print(out.getvalue())
         except Exception as err:
-            exc_type, exc_obj, exc_tb = sys.exc_info()
-            self.panic(Error(exc_type, str(err), exc_tb.tb_lineno))
+            self.panic(Error(traceback.format_exc()))
 
         self.status = Status.DYING
         self.report({"status": self.status})
@@ -395,8 +392,7 @@ class Task(multiprocessing.Process):
                 self.do_connect(address_pull, is_start, is_final)
                 self.print(out.getvalue())
         except Exception as err:
-            exc_type, exc_obj, exc_tb = sys.exc_info()
-            self.panic(Error(exc_type, str(err), exc_tb.tb_lineno))
+            self.panic(Error(traceback.format_exc()))
 
         if address_pull:
             self._socket_pull.connect(address_pull)
@@ -431,8 +427,7 @@ class Task(multiprocessing.Process):
                 self.do_configure(config)
                 self.print(out.getvalue())
         except Exception as err:
-            exc_type, exc_obj, exc_tb = sys.exc_info()
-            self.panic(Error(exc_type, str(err), exc_tb.tb_lineno))
+            self.panic(Error(traceback.format_exc()))
 
         self.config |= config
 
@@ -458,8 +453,7 @@ class Task(multiprocessing.Process):
                 self.do_wait()
                 self.print(out.getvalue())
         except Exception as err:
-            exc_type, exc_obj, exc_tb = sys.exc_info()
-            self.panic(Error(exc_type, str(err), exc_tb.tb_lineno))
+            self.panic(Error(traceback.format_exc()))
 
         time.sleep(SECONDS_WAIT)
 
@@ -484,8 +478,7 @@ class Task(multiprocessing.Process):
                 if ret is not None:
                     self.send_data(ret)
             except Exception as err:
-                exc_type, exc_obj, exc_tb = sys.exc_info()
-                self.panic(Error(exc_type, str(err), exc_tb.tb_lineno))
+                self.panic(Error(traceback.format_exc()))
 
     def report(self, report: dict) -> None:
         """

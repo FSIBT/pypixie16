@@ -1,7 +1,3 @@
-
 class Error(Exception):
-
-	def __init__(self, type, msg, line):
-		self.type = type
-		self.msg = msg
-		self.line = line
+    def __init__(self, msg: str):
+        self.msg: str = msg
