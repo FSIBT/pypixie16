@@ -5,6 +5,7 @@ Binary file loader that integrates with scope's existing Start/Stop buttons
 
 import time
 import threading
+import os
 from pathlib import Path
 
 import numpy as np
@@ -30,18 +31,33 @@ except ImportError:
 
 class BinaryReplayThread(QThread):
     progress_update = pyqtSignal(int, int)  # current, total
+    mca_histogram_update = pyqtSignal(dict)  # For MCA mode: {channel: histogram}
     replay_finished = pyqtSignal()
 
     def __init__(self, events, parent_scope, binary_loader):
         super().__init__()
         self.events = events
         self.parent_scope = parent_scope
-        self.binary_loader = binary_loader  # Reference to get current rate
+        self.binary_loader = binary_loader
         self.is_running = False
         self.is_paused = False
 
+        self.mca_histograms = {}
+        self.is_mca_mode = False
+        self.last_mca_update = 0
+        self.mca_update_interval = 2.0  # Update MCA display every 2 seconds
+
+        # Initialize MCA histograms if in MCA mode
+        if (
+            hasattr(parent_scope, "current_mode")
+            and parent_scope.current_mode == "mca_mode"
+        ):
+            self.is_mca_mode = True
+            for ch in parent_scope.channel_numbers:
+                self.mca_histograms[ch] = np.zeros(32768, dtype=np.int64)
+            print("MCA mode detected - will accumulate histograms during replay")
+
     def run(self):
-        """Main replay loop with dynamic rate adjustment"""
         self.is_running = True
         current_index = 0
 
@@ -64,14 +80,15 @@ class BinaryReplayThread(QThread):
 
                 event = self.events[i]
 
+                if self.is_mca_mode:
+                    self._process_event_for_mca(event)
+
                 # Feed event to the appropriate scope processor
                 try:
                     if self.parent_scope.current_mode == "list_mode":
                         self.parent_scope.process_list_mode_event(event)
                     elif self.parent_scope.current_mode == "traces_mode":
                         trace_data = getattr(event, "trace", np.random.random(100))
-
-                        # Check if spectrum_tab has coincidence-aware method
                         if hasattr(
                             self.parent_scope.spectrum_tab, "add_event_with_trace"
                         ):
@@ -79,9 +96,7 @@ class BinaryReplayThread(QThread):
                                 event, trace_data
                             )
                         else:
-                            # Fallback to old method
                             self.parent_scope.process_traces_event(event)
-
                 except Exception as e:
                     print(f"Error processing event {i}: {e}")
 
@@ -90,12 +105,49 @@ class BinaryReplayThread(QThread):
             # Emit progress update
             self.progress_update.emit(current_index, len(self.events))
 
-            # Sleep between batches
+            # Emit MCA histogram update
+            if self.is_mca_mode:
+                current_time = time.time()
+                if (current_time - self.last_mca_update) >= self.mca_update_interval:
+                    # Convert to int32
+                    display_histograms = {}
+                    for ch, hist in self.mca_histograms.items():
+                        display_histograms[ch] = np.clip(
+                            hist, 0, np.iinfo(np.int32).max
+                        ).astype(np.int32)
+
+                    self.mca_histogram_update.emit(display_histograms)
+                    self.last_mca_update = current_time
+
             time.sleep(delay_between_batches)
+
+        # Final MCA update
+        if self.is_mca_mode and self.mca_histograms:
+            display_histograms = {}
+            for ch, hist in self.mca_histograms.items():
+                display_histograms[ch] = np.clip(
+                    hist, 0, np.iinfo(np.int32).max
+                ).astype(np.int32)
+            self.mca_histogram_update.emit(display_histograms)
 
         # Replay finished
         self.replay_finished.emit()
         self.is_running = False
+
+    def _process_event_for_mca(self, event):
+        try:
+            channel = getattr(event, "channel", 0)
+            energy = getattr(event, "energy", 0)
+
+            if channel in self.mca_histograms:
+                # Convert energy to bin number (assuming 16-bit energy range)
+                bin_number = int((energy / 65536.0) * 32768)
+                bin_number = max(0, min(bin_number, 32767))
+
+                # Accumulate in histogram
+                self.mca_histograms[channel][bin_number] += 1
+        except Exception as e:
+            print(f"Error processing MCA event: {e}")
 
     def pause(self):
         self.is_paused = True
@@ -106,6 +158,63 @@ class BinaryReplayThread(QThread):
     def stop(self):
         self.is_running = False
         self.wait()
+
+
+class BinaryLoadingThread(QThread):
+    """Separate thread for loading binary files without blocking UI"""
+
+    progress = pyqtSignal(str)
+    finished = pyqtSignal(list, str)  # events, filename
+    failed = pyqtSignal(str)
+
+    def __init__(self, filename):
+        super().__init__()
+        self.filename = filename
+
+    def run(self):
+        """Load binary file in background"""
+        try:
+            file_size = os.path.getsize(self.filename)
+            size_mb = file_size / (1024 * 1024)
+            self.progress.emit(f"Reading {size_mb:.1f} MB file...")
+
+            if pixie16:
+                self.progress.emit("Parsing events...")
+                events = list(
+                    pixie16.read.read_list_mode_data_as_events([self.filename])
+                )
+                events.sort(key=lambda x: x.timestamp)
+                self.progress.emit(f"Loaded {len(events)} events")
+                self.finished.emit(events, self.filename)
+            else:
+                self.progress.emit("pixie16 not available, generating dummy data...")
+                events = self._generate_dummy_events()
+                self.finished.emit(events, self.filename)
+
+        except Exception as e:
+            self.failed.emit(f"Loading failed: {str(e)}")
+
+    def _generate_dummy_events(self):
+        """Generate dummy events when pixie16 not available"""
+        events = []
+        base_timestamp = int(time.time() * 1e8)
+        for i in range(5000):
+            event = type(
+                "Event",
+                (),
+                {
+                    "channel": np.random.randint(0, 16),
+                    "timestamp": base_timestamp
+                    + i * 100000
+                    + np.random.randint(-10000, 10000),
+                    "energy": np.random.randint(100, 4000),
+                    "trace": np.random.randint(0, 4096, np.random.randint(100, 1000))
+                    if np.random.random() > 0.3
+                    else [],
+                },
+            )()
+            events.append(event)
+        return events
 
 
 class BinaryFileLoader(QWidget):
@@ -124,7 +233,8 @@ class BinaryFileLoader(QWidget):
         self.events = []
         self.total_events = 0
         self.replay_thread = None
-        self.is_binary_mode = False  # Track if we're using binary data
+        self.loading_thread = None
+        self.is_binary_mode = False
 
         # Replay settings
         self.replay_rate_hz = 1000
@@ -141,9 +251,15 @@ class BinaryFileLoader(QWidget):
         # File loading row
         file_row = QHBoxLayout()
 
-        self.load_button = QPushButton("Load Binary File")
+        self.load_button = QPushButton("Load")
         self.load_button.clicked.connect(self.load_binary_file)
         file_row.addWidget(self.load_button)
+
+        # Cancel button for loading
+        self.cancel_button = QPushButton("Cancel")
+        self.cancel_button.clicked.connect(self.cancel_loading)
+        self.cancel_button.setEnabled(False)
+        file_row.addWidget(self.cancel_button)
 
         self.clear_button = QPushButton("Clear")
         self.clear_button.clicked.connect(self.clear_binary_file)
@@ -157,6 +273,12 @@ class BinaryFileLoader(QWidget):
         self.file_label = QLabel("No file loaded - using live/dummy data")
         self.file_label.setStyleSheet("font-size: 11px; color: gray;")
         file_layout.addWidget(self.file_label)
+
+        # Loading progress label
+        self.loading_label = QLabel("")
+        self.loading_label.setStyleSheet("font-size: 10px; color: blue;")
+        self.loading_label.setVisible(False)
+        file_layout.addWidget(self.loading_label)
 
         # Replay rate control with redo button
         rate_row = QHBoxLayout()
@@ -196,6 +318,10 @@ class BinaryFileLoader(QWidget):
         self.setLayout(layout)
 
     def load_binary_file(self):  # Replay functionality
+        # Don't allow loading if already loading
+        if self.loading_thread and self.loading_thread.isRunning():
+            return
+
         filename, _ = QFileDialog.getOpenFileName(
             self,
             "Load Binary File",
@@ -206,49 +332,105 @@ class BinaryFileLoader(QWidget):
         if not filename:
             return
 
+        # Check file size and warn for large files
         try:
-            self.status_label.setText("Loading file...")
+            file_size = os.path.getsize(filename)
+            size_mb = file_size / (1024 * 1024)
 
-            # Load events using pixie16 library
-            if pixie16:
-                print(f"Loading binary file: {filename}")
-                # fmt: off
-                self.events = list(
-                    pixie16.read.read_list_mode_data_as_events([filename])
+            if size_mb > 500:  # Warn for files > 500MB
+                reply = QMessageBox.question(
+                    self,
+                    "Large File Warning",
+                    f"File is {size_mb:.1f} MB. Loading may take a while.\n\nContinue?",
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
                 )
-                # fmt: on
-                self.events.sort(key=lambda x: x.timestamp)
-                print(f"✓ Binary file loaded: {len(self.events)} events")
-            else:
-                print("Warning: pixie16 module not available, generating dummy data")
-                self.events = self._generate_dummy_events()
-                print(f"✓ Generated dummy events: {len(self.events)} events")
+                if reply != QMessageBox.StandardButton.Yes:
+                    return
 
-            self.current_file = Path(filename)
-            self.total_events = len(self.events)
-            self.is_binary_mode = True
-
-            # Update UI
-            self.file_label.setText(f"📁 {self.current_file.name}")
-            self.file_label.setStyleSheet("font-size: 11px; color: blue;")
-            self.clear_button.setEnabled(True)
-            self.redo_button.setEnabled(True)  # Enable redo button
-            self.status_label.setText(f"Loaded {self.total_events:,} events")
-
-            # Emit signal
-            self.file_loaded.emit(filename, self.total_events)
-
-            print(f"Binary file ready: {filename}")
-            print("Use scope's Start button to begin replay")
+            # Start background loading
+            self._start_background_loading(filename)
 
         except Exception as e:
-            error_msg = f"Error loading file: {e}"
-            print(error_msg)
-            QMessageBox.critical(self, "Load Error", error_msg)
-            self.status_label.setText("Load failed")
+            QMessageBox.critical(self, "Error", f"Cannot access file: {e}")
+
+    def _start_background_loading(self, filename):
+        """Start loading in background thread"""
+        print(f"Starting background loading: {filename}")
+
+        # Update UI to loading state
+        self.load_button.setEnabled(False)
+        self.cancel_button.setEnabled(True)
+        self.loading_label.setVisible(True)
+        self.loading_label.setText("Loading...")
+        self.status_label.setText("Loading binary file...")
+
+        # Create and start loading thread
+        self.loading_thread = BinaryLoadingThread(filename)
+        self.loading_thread.progress.connect(self._on_loading_progress)
+        self.loading_thread.finished.connect(self._on_loading_finished)
+        self.loading_thread.failed.connect(self._on_loading_failed)
+        self.loading_thread.start()
+
+    def _on_loading_progress(self, message):
+        """Handle loading progress"""
+        self.loading_label.setText(message)
+        self.status_label.setText(message)
+
+    def _on_loading_finished(self, events, filename):
+        """Handle successful loading"""
+        print(f"Loading completed: {len(events)} events")
+
+        # Store loaded data
+        self.events = events
+        self.current_file = Path(filename)
+        self.total_events = len(events)
+        self.is_binary_mode = True
+
+        # Update UI
+        self.load_button.setEnabled(True)
+        self.cancel_button.setEnabled(False)
+        self.loading_label.setVisible(False)
+        self.clear_button.setEnabled(True)
+        self.redo_button.setEnabled(True)
+
+        self.file_label.setText(f"📁 {self.current_file.name}")
+        self.file_label.setStyleSheet("font-size: 11px; color: blue;")
+        self.status_label.setText(f"Loaded {self.total_events:,} events")
+
+        # Emit signal
+        self.file_loaded.emit(filename, self.total_events)
+        print("Binary file ready for replay")
+
+    def _on_loading_failed(self, error_message):
+        """Handle loading failure"""
+        print(f"Loading failed: {error_message}")
+
+        # Reset UI
+        self.load_button.setEnabled(True)
+        self.cancel_button.setEnabled(False)
+        self.loading_label.setVisible(False)
+        self.status_label.setText("Load failed")
+
+        QMessageBox.critical(self, "Loading Failed", error_message)
+
+    def cancel_loading(self):
+        """Cancel background loading"""
+        if self.loading_thread and self.loading_thread.isRunning():
+            print("Cancelling loading...")
+            self.loading_thread.terminate()
+            self.loading_thread.wait(1000)
+
+            # Reset UI
+            self.load_button.setEnabled(True)
+            self.cancel_button.setEnabled(False)
+            self.loading_label.setVisible(False)
+            self.status_label.setText("Loading cancelled")
 
     def clear_binary_file(self):
-        """Clear loaded binary file and return to live/dummy mode"""
+        # Cancel loading if in progress
+        if self.loading_thread and self.loading_thread.isRunning():
+            self.cancel_loading()
+
         self.current_file = None
         self.events = []
         self.total_events = 0
@@ -262,34 +444,11 @@ class BinaryFileLoader(QWidget):
         self.file_label.setText("No file loaded - using live/dummy data")
         self.file_label.setStyleSheet("font-size: 11px; color: gray;")
         self.clear_button.setEnabled(False)
-        self.redo_button.setEnabled(False)  # Disable redo button
+        self.redo_button.setEnabled(False)
         self.progress_bar.setVisible(False)
         self.status_label.setText("Ready")
 
         print("Binary file cleared - back to live/dummy mode")
-
-    def _generate_dummy_events(self):
-        events = []
-        base_timestamp = int(time.time() * 1e8)
-
-        for i in range(5000):
-            # fmt: off
-            event = type("Event", (), {
-                "channel": np.random.randint(0, 16),
-                "timestamp": (
-                    base_timestamp + i * 100000 + np.random.randint(-10000, 10000)
-                ),
-                "energy": np.random.randint(100, 4000),
-                "trace": (
-                    np.random.randint(0, 4096, np.random.randint(100, 1000))
-                    if np.random.random() > 0.3
-                    else []
-                ),
-            })()
-            # fmt: on
-            events.append(event)
-
-        return events
 
     def start_replay(self):
         """Start replaying binary file (called by scope's Start button)"""
@@ -315,6 +474,9 @@ class BinaryFileLoader(QWidget):
             self.replay_thread.progress_update.connect(self.update_progress)
             self.replay_thread.replay_finished.connect(self.on_replay_finished)
 
+            # Connect MCA-specific signal
+            self.replay_thread.mca_histogram_update.connect(self._update_mca_display)
+
             # Start thread
             self.replay_thread.start()
 
@@ -330,6 +492,31 @@ class BinaryFileLoader(QWidget):
         except Exception as e:
             print(f"Error starting binary replay: {e}")
             return False
+
+    def _update_mca_display(self, histograms):
+        try:
+            # Update display
+            if hasattr(self.parent_scope, "spectrum_tab") and hasattr(
+                self.parent_scope.spectrum_tab, "update_mca_histogram"
+            ):
+                for channel, histogram in histograms.items():
+                    self.parent_scope.spectrum_tab.update_mca_histogram(
+                        channel, histogram
+                    )
+
+            # Update internal MCA data storage
+            if hasattr(self.parent_scope, "mca_data"):
+                for channel, histogram in histograms.items():
+                    if channel in self.parent_scope.mca_data:
+                        self.parent_scope.mca_data[channel] = histogram
+                        self.parent_scope.cumulative_mca_data[channel] = (
+                            histogram.astype(np.int64)
+                        )
+
+            print(f"Updated MCA display: {len(histograms)} channels")
+
+        except Exception as e:
+            print(f"Error updating MCA display: {e}")
 
     def stop_replay(self):
         if self.replay_thread and self.replay_thread.isRunning():
