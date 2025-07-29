@@ -469,6 +469,9 @@ class DataAcquisition(QWidget):
                 else:
                     return "⚪", "gray"
 
+        if isinstance(value, float):
+            return f"{value:.0g}"
+
         return str(value)
 
     def update_trace_time(self):
