@@ -599,6 +599,8 @@ class Task(multiprocessing.Process):
         while True:
             self.poll()
 
+            self.send_heart_beat()
+
             if self.status == Status.RUNNING:
                 self.work()
             elif self.status == Status.WAITING:
@@ -613,5 +615,3 @@ class Task(multiprocessing.Process):
                 print(f"Error unhandled run status {self.status}")
 
                 assert False
-
-            self.send_heart_beat()
