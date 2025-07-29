@@ -54,6 +54,8 @@ class DataAcquisition(QWidget):
         self.mca_time = "1m"
         self.trace_time = "5"
 
+        self.last_report_time = {}
+
         self.create_layout()
         self.enable_ui_for_new_run()
 
@@ -150,6 +152,25 @@ class DataAcquisition(QWidget):
         self.task_table = QTableWidget(0, 0)
         self.layout.addWidget(QLabel("Task Status"))
         self.layout.addWidget(self.task_table)
+
+        ordered_keys = [
+            "name",
+            "status",
+            "cpu percent",
+            "memory",
+            "queue length",
+            "activity",
+            "Extra Info",
+        ]
+
+        self.task_table.setColumnCount(len(ordered_keys))
+        self.task_table.setHorizontalHeaderLabels(ordered_keys)
+
+        self.key_to_pos = {k: i for i, k in enumerate(ordered_keys)}
+        header = self.task_table.horizontalHeader()
+        header.setSectionResizeMode(
+            self.key_to_pos["Extra Info"], QHeaderView.ResizeMode.Stretch
+        )
 
         # Plot Area - make overridable
         self.create_plot_area()
@@ -296,6 +317,8 @@ class DataAcquisition(QWidget):
             case _:
                 print("Should not happen")
 
+        # TODO: recreate
+
     def error_popup(self, title: str, message: str):
         msg = QMessageBox()
         msg.setIcon(QMessageBox.Icon.Warning)
@@ -329,32 +352,7 @@ class DataAcquisition(QWidget):
         for i in range(10):
             self.pipeline.poll()
 
-        current_time = time.time()
-        if not hasattr(self, "last_report_time"):
-            self.last_report_time = {}
-
-        ordered_keys = [
-            "name",
-            "status",
-            "cpu percent",
-            "memory",
-            "queue length",
-            "activity",
-            "Extra Info",
-        ]
-
-        if self.task_table.columnCount() != len(ordered_keys):
-            self.task_table.setColumnCount(len(ordered_keys))
-            self.task_table.setHorizontalHeaderLabels(ordered_keys)
-
-            self.key_to_pos = {
-                k: i for i, k in enumerate(ordered_keys)
-            }  # Store in self for access
-            # Set header resize mode (only if header is new or changed)
-            header = self.task_table.horizontalHeader()
-            header.setSectionResizeMode(
-                self.key_to_pos["Extra Info"], QHeaderView.ResizeMode.Stretch
-            )
+        now = time.time()
 
         for t in self.pipeline.tasks_active:
             if t not in self.taskid_to_row:
@@ -368,7 +366,7 @@ class DataAcquisition(QWidget):
                 continue
             status = copy.deepcopy(status_tmp)
             # Check if task is active
-            self.last_report_time[t] = current_time
+            self.last_report_time[t] = now
 
             extra_info = []
             row = self.taskid_to_row[t]  # Get row once per task
@@ -401,7 +399,7 @@ class DataAcquisition(QWidget):
             self.task_table.setItem(row, self.key_to_pos["queue length"], queue_item)
 
             # Set Activity using tracked time
-            activity_text, color = self.format_value("activity", current_time)
+            activity_text, color = self.format_value("activity", now)
             activity_item = QTableWidgetItem(activity_text)
             activity_item.setForeground(QtGui.QColor(color))
             self.task_table.setItem(row, self.key_to_pos["activity"], activity_item)
