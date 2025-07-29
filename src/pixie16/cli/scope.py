@@ -114,7 +114,6 @@ class PixieHardwareManager:
             return False
 
     def start_histogram_mode(self) -> bool:
-        """Start MCA histogram mode"""
         if self.dummy_mode:
             print("DUMMY MODE: Starting histogram collection")
             self.is_running = True
@@ -122,7 +121,6 @@ class PixieHardwareManager:
             return True
 
         try:
-            # Stop any existing run first
             self.stop_current_run()
 
             print("Starting histogram mode...")
@@ -139,7 +137,6 @@ class PixieHardwareManager:
             }
             px.control.change_setting_from_dict(settings, call_pixie=True)
 
-            # Start histogram run
             px.control.start_histogram_run()
 
             self.is_running = True
@@ -160,12 +157,11 @@ class PixieHardwareManager:
             return True
 
         try:
-            # Stop any existing run first
             self.stop_current_run()
 
             print("Starting list mode...")
 
-            # Configure for list mode with proper settings
+            # Configure for list mode
             settings = {
                 "channels": [
                     (0, ch) for ch in self.enabled_channels
@@ -185,7 +181,6 @@ class PixieHardwareManager:
             px.control.change_setting_from_dict(settings, call_pixie=True)
             print("✓ List mode settings applied")
 
-            # Start list mode run
             px.control.start_list_mode_run()
             print("List mode run started")
 
@@ -210,7 +205,6 @@ class PixieHardwareManager:
             return False
 
     def start_traces_mode(self) -> bool:
-        """Start traces mode data acquisition"""
         if self.dummy_mode:
             print("DUMMY MODE: Starting traces mode")
             self.is_running = True
@@ -218,7 +212,6 @@ class PixieHardwareManager:
             return True
 
         try:
-            # Stop any existing run first
             self.stop_current_run()
 
             print("Starting traces mode...")
@@ -238,7 +231,7 @@ class PixieHardwareManager:
             }
             px.control.change_setting_from_dict(settings, call_pixie=True)
 
-            # Start list mode run (traces come through list mode)
+            # traces come through list mode
             px.control.start_list_mode_run()
 
             self.is_running = True
@@ -251,7 +244,6 @@ class PixieHardwareManager:
             return False
 
     def read_histograms(self) -> dict:
-        """Read histogram data from all channels"""
         if self.dummy_mode:
             return self._generate_dummy_histograms()
 
@@ -280,7 +272,6 @@ class PixieHardwareManager:
         return histograms
 
     def read_list_mode_data(self) -> list:
-        """Read list mode data from FIFO with enhanced debugging"""
         if self.dummy_mode or self.current_mode not in ["list", "traces"]:
             return []
 
@@ -352,7 +343,6 @@ class PixieHardwareManager:
         return histograms
 
     def stop_current_run(self):
-        """Stop any currently running acquisition"""
         if not self.is_running:
             return
 
@@ -369,15 +359,11 @@ class PixieHardwareManager:
             print(f"Error stopping run: {e}")
 
     def cleanup(self):
-        """Clean shutdown without killing the system for others"""
         self.stop_current_run()
-        # Note: We don't call exit_system() - that would kill it for everyone
         print("✓ Hardware manager cleaned up")
 
 
 class CompletePixieScopeApp(QMainWindow):
-    """Complete PIXIE-16 Scope with proper initialization and data handling"""
-
     shutdown_requested = pyqtSignal()
 
     def __init__(self, dummy_mode=False, physical_slot=2, channels=None):
@@ -442,7 +428,7 @@ class CompletePixieScopeApp(QMainWindow):
             self.mca_data[ch] = np.zeros(32768, dtype=np.int32)
 
         # Connect shutdown signal
-        self.shutdown_requested.connect(self.graceful_shutdown)
+        self.shutdown_requested.connect(self.manual_shutdown)
 
         self.init_ui()
         self.setup_timers()
@@ -455,7 +441,7 @@ class CompletePixieScopeApp(QMainWindow):
             if hasattr(self, "shutdown_requested"):
                 self.shutdown_requested.emit()
             else:
-                self.graceful_shutdown()
+                self.manual_shutdown()
 
         # Handle common termination signals
         signal.signal(signal.SIGINT, signal_handler)  # Ctrl+C
@@ -463,17 +449,15 @@ class CompletePixieScopeApp(QMainWindow):
         if hasattr(signal, "SIGHUP"):
             signal.signal(signal.SIGHUP, signal_handler)  # Hang up (Unix only)
 
-    def graceful_shutdown(self):
+    def manual_shutdown(self):
         """Perform graceful shutdown when requested"""
         if self.shutdown_in_progress:
             return
 
         self.shutdown_in_progress = True
-        print("Graceful shutdown initiated...")
         self.close()
 
     def init_ui(self):
-        """Initialize the user interface"""
         # Set responsive window size
         screen = QApplication.primaryScreen().geometry()
         window_width = min(1200, int(screen.width() * 0.85))
@@ -555,7 +539,6 @@ class CompletePixieScopeApp(QMainWindow):
         main_widget.setLayout(main_layout)
 
     def create_control_panel(self):
-        """Create the control panel"""
         group = QGroupBox("Acquisition Controls")
         group.setMaximumHeight(120)
         layout = QVBoxLayout()
@@ -603,7 +586,6 @@ class CompletePixieScopeApp(QMainWindow):
         return group
 
     def on_mode_changed(self, mode_text):
-        """Handle mode changes"""
         if self.is_acquiring:
             self.stop_acquisition()
 
@@ -640,7 +622,6 @@ class CompletePixieScopeApp(QMainWindow):
         self.info_bar.setText(f"Mode changed: {old_mode} → {self.current_mode}")
 
     def start_acquisition(self):
-        """Start acquisition based on current mode"""
         try:
             success = False
 
@@ -684,7 +665,6 @@ class CompletePixieScopeApp(QMainWindow):
             self.info_bar.setText(error_msg)
 
     def start_mca_acquisition(self) -> bool:
-        """Start MCA mode - histogram collection"""
         try:
             # Start hardware histogram collection
             if not self.pixie_hw.start_histogram_mode():
@@ -761,7 +741,6 @@ class CompletePixieScopeApp(QMainWindow):
             return False
 
     def start_traces_acquisition(self) -> bool:
-        """Start traces mode - trace capture"""
         try:
             # Start hardware traces mode
             if not self.pixie_hw.start_traces_mode():
@@ -902,18 +881,14 @@ class CompletePixieScopeApp(QMainWindow):
         self.binary_thread.start()
 
     def process_list_mode_event(self, event):
-        """Process list mode events and feed to spectrum plotter"""
         try:
             channel = getattr(event, "channel", 0)
             energy = getattr(event, "energy", 0)
 
-            # Debug counter
             if not hasattr(self, "_event_debug_counter"):
                 self._event_debug_counter = 0
 
             self._event_debug_counter += 1
-
-            # Show data source info periodically
             if self._event_debug_counter % 1000 == 0:
                 data_source = (
                     "BINARY FILE"
@@ -942,18 +917,15 @@ class CompletePixieScopeApp(QMainWindow):
             print(f"Error processing list mode event: {e}")
 
     def process_traces_event(self, event):
-        """Process traces events"""
         try:
             channel = getattr(event, "channel", 0)
             trace = getattr(event, "trace", None)
 
-            # Debug counter for traces
             if not hasattr(self, "_trace_debug_counter"):
                 self._trace_debug_counter = 0
 
             self._trace_debug_counter += 1
 
-            # Show data source info periodically
             if self._trace_debug_counter % 100 == 0:
                 data_source = (
                     "BINARY FILE"
@@ -985,7 +957,6 @@ class CompletePixieScopeApp(QMainWindow):
             print(f"Error processing traces event: {e}")
 
     def stop_acquisition(self):
-        """Stop current acquisition safely"""
         if self.shutdown_in_progress:
             return
 
@@ -1054,7 +1025,6 @@ class CompletePixieScopeApp(QMainWindow):
             print(f"Error stopping acquisition: {e}")
 
     def clear_data(self):
-        """Clear all accumulated data"""
         try:
             # Clear MCA data
             for channel in self.channel_numbers:
@@ -1074,7 +1044,6 @@ class CompletePixieScopeApp(QMainWindow):
             print(f"Error clearing data: {e}")
 
     def update_display_channels(self, selected_channels):
-        """Update which channels are displayed"""
         try:
             # Filter to only enabled channels
             valid_channels = [
@@ -1094,7 +1063,6 @@ class CompletePixieScopeApp(QMainWindow):
             print(f"Error updating display channels: {e}")
 
     def handle_parameter_change(self, param_name, value, module, channel):
-        """Handle parameter changes"""
         try:
             if not self.dummy_mode and px:
                 px.control.set_channel_parameter(param_name, value, module, channel)
@@ -1110,7 +1078,6 @@ class CompletePixieScopeApp(QMainWindow):
             self.info_bar.setText(error_msg)
 
     def handle_apply_all_parameters(self, params_dict, module, channel):
-        """Handle applying all parameters"""
         try:
             if not self.dummy_mode and px:
                 for param_name, value in params_dict.items():
@@ -1138,7 +1105,6 @@ class CompletePixieScopeApp(QMainWindow):
         self.status_timer.start(1000)  # 1 second updates
 
     def update_status(self):
-        """Update status display"""
         try:
             # Update live reader statistics
             if self.live_reader:
@@ -1163,7 +1129,6 @@ class CompletePixieScopeApp(QMainWindow):
             print(f"Error in update_status: {e}")
 
     def update_mca_channel_stats(self):
-        """Update channel statistics for MCA mode"""
         try:
             if not hasattr(self, "mca_data") or not self.mca_data:
                 return
@@ -1184,7 +1149,6 @@ class CompletePixieScopeApp(QMainWindow):
             print(f"Error updating MCA channel stats: {e}")
 
     def update_list_mode_channel_stats(self):
-        """Update channel statistics for List Mode"""
         try:
             channel_stats = {}
 
@@ -1332,7 +1296,6 @@ def main():
     app = QApplication(sys.argv)
     app.setApplicationName("PIXIE-16 Scope")
 
-    # Set up exception hook
     def exception_hook(exctype, value, traceback_obj):
         print(f"Unhandled exception: {exctype.__name__}: {value}")
         import traceback
@@ -1375,7 +1338,7 @@ def main():
     except KeyboardInterrupt:
         print("\nKeyboard interrupt received...")
         if window:
-            window.graceful_shutdown()
+            window.manual_shutdown()
         sys.exit(0)
 
     except Exception as e:
@@ -1386,7 +1349,7 @@ def main():
 
         if window:
             try:
-                window.graceful_shutdown()
+                window.manual_shutdown()
             except:
                 pass
         sys.exit(1)

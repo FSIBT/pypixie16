@@ -1,6 +1,6 @@
 """
 binary_loader.py
-Streamlined binary file loader that integrates with scope's existing Start/Stop buttons
+Binary file loader that integrates with scope's existing Start/Stop buttons
 """
 
 import time
@@ -29,8 +29,6 @@ except ImportError:
 
 
 class BinaryReplayThread(QThread):
-    """Thread for replaying binary events with dynamic rate control"""
-
     progress_update = pyqtSignal(int, int)  # current, total
     replay_finished = pyqtSignal()
 
@@ -111,10 +109,6 @@ class BinaryReplayThread(QThread):
 
 
 class BinaryFileLoader(QWidget):
-    """
-    Streamlined binary file loader that works with scope's existing Start/Stop buttons
-    """
-
     # Signals for integration with scope
     file_loaded = pyqtSignal(str, int)  # filename, num_events
     replay_started = pyqtSignal()
@@ -201,8 +195,7 @@ class BinaryFileLoader(QWidget):
 
         self.setLayout(layout)
 
-    def load_binary_file(self):
-        """Load a binary file for replay"""
+    def load_binary_file(self):  # Replay functionality
         filename, _ = QFileDialog.getOpenFileName(
             self,
             "Load Binary File",
@@ -276,7 +269,6 @@ class BinaryFileLoader(QWidget):
         print("Binary file cleared - back to live/dummy mode")
 
     def _generate_dummy_events(self):
-        """Generate dummy events for testing when pixie16 is not available"""
         events = []
         base_timestamp = int(time.time() * 1e8)
 
@@ -340,7 +332,6 @@ class BinaryFileLoader(QWidget):
             return False
 
     def stop_replay(self):
-        """Stop binary replay (called by scope's Stop button)"""
         if self.replay_thread and self.replay_thread.isRunning():
             print("Stopping binary replay...")
             self.replay_thread.stop()
@@ -354,7 +345,6 @@ class BinaryFileLoader(QWidget):
         return False
 
     def update_progress(self, current, total):
-        """Update progress bar"""
         self.progress_bar.setValue(current)
 
         # Update status
@@ -362,7 +352,6 @@ class BinaryFileLoader(QWidget):
         self.status_label.setText(f"Replaying: {current:,}/{total:,} ({percent:.1f}%)")
 
     def on_replay_finished(self):
-        """Handle replay completion"""
         print("Binary replay completed")
         self.progress_bar.setVisible(False)
         self.status_label.setText("Replay completed")
@@ -372,7 +361,6 @@ class BinaryFileLoader(QWidget):
         self.replay_stopped.emit()
 
     def update_replay_rate(self):
-        """Update replay rate - now works dynamically during replay"""
         old_rate = self.replay_rate_hz
         self.replay_rate_hz = self.rate_spin.value()
 
@@ -383,7 +371,6 @@ class BinaryFileLoader(QWidget):
             self.status_label.setText(f"Replaying at {self.replay_rate_hz} Hz")
 
     def redo_replay(self):
-        """Restart replay of the same file"""
         if not self.is_binary_mode or not self.events:
             return
 
@@ -406,16 +393,13 @@ class BinaryFileLoader(QWidget):
             self.start_replay()
 
     def is_using_binary_data(self):
-        """Check if currently using binary data"""
         return self.is_binary_mode and len(self.events) > 0
 
     def get_data_source_info(self):
-        """Get info about current data source"""
         if self.is_binary_mode:
             return f"Binary: {self.current_file.name} ({self.total_events:,} events)"
         else:
             return "Live/Dummy data"
 
     def set_parent_scope(self, scope):
-        """Set the parent scope for event processing"""
         self.parent_scope = scope
