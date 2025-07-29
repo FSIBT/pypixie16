@@ -4,7 +4,6 @@ Binary file loader that integrates with scope's existing Start/Stop buttons
 """
 
 import time
-import threading
 import os
 from pathlib import Path
 

@@ -64,13 +64,8 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-# Hardcoded paths for testing
-DUMMY_BINARY_FILE = "/home/jo/Documents/work/data/RUN-2025-06-05-00001/binary-data/RUN-2025-06-05-00001-mod0-1749144651-168324-00000.bin"
-
 
 class PixieHardwareManager:
-    """Complete PIXIE-16 hardware management with proper initialization"""
-
     def __init__(self, physical_slot: int = 2, dummy_mode: bool = False):
         self.physical_slot = physical_slot
         self.dummy_mode = dummy_mode
@@ -80,7 +75,6 @@ class PixieHardwareManager:
         self.enabled_channels = list(range(16))  # All 16 channels
 
     def initialize_system(self) -> bool:
-        """Initialize the PIXIE-16 system from scratch"""
         if self.dummy_mode:
             print("DUMMY MODE: Simulating PIXIE-16 initialization")
             self.is_initialized = True
@@ -149,7 +143,6 @@ class PixieHardwareManager:
             return False
 
     def start_list_mode(self) -> bool:
-        """Start list mode data acquisition with proper debugging"""
         if self.dummy_mode:
             print("DUMMY MODE: Starting list mode")
             self.is_running = True
@@ -244,9 +237,6 @@ class PixieHardwareManager:
             return False
 
     def read_histograms(self) -> dict:
-        if self.dummy_mode:
-            return self._generate_dummy_histograms()
-
         if self.current_mode != "histogram":
             return {}
 
@@ -310,38 +300,6 @@ class PixieHardwareManager:
             print(f"Error reading list mode data: {e}")
             return []
 
-    def _generate_dummy_histograms(self) -> dict:
-        """Generate realistic dummy histogram data"""
-        histograms = {}
-
-        for channel in self.enabled_channels[:4]:  # First 4 channels for demo
-            # Create realistic spectrum with peaks
-            spectrum = np.zeros(32768, dtype=np.int32)
-
-            # Add some peaks at different energies
-            peaks = [500 + channel * 100, 1200 + channel * 50, 2400, 4000, 6000]
-            for peak in peaks:
-                if peak < 32768:
-                    # Gaussian peak with some width
-                    sigma = 20 + channel * 2
-                    counts = int(1000 * (1 + np.random.random()))
-                    for i in range(max(0, peak - 100), min(32768, peak + 100)):
-                        spectrum[i] += int(
-                            counts * np.exp(-0.5 * ((i - peak) / sigma) ** 2)
-                        )
-
-            # Add background
-            background = np.random.poisson(5, 32768)
-            spectrum += background
-
-            # Accumulate over time for realistic behavior
-            accumulation_factor = int(time.time() % 60 + 1)
-            spectrum = spectrum * accumulation_factor
-
-            histograms[channel] = spectrum
-
-        return histograms
-
     def stop_current_run(self):
         if not self.is_running:
             return
@@ -382,10 +340,8 @@ class CompletePixieScopeApp(QMainWindow):
             channels = list(range(16))
         self.channel_numbers = channels
 
-        # Initialize hardware manager
         self.pixie_hw = PixieHardwareManager(physical_slot, dummy_mode)
 
-        # Initialize the PIXIE-16 system
         print(f"Initializing PIXIE-16 system for slot {physical_slot}...")
         if not self.pixie_hw.initialize_system():
             if not dummy_mode:
@@ -688,7 +644,6 @@ class CompletePixieScopeApp(QMainWindow):
             return False
 
     def start_list_mode_acquisition(self) -> bool:
-        """Start list mode - event-by-event data processing with enhanced debugging"""
         try:
             # Start hardware list mode
             if not self.pixie_hw.start_list_mode():
@@ -708,8 +663,7 @@ class CompletePixieScopeApp(QMainWindow):
             print("✓ Event callback added")
 
             if self.dummy_mode:
-                print("Starting binary file reader for dummy mode...")
-                self.start_binary_file_reader()
+                print("No binary file loaded")
             else:
                 print("Starting FIFO reader for real hardware...")
                 # Set up timer to read FIFO data every 50ms
@@ -754,7 +708,7 @@ class CompletePixieScopeApp(QMainWindow):
             # self.binary_loader.set_live_data_source(self.data_source)
 
             if self.dummy_mode:
-                self.start_binary_file_reader()
+                print("No binary file loaded")
             else:
                 # Set up timer to read FIFO data every 100ms
                 self.data_timer = QTimer()
@@ -775,7 +729,6 @@ class CompletePixieScopeApp(QMainWindow):
             return False
 
     def read_histogram_data(self):
-        """Read histogram data from hardware (MCA mode only)"""
         try:
             # Read histograms from hardware
             histograms = self.pixie_hw.read_histograms()
@@ -809,7 +762,6 @@ class CompletePixieScopeApp(QMainWindow):
             print(f"Error reading histogram data: {e}")
 
     def read_list_mode_fifo(self):
-        """Read data from PIXIE FIFO for real hardware with enhanced debugging"""
         if not self.is_acquiring or not self.live_reader or self.dummy_mode:
             return
 
@@ -843,42 +795,6 @@ class CompletePixieScopeApp(QMainWindow):
             import traceback
 
             traceback.print_exc()
-
-    def start_binary_file_reader(self):
-        """Start binary file reader for dummy mode"""
-
-        def binary_reader():
-            if not Path(DUMMY_BINARY_FILE).exists():
-                print(f"Dummy binary file not found: {DUMMY_BINARY_FILE}")
-                return
-
-            binary_data = np.fromfile(DUMMY_BINARY_FILE, dtype=np.uint32)
-            print(f"Loaded {len(binary_data)} words from binary file")
-
-            chunk_size = 1000
-            position = 0
-
-            while (
-                hasattr(self, "data_source")
-                and self.data_source is not None
-                and getattr(self.data_source, "is_active", False)
-                and position < len(binary_data)
-            ):
-                end_pos = min(position + chunk_size, len(binary_data))
-                chunk = binary_data[position:end_pos]
-
-                if hasattr(self, "live_reader") and self.live_reader is not None:
-                    self.live_reader.add_data(chunk)
-                else:
-                    break
-
-                position = end_pos
-                time.sleep(0.1)  # 10 Hz feeding rate
-
-            print("Binary file processing completed")
-
-        self.binary_thread = threading.Thread(target=binary_reader, daemon=True)
-        self.binary_thread.start()
 
     def process_list_mode_event(self, event):
         try:
@@ -1094,7 +1010,6 @@ class CompletePixieScopeApp(QMainWindow):
             self.info_bar.setText(error_msg)
 
     def update_info_bar(self, message):
-        """Update info bar with message"""
         mode_status = "DUMMY MODE - " if self.dummy_mode else ""
         self.info_bar.setText(f"{mode_status}{message}")
 
@@ -1175,7 +1090,6 @@ class CompletePixieScopeApp(QMainWindow):
             print(f"Error updating List Mode channel stats: {e}")
 
     def update_traces_channel_stats(self):
-        """Update channel statistics for Traces Mode"""
         try:
             channel_stats = {}
 
@@ -1202,7 +1116,6 @@ class CompletePixieScopeApp(QMainWindow):
             print(f"Error updating Traces channel stats: {e}")
 
     def closeEvent(self, event):
-        """Handle application close with proper cleanup"""
         try:
             print("Shutting down Complete PIXIE-16 Scope...")
 
