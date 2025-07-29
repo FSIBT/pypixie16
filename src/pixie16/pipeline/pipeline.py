@@ -215,7 +215,10 @@ class Pipeline:
 
     def quit(self) -> None:
         self.status = Status.DYING
-        self.update_active_tasks_status(Message.QUIT)
+
+        for name in self.tasks_all:
+            msg = pickle.dumps(Message.QUIT)
+            self.socket_router.send_multipart([name.encode(), msg])
 
         for task in self.tasks_all.values():
             task.join()
