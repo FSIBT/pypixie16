@@ -581,7 +581,7 @@ class Task(multiprocessing.Process):
                     "name": self.name,
                     "status": self.status,
                     "cpu": ps_data.cpu_percent(),
-                    "memory": ps_data.memory_percent(),
+                    "memory": ps_data.memory_info().vms / 1e6,
                     "queue": len(self._queue),
                     "activity": now,
                 }
