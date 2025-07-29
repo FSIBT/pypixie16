@@ -32,7 +32,7 @@ class GatherData(task.Task):
                 elif np.isscalar(element):
                     # For scalar values, estimate size
                     size += 8  # Assume 8 bytes for a scalar
-                elif isinstance(element, (int, float)):
+                elif isinstance(element, int | float):
                     size += 8  # 8 bytes for numeric types
                 else:
                     # For other types, try to get size or use a default
@@ -144,7 +144,7 @@ class GatherData(task.Task):
         }
         out_disk = {k: self.safe_concatenate(v) for k, v in self.data_disk.items() if v}
         if not self._is_final:
-            self.send(out_queue)
+            self.send_data(out_queue)
         if out_disk:
             if self.config["binary_save_data"]:
                 self.save_data(out_disk)
