@@ -1,5 +1,3 @@
-import sys
-
 import unittest.mock as mock
 
 from . import cli
@@ -11,6 +9,7 @@ from . import control
 from . import scan
 from . import plot
 from . import C_library_sdk as SDK
+from ._version import __version__, __version_tuple__
 
 tasks = pipeline.tasks
 
@@ -25,6 +24,8 @@ __all__ = [
     "scan",
     "plot",
     "tasks",
+    "__version__",
+    "__version_tuple__",
 ]
 
 if not SDK.load_library():
