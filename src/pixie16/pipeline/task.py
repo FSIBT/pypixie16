@@ -220,6 +220,24 @@ class Task(multiprocessing.Process):
         self._queue.append(data)
         self.report({"queue": len(self._queue)})
 
+    def _handle_finished(self):
+        # finish work
+        while self._queue:
+            self.poll()
+            self.work()
+
+        # handle left over and open files, etc.
+        try:
+            with contextlib.redirect_stdout(io.StringIO()) as out:
+                self.do_stop()
+                self.print(out.getvalue())
+        except Exception as err:
+            self.panic(Error(traceback.format_exc()))
+
+        self.status = Status.FINISHED
+        self.send_finished()
+        self.report({"status": self.status})
+
     # Senders
 
     def _send_stop(self) -> None:
@@ -515,6 +533,7 @@ class Task(multiprocessing.Process):
         Listens to sockets for the task.
         """
 
+        # from pipeline
         try:
             msg = self._socket_dealer.recv(flags=zmq.NOBLOCK)
             msg = pickle.loads(msg)
@@ -535,6 +554,7 @@ class Task(multiprocessing.Process):
         except zmq.Again:
             pass
 
+        # from previous task
         try:
             msg = self._socket_pull.recv_pyobj(flags=zmq.NOBLOCK)
 
@@ -543,7 +563,7 @@ class Task(multiprocessing.Process):
             elif msg == Message.STOP:
                 self._handle_stop()
             elif msg == Message.FINISHED:
-                self.send_finished()
+                self._handle_finished()
             else:  # pragma: no cover
                 print(f"Error to unhandled message 2 {msg}")
                 assert False
