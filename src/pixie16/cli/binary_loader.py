@@ -194,7 +194,6 @@ class BinaryLoadingThread(QThread):
             self.failed.emit(f"Loading failed: {str(e)}")
 
     def _generate_dummy_events(self):
-        """Generate dummy events when pixie16 not available"""
         events = []
         base_timestamp = int(time.time() * 1e8)
         for i in range(5000):
@@ -253,12 +252,6 @@ class BinaryFileLoader(QWidget):
         self.load_button = QPushButton("Load")
         self.load_button.clicked.connect(self.load_binary_file)
         file_row.addWidget(self.load_button)
-
-        # Cancel button for loading
-        self.cancel_button = QPushButton("Cancel")
-        self.cancel_button.clicked.connect(self.cancel_loading)
-        self.cancel_button.setEnabled(False)
-        file_row.addWidget(self.cancel_button)
 
         self.clear_button = QPushButton("Clear")
         self.clear_button.clicked.connect(self.clear_binary_file)
@@ -358,7 +351,6 @@ class BinaryFileLoader(QWidget):
 
         # Update UI to loading state
         self.load_button.setEnabled(False)
-        self.cancel_button.setEnabled(True)
         self.loading_label.setVisible(True)
         self.loading_label.setText("Loading...")
         self.status_label.setText("Loading binary file...")
@@ -387,7 +379,6 @@ class BinaryFileLoader(QWidget):
 
         # Update UI
         self.load_button.setEnabled(True)
-        self.cancel_button.setEnabled(False)
         self.loading_label.setVisible(False)
         self.clear_button.setEnabled(True)
         self.redo_button.setEnabled(True)
@@ -406,30 +397,12 @@ class BinaryFileLoader(QWidget):
 
         # Reset UI
         self.load_button.setEnabled(True)
-        self.cancel_button.setEnabled(False)
         self.loading_label.setVisible(False)
         self.status_label.setText("Load failed")
 
         QMessageBox.critical(self, "Loading Failed", error_message)
 
-    def cancel_loading(self):
-        """Cancel background loading"""
-        if self.loading_thread and self.loading_thread.isRunning():
-            print("Cancelling loading...")
-            self.loading_thread.terminate()
-            self.loading_thread.wait(1000)
-
-            # Reset UI
-            self.load_button.setEnabled(True)
-            self.cancel_button.setEnabled(False)
-            self.loading_label.setVisible(False)
-            self.status_label.setText("Loading cancelled")
-
     def clear_binary_file(self):
-        # Cancel loading if in progress
-        if self.loading_thread and self.loading_thread.isRunning():
-            self.cancel_loading()
-
         self.current_file = None
         self.events = []
         self.total_events = 0
