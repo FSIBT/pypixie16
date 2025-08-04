@@ -163,7 +163,7 @@ class PixieHardwareManager:
                 "CaptureTrace": False,  # Don't capture traces (use traces mode for that)
                 "CaptureSums": False,  # Don't capture sums
                 "GoodChannel": True,  # Enable channels
-                "EnableChannelVal": True,  # Enable channel validation
+                "EnableChannelVal": False,  # Enable channel validation
                 # Trigger settings to ensure we get events
                 "TRIGGER_THRESHOLD": 50,  # Lower threshold to get more events
                 "ENERGY_RISETIME": 0.5,  # Reasonable energy filter
@@ -218,7 +218,7 @@ class PixieHardwareManager:
                 "CaptureTrace": True,
                 "CaptureSums": True,
                 "GoodChannel": True,
-                "EnableChannelVal": True,
+                "EnableChannelVal": False,
                 "TRACE_LENGTH": 2.0,  # 2 microseconds
                 "TRACE_DELAY": 0.5,  # 0.5 microseconds
             }
@@ -283,16 +283,6 @@ class PixieHardwareManager:
                     f"Hardware FIFO: Read {total_words} words, {self._hw_debug_counter} total, {len(data_list) if data_list else 0} buffers"
                 )
                 self._last_hw_debug = current_time
-
-                # Also check FIFO status
-                try:
-                    # Try to check FIFO status directly if available
-                    if hasattr(px.control, "check_external_FIFO_status"):
-                        for i in range(len(px.control.module_list)):
-                            words = px.control.check_external_FIFO_status(i)
-                            print(f"  Module {i} FIFO: {words} words available")
-                except:
-                    pass
 
             return data_list if data_list else []
 
