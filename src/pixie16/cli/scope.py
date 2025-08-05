@@ -11,444 +11,179 @@ Options:
 """
 
 import sys
-import os
-import time
-import threading
 import signal
-from pathlib import Path
-import json
+import argparse
+import numpy as np
 
 from PyQt6.QtWidgets import (
     QApplication,
-    QMainWindow,
     QWidget,
     QVBoxLayout,
     QHBoxLayout,
-    QMessageBox,
     QGroupBox,
     QSplitter,
     QPushButton,
     QLabel,
     QComboBox,
-    QCheckBox,
+    QMessageBox,
 )
-from PyQt6.QtGui import QIcon
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal
-
-import numpy as np
-
-try:
-    from docopt import docopt
-except ImportError:
-    print("Error: docopt not found. Install with: pip install docopt")
-    sys.exit(1)
+from PyQt6.QtGui import QIcon
 
 try:
     import pixie16 as px
     from pixie16.live.live_data_reader import LiveDataReader, LiveDataSourceInterface
+    from pixie16.ui.mca_spectrum_plotter import MCASpectrumPlotter
+    from pixie16.ui.spectrum_plotter import ContinuousSpectrumPlotter
+    from pixie16.ui.traces_plotter import TracesPlotter
+    from pixie16.ui.channel_controls import ChannelDisplayControls
+    from pixie16.ui.parameter_controls import ParameterControls
+    from pixie16.ui.widgets import BaseApp
 except ImportError as e:
     print(f"Error importing pixie16 modules: {e}")
-    print("Make sure pypixie16 is properly installed")
     px = None
 
 from .binary_loader import BinaryFileLoader
 
-# Import the plotting modules
-from pixie16.ui.mca_spectrum_plotter import MCASpectrumPlotter
-from pixie16.ui.spectrum_plotter import ContinuousSpectrumPlotter
-from pixie16.ui.traces_plotter import TracesPlotter
-from pixie16.ui.channel_controls import ChannelDisplayControls
-from pixie16.ui.parameter_controls import ParameterControls
 
-import logging
-
-logger = logging.getLogger(__name__)
-
-
-class PixieHardwareManager:
-    def __init__(self, physical_slot: int = 2, dummy_mode: bool = False):
-        self.physical_slot = physical_slot
-        self.dummy_mode = dummy_mode
-        self.is_initialized = False
-        self.is_running = False
-        self.current_mode = None  # 'histogram', 'list', or None
-        self.enabled_channels = list(range(16))  # All 16 channels
-
-    def initialize_system(self) -> bool:
-        if self.dummy_mode:
-            print("DUMMY MODE: Simulating PIXIE-16 initialization")
-            self.is_initialized = True
-            return True
-
-        if px is None:
-            raise RuntimeError("pypixie16 not available")
-
-        try:
-            print(f"Initializing PIXIE-16 system...")
-            print(f"Physical slot: {self.physical_slot}")
-
-            # Initialize and boot the system
-            px.control.init_and_boot(modules=[self.physical_slot], verbose=True)
-
-            # Verify initialization worked
-            try:
-                settings = px.control.read_settings()
-                if len(settings) > 0:
-                    print(f"✓ PIXIE-16 system initialized successfully")
-                    print(f"  Logical modules available: {len(settings)}")
-                    self.is_initialized = True
-                    return True
-                else:
-                    raise RuntimeError("No modules found after initialization")
-            except Exception as e:
-                raise RuntimeError(f"Initialization verification failed: {e}")
-
-        except Exception as e:
-            print(f"PIXIE-16 initialization failed: {e}")
-            return False
-
-    def start_histogram_mode(self) -> bool:
-        if self.dummy_mode:
-            print("DUMMY MODE: Starting histogram collection")
-            self.is_running = True
-            self.current_mode = "histogram"
-            return True
-
-        try:
-            self.stop_current_run()
-
-            print("Starting histogram mode...")
-
-            # Configure for histogram mode
-            settings = {
-                "channels": [
-                    (0, ch) for ch in self.enabled_channels
-                ],  # Logical module 0
-                "CaptureHistogram": True,
-                "CaptureTrace": False,
-                "CaptureSums": False,
-                "GoodChannel": True,
-            }
-            px.control.change_setting_from_dict(settings, call_pixie=True)
-
-            px.control.start_histogram_run()
-
-            self.is_running = True
-            self.current_mode = "histogram"
-            print("✓ Histogram mode started")
-            return True
-
-        except Exception as e:
-            print(f"Failed to start histogram mode: {e}")
-            return False
-
-    def start_list_mode(self) -> bool:
-        if self.dummy_mode:
-            print("DUMMY MODE: Starting list mode")
-            self.is_running = True
-            self.current_mode = "list"
-            return True
-
-        try:
-            self.stop_current_run()
-
-            print("Starting list mode...")
-
-            # Configure for list mode
-            settings = {
-                "channels": [
-                    (0, ch) for ch in self.enabled_channels
-                ],  # Logical module 0
-                "CaptureHistogram": False,  # Don't capture histograms in list mode
-                "CaptureTrace": False,  # Don't capture traces (use traces mode for that)
-                "CaptureSums": False,  # Don't capture sums
-                "GoodChannel": True,  # Enable channels
-                "EnableChannelVal": False,  # Enable channel validation
-                # Trigger settings to ensure we get events
-                "TRIGGER_THRESHOLD": 50,  # Lower threshold to get more events
-                "ENERGY_RISETIME": 0.5,  # Reasonable energy filter
-                "ENERGY_FLATTOP": 0.1,
-                "TRIGGER_RISETIME": 0.02,  # Fast trigger settings
-                "TRIGGER_FLATTOP": 0.02,
-            }
-            px.control.change_setting_from_dict(settings, call_pixie=True)
-            print("✓ List mode settings applied")
-
-            px.control.start_list_mode_run()
-            print("List mode run started")
-
-            # Verify the run is active
-            time.sleep(0.5)  # Give it time to start
-            try:
-                run_active = px.control.check_run_status()
-                print(f"Run status check: {run_active}")
-            except:
-                print("Could not check run status")
-
-            self.is_running = True
-            self.current_mode = "list"
-            print("List mode started successfully")
-            return True
-
-        except Exception as e:
-            print(f"Failed to start list mode: {e}")
-            import traceback
-
-            traceback.print_exc()
-            return False
-
-    def start_traces_mode(self) -> bool:
-        if self.dummy_mode:
-            print("DUMMY MODE: Starting traces mode")
-            self.is_running = True
-            self.current_mode = "traces"
-            return True
-
-        try:
-            self.stop_current_run()
-
-            print("Starting traces mode...")
-
-            # Configure for traces mode
-            settings = {
-                "channels": [
-                    (0, ch) for ch in self.enabled_channels
-                ],  # Logical module 0
-                "CaptureHistogram": False,
-                "CaptureTrace": True,
-                "CaptureSums": True,
-                "GoodChannel": True,
-                "EnableChannelVal": False,
-                "TRACE_LENGTH": 2.0,  # 2 microseconds
-                "TRACE_DELAY": 0.5,  # 0.5 microseconds
-            }
-            px.control.change_setting_from_dict(settings, call_pixie=True)
-
-            # traces come through list mode
-            px.control.start_list_mode_run()
-
-            self.is_running = True
-            self.current_mode = "traces"
-            print("✓ Traces mode started")
-            return True
-
-        except Exception as e:
-            print(f"Failed to start traces mode: {e}")
-            return False
-
-    def read_histograms(self) -> dict:
-        if self.current_mode != "histogram":
-            return {}
-
-        histograms = {}
-        try:
-            # Read histograms using logical module 0
-            module_channels = [(0, ch) for ch in self.enabled_channels]
-            hist_list = px.control.read_histograms(module_channels)
-
-            # Convert to dict keyed by channel number
-            for i, channel in enumerate(self.enabled_channels):
-                if i < len(hist_list) and hist_list[i] is not None:
-                    histograms[channel] = np.array(hist_list[i], dtype=np.int32)
-                else:
-                    histograms[channel] = np.zeros(32768, dtype=np.int32)
-
-        except Exception as e:
-            print(f"Error reading histograms: {e}")
-            # Return empty histograms for all channels
-            for channel in self.enabled_channels:
-                histograms[channel] = np.zeros(32768, dtype=np.int32)
-
-        return histograms
-
-    def read_list_mode_data(self) -> list:
-        if self.dummy_mode or self.current_mode not in ["list", "traces"]:
-            return []
-
-        try:
-            # Use lower threshold and more aggressive reading
-            data_list = px.control.read_list_mode_fifo(check=True, threshold=8)
-
-            if not hasattr(self, "_hw_debug_counter"):
-                self._hw_debug_counter = 0
-                self._last_hw_debug = time.time()
-
-            total_words = sum(len(data) for data in data_list) if data_list else 0
-            self._hw_debug_counter += total_words
-
-            # Debug output every 3 seconds
-            current_time = time.time()
-            if current_time - self._last_hw_debug > 3.0:
-                print(
-                    f"Hardware FIFO: Read {total_words} words, {self._hw_debug_counter} total, {len(data_list) if data_list else 0} buffers"
-                )
-                self._last_hw_debug = current_time
-
-            return data_list if data_list else []
-
-        except Exception as e:
-            print(f"Error reading list mode data: {e}")
-            return []
-
-    def stop_current_run(self):
-        if not self.is_running:
-            return
-
-        try:
-            if not self.dummy_mode:
-                px.control.end_run()
-                time.sleep(0.1)  # Give time for cleanup
-
-            self.is_running = False
-            self.current_mode = None
-            print("✓ Acquisition stopped")
-
-        except Exception as e:
-            print(f"Error stopping run: {e}")
-
-    def cleanup(self):
-        self.stop_current_run()
-        print("✓ Hardware manager cleaned up")
-
-
-class CompletePixieScopeApp(QMainWindow):
+class PixieScopeApp(BaseApp):
     shutdown_requested = pyqtSignal()
 
     def __init__(self, dummy_mode=False, physical_slot=2, channels=None):
-        super().__init__()
-
-        self.setWindowTitle(f"Complete PIXIE-16 Scope - Slot {physical_slot}")
-        self.setGeometry(100, 100, 1600, 1000)
-
-        # Set up signal handlers for graceful shutdown
-        self.setup_signal_handlers()
+        super().__init__("PIXIE-16 Scope")
 
         self.dummy_mode = dummy_mode
         self.physical_slot = physical_slot
+        self.channels = channels or list(range(16))
+        self.channel_numbers = channels or list(range(16))
 
-        if channels is None:
-            channels = list(range(16))
-        self.channel_numbers = channels
+        self.dynamic_settings = {
+            "TRIGGER_THRESHOLD": 100,
+            "TRIGGER_RISETIME": 0.02,
+            "TRIGGER_FLATTOP": 0.02,
+            "ENERGY_RISETIME": 2.0,
+            "ENERGY_FLATTOP": 0.5,
+            "TRACE_LENGTH": 2.0,
+            "TRACE_DELAY": 0.5,
+            "SLOW_FILTER_RANGE": 1,
+            "FAST_FILTER_RANGE": 1,
+            "GoodChannel": True,
+            "CaptureHistogram": False,
+            "CaptureTrace": False,
+            "CaptureSums": False,
+        }
 
-        self.pixie_hw = PixieHardwareManager(physical_slot, dummy_mode)
+        # Per-channel settings
+        self.channel_settings = {}
+        for ch in self.channels:
+            self.channel_settings[ch] = self.dynamic_settings.copy()
 
-        print(f"Initializing PIXIE-16 system for slot {physical_slot}...")
-        if not self.pixie_hw.initialize_system():
-            if not dummy_mode:
-                reply = QMessageBox.question(
-                    self,
-                    "Hardware Initialization Failed",
-                    f"Failed to initialize PIXIE-16 in slot {physical_slot}.\n\n"
-                    "Continue in dummy mode?",
-                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                )
-                if reply == QMessageBox.StandardButton.Yes:
-                    print("Switching to dummy mode...")
-                    self.dummy_mode = True
-                    self.pixie_hw = PixieHardwareManager(physical_slot, dummy_mode=True)
-                    self.pixie_hw.initialize_system()
-                else:
-                    sys.exit(1)
-
-        # Data acquisition components
-        self.live_reader = None
-        self.data_source = None
+        # Acquisition state
         self.is_acquiring = False
         self.current_mode = "mca_mode"
+        self.is_initialized = False
 
-        # Timers
-        self.acquisition_timer = None
-        self.status_timer = None
-        self.data_timer = None
-
-        # Shutdown flag
-        self.shutdown_in_progress = False
-
-        # Data storage for MCA mode
+        # Data components
+        self.live_reader = None
+        self.data_source = None
         self.mca_data = {}
         self.cumulative_mca_data = {}
 
-        # Initialize data storage for all channels
-        for ch in self.channel_numbers:
-            self.cumulative_mca_data[ch] = np.zeros(32768, dtype=np.int64)
+        # Initialize data storage
+        for ch in self.channels:
             self.mca_data[ch] = np.zeros(32768, dtype=np.int32)
+            self.cumulative_mca_data[ch] = np.zeros(32768, dtype=np.int64)
 
-        # Connect shutdown signal
-        self.shutdown_requested.connect(self.manual_shutdown)
-
+        self.setup_signal_handlers()
+        self.init_pixie16()
         self.init_ui()
         self.setup_timers()
 
     def setup_signal_handlers(self):
-        """Set up signal handlers for graceful shutdown"""
-
         def signal_handler(signum, frame):
-            print(f"\nReceived signal {signum}, initiating graceful shutdown...")
-            if hasattr(self, "shutdown_requested"):
-                self.shutdown_requested.emit()
-            else:
-                self.manual_shutdown()
+            print(f"\nReceived signal {signum}, shutting down...")
+            self.shutdown_requested.emit()
 
-        # Handle common termination signals
-        signal.signal(signal.SIGINT, signal_handler)  # Ctrl+C
-        signal.signal(signal.SIGTERM, signal_handler)  # Termination
-        if hasattr(signal, "SIGHUP"):
-            signal.signal(signal.SIGHUP, signal_handler)  # Hang up (Unix only)
+        signal.signal(signal.SIGINT, signal_handler)
+        signal.signal(signal.SIGTERM, signal_handler)
 
-    def manual_shutdown(self):
-        """Perform graceful shutdown when requested"""
-        if self.shutdown_in_progress:
+        self.shutdown_requested.connect(self.close)
+
+    def init_pixie16(self):
+        if self.dummy_mode:
+            self.info_bar.setText("DUMMY MODE - No hardware initialization")
+            self.is_initialized = True
             return
 
-        self.shutdown_in_progress = True
-        self.close()
+        if px is None:
+            QMessageBox.critical(self, "Error", "pypixie16 not available")
+            sys.exit(1)
+
+        try:
+            print(f"Initializing PIXIE-16 in slot {self.physical_slot}...")
+            px.control.init_and_boot(modules=[self.physical_slot], verbose=True)
+
+            # Verify initialization
+            settings = px.control.read_settings()
+            if settings:
+                self.is_initialized = True
+                self.info_bar.setText(f"PIXIE-16 Slot {self.physical_slot} initialized")
+            else:
+                raise RuntimeError("No modules found after initialization")
+
+        except Exception as e:
+            reply = QMessageBox.question(
+                self,
+                "Hardware Failed",
+                f"PIXIE-16 initialization failed: {e}\n\nContinue in dummy mode?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            )
+            if reply == QMessageBox.StandardButton.Yes:
+                self.dummy_mode = True
+                self.info_bar.setText("DUMMY MODE - Hardware initialization failed")
+                self.is_initialized = True
+            else:
+                sys.exit(1)
 
     def init_ui(self):
-        # Set responsive window size
-        screen = QApplication.primaryScreen().geometry()
-        window_width = min(1200, int(screen.width() * 0.85))
-        window_height = min(800, int(screen.height() * 0.8))
-        self.setGeometry(100, 100, window_width, window_height)
-
         main_widget = QWidget()
         self.setCentralWidget(main_widget)
 
-        # Create layout with splitter
+        # Main splitter layout
         main_splitter = QSplitter(Qt.Orientation.Horizontal)
 
         # Left side - plotting area
         left_widget = QWidget()
-        self.left_layout = QVBoxLayout(left_widget)
-        self.left_layout.setContentsMargins(5, 5, 5, 5)
+        left_layout = QVBoxLayout(left_widget)
 
         # Control panel
         control_panel = self.create_control_panel()
-        self.left_layout.addWidget(control_panel)
+        left_layout.addWidget(control_panel)
 
-        # Initialize with MCA plotter by default
+        # Initialize spectrum plotter
         self.spectrum_tab = MCASpectrumPlotter(
-            channels=self.channel_numbers, title="PIXIE-16 MCA Spectra"
+            channels=self.channels, title="PIXIE-16 MCA Spectra"
         )
-        self.left_layout.addWidget(self.spectrum_tab)
+        left_layout.addWidget(self.spectrum_tab)
 
         # Right side - controls
         right_widget = QWidget()
         right_layout = QVBoxLayout(right_widget)
-        right_layout.setContentsMargins(5, 5, 5, 5)
 
+        # Binary file loader
         self.binary_loader = BinaryFileLoader(parent_scope=self)
         right_layout.addWidget(self.binary_loader)
 
-        # Create channel controls (using logical module 0)
+        # Channel controls
         self.channel_controls = ChannelDisplayControls(
-            channels=[(0, ch) for ch in self.channel_numbers], title="Channels"
+            channels=[(0, ch) for ch in self.channels], title="Channels"
         )
         self.channel_controls.channels_changed.connect(self.update_display_channels)
         right_layout.addWidget(self.channel_controls)
 
+        # Parameter controls
         self.parameter_controls = ParameterControls(
-            initial_module=0,
-            title="Parameters",  # Logical module 0
+            initial_module=0, title="Parameters"
         )
         self.parameter_controls.parameter_changed.connect(self.handle_parameter_change)
         self.parameter_controls.apply_all_requested.connect(
@@ -456,33 +191,26 @@ class CompletePixieScopeApp(QMainWindow):
         )
         self.parameter_controls.status_message.connect(self.update_info_bar)
 
+        # Sync parameter controls with current settings
+        self.parameter_controls.set_all_parameters(self.dynamic_settings)
         right_layout.addWidget(self.parameter_controls)
-        right_layout.addStretch()
 
-        # Set sizes
+        # Set splitter sizes
         left_widget.setMinimumWidth(400)
         right_widget.setMinimumWidth(200)
         right_widget.setMaximumWidth(350)
 
-        # Add to splitter
         main_splitter.addWidget(left_widget)
         main_splitter.addWidget(right_widget)
-        main_splitter.setSizes([int(window_width * 0.75), int(window_width * 0.25)])
+        main_splitter.setSizes([900, 300])
 
-        # Main layout
+        # Main layout with info bar
         main_layout = QVBoxLayout()
-        main_layout.setContentsMargins(5, 5, 5, 5)
         main_layout.addWidget(main_splitter)
-
-        # Info bar
-        mode_status = "DUMMY MODE - " if self.dummy_mode else ""
-        self.info_bar = QLabel(
-            f"{mode_status}PIXIE-16 Slot {self.physical_slot} → Logical Module 0 - Ready"
-        )
-        self.info_bar.setMaximumHeight(25)
         main_layout.addWidget(self.info_bar)
 
         main_widget.setLayout(main_layout)
+        self.setGeometry(100, 100, 1200, 800)
 
     def create_control_panel(self):
         group = QGroupBox("Acquisition Controls")
@@ -492,14 +220,12 @@ class CompletePixieScopeApp(QMainWindow):
         # Mode and control buttons
         top_layout = QHBoxLayout()
 
-        # Mode selection
         top_layout.addWidget(QLabel("Mode:"))
         self.mode_combo = QComboBox()
         self.mode_combo.addItems(["MCA Mode", "List Mode", "Traces Mode"])
         self.mode_combo.currentTextChanged.connect(self.on_mode_changed)
         top_layout.addWidget(self.mode_combo)
 
-        # Acquisition control buttons
         self.start_btn = QPushButton("Start")
         self.start_btn.clicked.connect(self.start_acquisition)
         top_layout.addWidget(self.start_btn)
@@ -535,289 +261,370 @@ class CompletePixieScopeApp(QMainWindow):
         if self.is_acquiring:
             self.stop_acquisition()
 
-        old_mode = self.current_mode
         self.current_mode = mode_text.lower().replace(" ", "_")
 
-        # Clean up old spectrum tab
-        if hasattr(self, "spectrum_tab") and self.spectrum_tab:
-            if hasattr(self.spectrum_tab, "stop_live_updates"):
-                self.spectrum_tab.stop_live_updates()
-            self.left_layout.removeWidget(self.spectrum_tab)
-            self.spectrum_tab.setParent(None)
+        # Switch spectrum plotter
+        if hasattr(self.spectrum_tab, "stop_live_updates"):
+            self.spectrum_tab.stop_live_updates()
 
-        # Create new spectrum tab
+        old_tab = self.spectrum_tab
+
         if self.current_mode == "mca_mode":
             self.spectrum_tab = MCASpectrumPlotter(
-                channels=self.channel_numbers, title="PIXIE-16 MCA Spectra"
+                channels=self.channels, title="PIXIE-16 MCA Spectra"
             )
         elif self.current_mode == "list_mode":
             self.spectrum_tab = ContinuousSpectrumPlotter(
                 app=None,
                 instrument_name="pixie16",
                 display_name="PIXIE-16 List Mode Spectra",
-                channels=self.channel_numbers,
+                channels=self.channels,
                 energy_range=(0, 8192),
                 bins=1000,
             )
         elif self.current_mode == "traces_mode":
             self.spectrum_tab = TracesPlotter(
-                channels=self.channel_numbers, title="PIXIE-16 Traces"
+                channels=self.channels, title="PIXIE-16 Traces"
             )
 
-        self.left_layout.addWidget(self.spectrum_tab)
-        self.info_bar.setText(f"Mode changed: {old_mode} → {self.current_mode}")
+        # Replace in layout
+        layout = old_tab.parent().layout()
+        layout.replaceWidget(old_tab, self.spectrum_tab)
+        old_tab.setParent(None)
+
+        self.info_bar.setText(f"Mode changed to {self.current_mode}")
+
+    def handle_parameter_change(self, param_name, value, module, channel):
+        try:
+            print(
+                f"DEBUG: Handling parameter change: {param_name} = {value} for M{module}:Ch{channel}"
+            )
+
+            # Update our dynamic settings
+            if channel is not None and channel in self.channel_settings:
+                self.channel_settings[channel][param_name] = value
+            self.dynamic_settings[param_name] = value
+            print(f"DEBUG: Updated global setting: {param_name} = {value}")
+
+            # Apply to hardware if not in dummy mode
+            if not self.dummy_mode and px:
+                if self._is_channel_parameter(param_name):
+                    px.control.set_channel_parameter(param_name, value, module, channel)
+                else:
+                    px.control.set_module_parameter(param_name, value, module)
+                self.info_bar.setText(
+                    f"Set {param_name} = {value} on M{module}:Ch{channel}"
+                )
+                print(f"DEBUG: Applied to hardware")
+            else:
+                self.info_bar.setText(f"DUMMY MODE - stored {param_name} = {value}")
+                print(f"DEBUG: DUMMY MODE - stored {param_name} = {value}")
+
+        except Exception as e:
+            error_msg = f"Error setting {param_name}: {e}"
+            print(f"DEBUG ERROR: {error_msg}")
+            self.info_bar.setText(error_msg)
+
+    def handle_apply_all_parameters(self, params_dict, module, channel):
+        try:
+            print(f"DEBUG: Applying all parameters to M{module}:Ch{channel}")
+            print(f"DEBUG: Parameters: {params_dict}")
+
+            # Update our settings
+            for param_name, value in params_dict.items():
+                if channel is not None and channel in self.channel_settings:
+                    self.channel_settings[channel][param_name] = value
+                self.dynamic_settings[param_name] = value
+
+            # Apply to hardware if not in dummy mode
+            if not self.dummy_mode and px:
+                # Use change_setting_from_dict for bulk update
+                settings_dict = {"channels": [(module, channel)], **params_dict}
+                px.control.change_setting_from_dict(settings_dict, call_pixie=True)
+                self.info_bar.setText(
+                    f"Applied {len(params_dict)} parameters to M{module}:Ch{channel}"
+                )
+                print(f"DEBUG: Applied all parameters to hardware")
+            else:
+                self.info_bar.setText(
+                    f"DUMMY MODE - Applied {len(params_dict)} parameters"
+                )
+                print(f"DEBUG: DUMMY MODE - stored all parameters")
+
+        except Exception as e:
+            error_msg = f"Error applying parameters: {e}"
+            print(f"DEBUG ERROR: {error_msg}")
+            self.info_bar.setText(error_msg)
+
+    def _is_channel_parameter(self, param_name):
+        channel_params = {
+            "TRIGGER_THRESHOLD",
+            "TRIGGER_RISETIME",
+            "TRIGGER_FLATTOP",
+            "ENERGY_RISETIME",
+            "ENERGY_FLATTOP",
+            "TRACE_LENGTH",
+            "TRACE_DELAY",
+            "VOFFSET",
+            "TAU",
+            "BASELINE_PERCENT",
+            "BASELINE_AVERAGE",
+            "EMIN",
+            "BINFACTOR",
+            "CFDDelay",
+            "CFDScale",
+            "CFDThresh",
+            "QDCLen0",
+            "QDCLen1",
+            "QDCLen2",
+            "QDCLen3",
+            "QDCLen4",
+            "QDCLen5",
+            "QDCLen6",
+            "QDCLen7",
+            "ExtTrigStretch",
+            "VetoStretch",
+            "ExternDelayLen",
+            "FtrigoutDelay",
+            "ChanTrigStretch",
+            "CHANNEL_CSRA",
+            "CHANNEL_CSRB",
+            "Gain",
+            "Polarity",
+            "GoodChannel",
+            "CaptureTrace",
+        }
+        return param_name in channel_params
 
     def start_acquisition(self):
         try:
-            success = False
-
-            # Check if we should use binary replay instead of live acquisition
+            # Check for binary replay mode
             if (
-                hasattr(self, "binary_loader")
+                hasattr(self.binary_loader, "is_using_binary_data")
                 and self.binary_loader.is_using_binary_data()
             ):
-                print("Using binary file replay instead of live acquisition")
-
-                # Start binary replay
                 success = self.binary_loader.start_replay()
+                if success and hasattr(self.spectrum_tab, "start_live_updates"):
+                    self.spectrum_tab.start_live_updates()
+                    self.is_acquiring = True
+                    self.update_acquisition_buttons(True)
+                    self.info_bar.setText("Binary file replay started")
+                return
 
-                if success:
-                    # Start the spectrum plotter updates
-                    if hasattr(self.spectrum_tab, "start_live_updates"):
-                        self.spectrum_tab.start_live_updates()
+            # Get current settings for the mode
+            settings = self.get_settings_for_mode(self.current_mode)
 
-                    data_source = self.binary_loader.get_data_source_info()
-                    self.info_bar.setText(f"Replaying: {data_source}")
+            # Start hardware acquisition
+            if self.current_mode == "mca_mode":
+                success = self.start_mca_mode(settings)
+            elif self.current_mode == "list_mode":
+                success = self.start_list_mode(settings)
+            elif self.current_mode == "traces_mode":
+                success = self.start_traces_mode(settings)
             else:
-                # Regular live acquisition
-                if self.current_mode == "mca_mode":
-                    success = self.start_mca_acquisition()
-                elif self.current_mode == "list_mode":
-                    success = self.start_list_mode_acquisition()
-                elif self.current_mode == "traces_mode":
-                    success = self.start_traces_acquisition()
+                success = False
 
             if success:
                 self.is_acquiring = True
-                self.start_btn.setEnabled(False)
-                self.stop_btn.setEnabled(True)
+                self.update_acquisition_buttons(True)
                 self.status_label.setText(f"Status: Acquiring ({self.current_mode})")
             else:
                 raise RuntimeError("Failed to start acquisition")
 
         except Exception as e:
-            error_msg = f"Failed to start acquisition: {str(e)}"
-            print(error_msg)
-            self.info_bar.setText(error_msg)
+            self.info_bar.setText(f"Failed to start acquisition: {e}")
 
-    def start_mca_acquisition(self) -> bool:
+    def get_settings_for_mode(self, mode):
+        settings = self.dynamic_settings.copy()
+        settings["channels"] = [(0, ch) for ch in self.channels]  # Logical module 0
+
+        if mode == "mca_mode":
+            settings.update(
+                {
+                    "CaptureHistogram": True,
+                    "CaptureTrace": False,
+                    "CaptureSums": False,
+                }
+            )
+        elif mode == "list_mode":
+            settings.update(
+                {
+                    "CaptureHistogram": False,
+                    "CaptureTrace": False,
+                    "CaptureSums": False,
+                }
+            )
+        elif mode == "traces_mode":
+            settings.update(
+                {
+                    "CaptureHistogram": False,
+                    "CaptureTrace": True,
+                    "CaptureSums": True,
+                }
+            )
+
+        return settings
+
+    def start_mca_mode(self, settings):
+        if self.dummy_mode:
+            self.setup_dummy_mca_timer()
+            return True
+
         try:
-            # Start hardware histogram collection
-            if not self.pixie_hw.start_histogram_mode():
-                return False
+            px.control.change_setting_from_dict(settings, call_pixie=True)
+            px.control.start_histogram_run()
 
-            # Start the MCA plotter's update timer
-            if hasattr(self.spectrum_tab, "start_live_updates"):
-                self.spectrum_tab.start_live_updates()
-
-            # Set up timer to read histogram data every 2 seconds
+            # Start histogram reading timer
             self.acquisition_timer = QTimer()
             self.acquisition_timer.timeout.connect(self.read_histogram_data)
-            self.acquisition_timer.start(2000)
+            self.acquisition_timer.start(2000)  # 2 second intervals
 
-            mode_status = "DUMMY MODE - " if self.dummy_mode else ""
-            self.info_bar.setText(f"{mode_status}MCA mode: Collecting histograms...")
-            return True
-
-        except Exception as e:
-            print(f"Error starting MCA: {str(e)}")
-            return False
-
-    def start_list_mode_acquisition(self) -> bool:
-        try:
-            # Start hardware list mode
-            if not self.pixie_hw.start_list_mode():
-                return False
-
-            print("Setting up live data processing...")
-
-            # Set up live data reader for event processing
-            self.live_reader = LiveDataReader()
-            self.data_source = LiveDataSourceInterface(self.live_reader)
-
-            # Add event callback with debugging
-            def debug_event_callback(event):
-                self.process_list_mode_event(event)
-
-            self.live_reader.add_event_callback(debug_event_callback)
-            print("✓ Event callback added")
-
-            if self.dummy_mode:
-                print("No binary file loaded")
-            else:
-                print("Starting FIFO reader for real hardware...")
-                # Set up timer to read FIFO data every 50ms
-                self.data_timer = QTimer()
-                self.data_timer.timeout.connect(self.read_list_mode_fifo)
-                self.data_timer.start(50)
-                print("✓ FIFO timer started (50ms intervals)")
-
-            # Start the data source
-            self.data_source.start_acquisition()
-            print("✓ Data source started")
-
-            # Start the spectrum plotter updates
             if hasattr(self.spectrum_tab, "start_live_updates"):
                 self.spectrum_tab.start_live_updates()
-                print("✓ Spectrum plotter live updates started")
 
-            mode_status = "DUMMY MODE - " if self.dummy_mode else ""
-            self.info_bar.setText(f"{mode_status}List mode: Processing events...")
-
-            print("Live data processing started")
             return True
-
         except Exception as e:
-            print(f"Error starting list mode: {str(e)}")
-            import traceback
-
-            traceback.print_exc()
+            print(f"Error starting MCA mode: {e}")
             return False
 
-    def start_traces_acquisition(self) -> bool:
-        try:
-            # Start hardware traces mode
-            if not self.pixie_hw.start_traces_mode():
-                return False
+    def start_list_mode(self, settings):
+        if self.dummy_mode:
+            return True
 
-            # Set up live data reader for trace processing
+        try:
+            px.control.change_setting_from_dict(settings, call_pixie=True)
+            px.control.start_list_mode_run()
+
+            # Set up live data processing
+            self.live_reader = LiveDataReader()
+            self.data_source = LiveDataSourceInterface(self.live_reader)
+            self.live_reader.add_event_callback(self.process_list_mode_event)
+
+            # Start FIFO reading timer
+            self.data_timer = QTimer()
+            self.data_timer.timeout.connect(self.read_list_mode_fifo)
+            self.data_timer.start(50)  # 50ms intervals
+
+            self.data_source.start_acquisition()
+
+            if hasattr(self.spectrum_tab, "start_live_updates"):
+                self.spectrum_tab.start_live_updates()
+
+            return True
+        except Exception as e:
+            print(f"Error starting list mode: {e}")
+            return False
+
+    def start_traces_mode(self, settings):
+        if self.dummy_mode:
+            return True
+
+        try:
+            px.control.change_setting_from_dict(settings, call_pixie=True)
+            px.control.start_list_mode_run()  # Traces come through list mode
+
+            # Set up live data processing
             self.live_reader = LiveDataReader()
             self.data_source = LiveDataSourceInterface(self.live_reader)
             self.live_reader.add_event_callback(self.process_traces_event)
 
-            # self.binary_loader.set_live_data_source(self.data_source)
-
-            if self.dummy_mode:
-                print("No binary file loaded")
-            else:
-                # Set up timer to read FIFO data every 100ms
-                self.data_timer = QTimer()
-                self.data_timer.timeout.connect(self.read_list_mode_fifo)
-                self.data_timer.start(100)
+            # Start FIFO reading timer
+            self.data_timer = QTimer()
+            self.data_timer.timeout.connect(self.read_list_mode_fifo)
+            self.data_timer.start(100)  # 100ms intervals
 
             self.data_source.start_acquisition()
 
             if hasattr(self.spectrum_tab, "start_live_updates"):
                 self.spectrum_tab.start_live_updates()
 
-            mode_status = "DUMMY MODE - " if self.dummy_mode else ""
-            self.info_bar.setText(f"{mode_status}Traces mode: Capturing traces...")
             return True
-
         except Exception as e:
-            print(f"Error starting traces mode: {str(e)}")
+            print(f"Error starting traces mode: {e}")
             return False
 
+    def setup_dummy_mca_timer(self):
+        self.acquisition_timer = QTimer()
+        self.acquisition_timer.timeout.connect(self.generate_dummy_mca_data)
+        self.acquisition_timer.start(1000)
+
+        if hasattr(self.spectrum_tab, "start_live_updates"):
+            self.spectrum_tab.start_live_updates()
+
+    def generate_dummy_mca_data(self):
+        for channel in self.channels:
+            # Generate synthetic spectrum with peaks
+            x = np.arange(32768)
+            spectrum = np.zeros(32768)
+
+            # Add some peaks at different energies
+            peak_positions = [1000, 2000, 4000, 8000, 16000]
+            for pos in peak_positions:
+                if pos < 32768:
+                    width = 50
+                    height = np.random.poisson(1000)  # Poisson statistics
+                    spectrum += height * np.exp(-0.5 * ((x - pos) / width) ** 2)
+
+            # Add noise
+            noise = np.random.poisson(10, 32768)
+            spectrum += noise
+
+            self.mca_data[channel] = spectrum.astype(np.int32)
+            self.cumulative_mca_data[channel] += spectrum.astype(np.int64)
+
+            # Update plotter
+            if hasattr(self.spectrum_tab, "update_mca_histogram"):
+                self.spectrum_tab.update_mca_histogram(channel, self.mca_data[channel])
+
     def read_histogram_data(self):
-        try:
-            # Read histograms from hardware
-            histograms = self.pixie_hw.read_histograms()
-
-            # Track statistics for channel controls
-            channel_stats = {}
-
-            for channel, histogram in histograms.items():
-                if channel in self.channel_numbers:
-                    # Update cumulative data
-                    self.cumulative_mca_data[channel] = histogram.astype(np.int64)
-                    self.mca_data[channel] = np.clip(
-                        self.cumulative_mca_data[channel], 0, np.iinfo(np.int32).max
-                    ).astype(np.int32)
-
-                    # Update display
-                    if hasattr(self.spectrum_tab, "update_mca_histogram"):
-                        self.spectrum_tab.update_mca_histogram(
-                            channel, self.mca_data[channel]
-                        )
-
-                    # Calculate statistics
-                    total_counts = int(np.sum(self.mca_data[channel]))
-                    channel_stats[channel] = total_counts
-
-            # Update channel controls
-            if channel_stats and hasattr(self, "channel_controls"):
-                self.channel_controls.update_channel_statistics(channel_stats)
-
-        except Exception as e:
-            print(f"Error reading histogram data: {e}")
-
-    def read_list_mode_fifo(self):
-        if not self.is_acquiring or not self.live_reader or self.dummy_mode:
+        if self.dummy_mode:
             return
 
         try:
-            # Read data with debugging
-            data_list = self.pixie_hw.read_list_mode_data()
+            module_channels = [(0, ch) for ch in self.channels]
+            hist_list = px.control.read_histograms(module_channels)
 
-            if not hasattr(self, "_fifo_debug_counter"):
-                self._fifo_debug_counter = 0
-                self._last_fifo_debug = time.time()
+            channel_stats = {}
+            for i, channel in enumerate(self.channels):
+                if i < len(hist_list) and hist_list[i] is not None:
+                    histogram = np.array(hist_list[i], dtype=np.int32)
+                    self.mca_data[channel] = histogram
+                    self.cumulative_mca_data[channel] = histogram.astype(np.int64)
 
-            total_words = sum(len(data) for data in data_list)
-            self._fifo_debug_counter += total_words
+                    if hasattr(self.spectrum_tab, "update_mca_histogram"):
+                        self.spectrum_tab.update_mca_histogram(channel, histogram)
 
-            # Debug output every 5 seconds
-            current_time = time.time()
-            if current_time - self._last_fifo_debug > 5.0:
-                print(
-                    f"FIFO Debug: Read {total_words} words this cycle, {self._fifo_debug_counter} total"
-                )
-                self._last_fifo_debug = current_time
+                    channel_stats[channel] = int(np.sum(histogram))
 
-            # Feed data to live reader
-            for data in data_list:
-                if len(data) > 0:
-                    self.live_reader.add_data(data)
-                    print(f"List Mode: Fed {len(data)} words to live reader")
+            # Update channel controls
+            if hasattr(self.channel_controls, "update_channel_statistics"):
+                self.channel_controls.update_channel_statistics(channel_stats)
 
         except Exception as e:
-            print(f"Error reading PIXIE FIFO: {e}")
-            import traceback
+            print(f"Error reading histograms: {e}")
 
-            traceback.print_exc()
+    def read_list_mode_fifo(self):
+        if self.dummy_mode or not self.live_reader:
+            return
+
+        try:
+            data_list = px.control.read_list_mode_fifo(check=True, threshold=8)
+
+            for data in data_list or []:
+                if len(data) > 0:
+                    self.live_reader.add_data(data)
+
+        except Exception as e:
+            print(f"Error reading FIFO: {e}")
 
     def process_list_mode_event(self, event):
         try:
             channel = getattr(event, "channel", 0)
             energy = getattr(event, "energy", 0)
 
-            if not hasattr(self, "_event_debug_counter"):
-                self._event_debug_counter = 0
-
-            self._event_debug_counter += 1
-            if self._event_debug_counter % 1000 == 0:
-                data_source = (
-                    "BINARY FILE"
-                    if (
-                        hasattr(self, "binary_loader")
-                        and self.binary_loader.is_using_binary_data()
-                    )
-                    else "DUMMY DATA"
-                )
-                print(
-                    f"List Mode ({data_source}): Processed {self._event_debug_counter} events, latest: Ch{channel} E={energy}"
-                )
-
-            if channel in self.channel_numbers:
-                # Feed data to the spectrum plotter
+            if channel in self.channels:
                 if hasattr(self.spectrum_tab, "add_energy_event"):
                     self.spectrum_tab.add_energy_event(channel, energy)
-                elif hasattr(self.spectrum_tab, "energy_data"):
-                    if channel not in self.spectrum_tab.energy_data:
-                        from collections import deque
-
-                        self.spectrum_tab.energy_data[channel] = deque(maxlen=50000)
-                    self.spectrum_tab.energy_data[channel].append(energy)
 
         except Exception as e:
             print(f"Error processing list mode event: {e}")
@@ -827,358 +634,115 @@ class CompletePixieScopeApp(QMainWindow):
             channel = getattr(event, "channel", 0)
             trace = getattr(event, "trace", None)
 
-            if not hasattr(self, "_trace_debug_counter"):
-                self._trace_debug_counter = 0
-
-            self._trace_debug_counter += 1
-
-            if self._trace_debug_counter % 100 == 0:
-                data_source = (
-                    "BINARY FILE"
-                    if (
-                        hasattr(self, "binary_loader")
-                        and self.binary_loader.is_using_binary_data()
-                    )
-                    else "DUMMY DATA"
-                )
-                print(
-                    f"Traces Mode ({data_source}): Processed {self._trace_debug_counter} traces, latest: Ch{channel} trace_len={len(trace) if trace else 0}"
-                )
-
-            if channel in self.channel_numbers and trace is not None and len(trace) > 0:
-                # For coincidence analysis, feed event + trace to enhanced plotter
-                if hasattr(self.spectrum_tab, "add_event_with_trace"):
-                    self.spectrum_tab.add_event_with_trace(event, trace)
-                # Fallback to regular trace processing
-                elif hasattr(self.spectrum_tab, "add_trace"):
+            if channel in self.channels and trace is not None:
+                if hasattr(self.spectrum_tab, "add_trace"):
                     self.spectrum_tab.add_trace(channel, trace)
-                elif hasattr(self.spectrum_tab, "trace_data"):
-                    if channel not in self.spectrum_tab.trace_data:
-                        from collections import deque
-
-                        self.spectrum_tab.trace_data[channel] = deque(maxlen=100)
-                    self.spectrum_tab.trace_data[channel].append(trace)
 
         except Exception as e:
             print(f"Error processing traces event: {e}")
 
     def stop_acquisition(self):
-        if self.shutdown_in_progress:
-            return
-
         try:
-            print("Stopping acquisition...")
-
-            # Stop binary replay if running
-            if (
-                hasattr(self, "binary_loader")
-                and self.binary_loader.is_using_binary_data()
-            ):
+            # Stop binary replay
+            if hasattr(self.binary_loader, "stop_replay"):
                 self.binary_loader.stop_replay()
 
-            # Stop timers first
-            if hasattr(self, "acquisition_timer") and self.acquisition_timer:
-                self.acquisition_timer.stop()
-                self.acquisition_timer = None
+            # Stop timers
+            for timer_name in ["acquisition_timer", "data_timer"]:
+                timer = getattr(self, timer_name, None)
+                if timer:
+                    timer.stop()
+                    setattr(self, timer_name, None)
 
-            if hasattr(self, "data_timer") and self.data_timer:
-                self.data_timer.stop()
-                self.data_timer = None
+            # Stop spectrum updates
+            if hasattr(self.spectrum_tab, "stop_live_updates"):
+                self.spectrum_tab.stop_live_updates()
 
-            # Stop spectrum tab updates
-            if (
-                hasattr(self, "spectrum_tab")
-                and self.spectrum_tab
-                and hasattr(self.spectrum_tab, "stop_live_updates")
-            ):
-                try:
-                    self.spectrum_tab.stop_live_updates()
-                except RuntimeError:
-                    pass  # Widget already deleted
+            # Stop hardware acquisition
+            if not self.dummy_mode and px:
+                px.control.end_run()
 
-            # Stop data source
-            if hasattr(self, "data_source") and self.data_source:
-                try:
-                    self.data_source.stop_acquisition()
-                except:
-                    pass
+            # Clean up data source
+            if self.data_source:
+                self.data_source.stop_acquisition()
                 self.data_source = None
 
-            # Stop hardware
-            self.pixie_hw.stop_current_run()
-
-            # Clean up live reader
-            if hasattr(self, "live_reader"):
-                self.live_reader = None
-
+            self.live_reader = None
             self.is_acquiring = False
 
-            # Update UI
-            if not self.shutdown_in_progress:
-                try:
-                    self.start_btn.setEnabled(True)
-                    self.stop_btn.setEnabled(False)
-                    self.status_label.setText("Status: Stopped")
-
-                    mode_status = "DUMMY MODE - " if self.dummy_mode else ""
-                    self.info_bar.setText(f"{mode_status}Acquisition stopped")
-                except RuntimeError:
-                    pass  # UI elements already deleted
-
-            print("✓ Acquisition stopped successfully")
+            self.update_acquisition_buttons(False)
+            self.status_label.setText("Status: Stopped")
+            self.info_bar.setText("Acquisition stopped")
 
         except Exception as e:
             print(f"Error stopping acquisition: {e}")
 
     def clear_data(self):
         try:
-            # Clear MCA data
-            for channel in self.channel_numbers:
-                if channel in self.cumulative_mca_data:
-                    self.cumulative_mca_data[channel].fill(0)
-                if channel in self.mca_data:
-                    self.mca_data[channel].fill(0)
+            for channel in self.channels:
+                self.mca_data[channel].fill(0)
+                self.cumulative_mca_data[channel].fill(0)
 
-            # Clear spectrum tab data
             if hasattr(self.spectrum_tab, "clear_data"):
                 self.spectrum_tab.clear_data()
 
-            mode_status = "DUMMY MODE - " if self.dummy_mode else ""
-            self.info_bar.setText(f"{mode_status}All data cleared")
+            self.info_bar.setText("Data cleared")
 
         except Exception as e:
             print(f"Error clearing data: {e}")
 
     def update_display_channels(self, selected_channels):
-        try:
-            # Filter to only enabled channels
-            valid_channels = [
-                ch for ch in selected_channels if ch in self.channel_numbers
-            ]
+        valid_channels = [ch for ch in selected_channels if ch in self.channels]
 
-            if hasattr(self.spectrum_tab, "set_display_channels"):
-                self.spectrum_tab.set_display_channels(valid_channels)
-            elif hasattr(self.spectrum_tab, "set_channels"):
-                self.spectrum_tab.set_channels(valid_channels)
+        if hasattr(self.spectrum_tab, "set_display_channels"):
+            self.spectrum_tab.set_display_channels(valid_channels)
 
-            self.info_bar.setText(
-                f"Displaying {len(valid_channels)} channels: {valid_channels}"
-            )
+        self.info_bar.setText(f"Displaying {len(valid_channels)} channels")
 
-        except Exception as e:
-            print(f"Error updating display channels: {e}")
-
-    def handle_parameter_change(self, param_name, value, module, channel):
-        try:
-            if not self.dummy_mode and px:
-                px.control.set_channel_parameter(param_name, value, module, channel)
-                self.info_bar.setText(
-                    f"Set {param_name} = {value} on M{module}:Ch{channel}"
-                )
-            else:
-                self.info_bar.setText(
-                    f"DUMMY MODE - {param_name} = {value} on M{module}:Ch{channel}"
-                )
-        except Exception as e:
-            error_msg = f"Error setting {param_name}: {e}"
-            self.info_bar.setText(error_msg)
-
-    def handle_apply_all_parameters(self, params_dict, module, channel):
-        try:
-            if not self.dummy_mode and px:
-                for param_name, value in params_dict.items():
-                    px.control.set_channel_parameter(param_name, value, module, channel)
-                self.info_bar.setText(
-                    f"Applied {len(params_dict)} parameters to M{module}:Ch{channel}"
-                )
-            else:
-                self.info_bar.setText(
-                    f"DUMMY MODE - Applied {len(params_dict)} parameters"
-                )
-        except Exception as e:
-            error_msg = f"Error applying parameters: {e}"
-            self.info_bar.setText(error_msg)
+    def update_acquisition_buttons(self, acquiring):
+        self.start_btn.setEnabled(not acquiring)
+        self.stop_btn.setEnabled(acquiring)
 
     def update_info_bar(self, message):
-        mode_status = "DUMMY MODE - " if self.dummy_mode else ""
-        self.info_bar.setText(f"{mode_status}{message}")
+        prefix = "DUMMY MODE - " if self.dummy_mode else ""
+        self.info_bar.setText(f"{prefix}{message}")
 
     def setup_timers(self):
-        """Set up status update timers"""
         self.status_timer = QTimer()
         self.status_timer.timeout.connect(self.update_status)
-        self.status_timer.start(1000)  # 1 second updates
+        self.status_timer.start(1000)
 
     def update_status(self):
         try:
-            # Update live reader statistics
             if self.live_reader:
-                try:
-                    stats = self.live_reader.get_statistics()
-                    rate = stats.get("processing_rate", 0)
-                    events = stats.get("events_processed", 0)
-                    self.rate_label.setText(f"Rate: {rate:.1f} Hz")
-                    self.events_label.setText(f"Events: {events}")
-                except Exception as e:
-                    print(f"Error updating live reader stats: {e}")
+                stats = self.live_reader.get_statistics()
+                rate = stats.get("processing_rate", 0)
+                events = stats.get("events_processed", 0)
 
-            # Update mode-specific channel statistics
-            if self.current_mode == "mca_mode":
-                self.update_mca_channel_stats()
-            elif self.current_mode == "list_mode":
-                self.update_list_mode_channel_stats()
-            elif self.current_mode == "traces_mode":
-                self.update_traces_channel_stats()
-
+                self.rate_label.setText(f"Rate: {rate:.1f} Hz")
+                self.events_label.setText(f"Events: {events}")
         except Exception as e:
-            print(f"Error in update_status: {e}")
-
-    def update_mca_channel_stats(self):
-        try:
-            if not hasattr(self, "mca_data") or not self.mca_data:
-                return
-
-            channel_stats = {}
-            for channel in self.channel_numbers:
-                if channel in self.mca_data and len(self.mca_data[channel]) > 0:
-                    total_counts = int(np.sum(self.mca_data[channel]))
-                    channel_stats[channel] = total_counts
-                else:
-                    channel_stats[channel] = 0
-
-            # Update channel controls
-            if channel_stats and hasattr(self, "channel_controls"):
-                self.channel_controls.update_channel_statistics(channel_stats)
-
-        except Exception as e:
-            print(f"Error updating MCA channel stats: {e}")
-
-    def update_list_mode_channel_stats(self):
-        try:
-            channel_stats = {}
-
-            # Get statistics from energy data in spectrum tab
-            if hasattr(self.spectrum_tab, "energy_data") and hasattr(
-                self.spectrum_tab.energy_data, "keys"
-            ):
-                for channel in self.channel_numbers:
-                    if channel in self.spectrum_tab.energy_data:
-                        event_count = len(self.spectrum_tab.energy_data[channel])
-                        channel_stats[channel] = event_count
-                    else:
-                        channel_stats[channel] = 0
-            else:
-                # Fallback
-                for channel in self.channel_numbers:
-                    channel_stats[channel] = 0
-
-            # Update channel controls
-            if channel_stats and hasattr(self, "channel_controls"):
-                self.channel_controls.update_channel_statistics(channel_stats)
-
-        except Exception as e:
-            print(f"Error updating List Mode channel stats: {e}")
-
-    def update_traces_channel_stats(self):
-        try:
-            channel_stats = {}
-
-            # Get statistics from trace data in spectrum tab
-            if hasattr(self.spectrum_tab, "trace_data") and hasattr(
-                self.spectrum_tab.trace_data, "keys"
-            ):
-                for channel in self.channel_numbers:
-                    if channel in self.spectrum_tab.trace_data:
-                        trace_count = len(self.spectrum_tab.trace_data[channel])
-                        channel_stats[channel] = trace_count
-                    else:
-                        channel_stats[channel] = 0
-            else:
-                # Fallback
-                for channel in self.channel_numbers:
-                    channel_stats[channel] = 0
-
-            # Update channel controls
-            if channel_stats and hasattr(self, "channel_controls"):
-                self.channel_controls.update_channel_statistics(channel_stats)
-
-        except Exception as e:
-            print(f"Error updating Traces channel stats: {e}")
+            print(f"Error updating status: {e}")
 
     def closeEvent(self, event):
         try:
-            print("Shutting down Complete PIXIE-16 Scope...")
-
-            # Stop acquisition first
             if self.is_acquiring:
-                print("  Stopping acquisition...")
                 self.stop_acquisition()
-                time.sleep(0.5)
 
-            # Stop all timers
-            print("  Stopping timers...")
             if hasattr(self, "status_timer") and self.status_timer:
                 self.status_timer.stop()
-                self.status_timer.deleteLater()
-                self.status_timer = None
 
-            # Clean up spectrum tab
-            print("  Cleaning up spectrum tab...")
-            if hasattr(self, "spectrum_tab") and self.spectrum_tab:
-                try:
-                    if hasattr(self.spectrum_tab, "stop_live_updates"):
-                        self.spectrum_tab.stop_live_updates()
-
-                    if (
-                        hasattr(self.spectrum_tab, "update_timer")
-                        and self.spectrum_tab.update_timer
-                    ):
-                        self.spectrum_tab.update_timer.stop()
-                        self.spectrum_tab.update_timer.deleteLater()
-
-                    if hasattr(self, "left_layout"):
-                        self.left_layout.removeWidget(self.spectrum_tab)
-
-                    self.spectrum_tab.setParent(None)
-                    self.spectrum_tab.deleteLater()
-                    self.spectrum_tab = None
-
-                except Exception as e:
-                    print(f"    Error cleaning up spectrum tab: {e}")
-
-            # Hardware cleanup (gentle, doesn't kill system for others)
-            print("  Cleaning up hardware...")
-            if hasattr(self, "pixie_hw") and self.pixie_hw:
-                try:
-                    self.pixie_hw.cleanup()
-                except Exception as e:
-                    print(f"    Error during hardware cleanup: {e}")
-
-            # Process remaining Qt events
-            print("  Processing remaining events...")
-            if hasattr(QApplication, "processEvents"):
-                QApplication.processEvents()
-                time.sleep(0.1)
-                QApplication.processEvents()
-
-            print("  Shutdown complete")
-
+            print("PIXIE-16 Scope shutdown complete")
+            event.accept()
         except Exception as e:
             print(f"Error during shutdown: {e}")
-
-        finally:
-            # Always accept the close event
             event.accept()
 
 
 def main():
-    import argparse
-
-    parser = argparse.ArgumentParser(description="PixieScope")
+    parser = argparse.ArgumentParser(description="PIXIE-16 Scope")
     parser.add_argument("--dummy", action="store_true", help="Run in dummy mode")
-    parser.add_argument(
-        "--slot", type=int, default=2, help="Physical slot number in PXI crate"
-    )
+    parser.add_argument("--slot", type=int, default=2, help="Physical slot number")
     parser.add_argument(
         "--channels",
         type=str,
@@ -1188,73 +752,33 @@ def main():
 
     args = parser.parse_args()
 
-    # Parse channels
     try:
         channels = [int(ch.strip()) for ch in args.channels.split(",")]
     except ValueError:
         print("Error: Invalid channel list format")
         sys.exit(1)
 
-    # Create QApplication
     app = QApplication(sys.argv)
     app.setApplicationName("PIXIE-16 Scope")
 
-    def exception_hook(exctype, value, traceback_obj):
-        print(f"Unhandled exception: {exctype.__name__}: {value}")
-        import traceback
+    print(f"Starting PIXIE-16 Scope - Slot {args.slot}")
+    print(f"Mode: {'DUMMY' if args.dummy else 'HARDWARE'}")
+    print(f"Channels: {channels}")
 
-        traceback.print_exception(exctype, value, traceback_obj)
-
-    sys.excepthook = exception_hook
-
-    # Print startup info
-    if args.dummy:
-        print("Starting PIXIE-16 Scope in DUMMY MODE")
-        print(f"  - Will simulate PIXIE-16 in slot {args.slot}")
-    else:
-        print("Starting PIXIE-16 Scope with REAL HARDWARE")
-        print(f"  - Physical slot: {args.slot}")
-        print(f"  - Channels: {channels}")
-
-    window = None
     try:
-        window = CompletePixieScopeApp(
+        window = PixieScopeApp(
             dummy_mode=args.dummy, physical_slot=args.slot, channels=channels
         )
         window.show()
 
-        print("\n" + "=" * 60)
-        print("PIXIE-16 Scope is ready!")
-        print("Usage:")
-        print("  - Select mode: MCA, List, or Traces")
-        print("  - Click Start to begin acquisition")
-        print("  - Use parameter controls to adjust settings")
-        print("  - Click Stop to end acquisition")
-        print("=" * 60 + "\n")
-
-        # Run the application
-        exit_code = app.exec()
-
-        print("Application exited cleanly")
-        sys.exit(exit_code)
+        print("PIXIE-16 Scope ready!")
+        sys.exit(app.exec())
 
     except KeyboardInterrupt:
-        print("\nKeyboard interrupt received...")
-        if window:
-            window.manual_shutdown()
+        print("\nKeyboard interrupt - shutting down...")
         sys.exit(0)
-
     except Exception as e:
         print(f"Fatal error: {e}")
-        import traceback
-
-        traceback.print_exc()
-
-        if window:
-            try:
-                window.manual_shutdown()
-            except:
-                pass
         sys.exit(1)
 
 
