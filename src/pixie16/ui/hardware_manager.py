@@ -311,14 +311,14 @@ class DynamicPixieHardwareManager:
         self, name: str, value: Any
     ) -> bool:  # simple check before using ParameterValidator
         if name == "TRIGGER_THRESHOLD":
-            return isinstance(value | (int, float)) and 1 <= value <= 65535
+            return isinstance(value, int | float) and 1 <= value <= 65535
         elif name in [
             "TRIGGER_RISETIME",
             "TRIGGER_FLATTOP",
             "ENERGY_RISETIME",
             "ENERGY_FLATTOP",
         ]:
-            return isinstance(value | (int, float)) and value >= 0
+            return isinstance(value, int | float) and value >= 0
         elif name in ["GoodChannel", "CaptureTrace"]:
             return isinstance(value, bool)
         return True
