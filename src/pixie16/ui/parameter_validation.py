@@ -260,6 +260,43 @@ class PixieParameterValidator:
                 description="Channel trigger stretch",
                 dsp_variable="CHANTRIGSTRETCH",
             ),
+            # UI-specific parameters
+            "Gain": ParameterSpec(
+                name="Gain",
+                data_type=float,
+                min_value=0.625,
+                max_value=2.5,
+                unit="V/V",
+                description="Analog input gain",
+                dsp_variable="CHANNEL_CSRA",
+            ),
+            "Polarity": ParameterSpec(
+                name="Polarity",
+                data_type=str,
+                min_value=0,  # Not used for strings
+                max_value=1,  # Not used for strings
+                unit="polarity",
+                description="Signal polarity (negative/positive)",
+                dsp_variable="CHANNEL_CSRA",
+            ),
+            "GoodChannel": ParameterSpec(
+                name="GoodChannel",
+                data_type=bool,
+                min_value=0,
+                max_value=1,
+                unit="boolean",
+                description="Enable channel for data collection",
+                dsp_variable="CHANNEL_CSRA",
+            ),
+            "CaptureTrace": ParameterSpec(
+                name="CaptureTrace",
+                data_type=bool,
+                min_value=0,
+                max_value=1,
+                unit="boolean",
+                description="Enable trace capture for this channel",
+                dsp_variable="CHANNEL_CSRA",
+            ),
             # Module-level Parameters
             "SYNCH_WAIT": ParameterSpec(
                 name="SYNCH_WAIT",
@@ -433,8 +470,6 @@ class PixieParameterValidator:
 
 
 class ParameterChangeManager:
-    """Manages parameter changes with debouncing and batch updates."""
-
     def __init__(self, validator: PixieParameterValidator, update_callback=None):
         """
         Initialize parameter change manager.

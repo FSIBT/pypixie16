@@ -278,6 +278,7 @@ class CompletePixieScopeApp(QMainWindow):
             title="Parameters",
             module_type="100MHz",  # Adjust based on your hardware
         )
+        # self.parameter_controls.setMaximumHeight(450)
 
         # Connect parameter controls to hardware updates
         self.parameter_controls.parameter_changed.connect(self.handle_parameter_change)
@@ -677,7 +678,7 @@ class CompletePixieScopeApp(QMainWindow):
                     else "DUMMY DATA"
                 )
                 print(
-                    f"Traces Mode ({data_source}): Processed {self._trace_debug_counter} traces, latest: Ch{channel} trace_len={len(trace) if trace else 0}"
+                    f"Traces Mode ({data_source}): Processed {self._trace_debug_counter} traces, latest: Ch{channel} trace_len={len(trace) if trace is not None and len(trace) > 0 else 0}"
                 )
 
             if channel in self.channel_numbers and trace is not None and len(trace) > 0:

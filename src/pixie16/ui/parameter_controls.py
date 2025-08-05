@@ -107,25 +107,21 @@ class ParameterControls(QGroupBox):
         update_controls = self.create_update_controls()
         main_layout.addWidget(update_controls)
 
-        # Parameter tabs with scroll area
-        scroll_area = QScrollArea()
-        scroll_area.setWidgetResizable(True)
-        scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
-        scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
-
+        # Parameter tabs without scroll area
         param_tabs = self.create_parameter_tabs()
-        scroll_area.setWidget(param_tabs)
-        main_layout.addWidget(scroll_area)
+        main_layout.addWidget(param_tabs)
 
         # Action buttons
         button_group = self.create_action_buttons()
         main_layout.addWidget(button_group)
-
+        main_layout.addStretch()
         self.setLayout(main_layout)
-        self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Expanding)
+        self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Minimum)
 
     def create_module_channel_selector(self):
         group = QGroupBox("Target Module/Channel")
+        group.setCheckable(True)  # Makes the group box collapsible
+        group.setChecked(True)  # Start expanded
         layout = QHBoxLayout()
 
         layout.addWidget(QLabel("Module:"))
@@ -139,6 +135,14 @@ class ParameterControls(QGroupBox):
         self.channel_spin.setRange(0, 15)
         self.channel_spin.setValue(self.current_channel)
         layout.addWidget(self.channel_spin)
+
+        # Add "Select All" toggle button
+        self.select_all_btn = QPushButton("All Channels")
+        self.select_all_btn.setCheckable(True)
+        self.select_all_btn.setChecked(False)
+        self.select_all_btn.clicked.connect(self.toggle_all_channels)
+        self.select_all_btn.setToolTip("Toggle between single channel and all channels")
+        layout.addWidget(self.select_all_btn)
 
         layout.addStretch()
         group.setLayout(layout)
@@ -168,8 +172,24 @@ class ParameterControls(QGroupBox):
         group.setLayout(layout)
         return group
 
+    def toggle_all_channels(self, checked):
+        if checked:
+            self.select_all_btn.setText("Single Channel")
+            self.channel_spin.setEnabled(False)
+            self.status_message.emit(
+                "All channels mode - parameters apply to all channels"
+            )
+            # You can emit a signal here to notify parent about all-channel mode
+        else:
+            self.select_all_btn.setText("All Channels")
+            self.channel_spin.setEnabled(True)
+            self.status_message.emit(
+                f"Single channel mode - parameters apply to Channel {self.channel_spin.value()}"
+            )
+
     def create_parameter_tabs(self):
         tabs = QTabWidget()
+        tabs.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Minimum)
 
         # Core acquisition parameters
         trigger_tab = self.create_trigger_tab()
@@ -182,9 +202,15 @@ class ParameterControls(QGroupBox):
         timing_tab = self.create_timing_tab()
         tabs.addTab(timing_tab, "Timing")
 
-        # Trace and CFD parameters
-        advanced_tab = self.create_advanced_tab()
-        tabs.addTab(advanced_tab, "Advanced")
+        # Split advanced into three tabs
+        trace_tab = self.create_trace_tab()
+        tabs.addTab(trace_tab, "Traces")
+
+        cfd_tab = self.create_cfd_tab()
+        tabs.addTab(cfd_tab, "CFD")
+
+        qdc_tab = self.create_qdc_tab()
+        tabs.addTab(qdc_tab, "QDC")
 
         # Hardware configuration
         hardware_tab = self.create_hardware_tab()
@@ -228,7 +254,6 @@ class ParameterControls(QGroupBox):
         layout.addWidget(self.trigger_flat_spin, row, 1)
         row += 1
 
-        layout.setRowStretch(row, 1)
         tab.setLayout(layout)
         return tab
 
@@ -265,7 +290,6 @@ class ParameterControls(QGroupBox):
         layout.addWidget(self.emin_spin, row, 1)
         row += 1
 
-        layout.setRowStretch(row, 1)
         tab.setLayout(layout)
         return tab
 
@@ -310,11 +334,10 @@ class ParameterControls(QGroupBox):
         layout.addWidget(self.baseline_avg_spin, row, 1)
         row += 1
 
-        layout.setRowStretch(row, 1)
         tab.setLayout(layout)
         return tab
 
-    def create_advanced_tab(self):
+    def create_trace_tab(self):
         tab = QWidget()
         layout = QGridLayout()
         layout.setVerticalSpacing(10)
@@ -337,11 +360,15 @@ class ParameterControls(QGroupBox):
         layout.addWidget(self.trace_delay_spin, row, 1)
         row += 1
 
-        # CFD Parameters
-        separator = QFrame()
-        separator.setFrameShape(QFrame.Shape.HLine)
-        layout.addWidget(separator, row, 0, 1, 2)
-        row += 1
+        tab.setLayout(layout)
+        return tab
+
+    def create_cfd_tab(self):
+        tab = QWidget()
+        layout = QGridLayout()
+        layout.setVerticalSpacing(10)
+
+        row = 0
 
         layout.addWidget(QLabel("CFD Delay:"), row, 0)
         self.cfd_delay_spin = ValidatedDoubleSpinBox("CFDDelay", self.validator)
@@ -364,13 +391,17 @@ class ParameterControls(QGroupBox):
         layout.addWidget(self.cfd_thresh_spin, row, 1)
         row += 1
 
-        # QDC Parameters
-        separator2 = QFrame()
-        separator2.setFrameShape(QFrame.Shape.HLine)
-        layout.addWidget(separator2, row, 0, 1, 2)
-        row += 1
+        tab.setLayout(layout)
+        return tab
 
-        for i in range(4):  # Show first 4 QDC channels
+    def create_qdc_tab(self):
+        tab = QWidget()
+        layout = QGridLayout()
+        layout.setVerticalSpacing(10)
+
+        row = 0
+
+        for i in range(8):  # Show all 8 QDC channels
             layout.addWidget(QLabel(f"QDC Len {i}:"), row, 0)
             qdc_spin = ValidatedDoubleSpinBox(f"QDCLen{i}", self.validator)
             qdc_spin.setValue(1.0)
@@ -378,7 +409,6 @@ class ParameterControls(QGroupBox):
             layout.addWidget(qdc_spin, row, 1)
             row += 1
 
-        layout.setRowStretch(row, 1)
         tab.setLayout(layout)
         return tab
 
@@ -439,7 +469,6 @@ class ParameterControls(QGroupBox):
         layout.addWidget(self.trace_capture_check, row, 0, 1, 2)
         row += 1
 
-        layout.setRowStretch(row, 1)
         tab.setLayout(layout)
         return tab
 
@@ -606,7 +635,7 @@ class ParameterControls(QGroupBox):
                 self._disconnect_widget_signals(widget)
 
                 try:
-                    if isinstance(widget | (QSpinBox | QDoubleSpinBox)):
+                    if isinstance(widget, QSpinBox | QDoubleSpinBox):
                         widget.setValue(value)
                     elif isinstance(widget, QComboBox):
                         widget.setCurrentText(str(value))

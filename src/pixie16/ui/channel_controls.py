@@ -66,7 +66,28 @@ class ChannelDisplayControls(QGroupBox):
         self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred)
 
     def create_channel_selection_group(self):
-        group = QGroupBox("Channel Selection")
+        # Create a container with a clickable header
+        main_container = QWidget()
+        main_container_layout = QVBoxLayout()
+        main_container_layout.setContentsMargins(0, 0, 0, 0)
+
+        # Clickable header button
+        self.channel_header_btn = QPushButton("▼ Channel Selection")
+        self.channel_header_btn.setCheckable(True)
+        self.channel_header_btn.setChecked(True)
+        self.channel_header_btn.clicked.connect(self.toggle_channel_selection)
+        self.channel_header_btn.setStyleSheet("""
+            QPushButton {
+                text-align: left;
+                padding: 5px;
+                font-weight: bold;
+                border: 1px solid gray;
+                background-color: #f0f0f0;
+            }
+        """)
+
+        # The actual content group
+        self.channel_content_group = QGroupBox()
         grid_layout = QGridLayout()
 
         colors = [
@@ -92,11 +113,11 @@ class ChannelDisplayControls(QGroupBox):
             row = i // 2
             col = i % 2
 
-            # Container for each channel
-            container = QWidget()
-            container_layout = QHBoxLayout()
-            container_layout.setContentsMargins(2, 2, 2, 2)
-            container_layout.setSpacing(5)
+            # Container for each channel (unique variable names)
+            channel_widget = QWidget()
+            channel_layout = QHBoxLayout()
+            channel_layout.setContentsMargins(2, 2, 2, 2)
+            channel_layout.setSpacing(5)
 
             # Color indicator
             color = colors[i % len(colors)]
@@ -121,24 +142,51 @@ class ChannelDisplayControls(QGroupBox):
             stats_label.setFixedWidth(40)
             stats_label.setAlignment(Qt.AlignmentFlag.AlignRight)
 
-            # Assemble container
-            container_layout.addWidget(color_label)
-            container_layout.addWidget(checkbox)
-            container_layout.addStretch()
-            container_layout.addWidget(stats_label)
-            container.setLayout(container_layout)
+            # Assemble channel widget
+            channel_layout.addWidget(color_label)
+            channel_layout.addWidget(checkbox)
+            channel_layout.addStretch()
+            channel_layout.addWidget(stats_label)
+            channel_widget.setLayout(channel_layout)
 
-            grid_layout.addWidget(container, row, col)
+            grid_layout.addWidget(channel_widget, row, col)
 
             # Store references
             self.channel_checkboxes[channel] = checkbox
             self.channel_stats_labels[channel] = stats_label
 
-        group.setLayout(grid_layout)
-        return group
+        self.channel_content_group.setLayout(grid_layout)
+
+        # Assemble the collapsible container
+        main_container_layout.addWidget(self.channel_header_btn)
+        main_container_layout.addWidget(self.channel_content_group)
+        main_container.setLayout(main_container_layout)
+
+        return main_container
 
     def create_quick_selection_group(self):
-        group = QGroupBox("Quick Select")
+        # Create collapsible container
+        container = QWidget()
+        container_layout = QVBoxLayout()
+        container_layout.setContentsMargins(0, 0, 0, 0)
+
+        # Clickable header
+        self.quick_header_btn = QPushButton("▼ Quick Select")
+        self.quick_header_btn.setCheckable(True)
+        self.quick_header_btn.setChecked(True)
+        self.quick_header_btn.clicked.connect(self.toggle_quick_selection)
+        self.quick_header_btn.setStyleSheet("""
+            QPushButton {
+                text-align: left;
+                padding: 5px;
+                font-weight: bold;
+                border: 1px solid gray;
+                background-color: #f0f0f0;
+            }
+        """)
+
+        # Content group
+        self.quick_content_group = QGroupBox()
         layout = QGridLayout()
 
         # All/None buttons
@@ -153,18 +201,35 @@ class ChannelDisplayControls(QGroupBox):
         layout.addWidget(all_btn, 0, 0)
         layout.addWidget(none_btn, 0, 1)
 
-        group.setLayout(layout)
-        return group
+        self.quick_content_group.setLayout(layout)
+
+        container_layout.addWidget(self.quick_header_btn)
+        container_layout.addWidget(self.quick_content_group)
+        container.setLayout(container_layout)
+
+        return container
+
+    def toggle_channel_selection(self, checked):
+        self.channel_content_group.setVisible(checked)
+        if checked:
+            self.channel_header_btn.setText("▼ Channel Selection")
+        else:
+            self.channel_header_btn.setText("▶ Channel Selection")
+
+    def toggle_quick_selection(self, checked):
+        self.quick_content_group.setVisible(checked)
+        if checked:
+            self.quick_header_btn.setText("▼ Quick Select")
+        else:
+            self.quick_header_btn.setText("▶ Quick Select")
 
     def connect_signals(self):
-        """Connect checkbox signals with proper channel identification"""
         for channel, checkbox in self.channel_checkboxes.items():
             checkbox.toggled.connect(
                 lambda checked, ch=channel: self.on_channel_toggled(ch, checked)
             )
 
     def on_channel_toggled(self, channel, checked):
-        """Handle individual channel toggle"""
         print(f"ChannelControls: Channel {channel} toggled to {checked}")
 
         # Update selected channels list
@@ -176,7 +241,6 @@ class ChannelDisplayControls(QGroupBox):
         self.channels_changed.emit(self.selected_channels)
 
     def update_selected_channels(self):
-        """Update the list of selected channels"""
         old_selected = self.selected_channels.copy()
 
         self.selected_channels = [
@@ -190,7 +254,6 @@ class ChannelDisplayControls(QGroupBox):
         )
 
     def select_all_channels(self):
-        """Select all available channels"""
         print("ChannelControls: Selecting all channels")
 
         # Block signals during bulk update to avoid multiple emissions
@@ -203,7 +266,6 @@ class ChannelDisplayControls(QGroupBox):
         self.channels_changed.emit(self.selected_channels)
 
     def select_no_channels(self):
-        """Deselect all channels"""
         print("ChannelControls: Deselecting all channels")
 
         # Block signals during bulk update
@@ -216,7 +278,6 @@ class ChannelDisplayControls(QGroupBox):
         self.channels_changed.emit(self.selected_channels)
 
     def select_channel_range(self, start, end):
-        """Select a specific range of channels"""
         print(f"ChannelControls: Selecting channels {start} to {end - 1}")
 
         # First deselect all
@@ -237,7 +298,6 @@ class ChannelDisplayControls(QGroupBox):
         self.channels_changed.emit(self.selected_channels)
 
     def update_channel_statistics(self, channel_stats):
-        """Update the statistics display for each channel"""
         for channel, count in channel_stats.items():
             if channel in self.channel_stats_labels:
                 if isinstance(count, int):
@@ -253,11 +313,9 @@ class ChannelDisplayControls(QGroupBox):
                 self.channel_stats_labels[channel].setText(text)
 
     def get_display_channels(self):
-        """Get the currently selected channels for display"""
         return self.selected_channels.copy()
 
     def set_channel_enabled(self, channel, enabled):
-        """Enable/disable a specific channel"""
         if channel in self.channel_checkboxes:
             checkbox = self.channel_checkboxes[channel]
             checkbox.setEnabled(enabled)
@@ -269,7 +327,6 @@ class ChannelDisplayControls(QGroupBox):
                 self.channels_changed.emit(self.selected_channels)
 
     def get_selected_module_channel_pairs(self):
-        """Get selected channels as (module, channel) tuples for hardware calls"""
         selected_pairs = []
         for mod_ch_pair in self.module_channel_pairs:
             if isinstance(mod_ch_pair, tuple):
