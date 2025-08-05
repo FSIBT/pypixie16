@@ -632,14 +632,15 @@ class CompletePixieScopeApp(QMainWindow):
 
             self._event_debug_counter += 1
             if self._event_debug_counter % 1000 == 0:
-                data_source = (
-                    "BINARY FILE"
-                    if (
-                        hasattr(self, "binary_loader")
-                        and self.binary_loader.is_using_binary_data()
-                    )
-                    else "DUMMY DATA"
-                )
+                if (
+                    hasattr(self, "binary_loader")
+                    and self.binary_loader.is_using_binary_data()
+                ):
+                    data_source = "BINARY FILE"
+                elif self.dummy_mode:
+                    data_source = "DUMMY DATA"
+                else:
+                    data_source = "REAL HARDWARE"
                 print(
                     f"List Mode ({data_source}): Processed {self._event_debug_counter} events, latest: Ch{channel} E={energy}"
                 )
@@ -669,14 +670,15 @@ class CompletePixieScopeApp(QMainWindow):
             self._trace_debug_counter += 1
 
             if self._trace_debug_counter % 100 == 0:
-                data_source = (
-                    "BINARY FILE"
-                    if (
-                        hasattr(self, "binary_loader")
-                        and self.binary_loader.is_using_binary_data()
-                    )
-                    else "DUMMY DATA"
-                )
+                if (
+                    hasattr(self, "binary_loader")
+                    and self.binary_loader.is_using_binary_data()
+                ):
+                    data_source = "BINARY FILE"
+                elif self.dummy_mode:
+                    data_source = "DUMMY DATA"
+                else:
+                    data_source = "REAL HARDWARE"
                 print(
                     f"Traces Mode ({data_source}): Processed {self._trace_debug_counter} traces, latest: Ch{channel} trace_len={len(trace) if trace is not None and len(trace) > 0 else 0}"
                 )
