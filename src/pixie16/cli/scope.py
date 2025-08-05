@@ -258,21 +258,33 @@ class PixieScopeApp(BaseApp):
         return group
 
     def on_mode_changed(self, mode_text):
-        if self.is_acquiring:
-            self.stop_acquisition()
+        # Store pipeline state before switching
+        pipeline_state = self.preserve_pipeline_during_mode_switch()
 
+        old_mode = self.current_mode
         self.current_mode = mode_text.lower().replace(" ", "_")
 
-        # Switch spectrum plotter
+        print(f"DEBUG: Mode change: {old_mode} → {self.current_mode}")
+        print(f"DEBUG: Pipeline state: {pipeline_state}")
+
+        # Stop spectrum updates but keep acquisition running if possible
         if hasattr(self.spectrum_tab, "stop_live_updates"):
             self.spectrum_tab.stop_live_updates()
 
+        # Switch spectrum plotter
         old_tab = self.spectrum_tab
 
         if self.current_mode == "mca_mode":
             self.spectrum_tab = MCASpectrumPlotter(
                 channels=self.channels, title="PIXIE-16 MCA Spectra"
             )
+            # For MCA mode, we need to stop list/traces and start histogram mode
+            if pipeline_state["is_acquiring"] and old_mode in [
+                "list_mode",
+                "traces_mode",
+            ]:
+                self.stop_acquisition()
+                # Will restart with MCA when user clicks start
         elif self.current_mode == "list_mode":
             self.spectrum_tab = ContinuousSpectrumPlotter(
                 app=None,
@@ -292,13 +304,25 @@ class PixieScopeApp(BaseApp):
         layout.replaceWidget(old_tab, self.spectrum_tab)
         old_tab.setParent(None)
 
-        self.info_bar.setText(f"Mode changed to {self.current_mode}")
+        # Restore pipeline for list/traces modes
+        if self.current_mode in ["list_mode", "traces_mode"]:
+            self.restore_pipeline(pipeline_state, self.current_mode)
+
+            # Restart spectrum updates
+            if hasattr(self.spectrum_tab, "start_live_updates"):
+                self.spectrum_tab.start_live_updates()
+
+        self.info_bar.setText(f"Mode changed: {old_mode} → {self.current_mode}")
 
     def handle_parameter_change(self, param_name, value, module, channel):
         try:
             print(
                 f"DEBUG: Handling parameter change: {param_name} = {value} for M{module}:Ch{channel}"
             )
+
+            # Store whether we were acquiring before parameter change
+            was_acquiring = self.is_acquiring
+            current_mode = self.current_mode
 
             # Update our dynamic settings
             if channel is not None and channel in self.channel_settings:
@@ -308,14 +332,23 @@ class PixieScopeApp(BaseApp):
 
             # Apply to hardware if not in dummy mode
             if not self.dummy_mode and px:
+                # CRITICAL: Don't stop acquisition for parameter changes
+                # Just update the hardware directly
                 if self._is_channel_parameter(param_name):
                     px.control.set_channel_parameter(param_name, value, module, channel)
                 else:
                     px.control.set_module_parameter(param_name, value, module)
+
+                # If we're currently acquiring, update the running settings
+                if was_acquiring and self.current_mode in ["list_mode", "traces_mode"]:
+                    # Apply updated settings to running acquisition
+                    settings = self.get_settings_for_mode(current_mode)
+                    px.control.change_setting_from_dict(settings, call_pixie=True)
+
                 self.info_bar.setText(
                     f"Set {param_name} = {value} on M{module}:Ch{channel}"
                 )
-                print(f"DEBUG: Applied to hardware")
+                print(f"DEBUG: Applied to hardware without stopping acquisition")
             else:
                 self.info_bar.setText(f"DUMMY MODE - stored {param_name} = {value}")
                 print(f"DEBUG: DUMMY MODE - stored {param_name} = {value}")
@@ -324,6 +357,60 @@ class PixieScopeApp(BaseApp):
             error_msg = f"Error setting {param_name}: {e}"
             print(f"DEBUG ERROR: {error_msg}")
             self.info_bar.setText(error_msg)
+
+    def preserve_pipeline_during_mode_switch(self):
+        # Store current pipeline state
+        had_live_reader = hasattr(self, "live_reader") and self.live_reader is not None
+        had_data_source = hasattr(self, "data_source") and self.data_source is not None
+        was_fifo_active = (
+            hasattr(self, "data_timer")
+            and self.data_timer
+            and self.data_timer.isActive()
+        )
+
+        return {
+            "had_live_reader": had_live_reader,
+            "had_data_source": had_data_source,
+            "was_fifo_active": was_fifo_active,
+            "is_acquiring": self.is_acquiring,
+        }
+
+    def restore_pipeline(self, pipeline_state, new_mode):
+        if not pipeline_state["is_acquiring"]:
+            return
+
+        # If we had a working pipeline, recreate it for the new mode
+        if pipeline_state["had_live_reader"] and pipeline_state["had_data_source"]:
+            if new_mode in ["list_mode", "traces_mode"]:
+                print(f"DEBUG: Restoring pipeline for {new_mode}")
+
+                # Recreate live reader if needed
+                if not hasattr(self, "live_reader") or self.live_reader is None:
+                    self.live_reader = LiveDataReader()
+
+                    if new_mode == "list_mode":
+                        self.live_reader.add_event_callback(
+                            self.process_list_mode_event
+                        )
+                    else:
+                        self.live_reader.add_event_callback(self.process_traces_event)
+
+                # Recreate data source if needed
+                if not hasattr(self, "data_source") or self.data_source is None:
+                    self.data_source = LiveDataSourceInterface(self.live_reader)
+                    self.data_source.start_acquisition()
+
+                # Restart FIFO timer if needed and not in dummy mode
+                if pipeline_state["was_fifo_active"] and not self.dummy_mode:
+                    if (
+                        not hasattr(self, "data_timer")
+                        or not self.data_timer.isActive()
+                    ):
+                        self.data_timer = QTimer()
+                        self.data_timer.timeout.connect(self.read_list_mode_fifo)
+                        interval = 50 if new_mode == "list_mode" else 100
+                        self.data_timer.start(interval)
+                        print(f"DEBUG: Restarted FIFO timer for {new_mode}")
 
     def handle_apply_all_parameters(self, params_dict, module, channel):
         try:
@@ -604,18 +691,61 @@ class PixieScopeApp(BaseApp):
             print(f"Error reading histograms: {e}")
 
     def read_list_mode_fifo(self):
-        if self.dummy_mode or not self.live_reader:
+        if not self.is_acquiring:
+            print("DEBUG: FIFO read called but not acquiring - stopping timer")
+            if hasattr(self, "data_timer") and self.data_timer:
+                self.data_timer.stop()
             return
 
+        if self.dummy_mode:
+            return  # Dummy mode uses binary replay, not FIFO
+
+        if not self.live_reader:
+            print("DEBUG: FIFO read called but no live_reader - recreating pipeline")
+            # Try to recreate the pipeline
+            try:
+                self.live_reader = LiveDataReader()
+                if self.current_mode == "list_mode":
+                    self.live_reader.add_event_callback(self.process_list_mode_event)
+                elif self.current_mode == "traces_mode":
+                    self.live_reader.add_event_callback(self.process_traces_event)
+
+                if not hasattr(self, "data_source") or not self.data_source:
+                    self.data_source = LiveDataSourceInterface(self.live_reader)
+                    self.data_source.start_acquisition()
+
+            except Exception as e:
+                print(f"DEBUG: Failed to recreate pipeline: {e}")
+                return
+
         try:
+            # Read from hardware FIFO
             data_list = px.control.read_list_mode_fifo(check=True, threshold=8)
 
+            # Debug counters
+            if not hasattr(self, "_fifo_debug_counter"):
+                self._fifo_debug_counter = 0
+                self._last_fifo_debug = time.time()
+
+            total_words = sum(len(data) for data in data_list or [])
+            self._fifo_debug_counter += total_words
+
+            # Feed data to live reader
             for data in data_list or []:
                 if len(data) > 0:
                     self.live_reader.add_data(data)
 
+            # Debug output every 3 seconds
+            current_time = time.time()
+            if current_time - self._last_fifo_debug > 3.0:
+                print(
+                    f"FIFO: Read {total_words} words, {self._fifo_debug_counter} total, pipeline OK"
+                )
+                self._last_fifo_debug = current_time
+
         except Exception as e:
             print(f"Error reading FIFO: {e}")
+            # Don't stop the timer - keep trying
 
     def process_list_mode_event(self, event):
         try:
