@@ -51,6 +51,8 @@ class ChannelDisplayControls(QGroupBox):
 
     def setup_ui(self):
         main_layout = QVBoxLayout()
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.setSpacing(2)
 
         # Channel selection
         channel_group = self.create_channel_selection_group()
@@ -60,10 +62,8 @@ class ChannelDisplayControls(QGroupBox):
         quick_group = self.create_quick_selection_group()
         main_layout.addWidget(quick_group)
 
-        main_layout.addStretch()
         self.setLayout(main_layout)
-
-        self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred)
+        self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
 
     def create_channel_selection_group(self):
         # Create a container with a clickable header
@@ -83,6 +83,9 @@ class ChannelDisplayControls(QGroupBox):
                 font-weight: bold;
                 border: 1px solid gray;
                 background-color: #f0f0f0;
+            }
+            QPushButton:hover {
+                background-color: #e0e0e0;
             }
         """)
 
@@ -183,6 +186,9 @@ class ChannelDisplayControls(QGroupBox):
                 border: 1px solid gray;
                 background-color: #f0f0f0;
             }
+            QPushButton:hover {
+                background-color: #e0e0e0;
+            }
         """)
 
         # Content group
@@ -205,7 +211,11 @@ class ChannelDisplayControls(QGroupBox):
 
         container_layout.addWidget(self.quick_header_btn)
         container_layout.addWidget(self.quick_content_group)
+        container_layout.setContentsMargins(0, 0, 0, 0)
         container.setLayout(container_layout)
+        container.setSizePolicy(
+            QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum
+        )
 
         return container
 

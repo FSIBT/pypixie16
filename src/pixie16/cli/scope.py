@@ -31,6 +31,7 @@ from PyQt6.QtWidgets import (
     QLabel,
     QComboBox,
     QCheckBox,
+    QSizePolicy,
 )
 from PyQt6.QtGui import QIcon
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal
@@ -262,8 +263,13 @@ class CompletePixieScopeApp(QMainWindow):
         right_widget = QWidget()
         right_layout = QVBoxLayout(right_widget)
         right_layout.setContentsMargins(5, 5, 5, 5)
+        right_layout.setSpacing(5)
 
+        # Binary loader
         self.binary_loader = BinaryFileLoader(parent_scope=self)
+        self.binary_loader.setSizePolicy(
+            QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum
+        )
         right_layout.addWidget(self.binary_loader)
 
         # Create channel controls (using logical module 0)
@@ -276,18 +282,15 @@ class CompletePixieScopeApp(QMainWindow):
         self.parameter_controls = ParameterControls(
             initial_module=0,
             title="Parameters",
-            module_type="100MHz",  # Adjust based on your hardware
+            module_type="100MHz",  # Adjust based on hardware later
         )
-        # self.parameter_controls.setMaximumHeight(450)
 
-        # Connect parameter controls to hardware updates
         self.parameter_controls.parameter_changed.connect(self.handle_parameter_change)
         self.parameter_controls.apply_all_requested.connect(
             self.handle_apply_all_parameters
         )
         self.parameter_controls.status_message.connect(self.update_info_bar)
 
-        # Connect real-time parameter reading
         self.parameter_controls.read_hw_btn.clicked.connect(
             self.read_parameters_from_hardware
         )
@@ -299,6 +302,9 @@ class CompletePixieScopeApp(QMainWindow):
         left_widget.setMinimumWidth(400)
         right_widget.setMinimumWidth(200)
         right_widget.setMaximumWidth(350)
+        right_widget.setSizePolicy(
+            QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred
+        )
 
         # Add to splitter
         main_splitter.addWidget(left_widget)

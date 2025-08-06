@@ -98,25 +98,77 @@ class ParameterControls(QGroupBox):
 
     def setup_ui(self):
         main_layout = QVBoxLayout()
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.setSpacing(2)
+
+        # Create collapsible container
+        main_container = self.create_collapsible_parameter_section()
+        main_layout.addWidget(main_container)
+
+        self.setLayout(main_layout)
+        self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
+
+    def create_collapsible_parameter_section(self):
+        main_container = QWidget()
+        main_container_layout = QVBoxLayout()
+        main_container_layout.setContentsMargins(0, 0, 0, 0)
+        main_container_layout.setSpacing(0)
+
+        self.param_header_btn = QPushButton("▼ Parameter Controls")
+        self.param_header_btn.setCheckable(True)
+        self.param_header_btn.setChecked(True)
+        self.param_header_btn.clicked.connect(self.toggle_parameter_section)
+        self.param_header_btn.setStyleSheet("""
+            QPushButton {
+                text-align: left;
+                padding: 5px;
+                font-weight: bold;
+                border: 1px solid gray;
+                background-color: #f0f0f0;
+            }
+            QPushButton:hover {
+                background-color: #e0e0e0;
+            }
+        """)
+
+        self.param_content_widget = QWidget()
+        content_layout = QVBoxLayout()
+        content_layout.setContentsMargins(5, 5, 5, 5)
+        content_layout.setSpacing(5)
 
         # Module/Channel selector
         module_channel_group = self.create_module_channel_selector()
-        main_layout.addWidget(module_channel_group)
+        content_layout.addWidget(module_channel_group)
 
         # Real-time update toggle
         update_controls = self.create_update_controls()
-        main_layout.addWidget(update_controls)
+        content_layout.addWidget(update_controls)
 
-        # Parameter tabs without scroll area
+        # Parameter tabs
         param_tabs = self.create_parameter_tabs()
-        main_layout.addWidget(param_tabs)
+        content_layout.addWidget(param_tabs)
 
         # Action buttons
         button_group = self.create_action_buttons()
-        main_layout.addWidget(button_group)
-        main_layout.addStretch()
-        self.setLayout(main_layout)
-        self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Minimum)
+        content_layout.addWidget(button_group)
+
+        self.param_content_widget.setLayout(content_layout)
+
+        main_container_layout.addWidget(self.param_header_btn)
+        main_container_layout.addWidget(self.param_content_widget)
+        main_container.setLayout(main_container_layout)
+        main_container.setSizePolicy(
+            QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum
+        )
+
+        return main_container
+
+    def toggle_parameter_section(self, checked):
+        self.param_content_widget.setVisible(checked)
+        if checked:
+            self.param_header_btn.setText("▼ Parameter Controls")
+        else:
+            self.param_header_btn.setText("▶ Parameter Controls")
 
     def create_module_channel_selector(self):
         group = QGroupBox("Target Module/Channel")
