@@ -403,11 +403,41 @@ class CompletePixieScopeApp(QMainWindow):
             )
         elif self.current_mode == "traces_mode":
             self.spectrum_tab = TracesPlotter(
-                channels=self.channel_numbers, title="PIXIE-16 Traces"
+                channels=self.channel_numbers,
+                title="PIXIE-16 Traces",
+                hardware_manager=self.pixie_hw,  # Enable hardware validation tab
+            )
+
+            self.spectrum_tab.parameter_changed.connect(
+                self.handle_traces_parameter_change
             )
 
         self.left_layout.addWidget(self.spectrum_tab)
         self.info_bar.setText(f"Mode changed: {old_mode} → {self.current_mode}")
+
+    def handle_traces_parameter_change(self, param_name, value, module, channel):
+        try:
+            if not self.dummy_mode and self.pixie_hw:
+                success = self.pixie_hw.update_parameter(
+                    param_name, value, module, channel
+                )
+                if success:
+                    self.update_info_bar(
+                        f"Hardware Validation: {param_name} = {value} on M{module}:Ch{channel}"
+                    )
+                else:
+                    self.update_info_bar(
+                        f"Hardware Validation: Failed to set {param_name} on M{module}:Ch{channel}"
+                    )
+            else:
+                self.update_info_bar(
+                    f"DUMMY MODE - Hardware Validation: {param_name} = {value}"
+                )
+
+        except Exception as e:
+            error_msg = f"Hardware Validation Error: {e}"
+            self.update_info_bar(error_msg)
+            print(error_msg)
 
     def start_acquisition(self):
         try:
@@ -690,7 +720,7 @@ class CompletePixieScopeApp(QMainWindow):
                 )
 
             if channel in self.channel_numbers and trace is not None and len(trace) > 0:
-                # For coincidence analysis, feed event + trace to enhanced plotter
+                # For coincidence analysis, feed event + trace to plotter
                 if hasattr(self.spectrum_tab, "add_event_with_trace"):
                     self.spectrum_tab.add_event_with_trace(event, trace)
                 # Fallback to regular trace processing
