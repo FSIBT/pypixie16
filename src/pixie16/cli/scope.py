@@ -880,11 +880,19 @@ class CompletePixieScopeApp(QMainWindow):
 
     def handle_apply_all_parameters(self, params_dict, module, channel):
         try:
-            # Validate all parameters
             validated_params = self.parameter_validator.validate_parameter_set(
                 params_dict, module, channel
             )
 
+            # Stop current run
+            was_acquiring = self.is_acquiring
+            if was_acquiring:
+                self.update_info_bar("Stopping run to apply parameters...")
+                self.stop_acquisition()
+                self.clear_data()
+                time.sleep(0.5)
+
+            # Apply parameters to hardware
             if not self.dummy_mode:
                 success = self.pixie_hw.update_parameters(
                     validated_params, module, channel
@@ -897,15 +905,33 @@ class CompletePixieScopeApp(QMainWindow):
                     self.update_info_bar(
                         f"Failed to apply parameters to M{module}:Ch{channel}"
                     )
+                    return
             else:
                 self.update_info_bar(
                     f"DUMMY MODE - Applied {len(validated_params)} parameters"
                 )
 
+            if was_acquiring:
+                self.update_info_bar("Restarting acquisition...")
+                time.sleep(0.5)
+                success = self.start_acquisition()
+                if success:
+                    self.update_info_bar("Parameters applied and acquisition restarted")
+                else:
+                    self.update_info_bar(
+                        "ERROR: Failed to restart acquisition after parameter update"
+                    )
+
         except Exception as e:
             error_msg = f"Error applying parameters: {e}"
             self.update_info_bar(error_msg)
             logger.error(error_msg)
+            # Try to restart acquisition anyway
+            if was_acquiring and not self.is_acquiring:
+                try:
+                    self.start_acquisition()
+                except:
+                    pass
 
     def read_parameters_from_hardware(self):
         try:

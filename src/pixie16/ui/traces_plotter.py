@@ -1063,16 +1063,16 @@ class TracesPlotter(QWidget):
         max_dt = np.max(all_time_diffs)
 
         stats_text = f"""
-Timing Statistics:
-  Total Coincidences: {len(self.coincidence_events)}
-  Total Time Differences: {len(all_time_diffs)}
-  Mean Δt: {mean_dt:.2f} ns
-  Std Δt: {std_dt:.2f} ns
-  Min Δt: {min_dt:.2f} ns
-  Max Δt: {max_dt:.2f} ns
+            Timing Statistics:
+            Total Coincidences: {len(self.coincidence_events)}
+            Total Time Differences: {len(all_time_diffs)}
+            Mean Δt: {mean_dt:.2f} ns
+            Std Δt: {std_dt:.2f} ns
+            Min Δt: {min_dt:.2f} ns
+            Max Δt: {max_dt:.2f} ns
 
-Current Window: ±{self.coincidence_window_ns:.1f} ns
-Center Channel: {self.center_channel}
+            Current Window: ±{self.coincidence_window_ns:.1f} ns
+            Center Channel: {self.center_channel}
         """
 
         self.timing_stats_text.setPlainText(stats_text)
@@ -1104,7 +1104,8 @@ Center Channel: {self.center_channel}
             return np.arange(trace_length)
 
         trace_delay = self.trace_delay_ns.get(channel, 200)
-        sample_times = np.arange(trace_length) * self.sampling_period_ns
+        sampling_period_ns = 2.0  # For 500 MHz module
+        sample_times = np.arange(trace_length) * sampling_period_ns
         real_times = sample_times - trace_delay
 
         return real_times

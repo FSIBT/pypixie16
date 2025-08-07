@@ -607,22 +607,22 @@ class ParameterControls(QGroupBox):
         module = self.module_spin.value()
         channel = self.channel_spin.value()
 
-        # Always emit the signal for external handling
         self.parameter_changed.emit(param_name, value, module, channel)
-
-        # Real-time hardware update if enabled
-        if self.real_time_updates_enabled:
-            success = self.change_manager.queue_parameter_change(
-                param_name, value, module, channel
-            )
-            if not success:
-                self.status_message.emit(f"Validation failed for {param_name}")
+        self.status_message.emit(
+            f"Parameter {param_name} changed to {value} (pending apply)"
+        )
 
     def on_realtime_toggled(self, enabled: bool):
-        self.real_time_updates_enabled = enabled
-        self.status_message.emit(
-            f"Real-time updates: {'enabled' if enabled else 'disabled'}"
-        )
+        self.real_time_updates_enabled = False
+        if enabled:
+            self.realtime_check.setChecked(False)  # Force disabled
+            self.status_message.emit(
+                "Real-time parameter updates disabled (use 'Apply All' button - PIXIE-16 hardware limitation)"
+            )
+        else:
+            self.status_message.emit(
+                "Parameter updates: Use 'Apply All' button to update hardware"
+            )
 
     def on_debounce_changed(self, delay: float):
         self.change_manager.debounce_delay = delay
