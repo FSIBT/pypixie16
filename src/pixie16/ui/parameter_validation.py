@@ -485,8 +485,6 @@ class ParameterChangeManager:
         self.lock = threading.Lock()
 
     def queue_parameter_change(self, name: str, value: any, module: int, channel: int):
-        import threading
-
         with self.lock:
             # Validate the parameter
             is_valid, corrected_value, error_msg = self.validator.validate_parameter(

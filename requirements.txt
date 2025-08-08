@@ -13,3 +13,4 @@ platformdirs
 PyQt6
 sphinx
 sphinxcontrib-napoleon
+pyqtgraph

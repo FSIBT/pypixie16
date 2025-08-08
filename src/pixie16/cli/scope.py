@@ -11,12 +11,14 @@ Options:
 """
 
 import sys
-import os
 import time
 import threading
 import signal
 from pathlib import Path
 import json
+import traceback
+import argparse
+
 
 from PyQt6.QtWidgets import (
     QApplication,
@@ -63,6 +65,7 @@ from pixie16.ui.parameter_controls import ParameterControls
 from pixie16.ui.hardware_manager import DynamicPixieHardwareManager
 from pixie16.ui.parameter_validation import PixieParameterValidator
 
+from collections import deque
 
 import logging
 
@@ -549,8 +552,6 @@ class CompletePixieScopeApp(QMainWindow):
 
         except Exception as e:
             print(f"Error starting list mode: {str(e)}")
-            import traceback
-
             traceback.print_exc()
             return False
 
@@ -652,8 +653,6 @@ class CompletePixieScopeApp(QMainWindow):
 
         except Exception as e:
             print(f"Error reading PIXIE FIFO: {e}")
-            import traceback
-
             traceback.print_exc()
 
     def process_list_mode_event(self, event):
@@ -685,8 +684,6 @@ class CompletePixieScopeApp(QMainWindow):
                     self.spectrum_tab.add_energy_event(channel, energy)
                 elif hasattr(self.spectrum_tab, "energy_data"):
                     if channel not in self.spectrum_tab.energy_data:
-                        from collections import deque
-
                         self.spectrum_tab.energy_data[channel] = deque(maxlen=50000)
                     self.spectrum_tab.energy_data[channel].append(energy)
 
@@ -726,8 +723,6 @@ class CompletePixieScopeApp(QMainWindow):
                     self.spectrum_tab.add_trace(channel, trace)
                 elif hasattr(self.spectrum_tab, "trace_data"):
                     if channel not in self.spectrum_tab.trace_data:
-                        from collections import deque
-
                         self.spectrum_tab.trace_data[channel] = deque(maxlen=100)
                     self.spectrum_tab.trace_data[channel].append(trace)
 
@@ -1152,8 +1147,6 @@ class CompletePixieScopeApp(QMainWindow):
 
 
 def main():
-    import argparse
-
     parser = argparse.ArgumentParser(description="PixieScope")
     parser.add_argument("--dummy", action="store_true", help="Run in dummy mode")
     parser.add_argument(
@@ -1181,7 +1174,6 @@ def main():
 
     def exception_hook(exctype, value, traceback_obj):
         print(f"Unhandled exception: {exctype.__name__}: {value}")
-        import traceback
 
         traceback.print_exception(exctype, value, traceback_obj)
 
@@ -1226,8 +1218,6 @@ def main():
 
     except Exception as e:
         print(f"Fatal error: {e}")
-        import traceback
-
         traceback.print_exc()
 
         if window:

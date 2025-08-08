@@ -45,6 +45,8 @@ from ..analyze import (
     calculate_CFD,
 )
 
+import csv
+
 
 class WindowOptimizationWorker(QThread):
     """Worker thread for optimizing coincidence windows"""
@@ -222,6 +224,8 @@ class TracesPlotter(QWidget):
             "energy_P": 10,  # Peak sample
             "decay_ns": 28.0,  # Decay time in nanoseconds
         }
+
+        self.trigger_points = {ch: {} for ch in self.channels}
 
         self.setWindowTitle(title)
         self.init_ui()
@@ -697,8 +701,6 @@ class TracesPlotter(QWidget):
             return
 
         try:
-            import pixie16 as px
-
             px.control.set_module_parameter("FastTrigBackplaneEna", value, 0)
             print(f"HARDWARE: Applied FastTrigBackplaneEna = {value}")
         except Exception as e:
@@ -714,8 +716,6 @@ class TracesPlotter(QWidget):
             return
 
         try:
-            import pixie16 as px
-
             for channel in [self.selected_channel_a, self.selected_channel_b]:
                 px.control.set_channel_parameter("FastTrigBackLen", value, 0, channel)
             print(f"HARDWARE: Applied FastTrigBackLen = {value}")
@@ -1009,8 +1009,6 @@ class TracesPlotter(QWidget):
 
         # Write to CSV
         try:
-            import csv
-
             filename = f"timing_data_{int(time.time())}.csv"
 
             with open(filename, "w", newline="") as csvfile:
@@ -1242,22 +1240,38 @@ class TracesPlotter(QWidget):
             latest_trace = list(self.trace_data[channel])[-1]
             time_axis = self.calculate_real_time_axis(len(latest_trace), channel)
 
-            # Update enabled trace types
+            # Clear previous trigger markers
+            plot_widget.clear()
+
+            # Re-add the curves
             for trace_type, enabled in self.trace_types.items():
                 if enabled and trace_type in curves:
                     if trace_type == "raw":
-                        curves[trace_type].setData(time_axis, latest_trace)
+                        curves[trace_type] = plot_widget.plot(
+                            time_axis,
+                            latest_trace,
+                            pen=pg.mkPen(color="#1f77b4", width=2),
+                            name="Raw Trace",
+                        )
                     else:
-                        # Use unified hardware computation for all processed trace types
                         signal = self.compute_hardware_traces(
                             trace_type, latest_trace, channel
                         )
                         if signal is not None:
-                            curves[trace_type].setData(time_axis, signal)
-                        else:
-                            curves[trace_type].setData([], [])
-                else:
-                    curves[trace_type].setData([], [])
+                            trace_colors = {
+                                "fast_trigger": "#ff7f0e",
+                                "energy_filter": "#2ca02c",
+                                "cfd": "#d62728",
+                            }
+                            curves[trace_type] = plot_widget.plot(
+                                time_axis,
+                                signal,
+                                pen=pg.mkPen(color=trace_colors[trace_type], width=2),
+                                name=trace_type.replace("_", " ").title(),
+                            )
+
+            # Add trigger point markers
+            self._add_trigger_markers(plot_widget, channel, time_axis)
 
             plot_widget.setTitle(f"{label} - Ch {channel}")
 
@@ -1265,12 +1279,16 @@ class TracesPlotter(QWidget):
             print(f"Error updating {label} plot: {e}")
 
     def compute_hardware_traces(self, trace_type, raw_trace, channel):
+        if not self.hardware_manager:
+            return self.fallback_simulation(trace_type, raw_trace)
+
         if self.hardware_manager.dummy_mode:
             return self.fallback_simulation(trace_type, raw_trace)
 
         try:
             # Convert trace to proper format
             raw_trace = np.asarray(raw_trace, dtype=np.uint16)
+            original_length = len(raw_trace)
 
             # Convert to FPGA cycles for hardware validation
             traces_fpga = convert_trace_to_FPGA(raw_trace[np.newaxis, :])
@@ -1284,9 +1302,25 @@ class TracesPlotter(QWidget):
                 )
 
                 if result["validation_passed"] and result["fast_triggers"] is not None:
-                    return result["fast_triggers"][0]
+                    fast_trigger = result["fast_triggers"][0]
+
+                    # Store trigger information for alignment
+                    trigger_indices = (
+                        result["trigger_indices"][0]
+                        if result["trigger_indices"]
+                        else []
+                    )
+                    self._store_trigger_info(channel, trigger_indices, "fast_trigger")
+
+                    # Resize and return
+                    return self._resize_trace_to_match(
+                        fast_trigger, original_length, "fast_trigger"
+                    )
+                else:
+                    return self.fallback_simulation(trace_type, raw_trace)
 
             elif trace_type == "cfd":
+                # Get fast trigger first for proper gating
                 fast_result = compute_fast_trigger_validation(
                     traces_fpga,
                     L=self.hardware_params["fast_L"],
@@ -1306,7 +1340,29 @@ class TracesPlotter(QWidget):
                     cfd_traces, cfd_times, fast_filter, error_indices = cfd_result
 
                     if len(error_indices) == 0 and cfd_traces is not None:
-                        return cfd_traces[0]
+                        cfd_trace = cfd_traces[0]
+
+                        # Store CFD timing information (zero crossings)
+                        cfd_trigger_points = []
+                        if (
+                            cfd_times is not None
+                            and len(cfd_times) > 0
+                            and cfd_times[0] is not None
+                        ):
+                            # Convert CFD time to sample index
+                            cfd_time_ns = cfd_times[0]
+                            cfd_sample_index = int(
+                                cfd_time_ns / self.sampling_period_ns
+                            )
+                            cfd_trigger_points = [cfd_sample_index]
+
+                        self._store_trigger_info(channel, cfd_trigger_points, "cfd")
+
+                        return self._resize_trace_to_match(
+                            cfd_trace, original_length, "cfd"
+                        )
+
+                return self.fallback_simulation(trace_type, raw_trace)
 
             elif trace_type == "energy_filter":
                 fast_result = compute_fast_trigger_validation(
@@ -1329,13 +1385,121 @@ class TracesPlotter(QWidget):
                     )
 
                     if energy_result["energy_traces"]:
-                        return energy_result["energy_traces"][0]["result"]
+                        energy_trace = energy_result["energy_traces"][0]["result"]
+                        trigger_pos = energy_result["energy_traces"][0]["trigger_pos"]
+
+                        # Store energy peak position
+                        energy_trigger_points = (
+                            [trigger_pos] if trigger_pos is not None else []
+                        )
+                        self._store_trigger_info(
+                            channel, energy_trigger_points, "energy_filter"
+                        )
+
+                        return self._resize_trace_to_match(
+                            energy_trace, original_length, "energy_filter"
+                        )
+
+                return self.fallback_simulation(trace_type, raw_trace)
+
+            return self.fallback_simulation(trace_type, raw_trace)
 
         except Exception as e:
             print(f"Hardware computation error for {trace_type}: {e}")
+            return self.fallback_simulation(trace_type, raw_trace)
+
+    def _store_trigger_info(self, channel, trigger_indices, trace_type):
+        if channel not in self.trigger_points:
+            self.trigger_points[channel] = {}
+        self.trigger_points[channel][trace_type] = trigger_indices
+
+    def _resize_trace_to_match(
+        self, processed_trace, original_length, trace_type="unknown"
+    ):
+        if processed_trace is None:
+            return np.zeros(original_length)
+
+        processed_trace = np.asarray(processed_trace)
+        current_length = len(processed_trace)
+
+        if current_length == original_length:
+            return processed_trace
+        elif current_length < original_length:
+            # Calculate filter-induced delay for proper alignment
+            if trace_type == "fast_trigger":
+                # Fast filter introduces delay = L + G samples
+                filter_delay = (
+                    self.hardware_params["fast_L"] + self.hardware_params["fast_G"]
+                )
+            elif trace_type == "cfd":
+                # CFD has additional delay from fast filter + CFD processing
+                filter_delay = (
+                    self.hardware_params["fast_L"] + self.hardware_params["fast_G"] + 5
+                )
+            elif trace_type == "energy_filter":
+                # Energy filter has delay = 2*L + G samples
+                filter_delay = (
+                    2 * self.hardware_params["energy_L"]
+                    + self.hardware_params["energy_G"]
+                )
+            else:
+                # Default: pad at beginning to preserve trigger timing
+                filter_delay = (original_length - current_length) // 2
+
+            # Pad at beginning to maintain timing alignment
+            pad_beginning = min(filter_delay, original_length - current_length)
+            pad_end = original_length - current_length - pad_beginning
+
+            # Ensure non-negative padding
+            pad_beginning = max(0, pad_beginning)
+            pad_end = max(0, pad_end)
+
+            padded_trace = np.concatenate(
+                [np.zeros(pad_beginning), processed_trace, np.zeros(pad_end)]
+            )
+
+            return padded_trace[:original_length]  # Ensure exact length
+        else:
+            # Truncate from the end, preserving the beginning timing
+            return processed_trace[:original_length]
+
+    def _add_trigger_markers(self, plot_widget, channel, time_axis):
+        if channel not in self.trigger_points:
+            return
+
+        trigger_info = self.trigger_points[channel]
+
+        # Colors for different trigger types
+        marker_colors = {"fast_trigger": "red", "cfd": "blue", "energy_filter": "green"}
+
+        marker_symbols = {
+            "fast_trigger": "o",  # Circle
+            "cfd": "s",  # Square
+            "energy_filter": "t",  # Triangle
+        }
+
+        for trace_type, trigger_indices in trigger_info.items():
+            if not trigger_indices:
+                continue
+
+            color = marker_colors.get(trace_type, "black")
+            symbol = marker_symbols.get(trace_type, "o")
+
+            for trigger_idx in trigger_indices:
+                if 0 <= trigger_idx < len(time_axis):
+                    # Add marker at trigger position
+                    plot_widget.plot(
+                        [time_axis[trigger_idx]],
+                        [0],  # Y=0 for marker position
+                        pen=None,
+                        symbol=symbol,
+                        symbolBrush=color,
+                        symbolSize=8,
+                        name=f"{trace_type}_trigger",
+                    )
 
     def fallback_simulation(self, trace_type, trace):
-        if trace_type == "fast_trigger":  # UPDATE: match checkbox name
+        if trace_type == "fast_trigger":
             fast_filter = np.convolve(trace, [-1] * 5 + [1] * 5, mode="same")
             return np.maximum(fast_filter, 0)
         elif trace_type == "cfd":
