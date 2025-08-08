@@ -6,7 +6,6 @@ import json
 import time
 import logging
 from pathlib import Path
-from typing import Any
 
 from PyQt6.QtWidgets import (
     QWidget,
@@ -660,7 +659,7 @@ class ParameterControls(QGroupBox):
     def read_from_hardware(self):  # Implemented by the parent scope application
         self.status_message.emit("Reading parameters from hardware...")
 
-    def get_all_parameters(self) -> dict[str, Any]:
+    def get_all_parameters(self) -> dict[str, any]:
         params = {}
 
         for param_name, widget in self.parameter_widgets.items():
@@ -678,7 +677,7 @@ class ParameterControls(QGroupBox):
 
         return params
 
-    def set_all_parameters(self, params: dict[str, Any]):
+    def set_all_parameters(self, params: dict[str, any]):
         for param_name, value in params.items():
             if param_name in self.parameter_widgets:
                 widget = self.parameter_widgets[param_name]
@@ -782,7 +781,7 @@ class ParameterControls(QGroupBox):
             QMessageBox.warning(self, "Save Error", error_msg)
 
     def _hardware_update_callback(
-        self, params: dict[str, Any], module: int, channel: int
+        self, params: dict[str, any], module: int, channel: int
     ):
         # This will be connected by the parent scope application
         self.apply_all_requested.emit(params, module, channel)

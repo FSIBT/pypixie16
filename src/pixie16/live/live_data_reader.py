@@ -4,7 +4,6 @@
 
 import time
 import threading
-from typing import Any
 from collections.abc import Callable
 import numpy as np
 
@@ -76,7 +75,7 @@ class LiveDataReader:
         self.stream_reader.put(data)
         self.stats["bytes_processed"] += len(data) * 4
 
-    def get_statistics(self) -> dict[str, Any]:
+    def get_statistics(self) -> dict[str, any]:
         stats = self.stats.copy()
 
         if stats["start_time"]:

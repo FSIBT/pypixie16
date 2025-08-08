@@ -2,7 +2,6 @@
 Parameter validation system for PIXIE-16 with range checking.
 """
 
-from typing import Any
 from dataclasses import dataclass
 import logging
 import threading
@@ -321,8 +320,8 @@ class PixieParameterValidator:
         return specs
 
     def validate_parameter(
-        self, name: str, value: Any, module: int = 0, channel: int = 0
-    ) -> tuple[bool, Any, str]:
+        self, name: str, value: any, module: int = 0, channel: int = 0
+    ) -> tuple[bool, any, str]:
         """
         Validate a parameter value against specifications.
 
@@ -380,8 +379,8 @@ class PixieParameterValidator:
         return True, corrected_value, ""
 
     def _validate_parameter_constraints(
-        self, name: str, value: Any, module: int, channel: int
-    ) -> tuple[bool, Any, str]:
+        self, name: str, value: any, module: int, channel: int
+    ) -> tuple[bool, any, str]:
         # Energy filter constraints: rise time + flat top affects performance
         if name == "ENERGY_RISETIME":
             # Warning for very short rise times (poor resolution)
@@ -436,8 +435,8 @@ class PixieParameterValidator:
         }
 
     def validate_parameter_set(
-        self, params: dict[str, Any], module: int = 0, channel: int = 0
-    ) -> dict[str, Any]:
+        self, params: dict[str, any], module: int = 0, channel: int = 0
+    ) -> dict[str, any]:
         """
         Validate a complete set of parameters.
 
@@ -485,7 +484,7 @@ class ParameterChangeManager:
         self.debounce_delay = 0.5  # seconds
         self.lock = threading.Lock()
 
-    def queue_parameter_change(self, name: str, value: Any, module: int, channel: int):
+    def queue_parameter_change(self, name: str, value: any, module: int, channel: int):
         import threading
 
         with self.lock:
@@ -538,7 +537,7 @@ class ParameterChangeManager:
                         f"Failed to apply parameters to M{module}:Ch{channel}: {e}"
                     )
 
-    def immediate_update(self, name: str, value: Any, module: int, channel: int):
+    def immediate_update(self, name: str, value: any, module: int, channel: int):
         is_valid, corrected_value, error_msg = self.validator.validate_parameter(
             name, value, module, channel
         )

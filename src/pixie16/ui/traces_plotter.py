@@ -38,6 +38,13 @@ import pyqtgraph as pg
 
 import pixie16 as px
 
+from ..analyze import (
+    compute_fast_trigger_validation,
+    compute_energy_filter,
+    convert_trace_to_FPGA,
+    calculate_CFD,
+)
+
 
 class WindowOptimizationWorker(QThread):
     """Worker thread for optimizing coincidence windows"""
@@ -203,6 +210,18 @@ class TracesPlotter(QWidget):
             "#c5b0d5",
             "#c49c94",
         ]
+
+        self.hardware_params = {
+            "fast_L": 2,  # FPGA units
+            "fast_G": 2,  # FPGA units
+            "fast_threshold": 100,  # Trigger threshold
+            "cfd_threshold": 100,  # CFD threshold
+            "energy_R": 1,  # Range (slow_filter_range = 2**R)
+            "energy_L": 10,  # Energy filter L steps
+            "energy_G": 5,  # Energy filter G steps
+            "energy_P": 10,  # Peak sample
+            "decay_ns": 28.0,  # Decay time in nanoseconds
+        }
 
         self.setWindowTitle(title)
         self.init_ui()
@@ -768,8 +787,6 @@ class TracesPlotter(QWidget):
             return
 
         try:
-            import pixie16 as px
-
             success_count = 0
             failed_params = []
             selected_channels = [self.selected_channel_a, self.selected_channel_b]
@@ -1248,25 +1265,71 @@ class TracesPlotter(QWidget):
             print(f"Error updating {label} plot: {e}")
 
     def compute_hardware_traces(self, trace_type, raw_trace, channel):
-        if not self.hardware_manager:
-            return self.fallback_simulation(trace_type, raw_trace)
-
         if self.hardware_manager.dummy_mode:
             return self.fallback_simulation(trace_type, raw_trace)
+
         try:
             # Convert trace to proper format
             raw_trace = np.asarray(raw_trace, dtype=np.uint16)
 
-            if trace_type in ["fast_trigger", "cfd"]:
-                pass  # TODO
+            # Convert to FPGA cycles for hardware validation
+            traces_fpga = convert_trace_to_FPGA(raw_trace[np.newaxis, :])
 
-                if trace_type == "fast_trigger":
-                    pass  # TODO
-                elif trace_type == "cfd":
-                    pass  # TODO
+            if trace_type == "fast_trigger":
+                result = compute_fast_trigger_validation(
+                    traces_fpga,
+                    L=self.hardware_params["fast_L"],
+                    G=self.hardware_params["fast_G"],
+                    threshold=self.hardware_params["fast_threshold"],
+                )
+
+                if result["validation_passed"] and result["fast_triggers"] is not None:
+                    return result["fast_triggers"][0]
+
+            elif trace_type == "cfd":
+                fast_result = compute_fast_trigger_validation(
+                    traces_fpga,
+                    L=self.hardware_params["fast_L"],
+                    G=self.hardware_params["fast_G"],
+                    threshold=self.hardware_params["fast_threshold"],
+                )
+
+                if fast_result["validation_passed"]:
+                    cfd_result = calculate_CFD(
+                        raw_trace[np.newaxis, :],
+                        CFD_threshold=self.hardware_params["cfd_threshold"],
+                        FF_threshold=self.hardware_params["fast_threshold"],
+                        Lf=self.hardware_params["fast_L"] * 0.01,
+                        Gf=self.hardware_params["fast_G"] * 0.01,
+                    )
+
+                    cfd_traces, cfd_times, fast_filter, error_indices = cfd_result
+
+                    if len(error_indices) == 0 and cfd_traces is not None:
+                        return cfd_traces[0]
 
             elif trace_type == "energy_filter":
-                pass  # TODO
+                fast_result = compute_fast_trigger_validation(
+                    traces_fpga,
+                    L=self.hardware_params["fast_L"],
+                    G=self.hardware_params["fast_G"],
+                    threshold=self.hardware_params["fast_threshold"],
+                )
+
+                if fast_result["validation_passed"]:
+                    energy_result = compute_energy_filter(
+                        traces_fpga,
+                        R=self.hardware_params["energy_R"],
+                        L=self.hardware_params["energy_L"],
+                        G=self.hardware_params["energy_G"],
+                        P=self.hardware_params["energy_P"],
+                        decay_ns=self.hardware_params["decay_ns"],
+                        trigger_indices=fast_result["trigger_indices"],
+                        baseline_index=fast_result["baseline_stats"]["baseline_index"],
+                    )
+
+                    if energy_result["energy_traces"]:
+                        return energy_result["energy_traces"][0]["result"]
 
         except Exception as e:
             print(f"Hardware computation error for {trace_type}: {e}")

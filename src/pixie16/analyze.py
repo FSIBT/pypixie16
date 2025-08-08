@@ -292,3 +292,297 @@ def calculate_filter(traces, L=0.02, G=0.02, filter_range=0):
     result = result / L
 
     return result
+
+
+@ensure_2d_array
+def compute_fast_trigger_validation(
+    traces: np.ndarray, L: int, G: int, threshold: int, baseline_index: int = None
+) -> dict[str, any]:
+    """
+    Compute fast trigger validation from trace_analysis.py update_fasttrigger()
+
+    Parameters
+    ----------
+    traces : np.ndarray
+        Raw trace data (converted to FPGA cycles)
+    L : int
+        Fast filter L parameter in FPGA units
+    G : int
+        Fast filter G parameter in FPGA units
+    threshold : int
+        Trigger threshold value
+    baseline_index : int, optional
+        Index for baseline calculation
+
+    Returns
+    -------
+    Dict containing fast trigger results matching trace_analysis.py output
+    """
+
+    # Convert L, G from FPGA units to microseconds for calculate_filter
+    L_us = L * 0.01  # Convert FPGA units to microseconds
+    G_us = G * 0.01
+
+    if traces.max() == 0:
+        return {
+            "fast_triggers": None,
+            "trigger_indices": None,
+            "baseline_stats": None,
+            "validation_passed": False,
+        }
+
+    length = len(traces[0])
+
+    # Calculate fast triggers using existing function
+    fast_triggers = calculate_filter(traces, L=L_us, G=G_us)
+
+    # Get trigger indices
+    trigger_indices = get_fast_trigger_index(fast_triggers, threshold)
+
+    # Calculate noise level (matching trace_analysis.py logic exactly)
+    try:
+        first_trigger_offset = int(
+            min(t[0] for t in trigger_indices if len(t) > 0) - 10
+        )
+    except (ValueError, IndexError):
+        print(
+            "[orange3]WARNING[/] No trigger found, using the first 20% of the trace to estimate baseline",
+            flush=True,
+        )
+        first_trigger_offset = int(length * 0.2)
+
+    if baseline_index is None:
+        baseline_index = first_trigger_offset
+
+    baseline_stats = {}
+    if first_trigger_offset > 0:
+        average_noise = [r[:first_trigger_offset].std() for r in fast_triggers]
+        average_noise = np.asarray(average_noise).mean()
+
+        max_noise = [r[:first_trigger_offset].max() for r in fast_triggers]
+        max_noise = np.asarray(max_noise).max()
+
+        baseline_stats = {
+            "baseline_index": baseline_index,
+            "average_noise": average_noise,
+            "max_noise": max_noise,
+            "first_trigger_offset": first_trigger_offset,
+            "title": f"Fast Trigger: noise level $\\sigma$={average_noise:.1f} max={max_noise:.1f} before x={first_trigger_offset}",
+        }
+        validation_passed = True
+    else:
+        baseline_stats = {
+            "baseline_index": 1,
+            "title": "Fast Trigger: cannot calculate noise level",
+        }
+        validation_passed = False
+
+    return {
+        "fast_triggers": fast_triggers,
+        "trigger_indices": trigger_indices,
+        "baseline_stats": baseline_stats,
+        "validation_passed": validation_passed,
+    }
+
+
+@ensure_2d_array
+def compute_energy_filter(
+    traces_fpga: np.ndarray,
+    R: int,
+    L: int,
+    G: int,
+    P: int,
+    decay_ns: float,
+    trigger_indices: list,
+    baseline_index: int,
+) -> dict[str, any]:
+    """
+    Compute energy filter from trace_analysis.py update_energies()
+
+    Parameters
+    ----------
+    traces_fpga : np.ndarray
+        Traces already converted to FPGA cycles
+    R : int
+        Range parameter (slow filter range = 2**R)
+    L : int
+        Energy filter L parameter in energy steps
+    G : int
+        Energy filter G parameter in energy steps
+    P : int
+        Peak sample parameter in energy steps
+    decay_ns : float
+        Decay time in nanoseconds
+    trigger_indices : List
+        Trigger positions from fast trigger
+    baseline_index : int
+        Baseline calculation index
+
+    Returns
+    -------
+    Dict containing energy filter results
+    """
+
+    q = np.exp(-2 / decay_ns)
+    slow_filter_range = 2**R
+
+    # Check trace length and padding (exact logic from trace_analysis.py)
+    length = len(traces_fpga[0]) // slow_filter_range
+    pad_data = False
+
+    if length - 2 * L - G + 1 <= 0:
+        print(
+            "[orange3]WARNING[/] L, G for energy filter are too large for the supplied trace length and slowfilter range. Padding data",
+            flush=True,
+        )
+        pad_data = True
+        pad_length = 2 * (L + G)
+        length += 2 * pad_length
+    elif length - 2 * L - G + 1 <= 20:
+        print(
+            "[orange3]WARNING[/] L, G for energy filter are large for the supplied trace length and slowfilter range. Padding data",
+            flush=True,
+        )
+        pad_data = True
+        pad_length = L + G
+        length += 2 * pad_length
+
+    # Energy calculation coefficients (exact from trace_analysis.py)
+    qL = q ** (5 * L * slow_filter_range)
+    c2 = 1 - q
+    c3 = (1 - q) / (1 - qL)
+    c1 = c3 * qL
+
+    # Baseline calculation (exact from trace_analysis.py)
+    baseline = [t[:baseline_index].mean() for t in traces_fpga]
+    baseline_pad = np.asarray(baseline).mean() * slow_filter_range
+    baseline = baseline_pad * (L + G) * 4 * c2
+
+    energy_values = np.zeros(len(traces_fpga))
+    energy_traces = []
+
+    for i, trace in enumerate(traces_fpga):
+        # Convert to avoid overflows (exact from trace_analysis.py)
+        trace = trace.astype(np.int64)
+
+        # Handle slow filter range grouping
+        N = (trace.shape[0] // slow_filter_range) * slow_filter_range
+        trace = trace[:N].reshape(
+            trace.shape[0] // slow_filter_range, slow_filter_range
+        )
+        trace = trace.sum(axis=1)
+
+        if pad_data:
+            pad = np.ones(pad_length) * int(baseline_pad)
+            trace = np.concatenate([pad, trace, pad])
+
+        result = np.zeros(length - 2 * L - G + 1)
+
+        # Calculate trigger position in new time units
+        trigger_pos = None
+        if len(trigger_indices[i]):
+            trigger_pos = (
+                int(trigger_indices[i][0]) // slow_filter_range - 2 * L - G + P
+            )
+            if pad_data:
+                trigger_pos += pad_length
+
+        # Energy filter calculation (exact from trace_analysis.py)
+        for k in range(2 * L + G - 1, length):
+            S1 = trace[k - 2 * L - G + 1 : k - L - G + 1].sum()
+            S2 = trace[k - L - G + 1 : k - L + 1].sum()
+            S3 = trace[k - L + 1 : k + 1].sum()
+
+            result[k - 2 * L - G + 1] = 4 * (-c1 * S1 + c2 * S2 + c3 * S3) - baseline
+
+            if trigger_pos is not None and k - 2 * L - G + 1 == trigger_pos:
+                energy_values[i] = result[k - 2 * L - G + 1]
+
+        energy_traces.append(
+            {"result": result, "trigger_pos": trigger_pos, "trace_index": i}
+        )
+
+    return {
+        "energy_traces": energy_traces,
+        "energy_values": energy_values,
+        "baseline": baseline,
+        "slow_filter_range": slow_filter_range,
+        "coefficients": {"c1": c1, "c2": c2, "c3": c3, "qL": qL},
+    }
+
+
+def compute_energy_linearity(
+    traces_fpga: np.ndarray,
+    trigger_indices: list,
+    energy_values: np.ndarray,
+    baseline_index: int,
+    integration_length: int,
+) -> dict[str, any]:
+    """
+    Compute energy linearity from trace_analysis.py update_energy_linearity()
+
+    Parameters
+    ----------
+    traces_fpga : np.ndarray
+        FPGA converted traces
+    trigger_indices : List
+        Trigger positions
+    energy_values : np.ndarray
+        Calculated energy values
+    baseline_index : int
+        Baseline index
+    integration_length : int
+        Integration length L parameter
+
+    Returns
+    -------
+    Dict containing linearity analysis results
+    """
+
+    baseline = [t[:baseline_index].mean() for t in traces_fpga]
+    baseline = np.asarray(baseline).mean()
+
+    N = len(traces_fpga)
+    energy = np.zeros(N)
+
+    for i, trace in enumerate(traces_fpga):
+        try:
+            trigger_pos = int(trigger_indices[i][0])
+        except IndexError:
+            trigger_pos = 0
+        if trigger_pos:
+            if trigger_pos + integration_length < len(trace):
+                energy[i] = (
+                    trace[trigger_pos : trigger_pos + integration_length].sum()
+                    - baseline * integration_length
+                )
+
+    # Linearity analysis (exact from trace_analysis.py)
+    X = energy
+    Y = energy_values
+
+    if len(X) == 0 or len(Y) == 0:
+        return {"validation_passed": False, "error": "No data for linearity analysis"}
+
+    fit = np.poly1d(np.polyfit(X, Y, 1))
+    F = fit(X)
+    mask = X > 0
+
+    if mask.sum() == 0:
+        return {"validation_passed": False, "error": "No valid data points"}
+
+    X = X[mask]
+    Y = Y[mask]
+    F = F[mask]
+
+    r2 = ((F - Y.mean()) ** 2).sum() / ((Y - Y.mean()) ** 2).sum()
+
+    return {
+        "X": X,
+        "Y": Y,
+        "F": F,
+        "r2": r2,
+        "fit": fit,
+        "mask": mask,
+        "validation_passed": True,
+    }
