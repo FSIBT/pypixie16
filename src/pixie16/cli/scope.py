@@ -159,9 +159,7 @@ class CompletePixieScopeApp(QMainWindow):
         self.pixie_hw = PixieHardwareManager(physical_slot, dummy_mode)
 
         # Initialize parameter validation system
-        self.parameter_validator = PixieParameterValidator(
-            "100MHz"
-        )  # Adjust module type as needed
+        self.parameter_validator = PixieParameterValidator("500MHz")
 
         print(f"Initializing PIXIE-16 system for slot {physical_slot}...")
         if not self.pixie_hw.initialize_system():
@@ -282,7 +280,7 @@ class CompletePixieScopeApp(QMainWindow):
         self.parameter_controls = ParameterControls(
             initial_module=0,
             title="Parameters",
-            module_type="100MHz",  # Adjust based on hardware later
+            module_type="500MHz",  # Adjust based on hardware later
         )
 
         self.parameter_controls.parameter_changed.connect(self.handle_parameter_change)
@@ -1088,26 +1086,45 @@ class CompletePixieScopeApp(QMainWindow):
             # Clean up spectrum tab
             print("  Cleaning up spectrum tab...")
             if hasattr(self, "spectrum_tab") and self.spectrum_tab:
-                try:
-                    if hasattr(self.spectrum_tab, "stop_live_updates"):
-                        self.spectrum_tab.stop_live_updates()
+                if hasattr(self.spectrum_tab, "stop_live_updates"):
+                    self.spectrum_tab.stop_live_updates()
 
-                    if (
-                        hasattr(self.spectrum_tab, "update_timer")
-                        and self.spectrum_tab.update_timer
-                    ):
-                        self.spectrum_tab.update_timer.stop()
-                        self.spectrum_tab.update_timer.deleteLater()
+                if (
+                    hasattr(self.spectrum_tab, "update_timer")
+                    and self.spectrum_tab.update_timer
+                ):
+                    self.spectrum_tab.update_timer.stop()
+                    self.spectrum_tab.update_timer.deleteLater()
 
-                    if hasattr(self, "left_layout"):
-                        self.left_layout.removeWidget(self.spectrum_tab)
+                if hasattr(self, "left_layout"):
+                    self.left_layout.removeWidget(self.spectrum_tab)
 
-                    self.spectrum_tab.setParent(None)
-                    self.spectrum_tab.deleteLater()
-                    self.spectrum_tab = None
+                self.spectrum_tab.setParent(None)
+                self.spectrum_tab.deleteLater()
+                self.spectrum_tab = None
+            if hasattr(self, "traces_plotter") and self.traces_plotter:
+                # Stop live updates first
+                self.traces_plotter.stop_live_updates()
 
-                except Exception as e:
-                    print(f"    Error cleaning up spectrum tab: {e}")
+                # Clear all plot data BEFORE deleting widgets
+                self.traces_plotter.clear_data()
+
+                # Clear specific plot widgets to avoid painter crashes
+                if hasattr(self.traces_plotter, "raw_plot_widget"):
+                    self.traces_plotter.raw_plot_widget.clear()
+                if hasattr(self.traces_plotter, "channel_a_plot"):
+                    self.traces_plotter.channel_a_plot.clear()
+                if hasattr(self.traces_plotter, "channel_b_plot"):
+                    self.traces_plotter.channel_b_plot.clear()
+
+                # Remove from layout BEFORE deleting
+                if hasattr(self, "main_layout"):
+                    self.main_layout.removeWidget(self.traces_plotter)
+
+                # Finally delete
+                self.traces_plotter.setParent(None)
+                self.traces_plotter.deleteLater()
+                self.traces_plotter = None
 
             # Hardware cleanup (gentle, doesn't kill system for others)
             print("  Cleaning up hardware...")

@@ -1,6 +1,5 @@
 """
-Dynamic hardware manager for PIXIE-16 with real-time parameter updates
-and improved mode switching.
+Hardware manager for PIXIE-16 scope with real-time parameter updates.
 """
 
 import time
@@ -22,9 +21,9 @@ logger = logging.getLogger(__name__)
 class HardwareState:
     is_initialized: bool = False
     is_running: bool = False
-    current_mode: str | None = None  # 'histogram', 'list', 'traces'
+    current_mode: str | None = None
     enabled_channels: list[int] = None
-    current_parameters: dict[str, dict[str, Any]] = None  # module -> channel -> params
+    current_parameters: dict[str, dict[str, Any]] = None
 
     def __post_init__(self):
         if self.enabled_channels is None:
@@ -41,7 +40,6 @@ class DynamicPixieHardwareManager:
         self.parameter_lock = threading.Lock()
         self.mode_transition_lock = threading.Lock()
 
-        # Default parameter sets for different modes
         self.mode_parameter_templates = {
             "histogram": {
                 "CaptureHistogram": True,
@@ -65,7 +63,6 @@ class DynamicPixieHardwareManager:
             },
         }
 
-        # Parameter cache for restoration
         self.parameter_cache = {}
 
     def initialize_system(self) -> bool:
@@ -81,17 +78,14 @@ class DynamicPixieHardwareManager:
         try:
             logger.info(f"Initializing PIXIE-16 system in slot {self.physical_slot}")
 
-            # Clean initialization
             try:
                 px.control.exit_system()
                 time.sleep(0.5)
             except:
-                pass  # Ignore if system wasn't initialized
+                pass
 
-            # Initialize and boot
             px.control.init_and_boot(modules=[self.physical_slot], verbose=True)
 
-            # Verify and read initial state
             settings = px.control.read_settings()
             if len(settings) > 0:
                 logger.info(
@@ -121,7 +115,7 @@ class DynamicPixieHardwareManager:
             "CaptureTrace": False,
         }
 
-        for module in range(1):  # Logical module 0
+        for module in range(1):
             self.state.current_parameters[module] = {}
             for channel in range(16):
                 self.state.current_parameters[module][channel] = default_params.copy()
@@ -131,18 +125,16 @@ class DynamicPixieHardwareManager:
             return
 
         try:
-            # Read settings for logical module 0
             settings = px.control.read_settings()
             if not settings:
                 return
 
-            module_settings = settings[0]  # Logical module 0
+            module_settings = settings[0]
             self.state.current_parameters[0] = {}
 
             for channel in range(16):
                 channel_params = {}
 
-                # Read key parameters
                 param_names = [
                     "TRIGGER_THRESHOLD",
                     "TRIGGER_RISETIME",
@@ -158,7 +150,7 @@ class DynamicPixieHardwareManager:
 
                 for param in param_names:
                     try:
-                        value = px.control.get_channel_parameter(param, 0, channel)
+                        value = px.control.set_channel_parameter(param, 0, channel)
                         channel_params[param] = value
                     except Exception as e:
                         logger.warning(f"Could not read {param} for Ch{channel}: {e}")
@@ -175,7 +167,6 @@ class DynamicPixieHardwareManager:
     ) -> bool:
         with self.parameter_lock:
             try:
-                # Update cache first
                 if module not in self.state.current_parameters:
                     self.state.current_parameters[module] = {}
                 if channel not in self.state.current_parameters[module]:
@@ -186,13 +177,11 @@ class DynamicPixieHardwareManager:
                 )
                 self.state.current_parameters[module][channel][param_name] = value
 
-                # Apply to hardware
                 if not self.dummy_mode and self.state.is_initialized:
                     success = self._apply_parameter_to_hardware(
                         param_name, value, module, channel
                     )
                     if not success:
-                        # Rollback cache on failure
                         if old_value is not None:
                             self.state.current_parameters[module][channel][
                                 param_name
@@ -210,7 +199,6 @@ class DynamicPixieHardwareManager:
         self, params: dict[str, Any], module: int = 0, channel: int = 0
     ) -> bool:
         with self.parameter_lock:
-            # Validate all parameters first
             validated_params = {}
             for name, value in params.items():
                 if self._is_valid_parameter(name, value):
@@ -221,7 +209,6 @@ class DynamicPixieHardwareManager:
             if not validated_params:
                 return False
 
-            # Store old values for rollback
             old_values = {}
             if (
                 module in self.state.current_parameters
@@ -232,7 +219,6 @@ class DynamicPixieHardwareManager:
                     for name in validated_params.keys()
                 }
 
-            # Update cache
             if module not in self.state.current_parameters:
                 self.state.current_parameters[module] = {}
             if channel not in self.state.current_parameters[module]:
@@ -241,13 +227,11 @@ class DynamicPixieHardwareManager:
             for name, value in validated_params.items():
                 self.state.current_parameters[module][channel][name] = value
 
-            # Apply to hardware
             if not self.dummy_mode and self.state.is_initialized:
                 success = self._apply_parameters_to_hardware(
                     validated_params, module, channel
                 )
                 if not success:
-                    # Rollback cache
                     for name, old_value in old_values.items():
                         if old_value is not None:
                             self.state.current_parameters[module][channel][name] = (
@@ -264,16 +248,8 @@ class DynamicPixieHardwareManager:
         self, param_name: str, value: Any, module: int, channel: int
     ) -> bool:
         try:
-            if param_name in ["GoodChannel", "CaptureTrace", "Gain", "Polarity"]:
-                # These require special handling via settings dictionary
-                settings = {"channels": [(module, channel)], param_name: value}
-                px.control.change_setting_from_dict(settings, call_pixie=True)
-            else:
-                # Standard parameter update
-                px.control.set_channel_parameter(param_name, value, module, channel)
-
+            px.control.set_channel_parameter(param_name, value, module, channel)
             return True
-
         except Exception as e:
             logger.error(f"Hardware update failed for {param_name}: {e}")
             return False
@@ -282,7 +258,6 @@ class DynamicPixieHardwareManager:
         self, params: dict[str, Any], module: int, channel: int
     ) -> bool:
         try:
-            # Separate standard parameters from special ones
             standard_params = {}
             special_params = {}
 
@@ -292,11 +267,9 @@ class DynamicPixieHardwareManager:
                 else:
                     standard_params[name] = value
 
-            # Apply standard parameters
             for name, value in standard_params.items():
                 px.control.set_channel_parameter(name, value, module, channel)
 
-            # Apply special parameters via settings dictionary
             if special_params:
                 settings = {"channels": [(module, channel)], **special_params}
                 px.control.change_setting_from_dict(settings, call_pixie=True)
@@ -307,9 +280,7 @@ class DynamicPixieHardwareManager:
             logger.error(f"Batch hardware update failed: {e}")
             return False
 
-    def _is_valid_parameter(
-        self, name: str, value: Any
-    ) -> bool:  # simple check before using ParameterValidator
+    def _is_valid_parameter(self, name: str, value: Any) -> bool:
         if name == "TRIGGER_THRESHOLD":
             return isinstance(value, int | float) and 1 <= value <= 65535
         elif name in [
@@ -326,19 +297,16 @@ class DynamicPixieHardwareManager:
     def start_mode(self, mode: str) -> bool:
         with self.mode_transition_lock:
             try:
-                # Stop current mode cleanly
                 if self.state.is_running:
                     logger.info(f"Stopping current mode: {self.state.current_mode}")
                     self._stop_current_mode()
-                    time.sleep(0.2)  # Allow hardware to settle
+                    time.sleep(0.2)
 
-                # Apply mode-specific settings
                 mode_settings = self._get_mode_settings(mode)
                 if not self._apply_mode_settings(mode_settings):
                     logger.error(f"Failed to apply settings for {mode} mode")
                     return False
 
-                # Start the specific mode
                 if mode == "histogram":
                     success = self._start_histogram_mode()
                 elif mode == "list":
@@ -367,11 +335,9 @@ class DynamicPixieHardwareManager:
             "channels": [(0, ch) for ch in self.state.enabled_channels],
         }
 
-        # Add mode-specific template
         if mode in self.mode_parameter_templates:
             base_settings.update(self.mode_parameter_templates[mode])
 
-        # Apply current user parameters
         current_params = self._get_current_channel_parameters()
         base_settings.update(current_params)
 
@@ -381,10 +347,8 @@ class DynamicPixieHardwareManager:
         params = {}
 
         if 0 in self.state.current_parameters:
-            # Use parameters from channel 0 as default (could be enhanced per-channel)
             channel_0_params = self.state.current_parameters[0].get(0, {})
 
-            # Map to settings format
             for param_name, value in channel_0_params.items():
                 if param_name in [
                     "TRIGGER_THRESHOLD",
@@ -433,7 +397,6 @@ class DynamicPixieHardwareManager:
         try:
             px.control.start_list_mode_run()
 
-            # Verify the run is active
             time.sleep(0.3)
             try:
                 run_active = px.control.check_run_status()
@@ -453,7 +416,6 @@ class DynamicPixieHardwareManager:
             return True
 
         try:
-            # Traces come through list mode with trace capture enabled
             px.control.start_list_mode_run()
             logger.info("Traces mode started")
             return True
@@ -485,12 +447,9 @@ class DynamicPixieHardwareManager:
         histograms = {}
         try:
             if self.dummy_mode:
-                # Generate dummy histogram data
                 for channel in self.state.enabled_channels:
-                    # Create realistic-looking dummy data
                     hist = np.zeros(32768, dtype=np.int32)
-                    if np.random.random() > 0.7:  # 30% chance of having data
-                        # Add some peaks
+                    if np.random.random() > 0.7:
                         peak_pos = np.random.randint(1000, 20000)
                         peak_width = np.random.randint(50, 200)
                         counts = np.random.randint(10, 1000)
@@ -506,7 +465,6 @@ class DynamicPixieHardwareManager:
 
                     histograms[channel] = hist
             else:
-                # Read from hardware
                 module_channels = [(0, ch) for ch in self.state.enabled_channels]
                 hist_list = px.control.read_histograms(module_channels)
 
@@ -562,19 +520,10 @@ class DynamicPixieHardwareManager:
             return self.get_parameter(param_name, module, channel)
 
         try:
-            if param_name in ["GoodChannel", "CaptureTrace"]:
-                # These require reading from settings
-                settings = px.control.read_settings()
-                if settings and len(settings) > module:
-                    # Extract from channel settings
-                    return settings[module].get(param_name, {}).get(channel, False)
-            else:
-                # Standard parameter read
-                return px.control.get_channel_parameter(param_name, module, channel)
-
+            return px.control.set_channel_parameter(param_name, module, channel)
         except Exception as e:
             logger.error(f"Failed to read {param_name} from hardware: {e}")
-            return None
+            return self.get_parameter(param_name, module, channel)
 
     def refresh_parameter_cache(self, module: int = 0, channel: int = 0):
         if self.dummy_mode or not self.state.is_initialized:
@@ -623,7 +572,6 @@ class DynamicPixieHardwareManager:
             self.stop_acquisition()
 
             if not self.dummy_mode and self.state.is_initialized:
-                # Don't call exit_system here as it might affect other applications
                 pass
 
             logger.info("Hardware manager cleaned up")

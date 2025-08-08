@@ -433,6 +433,7 @@ class TracesPlotter(QWidget):
         self.channel_a_plot.showGrid(True, True, alpha=0.3)
         self.channel_a_plot.setBackground("w")
         channel_a_layout.addWidget(self.channel_a_plot)
+        self.channel_a_plot.addLegend(offset=(10, 10))
 
         # Channel B panel
         channel_b_widget = QWidget()
@@ -445,6 +446,7 @@ class TracesPlotter(QWidget):
         self.channel_b_plot.showGrid(True, True, alpha=0.3)
         self.channel_b_plot.setBackground("w")
         channel_b_layout.addWidget(self.channel_b_plot)
+        self.channel_b_plot.addLegend(offset=(10, 10))
 
         display_splitter.addWidget(channel_a_widget)
         display_splitter.addWidget(channel_b_widget)
@@ -456,12 +458,32 @@ class TracesPlotter(QWidget):
         # Initialize plot curves for hardware validation
         self.hw_curves_a = {}
         self.hw_curves_b = {}
+
+        trace_colors = {
+            "raw": "#1f77b4",  # Blue
+            "fast_trigger": "#ff7f0e",  # Orange
+            "energy_filter": "#2ca02c",  # Green
+            "cfd": "#d62728",  # Red
+        }
+
+        trace_names = {
+            "raw": "Raw Trace",
+            "fast_trigger": "Fast Trigger",
+            "energy_filter": "Energy Filter",
+            "cfd": "CFD",
+        }
+
         for trace_type in self.trace_types.keys():
+            # Channel A curves
             self.hw_curves_a[trace_type] = self.channel_a_plot.plot(
-                pen=pg.mkPen(color="blue", width=1.5), name=trace_type
+                pen=pg.mkPen(color=trace_colors[trace_type], width=2),
+                name=trace_names[trace_type],
             )
+
+            # Channel B curves
             self.hw_curves_b[trace_type] = self.channel_b_plot.plot(
-                pen=pg.mkPen(color="red", width=1.5), name=trace_type
+                pen=pg.mkPen(color=trace_colors[trace_type], width=2),
+                name=trace_names[trace_type],
             )
 
         return tab
@@ -1164,7 +1186,6 @@ class TracesPlotter(QWidget):
 
             self.raw_stats_label.setText(stats_text)
 
-            # Auto scale if enabled
             if self.auto_scale and total_traces > 0:
                 self.raw_plot_widget.autoRange()
 
@@ -1232,58 +1253,23 @@ class TracesPlotter(QWidget):
 
         if self.hardware_manager.dummy_mode:
             return self.fallback_simulation(trace_type, raw_trace)
-
-        # Import pixie16 control
         try:
-            import pixie16 as px
-        except ImportError:
-            return self.fallback_simulation(trace_type, raw_trace)
+            # Convert trace to proper format
+            raw_trace = np.asarray(raw_trace, dtype=np.uint16)
 
-        try:
-            # Convert for PIXIE SDK
-            trace_length = len(raw_trace)
-            raw_trace_buffer = raw_trace.astype(np.uint16)
+            if trace_type in ["fast_trigger", "cfd"]:
+                pass  # TODO
 
-            # UPDATE: Handle the actual trace type names from your checkboxes
-            if trace_type in [
-                "fast_trigger",
-                "cfd",
-            ]:  # Note: 'fast_trigger' not 'fast_filter'
-                # Allocate output buffers
-                fast_filter_buffer = np.zeros(trace_length, dtype=np.float64)
-                cfd_buffer = np.zeros(trace_length, dtype=np.float64)
-
-                # REAL HARDWARE: Call PIXIE SDK
-                ret_val = px.control.compute_fast_filters_offline(
-                    module_number=0,
-                    channel_number=channel,
-                    recorded_trace=raw_trace_buffer,
-                    fast_filter_output=fast_filter_buffer,
-                    cfd_output=cfd_buffer,
-                )
-
-                if ret_val == 0:  # Success
-                    if trace_type == "fast_trigger":  # UPDATE: match checkbox name
-                        return fast_filter_buffer
-                    elif trace_type == "cfd":
-                        return cfd_buffer
+                if trace_type == "fast_trigger":
+                    pass  # TODO
+                elif trace_type == "cfd":
+                    pass  # TODO
 
             elif trace_type == "energy_filter":
-                # Use hardware parameters
-                rise_time = (
-                    self.hardware_manager.get_parameter("ENERGY_RISETIME", 0, channel)
-                    or 10.0
-                )
-                flat_top = (
-                    self.hardware_manager.get_parameter("ENERGY_FLATTOP", 0, channel)
-                    or 5.0
-                )
-                return self.compute_trapezoidal_filter(raw_trace, rise_time, flat_top)
+                pass  # TODO
 
         except Exception as e:
-            print(f"Hardware error: {e}")
-
-        return self.fallback_simulation(trace_type, raw_trace)
+            print(f"Hardware computation error for {trace_type}: {e}")
 
     def fallback_simulation(self, trace_type, trace):
         if trace_type == "fast_trigger":  # UPDATE: match checkbox name
