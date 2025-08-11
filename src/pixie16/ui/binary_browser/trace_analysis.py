@@ -18,6 +18,9 @@ from ...analyze import (
     convert_trace_to_FPGA,
     calculate_filter,
     get_fast_trigger_index,
+    compute_energy_filter,
+    compute_fast_trigger_validation,
+    compute_energy_linearity,
 )
 
 
@@ -193,53 +196,36 @@ class FastTrigger(QWidget):
         if self.data_FPGA.max() == 0:
             return
 
-        length = len(self.data_FPGA[0])
+        result = compute_fast_trigger_validation(self.data_FPGA, L=L, G=G, threshold=T)
 
-        self.fast_triggers = calculate_filter(self.raw_data, L=L, G=G)
+        if result["validation_passed"]:
+            self.fast_triggers = result["fast_triggers"]
+            self.triggers = result["trigger_indices"]
+            baseline_stats = result["baseline_stats"]
 
-        self.triggers = get_fast_trigger_index(self.fast_triggers, T)
+            # plots traces
+            for i, trace in enumerate(self.fast_triggers):
+                self.fast_plot.axes.plot(
+                    trace, color=self.colors[i], drawstyle="steps-mid"
+                )
 
-        # plots traces
-        for i, trace in enumerate(self.fast_triggers):
-            self.fast_plot.axes.plot(trace, color=self.colors[i], drawstyle="steps-mid")
+            # plot triggers
+            for i, positions in enumerate(self.triggers):
+                for p in positions:
+                    self.fast_plot.axes.axvline(p, color=self.colors[i])
 
-        # plot triggers
-        for i, positions in enumerate(self.triggers):
-            for p in positions:
-                self.fast_plot.axes.axvline(p, color=self.colors[i])
+            # plot threshold
+            self.fast_plot.axes.axhline(T, color="black")
 
-        # plot threshold
-        self.fast_plot.axes.axhline(T, color="black")
+            self.baseline_index = baseline_stats["baseline_index"]
+            self.fast_plot.axes.set_title(baseline_stats["title"])
 
-        # calc noise level
-        try:
-            first_trigger_offset = int(min(t[0] for t in self.triggers) - 10)
-        except (ValueError, IndexError):
-            print(
-                "[orange3]WARNING[/] No trigger found, using the first 20% of the trace to estimate baseline",
-                flush=True,
-            )
-            first_trigger_offset = int(length * 0.2)
-        self.baseline_index = first_trigger_offset
-
-        if first_trigger_offset > 0:
-            average_noise = [r[:first_trigger_offset].std() for r in self.fast_triggers]
-            average_noise = np.asarray(average_noise).mean()
-
-            max_noise = [r[:first_trigger_offset].max() for r in self.fast_triggers]
-            max_noise = np.asarray(max_noise).max()
-
-            self.fast_plot.axes.set_title(
-                f"Fast Trigger: noise level $\\sigma$={average_noise:.1f} "
-                f"max={max_noise:.1f} before x={first_trigger_offset}"
-            )
         else:
             self.fast_plot.axes.set_title("Fast Trigger: cannot calculate noise level")
             self.baseline_index = 1
 
         self.fast_plot.axes.set_xlabel("FPGA cycles")
         self.fast_plot.canvas.draw()
-
         self.update_energies()
 
     ##################Draco mods space BEGIN ##################################
@@ -374,101 +360,41 @@ class FastTrigger(QWidget):
         L = self.energy.value["L"]
         G = self.energy.value["G"]
         P = self.energy.value["peaksample"]
-        q = self.energy.value["decay"]
-        q = np.exp(-2 / q)
+        decay_ns = self.energy.value["decay"]
 
         self.energy_values *= 0
-
         self.energy_plot.axes.clear()
 
-        self.slow_filter_range = 2**R
-        # check how long the trace is, if it is too short, we try to
-        # fix it by adding data points at `baseline` value to the
-        # trace on the left and right
-        length = len(self.data_FPGA[0]) // self.slow_filter_range
-        pad_data = False
+        # Use the migrated function for computation
+        energy_result = compute_energy_filter(
+            self.data_FPGA,
+            R=R,
+            L=L,
+            G=G,
+            P=P,
+            decay_ns=decay_ns,
+            trigger_indices=self.triggers,
+            baseline_index=self.baseline_index,
+        )
 
-        if length - 2 * L - G + 1 <= 0:
-            print(
-                "[orange3]WARNING[/] L, G for energy filter are too large for the supplied trace length and slowfilter range. Padding data",
-                flush=True,
-            )
-            pad_data = True
-            pad_length = 2 * (L + G)
-            length += 2 * pad_length
-        elif length - 2 * L - G + 1 <= 20:
-            print(
-                "[orange3]WARNING[/] L, G for energy filter are large for the supplied trace length and slowfilter range. Padding data",
-                flush=True,
-            )
-            pad_data = True
-            pad_length = L + G
-            length += 2 * pad_length
+        if energy_result["energy_traces"]:
+            baseline = energy_result["baseline"]
+            self.slow_filter_range = energy_result["slow_filter_range"]
+            self.energy_values = energy_result["energy_values"]
 
-        result = np.zeros(length - 2 * L - G + 1)
+            for i, energy_trace_data in enumerate(energy_result["energy_traces"]):
+                result = energy_trace_data["result"]
+                trigger_pos = energy_trace_data["trigger_pos"]
 
-        qL = q ** (5 * L * self.slow_filter_range)
-        c2 = 1 - q
-        c3 = (1 - q) / (1 - qL)
-        c1 = c3 * qL
-
-        # self.data is already in FPGA cycles
-        baseline = [t[: self.baseline_index].mean() for t in self.data_FPGA]
-        # convert to energy cycles
-        baseline_pad = np.asarray(baseline).mean() * self.slow_filter_range
-        baseline = baseline_pad * (L + G) * 4 * c2
-
-        for i, trace in enumerate(self.data_FPGA):
-            # need to convert to avoid overflows in the sums
-            trace = trace.astype(np.int64)
-
-            # for the energy calculation groups of 10 ns * 2**slowfilterrange
-            # the traces are already in 10ns groups, so we now handle the slowfilterrange
-            N = (trace.shape[0] // self.slow_filter_range) * self.slow_filter_range
-            trace = trace[:N].reshape(
-                trace.shape[0] // self.slow_filter_range, self.slow_filter_range
-            )
-            trace = trace.sum(axis=1)
-
-            if pad_data:
-                pad = np.ones(pad_length) * int(baseline_pad)
-                trace = np.concatenate([pad, trace, pad])
-
-            if len(self.triggers[i]):
-                # calculate trigger position in new time units
-                trigger_pos = (
-                    int(self.triggers[i][0]) // self.slow_filter_range - 2 * L - G + P
+                self.energy_plot.axes.plot(
+                    result, color=self.colors[i], drawstyle="steps-mid"
                 )
-                if pad_data:
-                    trigger_pos += pad_length
 
-            for k in range(2 * L + G - 1, length):
-                S1 = trace[k - 2 * L - G + 1 : k - L - G + 1].sum()
-                S2 = trace[k - L - G + 1 : k - L + 1].sum()
-                S3 = trace[k - L + 1 : k + 1].sum()
-
-                result[k - 2 * L - G + 1] = (
-                    4 * (-c1 * S1 + c2 * S2 + c3 * S3) - baseline
-                )
-                if len(self.triggers[i]):
-                    if k - 2 * L - G + 1 == trigger_pos:
-                        print(
-                            f"[yellow]INFO[/] found peaksample position {i}: ",
-                            S1,
-                            S2,
-                            S3,
-                            baseline,
-                        )
-                        self.energy_values[i] = result[k - 2 * L - G + 1]
-
-            self.energy_plot.axes.plot(
-                result, color=self.colors[i], drawstyle="steps-mid"
-            )
-            if len(self.triggers[i]):
-                if 0 < trigger_pos < len(result):
+                if trigger_pos is not None and 0 < trigger_pos < len(result):
                     self.energy_plot.axes.plot(
                         trigger_pos, result[trigger_pos], "o", color=self.colors[i]
                     )
+
             self.energy_plot.axes.set_xlabel(f"{self.slow_filter_range * 10} ns cycles")
             self.energy_plot.axes.set_ylabel("Energy")
             self.energy_plot.axes.set_title(f"Energy baseline {baseline:.1f}")
@@ -479,34 +405,23 @@ class FastTrigger(QWidget):
     def update_energy_linearity(self):
         L = self.energy_linearity.value["L"]
 
-        baseline = [t[: self.baseline_index].mean() for t in self.data_FPGA]
-        baseline = np.asarray(baseline).mean()
+        linearity_result = compute_energy_linearity(
+            self.data_FPGA, self.triggers, self.energy_values, self.baseline_index, L
+        )
 
-        energy = np.zeros(self.N)
-        for i, trace in enumerate(self.data_FPGA):
-            try:
-                trigger_pos = int(self.triggers[i][0])
-            except IndexError:
-                trigger_pos = 0
-            if trigger_pos:
-                if trigger_pos + L < len(trace):
-                    energy[i] = (
-                        trace[trigger_pos : trigger_pos + L].sum() - baseline * L
-                    )
         self.energy_linearity_plot.axes.clear()
-        X = energy
-        Y = self.energy_values
-        fit = np.poly1d(np.polyfit(X, Y, 1))
-        F = fit(X)
-        mask = X > 0
-        if mask.sum() == 0:
+
+        if not linearity_result["validation_passed"]:
             self.energy_linearity_plot.canvas.draw()
             return
-        X = X[mask]
-        Y = Y[mask]
-        F = F[mask]
+
+        X = linearity_result["X"]
+        Y = linearity_result["Y"]
+        F = linearity_result["F"]
+        r2 = linearity_result["r2"]
+        mask = linearity_result["mask"]
         C = np.array(self.colors)[mask]
-        r2 = ((F - Y.mean()) ** 2).sum() / ((Y - Y.mean()) ** 2).sum()
+
         if r2 < 0.96:
             self.energy_linearity_plot.axes.plot(X, F, color="black")
             self.energy_linearity_plot.axes.scatter(X, Y, c=C)
