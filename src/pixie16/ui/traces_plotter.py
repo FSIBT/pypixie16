@@ -712,13 +712,13 @@ class TracesPlotter(QWidget):
         if not self.hardware_manager:
             return
         if self.hardware_manager.dummy_mode:
-            print(f"DUMMY MODE: FastTrigBackLen = {value}")
+            print(f"DUMMY MODE: FASTTRIGBACKLEN = {value}")
             return
 
         try:
             for channel in [self.selected_channel_a, self.selected_channel_b]:
-                px.control.set_channel_parameter("FastTrigBackLen", value, 0, channel)
-            print(f"HARDWARE: Applied FastTrigBackLen = {value}")
+                px.control.set_channel_parameter("FASTTRIGBACKLEN", value, 0, channel)
+            print(f"HARDWARE: Applied FASTTRIGBACKLEN = {value}")
         except Exception as e:
             print(f"Hardware Error: {e}")
 
@@ -773,7 +773,7 @@ class TracesPlotter(QWidget):
         if self.hardware_manager.dummy_mode:
             params_summary = [
                 f"FastTrigBackplaneEna: {self.ft_backplane_delay_slider.value()}",  # MODULE
-                f"FastTrigBackLen: {self.ft_backplane_length_slider.value()}",  # CHANNEL
+                f"FASTTRIGBACKLEN: {self.ft_backplane_length_slider.value()}",  # CHANNEL
                 f"ChanTrigStretch: {self.channel_trigger_stretch_slider.value()}",  # CHANNEL
                 f"ExternDelayLen: {self.external_delay_length_slider.value()}",  # CHANNEL
                 f"Channels: {[self.selected_channel_a, self.selected_channel_b]}",
@@ -802,7 +802,7 @@ class TracesPlotter(QWidget):
 
             # Channel-level parameters
             channel_params = {
-                "FastTrigBackLen": self.ft_backplane_length_slider.value(),
+                "FASTTRIGBACKLEN": self.ft_backplane_length_slider.value(),
                 "ChanTrigStretch": self.channel_trigger_stretch_slider.value(),
                 "ExternDelayLen": self.external_delay_length_slider.value(),
             }
