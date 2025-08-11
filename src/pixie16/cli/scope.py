@@ -399,8 +399,8 @@ class CompletePixieScopeApp(QMainWindow):
                 instrument_name="pixie16",
                 display_name="PIXIE-16 List Mode Spectra",
                 channels=self.channel_numbers,
-                energy_range=(0, 8192),
-                bins=1000,
+                energy_range=(0, 80000),
+                bins=2000,
             )
         elif self.current_mode == "traces_mode":
             self.spectrum_tab = TracesPlotter(
