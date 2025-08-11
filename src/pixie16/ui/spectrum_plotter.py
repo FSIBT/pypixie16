@@ -94,7 +94,7 @@ class ContinuousSpectrumPlotter(QWidget):
         self.display = pg.PlotWidget()
         self.display.setBackground(bkg_color)
         self.display.setLabel("left", "Counts")
-        self.display.setLabel("bottom", "Energy", "keV")
+        self.display.setLabel("bottom", "Energy", "a.u.")
         self.display.setTitle("PIXIE-16 List Mode Energy Spectra")
         self.display.showGrid(x=True, y=True)
         self.display.setMenuEnabled(enableMenu=True)
@@ -118,22 +118,21 @@ class ContinuousSpectrumPlotter(QWidget):
         self.setLayout(main_layout)
 
     def create_control_widgets(self):
-        """Create individual control widgets"""
-        self.energy_min_label = QLabel("Energy Min (keV):")
+        self.energy_min_label = QLabel("Energy Min (a.u.):")
         self.energy_min_spin = QDoubleSpinBox()
         self.energy_min_spin.setRange(0, 10000)
         self.energy_min_spin.setValue(self.energy_range[0])
         self.energy_min_spin.valueChanged.connect(self.update_energy_range)
 
-        self.energy_max_label = QLabel("Energy Max (keV):")
+        self.energy_max_label = QLabel("Energy Max (a.u.):")
         self.energy_max_spin = QDoubleSpinBox()
-        self.energy_max_spin.setRange(0, 10000)
+        self.energy_max_spin.setRange(0, 100000)
         self.energy_max_spin.setValue(self.energy_range[1])
         self.energy_max_spin.valueChanged.connect(self.update_energy_range)
 
         self.bins_label = QLabel("Bins:")
         self.bins_spin = QSpinBox()
-        self.bins_spin.setRange(10, 10000)
+        self.bins_spin.setRange(10, 100000)
         self.bins_spin.setValue(self.bins)
         self.bins_spin.valueChanged.connect(self.update_bins)
 
@@ -155,7 +154,6 @@ class ContinuousSpectrumPlotter(QWidget):
         self.clear_btn.clicked.connect(self.clear_data)
 
     def create_control_group(self):
-        """Create the control panel group - compact version"""
         self.create_control_widgets()
 
         group = QGroupBox("Plot Controls")
@@ -199,7 +197,6 @@ class ContinuousSpectrumPlotter(QWidget):
         return group
 
     def create_stats_widget(self):
-        """Create statistics display widget - compact version"""
         self.stats_labels = {}
 
         stats_group = QGroupBox("Channel Statistics")
@@ -228,24 +225,20 @@ class ContinuousSpectrumPlotter(QWidget):
         return stats_group
 
     def start_live_updates(self):
-        """Start live updating of the display"""
         if not self.update_timer.isActive():
             self.update_timer.start(int(self.update_rate * 1000))
             print("List Mode Plotter: Started live updates")
 
     def stop_live_updates(self):
-        """Stop live updating"""
         if self.update_timer.isActive():
             self.update_timer.stop()
             print("List Mode Plotter: Stopped live updates")
 
     def add_energy_event(self, channel, energy):
-        """Add a single energy event for the specified channel"""
         if channel in self.channels:
             self.energy_data[channel].append(energy)
 
     def add_energy_events(self, channel, energies):
-        """Add multiple energy events for the specified channel"""
         if channel in self.channels:
             if isinstance(energies, list | np.ndarray):
                 self.energy_data[channel].extend(energies)
@@ -313,31 +306,26 @@ class ContinuousSpectrumPlotter(QWidget):
             self.display.autoRange()
 
     def update_energy_range(self):
-        """Update energy display range"""
         self.energy_range = (self.energy_min_spin.value(), self.energy_max_spin.value())
         if not self.auto_scale_cb.isChecked():
             self.display.setXRange(*self.energy_range)
 
     def update_bins(self):
-        """Update number of histogram bins"""
         self.bins = self.bins_spin.value()
 
     def update_update_rate(self):
-        """Update the display update rate"""
         self.update_rate = self.update_rate_spin.value()
         if self.update_timer.isActive():
             self.update_timer.stop()
             self.update_timer.start(int(self.update_rate * 1000))
 
     def toggle_log_scale(self, checked):
-        """Toggle logarithmic scale"""
         if checked:
             self.display.setLabel("left", "Log10(Counts)")
         else:
             self.display.setLabel("left", "Counts")
 
     def toggle_auto_scale(self, checked):
-        """Toggle auto scaling"""
         if not checked:
             self.display.setXRange(*self.energy_range)
 
@@ -356,7 +344,6 @@ class ContinuousSpectrumPlotter(QWidget):
         self.update_display()
 
     def clear_data(self):
-        """Clear all spectrum data"""
         for channel in self.channels:
             self.energy_data[channel].clear()
 
@@ -367,7 +354,6 @@ class ContinuousSpectrumPlotter(QWidget):
                 self.stats_labels[channel].setText(f"Ch{channel}: 0 events")
 
     def get_spectrum_data(self):
-        """Get current spectrum data for saving"""
         data = {}
         for channel in self.channels:
             if len(self.energy_data[channel]) > 0:
@@ -375,7 +361,6 @@ class ContinuousSpectrumPlotter(QWidget):
         return data
 
     def set_channels(self, channels):
-        """Update the list of channels"""
         # Remove old plot items
         for channel in self.channels:
             if channel in self.plot_items:
