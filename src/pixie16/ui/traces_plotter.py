@@ -779,6 +779,10 @@ class TracesPlotter(QWidget):
                 f"Channels: {[self.selected_channel_a, self.selected_channel_b]}",
             ]
 
+            print("DUMMY MODE: Would apply parameters:")
+            for param in params_summary:
+                print(f"  {param}")
+
             QMessageBox.information(
                 self,
                 "Dummy Mode",
@@ -797,8 +801,12 @@ class TracesPlotter(QWidget):
                     "FastTrigBackplaneEna", self.ft_backplane_delay_slider.value(), 0
                 )
                 success_count += 1
+                print(
+                    f"Applied FastTrigBackplaneEna = {self.ft_backplane_delay_slider.value()}"
+                )
             except Exception as e:
                 failed_params.append(f"FastTrigBackplaneEna: {e}")
+                print(f"Failed FastTrigBackplaneEna: {e}")
 
             # Channel-level parameters
             channel_params = {
@@ -808,25 +816,41 @@ class TracesPlotter(QWidget):
             }
 
             for param_name, value in channel_params.items():
-                try:
-                    for channel in selected_channels:
+                param_applied = False
+                for channel in selected_channels:
+                    try:
                         px.control.set_channel_parameter(param_name, value, 0, channel)
-                    success_count += len(selected_channels)
-                except Exception as e:
-                    failed_params.append(f"{param_name}: {e}")
+                        if not param_applied:  # Only count once per parameter
+                            success_count += 1
+                            param_applied = True
+                        print(f"Applied {param_name} = {value} to Ch{channel}")
+                    except Exception as e:
+                        failed_params.append(f"{param_name} Ch{channel}: {e}")
+                        print(f"Failed {param_name} Ch{channel}: {e}")
+
+            try:
+                if hasattr(self.hardware_manager, "stop_acquisition"):
+                    self.hardware_manager.stop_acquisition()
+                time.sleep(0.2)
+                if hasattr(self.hardware_manager, "start_acquisition_mode"):
+                    self.hardware_manager.start_acquisition_mode("traces")
+                print("PIXIE data acquisition restarted")
+            except Exception as e:
+                print(f"Warning: Could not restart acquisition: {e}")
 
             # Report results
             if success_count > 0 and not failed_params:
                 QMessageBox.information(
                     self,
                     "Parameters Applied",
-                    f"HARDWARE: Successfully applied {success_count} parameter updates",
+                    f"HARDWARE: Successfully applied {success_count} parameter updates\nData acquisition restarted",
                 )
             elif failed_params:
                 QMessageBox.warning(
                     self,
                     "Partial Failure",
-                    f"Some parameters failed:\n" + "\n".join(failed_params),
+                    f"Applied {success_count} parameters successfully.\nSome parameters failed:\n"
+                    + "\n".join(failed_params),
                 )
             else:
                 QMessageBox.warning(
@@ -834,6 +858,7 @@ class TracesPlotter(QWidget):
                 )
 
         except Exception as e:
+            print(f"Critical error in apply_hardware_parameters: {e}")
             QMessageBox.critical(
                 self, "Critical Error", f"Hardware system error: {str(e)}"
             )
@@ -1257,7 +1282,7 @@ class TracesPlotter(QWidget):
                         signal = self.compute_hardware_traces(
                             trace_type, latest_trace, channel
                         )
-                        if signal is not None:
+                        if signal is not None and len(signal) > 0:
                             trace_colors = {
                                 "fast_trigger": "#ff7f0e",
                                 "energy_filter": "#2ca02c",
