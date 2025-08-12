@@ -174,9 +174,7 @@ class TracesPlotter(QWidget):
         self.sampling_period_ns = 2.0
 
         # Hardware validation settings
-        self.selected_channel_a = 0
-        self.selected_channel_b = 1
-        self.selected_channels = [0, 1]
+        self.selected_channel = 0
         self.hardware_status_label = None
 
         self.trace_types = {
@@ -330,27 +328,19 @@ class TracesPlotter(QWidget):
         tab = QWidget()
         layout = QVBoxLayout(tab)
 
-        # Channel pair selector
-        selector_group = QGroupBox("Channel Pair Selection")
+        # Channel selector
+        selector_group = QGroupBox("Channel Selection")
         selector_layout = QHBoxLayout()
         selector_layout.setContentsMargins(8, 2, 8, 2)
         selector_layout.setSpacing(8)
 
-        selector_layout.addWidget(QLabel("Channel A:"))
-        self.channel_a_combo = QComboBox()
+        selector_layout.addWidget(QLabel("Channel:"))
+        self.channel_combo = QComboBox()
         for ch in self.channels:
-            self.channel_a_combo.addItem(f"Ch {ch}")
-        self.channel_a_combo.setCurrentIndex(0)
-        self.channel_a_combo.currentIndexChanged.connect(self.update_channel_a)
-        selector_layout.addWidget(self.channel_a_combo)
-
-        selector_layout.addWidget(QLabel("Channel B:"))
-        self.channel_b_combo = QComboBox()
-        for ch in self.channels:
-            self.channel_b_combo.addItem(f"Ch {ch}")
-        self.channel_b_combo.setCurrentIndex(1 if len(self.channels) > 1 else 0)
-        self.channel_b_combo.currentIndexChanged.connect(self.update_channel_b)
-        selector_layout.addWidget(self.channel_b_combo)
+            self.channel_combo.addItem(f"Ch {ch}")
+        self.channel_combo.setCurrentIndex(0)
+        self.channel_combo.currentIndexChanged.connect(self.update_selected_channel)
+        selector_layout.addWidget(self.channel_combo)
 
         selector_layout.addStretch()
         selector_group.setLayout(selector_layout)
@@ -458,45 +448,20 @@ class TracesPlotter(QWidget):
         trace_types_group.setLayout(trace_types_layout)
         layout.addWidget(trace_types_group)
 
-        # Dual-panel display
-        display_splitter = QSplitter(Qt.Orientation.Horizontal)
-
-        # Channel A panel
-        channel_a_widget = QWidget()
-        channel_a_layout = QVBoxLayout(channel_a_widget)
-        channel_a_layout.addWidget(QLabel("Channel A"))
-        self.channel_a_plot = pg.PlotWidget()
-        self.channel_a_plot.setLabel("left", "Amplitude")
-        self.channel_a_plot.setLabel("bottom", "Time (ns)")
-        self.channel_a_plot.setTitle("Channel A Validation")
-        self.channel_a_plot.showGrid(True, True, alpha=0.3)
-        self.channel_a_plot.setBackground("w")
-        channel_a_layout.addWidget(self.channel_a_plot)
-        self.channel_a_plot.addLegend(offset=(10, 10))
-
-        # Channel B panel
-        channel_b_widget = QWidget()
-        channel_b_layout = QVBoxLayout(channel_b_widget)
-        channel_b_layout.addWidget(QLabel("Channel B"))
-        self.channel_b_plot = pg.PlotWidget()
-        self.channel_b_plot.setLabel("left", "Amplitude")
-        self.channel_b_plot.setLabel("bottom", "Time (ns)")
-        self.channel_b_plot.setTitle("Channel B Validation")
-        self.channel_b_plot.showGrid(True, True, alpha=0.3)
-        self.channel_b_plot.setBackground("w")
-        channel_b_layout.addWidget(self.channel_b_plot)
-        self.channel_b_plot.addLegend(offset=(10, 10))
-
-        display_splitter.addWidget(channel_a_widget)
-        display_splitter.addWidget(channel_b_widget)
-        layout.addWidget(display_splitter)
+        self.channel_plot = pg.PlotWidget()
+        self.channel_plot.setLabel("left", "Amplitude")
+        self.channel_plot.setLabel("bottom", "Time (ns)")
+        self.channel_plot.setTitle(f"Channel {self.selected_channel} Validation")
+        self.channel_plot.showGrid(True, True, alpha=0.3)
+        self.channel_plot.setBackground("w")
+        self.channel_plot.addLegend(offset=(10, 10))
+        layout.addWidget(self.channel_plot)
 
         self.hardware_status_label = QLabel("Hardware Status: Ready")
         layout.addWidget(self.hardware_status_label)
 
         # Initialize plot curves for hardware validation
-        self.hw_curves_a = {}
-        self.hw_curves_b = {}
+        self.hw_curves = {}
 
         trace_colors = {
             "raw": "#1f77b4",  # Blue
@@ -513,14 +478,7 @@ class TracesPlotter(QWidget):
         }
 
         for trace_type in self.trace_types.keys():
-            # Channel A curves
-            self.hw_curves_a[trace_type] = self.channel_a_plot.plot(
-                pen=pg.mkPen(color=trace_colors[trace_type], width=2),
-                name=trace_names[trace_type],
-            )
-
-            # Channel B curves
-            self.hw_curves_b[trace_type] = self.channel_b_plot.plot(
+            self.hw_curves[trace_type] = self.channel_plot.plot(
                 pen=pg.mkPen(color=trace_colors[trace_type], width=2),
                 name=trace_names[trace_type],
             )
@@ -701,11 +659,9 @@ class TracesPlotter(QWidget):
         self.auto_scale = enabled
 
     # Hardware validation
-    def update_channel_a(self):
-        self.selected_channel_a = self.channels[self.channel_a_combo.currentIndex()]
-
-    def update_channel_b(self):
-        self.selected_channel_b = self.channels[self.channel_b_combo.currentIndex()]
+    def update_selected_channel(self):
+        self.selected_channel = self.channels[self.channel_combo.currentIndex()]
+        self.channel_plot.setTitle(f"Channel {self.selected_channel} Validation")
 
     def update_ft_backplane_delay(self, value):
         self.ft_backplane_delay_label.setText(str(value))
@@ -1271,20 +1227,12 @@ class TracesPlotter(QWidget):
 
     def update_hardware_validation_plots(self):
         try:
-            # Update Channel A plot
+            # Update single channel plot
             self.update_channel_validation_plot(
-                self.selected_channel_a,
-                self.channel_a_plot,
-                self.hw_curves_a,
-                "Channel A",
-            )
-
-            # Update Channel B plot
-            self.update_channel_validation_plot(
-                self.selected_channel_b,
-                self.channel_b_plot,
-                self.hw_curves_b,
-                "Channel B",
+                self.selected_channel,
+                self.channel_plot,
+                self.hw_curves,
+                f"Channel {self.selected_channel}",
             )
 
         except Exception as e:
@@ -1861,37 +1809,19 @@ class TracesPlotter(QWidget):
 
     def on_hardware_replay_trace_selected(self, stored_trace):
         if self.replay_mode and stored_trace:
-            # Update both Channel A and B plots with the same trace
+            # Update single channel plot with the trace
             channel = stored_trace.channel
             trace_data = stored_trace.trace_data
 
-            # Update Channel A plot (if it matches the selected channel A)
-            if channel == self.selected_channel_a:
+            # Update plot if it matches the selected channel
+            if channel == self.selected_channel:
                 self.update_single_channel_validation_plot(
                     channel,
                     trace_data,
-                    self.channel_a_plot,
-                    self.hw_curves_a,
-                    "Channel A",
+                    self.channel_plot,
+                    self.hw_curves,
+                    f"Channel {self.selected_channel}",
                 )
-
-            # Update Channel B plot (if it matches the selected channel B)
-            if channel == self.selected_channel_b:
-                self.update_single_channel_validation_plot(
-                    channel,
-                    trace_data,
-                    self.channel_b_plot,
-                    self.hw_curves_b,
-                    "Channel B",
-                )
-
-            # Update hardware status
-            current_pos, total_traces, _ = self.replay_widget.get_buffer_stats()
-            self.hardware_status_label.setText(
-                f"REPLAY MODE - Trace {current_pos}/{total_traces} - "
-                f"Ch{channel} - Energy: {stored_trace.energy:.2f} - "
-                f"Time: {time.strftime('%H:%M:%S', time.localtime(stored_trace.timestamp))}"
-            )
 
     def on_hardware_replay_mode_changed(self, enabled):
         print(f"DEBUG: Replay mode changed to: {enabled}")
