@@ -226,6 +226,10 @@ class TracesPlotter(QWidget):
         }
 
         self.trigger_points = {ch: {} for ch in self.channels}
+        self.peak_sample_points = {ch: {} for ch in self.channels}
+
+        # Add parameter display labels
+        self.parameter_info_label = None
 
         # Initialize replay system first
         self.replay_widget = None
@@ -448,6 +452,20 @@ class TracesPlotter(QWidget):
         trace_types_group.setLayout(trace_types_layout)
         layout.addWidget(trace_types_group)
 
+        params_info_group = QGroupBox("Current Parameters")
+        params_info_layout = QVBoxLayout()
+        params_info_layout.setContentsMargins(8, 2, 8, 2)
+
+        self.parameter_info_label = QLabel()
+        self.parameter_info_label.setStyleSheet(
+            "font-family: monospace; font-size: 10pt;"
+        )
+        self.update_parameter_info_display()
+        params_info_layout.addWidget(self.parameter_info_label)
+
+        params_info_group.setLayout(params_info_layout)
+        layout.addWidget(params_info_group)
+
         self.channel_plot = pg.PlotWidget()
         self.channel_plot.setLabel("left", "Amplitude")
         self.channel_plot.setLabel("bottom", "Time (ns)")
@@ -484,6 +502,21 @@ class TracesPlotter(QWidget):
             )
 
         return tab
+
+    def update_parameter_info_display(self):
+        if self.parameter_info_label:
+            params_text = (
+                f"Fast Filter: L={self.hardware_params['fast_L']} FPGA, "
+                f"G={self.hardware_params['fast_G']} FPGA, "
+                f"Threshold={self.hardware_params['fast_threshold']} ADC\n"
+                f"Energy Filter: R={self.hardware_params['energy_R']}, "
+                f"L={self.hardware_params['energy_L']}, "
+                f"G={self.hardware_params['energy_G']}, "
+                f"P={self.hardware_params['energy_P']}\n"
+                f"CFD: Threshold={self.hardware_params['cfd_threshold']} ADC, "
+                f"Decay={self.hardware_params['decay_ns']:.1f}ns"
+            )
+            self.parameter_info_label.setText(params_text)
 
     def create_coincidence_analysis_tab(self):
         tab = QWidget()
@@ -1327,26 +1360,32 @@ class TracesPlotter(QWidget):
 
             # Fast trigger threshold (orange dashed line)
             fast_threshold = self.hardware_params["fast_threshold"]
-            plot_widget.addItem(
-                pg.InfiniteLine(
-                    pos=fast_threshold,
-                    angle=0,  # Horizontal
-                    pen=pg.mkPen(color="orange", style=2, width=2),  # Dashed
-                    label="Fast Threshold",
-                )
+            fast_threshold_line = pg.InfiniteLine(
+                pos=baseline + fast_threshold,
+                angle=0,  # Horizontal
+                pen=pg.mkPen(color="orange", style=2, width=2),
+                label=f"Fast Threshold ({fast_threshold} ADC)",
             )
+            plot_widget.addItem(fast_threshold_line)
 
             # CFD threshold (red dashed line)
-            # CFD threshold should be relative to baseline
             cfd_threshold = self.hardware_params["cfd_threshold"]
-            plot_widget.addItem(
-                pg.InfiniteLine(
-                    pos=baseline + cfd_threshold,
-                    angle=0,  # Horizontal
-                    pen=pg.mkPen(color="red", style=2, width=2),  # Dashed
-                    label="CFD Threshold",
-                )
+            cfd_threshold_line = pg.InfiniteLine(
+                pos=baseline + cfd_threshold,
+                angle=0,
+                pen=pg.mkPen(color="red", style=2, width=2),
+                label=f"CFD Threshold ({cfd_threshold} ADC)",
             )
+            plot_widget.addItem(cfd_threshold_line)
+
+            # Baseline reference line (gray dotted)
+            baseline_line = pg.InfiniteLine(
+                pos=baseline,
+                angle=0,
+                pen=pg.mkPen(color="gray", style=3, width=1),
+                label=f"Baseline ({baseline:.1f} ADC)",
+            )
+            plot_widget.addItem(baseline_line)
 
         except Exception as e:
             print(f"Error adding threshold lines: {e}")
@@ -1515,8 +1554,31 @@ class TracesPlotter(QWidget):
                             if 0 <= corrected_trigger_pos < original_length:
                                 energy_trigger_points = [int(corrected_trigger_pos)]
 
+                        energy_trigger_points = []
+                        peak_sample_points = []
+
+                        if trigger_pos is not None:
+                            corrected_trigger_pos = (
+                                trigger_pos * samples_per_energy_cycle
+                                + (alignment_offset if alignment_offset else 0)
+                            )
+                            if 0 <= corrected_trigger_pos < original_length:
+                                energy_trigger_points = [int(corrected_trigger_pos)]
+
+                                # Calculate peak sample position (P samples after trigger)
+                                peak_sample_pos = corrected_trigger_pos + (
+                                    self.hardware_params["energy_P"]
+                                    * samples_per_energy_cycle
+                                )
+                                if 0 <= peak_sample_pos < original_length:
+                                    peak_sample_points = [int(peak_sample_pos)]
+
+                        # Store both trigger and peak sample info
                         self._store_trigger_info(
-                            channel, energy_trigger_points, "energy_filter"
+                            channel,
+                            energy_trigger_points,
+                            "energy_filter",
+                            peak_sample_points,
                         )
 
                         # Resize to match original length
@@ -1560,10 +1622,18 @@ class TracesPlotter(QWidget):
             print(f"Hardware computation error for {trace_type}: {e}")
             return np.zeros(original_length)
 
-    def _store_trigger_info(self, channel, trigger_indices, trace_type):
+    def _store_trigger_info(
+        self, channel, trigger_indices, trace_type, peak_samples=None
+    ):
         if channel not in self.trigger_points:
             self.trigger_points[channel] = {}
+            self.peak_sample_points[channel] = {}
+
         self.trigger_points[channel][trace_type] = trigger_indices
+
+        # Store peak sample information for energy filter
+        if trace_type == "energy_filter" and peak_samples:
+            self.peak_sample_points[channel][trace_type] = peak_samples
 
     def _resize_trace_to_match(
         self, processed_trace, original_length, trace_type="unknown"
@@ -1593,29 +1663,34 @@ class TracesPlotter(QWidget):
             return
 
         trigger_info = self.trigger_points[channel]
+        peak_info = self.peak_sample_points.get(channel, {})
 
         # Marker styles for different trigger types
         marker_styles = {
             "fast_trigger": {
                 "color": "orange",
                 "symbol": "o",
-                "size": 10,
+                "size": 12,
                 "name": "Fast Trigger",
+                "line_style": 2,  # Dashed
             },
             "cfd": {
                 "color": "red",
                 "symbol": "s",
-                "size": 8,
+                "size": 10,
                 "name": "CFD Zero Crossing",
+                "line_style": 3,  # Dash-dot
             },
             "energy_filter": {
                 "color": "blue",
                 "symbol": "t",
-                "size": 10,
-                "name": "Energy Peak Sample",
+                "size": 12,
+                "name": "Energy Trigger",
+                "line_style": 2,  # Dashed
             },
         }
 
+        # Add trigger markers
         for trace_type, trigger_indices in trigger_info.items():
             if not trigger_indices or trace_type not in marker_styles:
                 continue
@@ -1624,28 +1699,59 @@ class TracesPlotter(QWidget):
 
             for trigger_idx in trigger_indices:
                 if 0 <= trigger_idx < len(time_axis):
-                    # Add vertical line at trigger position
-                    plot_widget.addItem(
-                        pg.InfiniteLine(
-                            pos=time_axis[trigger_idx],
-                            angle=90,  # Vertical line
-                            pen=pg.mkPen(
-                                color=style["color"], style=2, width=1
-                            ),  # Dashed line
-                            label=style["name"],
-                        )
-                    )
+                    trigger_time = time_axis[trigger_idx]
 
-                    # Add marker point
+                    # Add vertical line at trigger position
+                    trigger_line = pg.InfiniteLine(
+                        pos=trigger_time,
+                        angle=90,  # Vertical line
+                        pen=pg.mkPen(
+                            color=style["color"], style=style["line_style"], width=2
+                        ),
+                        label=f"{style['name']}",
+                    )
+                    plot_widget.addItem(trigger_line)
+
+                    # Add marker point at y=0 baseline for visibility
                     plot_widget.plot(
-                        [time_axis[trigger_idx]],
-                        [0],  # Y position will be adjusted by auto-range
+                        [trigger_time],
+                        [0],
                         pen=None,
                         symbol=style["symbol"],
                         symbolBrush=style["color"],
-                        symbolPen=pg.mkPen(color="white", width=1),
+                        symbolPen=pg.mkPen(color="white", width=2),
                         symbolSize=style["size"],
                         name=f"{style['name']} Point",
+                    )
+
+        # Add peak sample markers for energy filter
+        if "energy_filter" in peak_info:
+            peak_samples = peak_info["energy_filter"]
+            for peak_idx in peak_samples:
+                if 0 <= peak_idx < len(time_axis):
+                    peak_time = time_axis[peak_idx]
+
+                    # Add peak sample marker (diamond shape)
+                    peak_line = pg.InfiniteLine(
+                        pos=peak_time,
+                        angle=90,
+                        pen=pg.mkPen(
+                            color="green", style=1, width=3
+                        ),  # Solid thick line
+                        label="Peak Sample",
+                    )
+                    plot_widget.addItem(peak_line)
+
+                    # Add diamond marker
+                    plot_widget.plot(
+                        [peak_time],
+                        [0],
+                        pen=None,
+                        symbol="d",  # Diamond
+                        symbolBrush="green",
+                        symbolPen=pg.mkPen(color="white", width=2),
+                        symbolSize=14,
+                        name="Peak Sample Point",
                     )
 
     def fallback_simulation(self, trace_type, trace):
