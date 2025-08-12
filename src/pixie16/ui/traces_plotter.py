@@ -244,10 +244,10 @@ class TracesPlotter(QWidget):
         self.tab_widget.addTab(raw_traces_tab, "Raw Traces")
 
         hardware_validation_tab = self.create_hardware_validation_tab()
-        self.tab_widget.addTab(hardware_validation_tab, "Hardware Trigger Validation")
+        self.tab_widget.addTab(hardware_validation_tab, "Single Trace Validation")
 
         coincidence_analysis_tab = self.create_coincidence_analysis_tab()
-        self.tab_widget.addTab(coincidence_analysis_tab, "Coincidence Analysis")
+        self.tab_widget.addTab(coincidence_analysis_tab, "Coincidence Logic")
 
         layout.addWidget(self.tab_widget)
         self.setLayout(layout)
@@ -263,7 +263,7 @@ class TracesPlotter(QWidget):
         # Max traces
         controls_layout.addWidget(QLabel("Max Traces:"))
         self.max_traces_spin = QSpinBox()
-        self.max_traces_spin.setRange(1, 50)
+        self.max_traces_spin.setRange(1, 100)
         self.max_traces_spin.setValue(self.max_traces_display)
         self.max_traces_spin.valueChanged.connect(self.update_max_traces)
         controls_layout.addWidget(self.max_traces_spin)
@@ -351,65 +351,65 @@ class TracesPlotter(QWidget):
         selector_group.setLayout(selector_layout)
         layout.addWidget(selector_group)
 
-        # Hardware parameter controls
-        params_group = QGroupBox("Hardware Timing Parameters")
-        params_layout = QGridLayout()
+        # # Hardware parameter controls
+        # params_group = QGroupBox("Hardware Timing Parameters")
+        # params_layout = QGridLayout()
 
-        # Fast Trigger Backplane Delay (0-255)
-        params_layout.addWidget(QLabel("Fast Trigger Backplane Delay:"), 0, 0)
-        self.ft_backplane_delay_slider = QSlider(Qt.Orientation.Horizontal)
-        self.ft_backplane_delay_slider.setRange(0, 255)
-        self.ft_backplane_delay_slider.setValue(100)
-        self.ft_backplane_delay_slider.valueChanged.connect(
-            self.update_ft_backplane_delay
-        )
-        params_layout.addWidget(self.ft_backplane_delay_slider, 0, 1)
-        self.ft_backplane_delay_label = QLabel("100")
-        params_layout.addWidget(self.ft_backplane_delay_label, 0, 2)
+        # # Fast Trigger Backplane Delay (0-255)
+        # params_layout.addWidget(QLabel("Fast Trigger Backplane Delay:"), 0, 0)
+        # self.ft_backplane_delay_slider = QSlider(Qt.Orientation.Horizontal)
+        # self.ft_backplane_delay_slider.setRange(0, 255)
+        # self.ft_backplane_delay_slider.setValue(100)
+        # self.ft_backplane_delay_slider.valueChanged.connect(
+        #     self.update_ft_backplane_delay
+        # )
+        # params_layout.addWidget(self.ft_backplane_delay_slider, 0, 1)
+        # self.ft_backplane_delay_label = QLabel("100")
+        # params_layout.addWidget(self.ft_backplane_delay_label, 0, 2)
 
-        # Fast Trigger Backplane Length (1-511)
-        params_layout.addWidget(QLabel("Fast Trigger Backplane Length:"), 1, 0)
-        self.ft_backplane_length_slider = QSlider(Qt.Orientation.Horizontal)
-        self.ft_backplane_length_slider.setRange(1, 511)
-        self.ft_backplane_length_slider.setValue(100)
-        self.ft_backplane_length_slider.valueChanged.connect(
-            self.update_ft_backplane_length
-        )
-        params_layout.addWidget(self.ft_backplane_length_slider, 1, 1)
-        self.ft_backplane_length_label = QLabel("100")
-        params_layout.addWidget(self.ft_backplane_length_label, 1, 2)
+        # # Fast Trigger Backplane Length (1-511)
+        # params_layout.addWidget(QLabel("Fast Trigger Backplane Length:"), 1, 0)
+        # self.ft_backplane_length_slider = QSlider(Qt.Orientation.Horizontal)
+        # self.ft_backplane_length_slider.setRange(1, 511)
+        # self.ft_backplane_length_slider.setValue(100)
+        # self.ft_backplane_length_slider.valueChanged.connect(
+        #     self.update_ft_backplane_length
+        # )
+        # params_layout.addWidget(self.ft_backplane_length_slider, 1, 1)
+        # self.ft_backplane_length_label = QLabel("100")
+        # params_layout.addWidget(self.ft_backplane_length_label, 1, 2)
 
-        # Channel Trigger Stretch (1-511)
-        params_layout.addWidget(QLabel("Channel Trigger Stretch:"), 2, 0)
-        self.channel_trigger_stretch_slider = QSlider(Qt.Orientation.Horizontal)
-        self.channel_trigger_stretch_slider.setRange(1, 511)
-        self.channel_trigger_stretch_slider.setValue(100)
-        self.channel_trigger_stretch_slider.valueChanged.connect(
-            self.update_channel_trigger_stretch
-        )
-        params_layout.addWidget(self.channel_trigger_stretch_slider, 2, 1)
-        self.channel_trigger_stretch_label = QLabel("100")
-        params_layout.addWidget(self.channel_trigger_stretch_label, 2, 2)
+        # # Channel Trigger Stretch (1-511)
+        # params_layout.addWidget(QLabel("Channel Trigger Stretch:"), 2, 0)
+        # self.channel_trigger_stretch_slider = QSlider(Qt.Orientation.Horizontal)
+        # self.channel_trigger_stretch_slider.setRange(1, 511)
+        # self.channel_trigger_stretch_slider.setValue(100)
+        # self.channel_trigger_stretch_slider.valueChanged.connect(
+        #     self.update_channel_trigger_stretch
+        # )
+        # params_layout.addWidget(self.channel_trigger_stretch_slider, 2, 1)
+        # self.channel_trigger_stretch_label = QLabel("100")
+        # params_layout.addWidget(self.channel_trigger_stretch_label, 2, 2)
 
-        # External Delay Length (1-511)
-        params_layout.addWidget(QLabel("External Delay Length:"), 3, 0)
-        self.external_delay_length_slider = QSlider(Qt.Orientation.Horizontal)
-        self.external_delay_length_slider.setRange(1, 511)
-        self.external_delay_length_slider.setValue(100)
-        self.external_delay_length_slider.valueChanged.connect(
-            self.update_external_delay_length
-        )
-        params_layout.addWidget(self.external_delay_length_slider, 3, 1)
-        self.external_delay_length_label = QLabel("100")
-        params_layout.addWidget(self.external_delay_length_label, 3, 2)
+        # # External Delay Length (1-511)
+        # params_layout.addWidget(QLabel("External Delay Length:"), 3, 0)
+        # self.external_delay_length_slider = QSlider(Qt.Orientation.Horizontal)
+        # self.external_delay_length_slider.setRange(1, 511)
+        # self.external_delay_length_slider.setValue(100)
+        # self.external_delay_length_slider.valueChanged.connect(
+        #     self.update_external_delay_length
+        # )
+        # params_layout.addWidget(self.external_delay_length_slider, 3, 1)
+        # self.external_delay_length_label = QLabel("100")
+        # params_layout.addWidget(self.external_delay_length_label, 3, 2)
 
-        # Apply to Hardware button
-        self.apply_hw_btn = QPushButton("Apply to Hardware")
-        self.apply_hw_btn.clicked.connect(self.apply_hardware_parameters)
-        params_layout.addWidget(self.apply_hw_btn, 4, 0, 1, 3)
+        # # Apply to Hardware button
+        # self.apply_hw_btn = QPushButton("Apply to Hardware")
+        # self.apply_hw_btn.clicked.connect(self.apply_hardware_parameters)
+        # params_layout.addWidget(self.apply_hw_btn, 4, 0, 1, 3)
 
-        params_group.setLayout(params_layout)
-        layout.addWidget(params_group)
+        # params_group.setLayout(params_layout)
+        # layout.addWidget(params_group)
 
         # Trace type controls
         trace_types_group = QGroupBox("Trace Types")

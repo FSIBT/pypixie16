@@ -338,7 +338,7 @@ class CompletePixieScopeApp(QMainWindow):
         # Mode selection
         top_layout.addWidget(QLabel("Mode:"))
         self.mode_combo = QComboBox()
-        self.mode_combo.addItems(["MCA Mode", "List Mode", "Traces Mode"])
+        self.mode_combo.addItems(["MCA Mode", "ListMode Histogram", "ListMode Traces"])
         self.mode_combo.currentTextChanged.connect(self.on_mode_changed)
         top_layout.addWidget(self.mode_combo)
 

@@ -139,24 +139,24 @@ class MCASpectrumPlotter(QWidget):
         self.target_bins_spin.setRange(500, 8192)
         self.target_bins_spin.setValue(self.target_bins)
         self.target_bins_spin.valueChanged.connect(self.update_target_bins)
-        self.target_bins_spin.setMaximumWidth(80)
+        self.target_bins_spin.setMaximumWidth(120)
         row1_layout.addWidget(self.target_bins_spin)
 
         # Energy range - compact
         row1_layout.addWidget(QLabel("Min:"))
         self.energy_min_spin = QSpinBox()
-        self.energy_min_spin.setRange(0, 8191)
+        self.energy_min_spin.setRange(0, 100000)
         self.energy_min_spin.setValue(0)
         self.energy_min_spin.valueChanged.connect(self.update_energy_range)
-        self.energy_min_spin.setMaximumWidth(80)
+        self.energy_min_spin.setMaximumWidth(120)
         row1_layout.addWidget(self.energy_min_spin)
 
         row1_layout.addWidget(QLabel("Max:"))
         self.energy_max_spin = QSpinBox()
-        self.energy_max_spin.setRange(1, 8192)
+        self.energy_max_spin.setRange(1, 100000)
         self.energy_max_spin.setValue(2047)
         self.energy_max_spin.valueChanged.connect(self.update_energy_range)
-        self.energy_max_spin.setMaximumWidth(80)
+        self.energy_max_spin.setMaximumWidth(120)
         row1_layout.addWidget(self.energy_max_spin)
 
         # Auto-detect button - compact
