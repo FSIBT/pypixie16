@@ -10,6 +10,7 @@ from collections import deque, defaultdict
 import time
 import json
 from pathlib import Path
+import csv
 
 from PyQt6.QtWidgets import (
     QWidget,
@@ -46,8 +47,7 @@ from ..analyze import (
     calculate_filter,
     get_fast_trigger_index,
 )
-
-import csv
+from .traces_replay import TraceReplayWidget, StoredTrace
 
 
 class WindowOptimizationWorker(QThread):
@@ -229,7 +229,10 @@ class TracesPlotter(QWidget):
 
         self.trigger_points = {ch: {} for ch in self.channels}
 
-        self.setWindowTitle(title)
+        # Initialize replay system first
+        self.replay_widget = None
+        self.replay_mode = False
+
         self.init_ui()
 
         # Update timer
@@ -352,6 +355,17 @@ class TracesPlotter(QWidget):
         selector_layout.addStretch()
         selector_group.setLayout(selector_layout)
         layout.addWidget(selector_group)
+
+        # Add replay controls for single trace validation
+        self.replay_widget = TraceReplayWidget(initial_buffer_size=1000)
+        self.replay_widget.trace_selected.connect(
+            self.on_hardware_replay_trace_selected
+        )
+        self.replay_widget.replay_mode_changed.connect(
+            self.on_hardware_replay_mode_changed
+        )
+        layout.addWidget(self.replay_widget)
+        print(f"Successfully created replay widget: {self.replay_widget}")
 
         # # Hardware parameter controls
         # params_group = QGroupBox("Hardware Timing Parameters")
@@ -1156,9 +1170,27 @@ class TracesPlotter(QWidget):
             if len(trace_data) > 10:
                 amplitude = np.max(trace_data) - np.min(trace_data)
                 if amplitude >= self.amplitude_threshold:
+                    # Store in original buffer
                     self.trace_data[channel].append(trace_data)
+
+                    # Store in replay buffer
+                    if (
+                        hasattr(self, "replay_widget")
+                        and self.replay_widget is not None
+                        and not self.replay_mode
+                    ):
+                        self.replay_widget.add_trace(trace_data, channel, amplitude)
             else:
+                # Store in original buffer
                 self.trace_data[channel].append(trace_data)
+
+                # Store in replay buffer
+                if (
+                    hasattr(self, "replay_widget")
+                    and self.replay_widget is not None
+                    and not self.replay_mode
+                ):
+                    self.replay_widget.add_trace(trace_data, channel, 0)
 
         except Exception as e:
             print(f"Error adding trace to channel {channel}: {e}")
@@ -1184,6 +1216,9 @@ class TracesPlotter(QWidget):
 
     def update_raw_traces_plot(self):
         try:
+            if self.replay_mode:
+                return
+
             total_traces = 0
 
             # Process all channels for raw traces display
@@ -1724,6 +1759,9 @@ class TracesPlotter(QWidget):
                 for curve in self.hw_curves_b.values():
                     curve.setData([], [])
 
+        if self.replay_widget:
+            self.replay_widget.clear_traces()
+
         self.update_plots()
 
     def set_display_channels(self, channels):
@@ -1820,3 +1858,130 @@ class TracesPlotter(QWidget):
                 )
 
         return stats
+
+    def on_hardware_replay_trace_selected(self, stored_trace):
+        if self.replay_mode and stored_trace:
+            # Update both Channel A and B plots with the same trace
+            channel = stored_trace.channel
+            trace_data = stored_trace.trace_data
+
+            # Update Channel A plot (if it matches the selected channel A)
+            if channel == self.selected_channel_a:
+                self.update_single_channel_validation_plot(
+                    channel,
+                    trace_data,
+                    self.channel_a_plot,
+                    self.hw_curves_a,
+                    "Channel A",
+                )
+
+            # Update Channel B plot (if it matches the selected channel B)
+            if channel == self.selected_channel_b:
+                self.update_single_channel_validation_plot(
+                    channel,
+                    trace_data,
+                    self.channel_b_plot,
+                    self.hw_curves_b,
+                    "Channel B",
+                )
+
+            # Update hardware status
+            current_pos, total_traces, _ = self.replay_widget.get_buffer_stats()
+            self.hardware_status_label.setText(
+                f"REPLAY MODE - Trace {current_pos}/{total_traces} - "
+                f"Ch{channel} - Energy: {stored_trace.energy:.2f} - "
+                f"Time: {time.strftime('%H:%M:%S', time.localtime(stored_trace.timestamp))}"
+            )
+
+    def on_hardware_replay_mode_changed(self, enabled):
+        print(f"DEBUG: Replay mode changed to: {enabled}")
+        print(f"DEBUG: self.replay_widget = {self.replay_widget}")
+        print(f"DEBUG: type(self.replay_widget) = {type(self.replay_widget)}")
+
+        self.replay_mode = enabled
+
+        if enabled:
+            # Switch to replay mode for hardware validation
+            if self.replay_widget is not None:
+                current_trace = self.replay_widget.get_current_trace()
+                print(f"DEBUG: current_trace = {current_trace}")
+                if current_trace:
+                    self.on_hardware_replay_trace_selected(current_trace)
+                else:
+                    current_pos, total_traces, _ = self.replay_widget.get_buffer_stats()
+                    self.hardware_status_label.setText(
+                        f"REPLAY MODE - No traces available ({total_traces} stored)"
+                    )
+            else:
+                self.hardware_status_label.setText(
+                    "REPLAY MODE - Widget not initialized"
+                )
+        else:
+            # Return to live mode for hardware validation
+            self.hardware_status_label.setText("Hardware Status: Live mode resumed")
+
+    def update_single_channel_validation_plot(
+        self, channel, trace_data, plot_widget, curves, label
+    ):
+        try:
+            # Clear plot
+            plot_widget.clear()
+
+            time_axis = self.calculate_real_time_axis(len(trace_data), channel)
+
+            # Plot enabled traces with proper scaling
+            for trace_type, enabled in self.trace_types.items():
+                if not enabled:
+                    continue
+
+                if trace_type == "raw":
+                    signal = trace_data
+                    color = "#1f77b4"  # Blue
+                    name = "Raw Trace"
+                else:
+                    signal = self.compute_hardware_traces(
+                        trace_type, trace_data, channel
+                    )
+                    if signal is None or len(signal) == 0:
+                        continue
+
+                    trace_colors = {
+                        "fast_trigger": "#ff7f0e",  # Orange
+                        "energy_filter": "#2ca02c",  # Green
+                        "cfd": "#d62728",  # Red
+                    }
+                    color = trace_colors.get(trace_type, "#333333")
+                    name = trace_type.replace("_", " ").title()
+
+                    # Apply amplitude scaling for visibility
+                    if trace_type == "fast_trigger":
+                        raw_amplitude = np.max(trace_data) - np.min(trace_data)
+                        if np.max(signal) > 0:
+                            scale_factor = raw_amplitude / (3 * np.max(signal))
+                            signal = signal * scale_factor
+                    elif trace_type == "cfd":
+                        baseline = np.mean(trace_data[:100])
+                        signal = signal + baseline
+                    elif trace_type == "energy_filter":
+                        raw_amplitude = np.max(trace_data) - np.min(trace_data)
+                        if np.max(signal) > np.min(signal):
+                            signal_amplitude = np.max(signal) - np.min(signal)
+                            scale_factor = (2 * raw_amplitude) / signal_amplitude
+                            signal = (signal - np.min(signal)) * scale_factor + np.min(
+                                trace_data
+                            )
+
+                # Plot the trace
+                plot_widget.plot(
+                    time_axis, signal, pen=pg.mkPen(color=color, width=2), name=name
+                )
+
+            # Add trigger markers and threshold lines
+            self._add_trigger_markers(plot_widget, channel, time_axis)
+            self._add_threshold_lines(plot_widget, trace_data)
+
+            plot_widget.setTitle(f"{label} - Ch {channel} (REPLAY)")
+            plot_widget.addLegend()
+
+        except Exception as e:
+            print(f"Error updating {label} replay plot: {e}")
