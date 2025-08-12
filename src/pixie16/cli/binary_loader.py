@@ -84,9 +84,9 @@ class BinaryReplayThread(QThread):
 
                 # Feed event to the appropriate scope processor
                 try:
-                    if self.parent_scope.current_mode == "list_mode":
+                    if self.parent_scope.current_mode == "listmode_histogram":
                         self.parent_scope.process_list_mode_event(event)
-                    elif self.parent_scope.current_mode == "traces_mode":
+                    elif self.parent_scope.current_mode == "listmode_traces":
                         trace_data = getattr(event, "trace", np.random.random(100))
                         if hasattr(
                             self.parent_scope.spectrum_tab, "add_event_with_trace"

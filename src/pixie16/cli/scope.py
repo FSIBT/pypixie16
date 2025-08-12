@@ -393,7 +393,7 @@ class CompletePixieScopeApp(QMainWindow):
             self.spectrum_tab = MCASpectrumPlotter(
                 channels=self.channel_numbers, title="PIXIE-16 MCA Spectra"
             )
-        elif self.current_mode == "list_mode":
+        elif self.current_mode == "listmode_histogram":
             self.spectrum_tab = ContinuousSpectrumPlotter(
                 app=None,
                 instrument_name="pixie16",
@@ -402,7 +402,7 @@ class CompletePixieScopeApp(QMainWindow):
                 energy_range=(0, 80000),
                 bins=2000,
             )
-        elif self.current_mode == "traces_mode":
+        elif self.current_mode == "listmode_traces":
             self.spectrum_tab = TracesPlotter(
                 channels=self.channel_numbers,
                 title="PIXIE-16 Traces",
@@ -465,9 +465,9 @@ class CompletePixieScopeApp(QMainWindow):
                 # Regular live acquisition
                 if self.current_mode == "mca_mode":
                     success = self.start_mca_acquisition()
-                elif self.current_mode == "list_mode":
+                elif self.current_mode == "listmode_histogram":
                     success = self.start_list_mode_acquisition()
-                elif self.current_mode == "traces_mode":
+                elif self.current_mode == "listmode_traces":
                     success = self.start_traces_acquisition()
 
             if success:
@@ -981,9 +981,9 @@ class CompletePixieScopeApp(QMainWindow):
             # Update mode-specific channel statistics
             if self.current_mode == "mca_mode":
                 self.update_mca_channel_stats()
-            elif self.current_mode == "list_mode":
+            elif self.current_mode == "listmode_histogram":
                 self.update_list_mode_channel_stats()
-            elif self.current_mode == "traces_mode":
+            elif self.current_mode == "listmode_traces":
                 self.update_traces_channel_stats()
 
         except Exception as e:
