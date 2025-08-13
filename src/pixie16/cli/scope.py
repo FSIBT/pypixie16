@@ -694,33 +694,17 @@ class CompletePixieScopeApp(QMainWindow):
         try:
             channel = getattr(event, "channel", 0)
             trace = getattr(event, "trace", None)
-
-            # if not hasattr(self, "_trace_debug_counter"):
-            #     self._trace_debug_counter = 0
-
-            # self._trace_debug_counter += 1
-
-            # if self._trace_debug_counter % 100 == 0:
-            #     if (
-            #         hasattr(self, "binary_loader")
-            #         and self.binary_loader.is_using_binary_data()
-            #     ):
-            #         data_source = "BINARY FILE"
-            #     elif self.dummy_mode:
-            #         data_source = "DUMMY DATA"
-            #     else:
-            #         data_source = "REAL HARDWARE"
-            #     print(
-            #         f"Traces Mode ({data_source}): Processed {self._trace_debug_counter} traces, latest: Ch{channel} trace_len={len(trace) if trace is not None and len(trace) > 0 else 0}"
-            #     )
+            timestamp = getattr(event, "timestamp", None)  # Add this line
 
             if channel in self.channel_numbers and trace is not None and len(trace) > 0:
                 # For coincidence analysis, feed event + trace to plotter
                 if hasattr(self.spectrum_tab, "add_event_with_trace"):
                     self.spectrum_tab.add_event_with_trace(event, trace)
-                # Fallback to regular trace processing
+                # Fallback to regular trace processing with timestamp
                 elif hasattr(self.spectrum_tab, "add_trace"):
-                    self.spectrum_tab.add_trace(channel, trace)
+                    self.spectrum_tab.add_trace(
+                        channel, trace, timestamp
+                    )  # Add timestamp parameter
                 elif hasattr(self.spectrum_tab, "trace_data"):
                     if channel not in self.spectrum_tab.trace_data:
                         self.spectrum_tab.trace_data[channel] = deque(maxlen=100)

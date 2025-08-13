@@ -235,6 +235,11 @@ class TracesPlotter(QWidget):
         self.replay_widget = None
         self.replay_mode = False
 
+        # Time alignment settings
+        self.time_alignment_mode = "none"
+        self.alignment_reference_channel = 0
+        self.trace_timestamps = {ch: deque(maxlen=1000) for ch in self.channels}
+
         self.init_ui()
 
         # Update timer
@@ -264,46 +269,67 @@ class TracesPlotter(QWidget):
         layout = QVBoxLayout(tab)
 
         controls_group = QGroupBox("Display Controls")
-        controls_group.setMaximumHeight(100)
-        controls_layout = QHBoxLayout()
+        controls_group.setMaximumHeight(120)
+        controls_layout = (
+            QGridLayout()
+        )  # Changed to QGridLayout for better organization
 
-        # Max traces
-        controls_layout.addWidget(QLabel("Max Traces:"))
+        # Row 1: Basic controls
+        controls_layout.addWidget(QLabel("Max Traces:"), 0, 0)
         self.max_traces_spin = QSpinBox()
         self.max_traces_spin.setRange(1, 100)
         self.max_traces_spin.setValue(self.max_traces_display)
         self.max_traces_spin.valueChanged.connect(self.update_max_traces)
-        controls_layout.addWidget(self.max_traces_spin)
+        controls_layout.addWidget(self.max_traces_spin, 0, 1)
 
-        # Threshold
-        controls_layout.addWidget(QLabel("Threshold:"))
+        controls_layout.addWidget(QLabel("Threshold:"), 0, 2)
         self.threshold_spin = QDoubleSpinBox()
         self.threshold_spin.setRange(0.0, 2.0)
         self.threshold_spin.setValue(self.amplitude_threshold)
         self.threshold_spin.setSingleStep(0.01)
         self.threshold_spin.valueChanged.connect(self.update_threshold)
-        controls_layout.addWidget(self.threshold_spin)
+        controls_layout.addWidget(self.threshold_spin, 0, 3)
 
-        # Auto scale
+        # Row 2: Time alignment controls
+        controls_layout.addWidget(QLabel("Time Alignment:"), 1, 0)
+        self.time_alignment_combo = QComboBox()
+        self.time_alignment_combo.addItems(["No Alignment", "Channel Aligned"])
+        self.time_alignment_combo.currentTextChanged.connect(
+            self.update_time_alignment_mode
+        )
+        controls_layout.addWidget(self.time_alignment_combo, 1, 1)
+
+        controls_layout.addWidget(QLabel("Ref Channel:"), 1, 2)
+        self.alignment_ref_combo = QComboBox()
+        for ch in self.channels:
+            self.alignment_ref_combo.addItem(f"Ch {ch}")
+        self.alignment_ref_combo.setCurrentIndex(0)
+        self.alignment_ref_combo.currentIndexChanged.connect(
+            self.update_alignment_reference
+        )
+        self.alignment_ref_combo.setEnabled(
+            False
+        )  # Disabled until channel aligned mode is selected
+        controls_layout.addWidget(self.alignment_ref_combo, 1, 3)
+
+        # Row 3: Other controls
         self.auto_scale_cb = QCheckBox("Auto Scale")
         self.auto_scale_cb.setChecked(True)
         self.auto_scale_cb.toggled.connect(self.toggle_auto_scale)
-        controls_layout.addWidget(self.auto_scale_cb)
+        controls_layout.addWidget(self.auto_scale_cb, 2, 0)
 
-        # Simple coincidence mode toggle
         self.simple_coincidence_cb = QCheckBox("Coincidence Mode")
         self.simple_coincidence_cb.toggled.connect(self.toggle_simple_coincidence)
-        controls_layout.addWidget(self.simple_coincidence_cb)
+        controls_layout.addWidget(self.simple_coincidence_cb, 2, 1)
 
-        # Clear button
         self.clear_btn = QPushButton("Clear")
         self.clear_btn.clicked.connect(self.clear_data)
-        controls_layout.addWidget(self.clear_btn)
+        controls_layout.addWidget(self.clear_btn, 2, 2)
 
-        controls_layout.addStretch()
         controls_group.setLayout(controls_layout)
         layout.addWidget(controls_group)
 
+        # Rest of the method remains the same...
         # Plot area
         self.raw_plot_widget = pg.PlotWidget()
         self.raw_plot_widget.setLabel("left", "Amplitude (V)")
@@ -327,6 +353,61 @@ class TracesPlotter(QWidget):
             )
 
         return tab
+
+    def update_time_alignment_mode(self, mode_text):
+        if mode_text == "No Alignment":
+            self.time_alignment_mode = "none"
+            self.alignment_ref_combo.setEnabled(False)
+            self.raw_plot_widget.setTitle("PIXIE-16 Raw Traces - No Time Alignment")
+        elif mode_text == "Channel Aligned":
+            self.time_alignment_mode = "channel_aligned"
+            self.alignment_ref_combo.setEnabled(True)
+            ref_ch = self.channels[self.alignment_ref_combo.currentIndex()]
+            self.raw_plot_widget.setTitle(
+                f"PIXIE-16 Raw Traces - Aligned to Ch{ref_ch}"
+            )
+
+    def update_alignment_reference(self):
+        self.alignment_reference_channel = self.channels[
+            self.alignment_ref_combo.currentIndex()
+        ]
+        if self.time_alignment_mode == "channel_aligned":
+            self.raw_plot_widget.setTitle(
+                f"PIXIE-16 Raw Traces - Aligned to Ch{self.alignment_reference_channel}"
+            )
+
+    def calculate_aligned_time_axis(self, trace_length, channel, event_timestamp=None):
+        if self.time_alignment_mode == "none":
+            # Random offset for non-coincidence mode
+            if not self.coincidence_mode:
+                random_offset = np.random.uniform(-500, 500)  # ±500ns random offset
+                return np.arange(trace_length) * self.sampling_period_ns + random_offset
+            else:
+                return np.arange(trace_length) * self.sampling_period_ns
+
+        elif (
+            self.time_alignment_mode == "channel_aligned"
+            and event_timestamp is not None
+        ):
+            # Get reference timestamp for alignment
+            ref_timestamp = self.get_reference_timestamp()
+            if ref_timestamp is not None:
+                # Calculate time difference in ns (assuming 10ns timestamp units)
+                time_offset = (event_timestamp - ref_timestamp) * 10.0
+                return np.arange(trace_length) * self.sampling_period_ns + time_offset
+            else:
+                # No reference yet, use default
+                return np.arange(trace_length) * self.sampling_period_ns
+
+        else:
+            # Fallback to default
+            return np.arange(trace_length) * self.sampling_period_ns
+
+    def get_reference_timestamp(self):
+        ref_ch = self.alignment_reference_channel
+        if ref_ch in self.trace_timestamps and len(self.trace_timestamps[ref_ch]) > 0:
+            return self.trace_timestamps[ref_ch][-1]
+        return None
 
     def create_hardware_validation_tab(self):
         tab = QWidget()
@@ -1056,8 +1137,11 @@ class TracesPlotter(QWidget):
             QMessageBox.critical(self, "Export Failed", f"Failed to export data: {e}")
 
     def add_event_with_trace(self, event, trace_data):
+        # Extract timestamp from event
+        event_timestamp = getattr(event, "timestamp", None)
+
         if not self.coincidence_mode:
-            self.add_trace(event.channel, trace_data)
+            self.add_trace(event.channel, trace_data, event_timestamp)
             return
 
         self.event_buffer.append((event, trace_data))
@@ -1144,7 +1228,7 @@ class TracesPlotter(QWidget):
 
         self.timing_stats_text.setPlainText(stats_text)
 
-    def add_trace(self, channel, trace_data):
+    def add_trace(self, channel, trace_data, event_timestamp=None):
         try:
             if channel not in self.channels:
                 return
@@ -1154,6 +1238,10 @@ class TracesPlotter(QWidget):
 
             if len(trace_data) == 0:
                 return
+
+            # Store timestamp for alignment
+            if event_timestamp is not None:
+                self.trace_timestamps[channel].append(event_timestamp)
 
             # Apply amplitude threshold filter
             if len(trace_data) > 10:
@@ -1221,18 +1309,34 @@ class TracesPlotter(QWidget):
                     continue
 
                 traces = list(self.trace_data[channel])
+                timestamps = (
+                    list(self.trace_timestamps[channel])
+                    if channel in self.trace_timestamps
+                    else [None] * len(traces)
+                )
                 total_traces += len(traces)
                 display_traces = traces[-self.max_traces_display :]
+                display_timestamps = (
+                    timestamps[-self.max_traces_display :]
+                    if timestamps
+                    else [None] * len(display_traces)
+                )
 
                 if display_traces:
                     trace_length = len(display_traces[0])
-                    time_axis = self.calculate_real_time_axis(trace_length, channel)
 
                     combined_y = []
                     combined_x = []
 
-                    for i, trace in enumerate(display_traces):
+                    for i, (trace, timestamp) in enumerate(
+                        zip(display_traces, display_timestamps)
+                    ):
                         if len(trace) == trace_length:
+                            # Calculate time axis with alignment
+                            time_axis = self.calculate_aligned_time_axis(
+                                trace_length, channel, timestamp
+                            )
+
                             offset = i * 0.01
                             y_data = trace + offset
 
@@ -1248,7 +1352,10 @@ class TracesPlotter(QWidget):
             stats_text = f"Total Traces: {total_traces} | "
             if self.coincidence_mode:
                 stats_text += f"Coincidences: {len(self.coincidence_events)} | "
-            stats_text += f"Displayed Channels: {len(self.display_channels)}"
+            stats_text += f"Displayed Channels: {len(self.display_channels)} | "
+            stats_text += f"Alignment: {self.time_alignment_mode}"
+            if self.time_alignment_mode == "channel_aligned":
+                stats_text += f" (Ref: Ch{self.alignment_reference_channel})"
 
             self.raw_stats_label.setText(stats_text)
 
