@@ -39,7 +39,7 @@ import pyqtgraph as pg
 
 import pixie16 as px
 
-from ..analyze import (
+from ...analyze import (
     compute_fast_trigger_validation,
     compute_energy_filter,
     convert_trace_to_FPGA,
