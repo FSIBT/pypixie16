@@ -1782,32 +1782,60 @@ class TracesPlotter(QWidget):
         trigger_info = self.trigger_points[channel]
         print(f"DEBUG: Trigger info for channel {channel}: {trigger_info}")
 
-        # Get trace amplitude range to position markers
+        # Get the latest trace to read signal values
         if channel in self.trace_data and len(self.trace_data[channel]) > 0:
             latest_trace = list(self.trace_data[channel])[-1]
-            trace_min = np.min(latest_trace)
-            trace_max = np.max(latest_trace)
-            marker_y = trace_min - (trace_max - trace_min) * 0.1  # Position below trace
         else:
-            marker_y = 0
+            print(f"DEBUG: No trace data for channel {channel}")
+            return
 
-        # Add trigger markers
+        # Add trigger markers - plot them ON the actual trace signals
         for trace_type, trigger_indices in trigger_info.items():
             if not trigger_indices:
                 continue
 
-            print(
-                f"DEBUG: Adding {len(trigger_indices)} {trace_type} markers at y={marker_y}"
-            )
+            print(f"DEBUG: Adding {len(trigger_indices)} {trace_type} markers")
 
+            # Get the signal data for this trace type
+            if trace_type == "raw":
+                signal_data = latest_trace
+            else:
+                signal_data = self.compute_hardware_traces(
+                    trace_type, latest_trace, channel
+                )
+                if signal_data is None or len(signal_data) == 0:
+                    continue
+
+                # Apply the same scaling that was used in the plot
+                if trace_type == "fast_trigger":
+                    raw_amplitude = np.max(latest_trace) - np.min(latest_trace)
+                    if np.max(signal_data) > 0:
+                        scale_factor = raw_amplitude / (3 * np.max(signal_data))
+                        signal_data = signal_data * scale_factor
+                elif trace_type == "cfd":
+                    baseline = np.mean(latest_trace[:100])
+                    signal_data = signal_data + baseline
+                elif trace_type == "energy_filter":
+                    raw_amplitude = np.max(latest_trace) - np.min(latest_trace)
+                    if np.max(signal_data) > np.min(signal_data):
+                        signal_amplitude = np.max(signal_data) - np.min(signal_data)
+                        scale_factor = (2 * raw_amplitude) / signal_amplitude
+                        signal_data = (
+                            signal_data - np.min(signal_data)
+                        ) * scale_factor + np.min(latest_trace)
+
+            # Plot markers at the actual signal amplitude
             for trigger_idx in trigger_indices:
-                if 0 <= trigger_idx < len(time_axis):
+                if 0 <= trigger_idx < len(time_axis) and 0 <= trigger_idx < len(
+                    signal_data
+                ):
                     trigger_time = time_axis[trigger_idx]
+                    trigger_amplitude = signal_data[trigger_idx]
 
                     if trace_type == "fast_trigger":
                         plot_widget.plot(
                             [trigger_time],
-                            [marker_y],
+                            [trigger_amplitude],
                             pen=None,
                             symbol="o",
                             symbolBrush="red",
@@ -1818,7 +1846,7 @@ class TracesPlotter(QWidget):
                     elif trace_type == "energy_filter":
                         plot_widget.plot(
                             [trigger_time],
-                            [marker_y],
+                            [trigger_amplitude],
                             pen=None,
                             symbol="t",
                             symbolBrush="blue",
@@ -1829,7 +1857,7 @@ class TracesPlotter(QWidget):
                     elif trace_type == "cfd":
                         plot_widget.plot(
                             [trigger_time],
-                            [marker_y],
+                            [trigger_amplitude],
                             pen=None,
                             symbol="s",
                             symbolBrush="magenta",
@@ -1843,19 +1871,37 @@ class TracesPlotter(QWidget):
         if "energy_filter" in peak_info:
             peak_samples = peak_info["energy_filter"]
             print(f"DEBUG: Adding {len(peak_samples)} peak sample markers")
-            for peak_idx in peak_samples:
-                if 0 <= peak_idx < len(time_axis):
-                    peak_time = time_axis[peak_idx]
-                    plot_widget.plot(
-                        [peak_time],
-                        [marker_y],
-                        pen=None,
-                        symbol="d",
-                        symbolBrush="cyan",
-                        symbolPen=pg.mkPen(color="black", width=2),
-                        symbolSize=12,
-                        name="Peak Sample",
-                    )
+
+            # Get energy filter signal for peak sample positioning
+            energy_signal = self.compute_hardware_traces(
+                "energy_filter", latest_trace, channel
+            )
+            if energy_signal is not None and len(energy_signal) > 0:
+                # Apply same scaling as energy filter
+                raw_amplitude = np.max(latest_trace) - np.min(latest_trace)
+                if np.max(energy_signal) > np.min(energy_signal):
+                    signal_amplitude = np.max(energy_signal) - np.min(energy_signal)
+                    scale_factor = (2 * raw_amplitude) / signal_amplitude
+                    energy_signal = (
+                        energy_signal - np.min(energy_signal)
+                    ) * scale_factor + np.min(latest_trace)
+
+                for peak_idx in peak_samples:
+                    if 0 <= peak_idx < len(time_axis) and 0 <= peak_idx < len(
+                        energy_signal
+                    ):
+                        peak_time = time_axis[peak_idx]
+                        peak_amplitude = energy_signal[peak_idx]
+                        plot_widget.plot(
+                            [peak_time],
+                            [peak_amplitude],
+                            pen=None,
+                            symbol="d",
+                            symbolBrush="cyan",
+                            symbolPen=pg.mkPen(color="black", width=2),
+                            symbolSize=12,
+                            name="Peak Sample",
+                        )
 
     def fallback_simulation(self, trace_type, trace):
         if trace_type == "fast_trigger":
