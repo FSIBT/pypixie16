@@ -8,7 +8,7 @@ import os
 from pathlib import Path
 
 import numpy as np
-from PyQt6.QtCore import QThread, QTimer, pyqtSignal
+from PyQt6.QtCore import QThread, pyqtSignal
 from PyQt6.QtWidgets import (
     QFileDialog,
     QGroupBox,

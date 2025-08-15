@@ -1,9 +1,6 @@
 import sys
 import time
-import threading
 import signal
-from pathlib import Path
-import json
 import traceback
 
 
@@ -19,7 +16,6 @@ from PyQt6.QtWidgets import (
     QPushButton,
     QLabel,
     QComboBox,
-    QCheckBox,
     QSizePolicy,
 )
 from PyQt6.QtGui import QIcon

@@ -30,11 +30,8 @@ from PyQt6.QtWidgets import (
     QTableWidgetItem,
     QProgressBar,
     QMessageBox,
-    QSlider,
-    QFrame,
-    QSplitter,
 )
-from PyQt6.QtCore import QTimer, Qt, QThread, pyqtSignal
+from PyQt6.QtCore import QTimer, QThread, pyqtSignal
 import pyqtgraph as pg
 
 import pixie16 as px
