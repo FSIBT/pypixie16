@@ -351,6 +351,76 @@ class TracesPlotter(QWidget):
 
         return tab
 
+    def calculate_main_trigger_point(self, raw_trace, channel):
+        """Calculate the main trigger point - leading edge detection for nuclear spectroscopy"""
+        try:
+            if raw_trace is None or len(raw_trace) == 0:
+                return []
+
+            raw_trace = np.asarray(raw_trace)
+            if len(raw_trace) < 20:  # Need enough samples for analysis
+                return []
+
+            # Get baseline from first 20% of trace (more conservative for nuclear pulses)
+            baseline_samples = max(20, int(len(raw_trace) * 0.2))
+            baseline_samples = min(baseline_samples, len(raw_trace) // 3)
+
+            baseline = np.mean(raw_trace[:baseline_samples])
+            baseline_noise = np.std(raw_trace[:baseline_samples])
+
+            # Leading edge trigger: baseline + small multiple of noise (typically 2-5 sigma)
+            # This catches the pulse as soon as it starts rising above noise
+            leading_edge_threshold = baseline + (
+                3.0 * baseline_noise
+            )  # 3-sigma above baseline
+
+            # Also calculate derivative to find steepest rise
+            if len(raw_trace) > 5:
+                # Simple derivative (difference between adjacent points)
+                derivative = np.diff(raw_trace)
+                # Smooth the derivative to reduce noise
+                if len(derivative) > 3:
+                    derivative = np.convolve(derivative, [0.25, 0.5, 0.25], mode="same")
+
+            # Find first point where trace crosses leading edge threshold (rising edge)
+            trigger_indices = []
+
+            # Start looking after baseline region
+            search_start = baseline_samples
+
+            for i in range(search_start, len(raw_trace) - 1):
+                # Check for threshold crossing
+                if (
+                    raw_trace[i] < leading_edge_threshold
+                    and raw_trace[i + 1] >= leading_edge_threshold
+                ):
+                    # Additional validation: check if this is a real rising edge
+                    # Look at the next few points to confirm it's going up
+                    if i + 5 < len(raw_trace):
+                        next_few = raw_trace[i : i + 5]
+                        if (
+                            np.mean(next_few) > leading_edge_threshold
+                        ):  # Confirm it stays up
+                            trigger_indices.append(
+                                i + 1
+                            )  # Return the point that crossed
+                            break  # Only take first trigger
+                    else:
+                        trigger_indices.append(i + 1)
+                        break
+
+            print(
+                f"DEBUG: Leading edge trigger for Ch{channel}: baseline={baseline:.1f}, "
+                f"noise={baseline_noise:.1f}, threshold={leading_edge_threshold:.1f}, "
+                f"trigger_points={trigger_indices}"
+            )
+
+            return trigger_indices
+
+        except Exception as e:
+            print(f"Error calculating leading edge trigger for channel {channel}: {e}")
+            return []
+
     def update_time_alignment_mode(self, mode_text):
         if mode_text == "No Alignment":
             self.time_alignment_mode = "none"
@@ -374,15 +444,7 @@ class TracesPlotter(QWidget):
             )
 
     def calculate_aligned_time_axis(self, trace_length, channel, event_timestamp=None):
-        if self.time_alignment_mode == "none":
-            # Random offset for non-coincidence mode
-            if not self.coincidence_mode:
-                random_offset = np.random.uniform(-500, 500)  # ±500ns random offset
-                return np.arange(trace_length) * self.sampling_period_ns + random_offset
-            else:
-                return np.arange(trace_length) * self.sampling_period_ns
-
-        elif (
+        if (
             self.time_alignment_mode == "channel_aligned"
             and event_timestamp is not None
         ):
@@ -1377,18 +1439,52 @@ class TracesPlotter(QWidget):
 
     def update_channel_validation_plot(self, channel, plot_widget, curves, label):
         try:
-            if channel in self.trigger_points:
+            # Clear trigger points for this channel before computing new ones
+            if channel not in self.trigger_points:
                 self.trigger_points[channel] = {}
-            if channel in self.peak_sample_points:
+            else:
+                self.trigger_points[channel] = {}
+
+            if channel not in self.peak_sample_points:
                 self.peak_sample_points[channel] = {}
+            else:
+                self.peak_sample_points[channel] = {}
+
             if channel not in self.trace_data or len(self.trace_data[channel]) == 0:
                 for trace_type, curve in curves.items():
                     curve.setData([], [])
                 return
 
-            # Get latest trace
-            latest_trace = list(self.trace_data[channel])[-1]
+            # Get latest trace with safety checks
+            traces_list = list(self.trace_data[channel])
+            if not traces_list:
+                for trace_type, curve in curves.items():
+                    curve.setData([], [])
+                return
+
+            latest_trace = traces_list[-1]
+            if latest_trace is None or len(latest_trace) == 0:
+                print(f"DEBUG: Empty or None trace for channel {channel}")
+                for trace_type, curve in curves.items():
+                    curve.setData([], [])
+                return
+
             time_axis = self.calculate_real_time_axis(len(latest_trace), channel)
+
+            try:
+                main_trigger_points = self.calculate_main_trigger_point(
+                    latest_trace, channel
+                )
+                if main_trigger_points:
+                    self._store_trigger_info(
+                        channel, main_trigger_points, "main_trigger"
+                    )
+                else:
+                    # Store empty list so we know we tried
+                    self._store_trigger_info(channel, [], "main_trigger")
+            except Exception as e:
+                print(f"Error calculating main trigger for channel {channel}: {e}")
+                self._store_trigger_info(channel, [], "main_trigger")
 
             # Clear plot
             plot_widget.clear()
@@ -1400,73 +1496,111 @@ class TracesPlotter(QWidget):
                 if not enabled:
                     continue
 
-                if trace_type == "raw":
-                    signal = latest_trace
-                    color = "#1f77b4"  # Blue
-                    name = "Raw Trace"
+                try:
+                    if trace_type == "raw":
+                        signal = latest_trace
+                        color = "#1f77b4"  # Blue
+                        name = "Raw Trace"
 
-                else:
-                    signal = self.compute_hardware_traces(
-                        trace_type, latest_trace, channel
-                    )
-                    if signal is None or len(signal) == 0:
-                        continue
-
-                    trace_colors = {
-                        "fast_trigger": "#ff7f0e",  # Orange
-                        "energy_filter": "#2ca02c",  # Green
-                        "cfd": "#d62728",  # Red
-                    }
-                    color = trace_colors.get(trace_type, "#333333")
-                    name = trace_type.replace("_", " ").title()
-
-                    # Apply amplitude scaling for visibility
-                    if trace_type == "fast_trigger":
-                        # Scale fast trigger to be 1/3 of raw trace amplitude
-                        raw_amplitude = np.max(latest_trace) - np.min(latest_trace)
-                        if np.max(signal) > 0:
-                            scale_factor = raw_amplitude / (3 * np.max(signal))
-                            signal = signal * scale_factor
-
-                    elif trace_type == "cfd":
-                        # CFD is bipolar - offset to baseline for visibility
-                        baseline = np.mean(latest_trace[:100])
-                        signal = signal + baseline
-
-                    elif trace_type == "energy_filter":
-                        # Scale energy filter to be 2x raw amplitude for visibility
-                        raw_amplitude = np.max(latest_trace) - np.min(latest_trace)
-                        if np.max(signal) > np.min(signal):
-                            signal_amplitude = np.max(signal) - np.min(signal)
-                            scale_factor = (2 * raw_amplitude) / signal_amplitude
-                            signal = (signal - np.min(signal)) * scale_factor + np.min(
-                                latest_trace
+                    else:
+                        signal = self.compute_hardware_traces(
+                            trace_type, latest_trace, channel
+                        )
+                        if signal is None or len(signal) == 0:
+                            print(
+                                f"DEBUG: No {trace_type} signal for channel {channel}"
                             )
+                            continue
 
-                # Plot the trace
-                plotted_traces[trace_type] = plot_widget.plot(
-                    time_axis, signal, pen=pg.mkPen(color=color, width=2), name=name
-                )
+                        trace_colors = {
+                            "fast_trigger": "#ff7f0e",  # Orange
+                            "energy_filter": "#2ca02c",  # Green
+                            "cfd": "#d62728",  # Red
+                        }
+                        color = trace_colors.get(trace_type, "#333333")
+                        name = trace_type.replace("_", " ").title()
 
-            # Add trigger markers
-            self._add_trigger_markers(plot_widget, channel, time_axis)
+                        # Apply amplitude scaling for visibility
+                        if trace_type == "fast_trigger":
+                            raw_amplitude = np.max(latest_trace) - np.min(latest_trace)
+                            if np.max(signal) > 0:
+                                scale_factor = raw_amplitude / (3 * np.max(signal))
+                                signal = signal * scale_factor
 
-            # Add threshold lines
-            self._add_threshold_lines(plot_widget, latest_trace)
+                        elif trace_type == "cfd":
+                            baseline = np.mean(latest_trace[:100])
+                            signal = signal + baseline
+
+                        elif trace_type == "energy_filter":
+                            raw_amplitude = np.max(latest_trace) - np.min(latest_trace)
+                            if np.max(signal) > np.min(signal):
+                                signal_amplitude = np.max(signal) - np.min(signal)
+                                scale_factor = (2 * raw_amplitude) / signal_amplitude
+                                signal = (
+                                    signal - np.min(signal)
+                                ) * scale_factor + np.min(latest_trace)
+
+                    # Plot the trace
+                    plotted_traces[trace_type] = plot_widget.plot(
+                        time_axis, signal, pen=pg.mkPen(color=color, width=2), name=name
+                    )
+
+                except Exception as e:
+                    print(f"Error plotting {trace_type} for channel {channel}: {e}")
+
+            try:
+                self._add_trigger_markers(plot_widget, channel, time_axis)
+            except Exception as e:
+                print(f"Error adding trigger markers for channel {channel}: {e}")
+
+            try:
+                self._add_threshold_lines(plot_widget, latest_trace)
+            except Exception as e:
+                print(f"Error adding threshold lines for channel {channel}: {e}")
 
             plot_widget.setTitle(f"{label} - Ch {channel}")
-            plot_widget.addLegend()
+
+            try:
+                plot_widget.addLegend()
+            except Exception as e:
+                print(f"Error adding legend for channel {channel}: {e}")
 
         except Exception as e:
-            print(f"Error updating {label} plot: {e}")
+            print(f"CRITICAL ERROR updating {label} plot for channel {channel}: {e}")
+            try:
+                plot_widget.clear()
+                plot_widget.setTitle(f"{label} - Ch {channel} (ERROR)")
+            except:
+                pass
 
     def _add_threshold_lines(self, plot_widget, raw_trace):
         try:
-            # Get baseline from first 10% of trace
-            baseline_samples = int(len(raw_trace) * 0.1)
-            if baseline_samples < 10:
-                baseline_samples = min(10, len(raw_trace))
+            if raw_trace is None or len(raw_trace) == 0:
+                print("DEBUG: Cannot add threshold lines - no trace data")
+                return
+
+            raw_trace = np.asarray(raw_trace)
+
+            # Get baseline from first 20% of trace (consistent with leading edge calculation)
+            baseline_samples = max(20, int(len(raw_trace) * 0.2))
+            baseline_samples = min(baseline_samples, len(raw_trace) // 3)
+
+            if baseline_samples >= len(raw_trace):
+                baseline_samples = min(10, len(raw_trace) - 1)
+
             baseline = np.mean(raw_trace[:baseline_samples])
+            baseline_noise = np.std(raw_trace[:baseline_samples])
+
+            # Leading edge threshold line (green dotted line) - matches main trigger calculation
+            leading_edge_threshold = baseline + (3.0 * baseline_noise)
+            leading_edge_line = pg.InfiniteLine(
+                pos=leading_edge_threshold,
+                angle=0,
+                pen=pg.mkPen(
+                    color="darkgreen", style=pg.QtCore.Qt.PenStyle.DotLine, width=2
+                ),
+            )
+            plot_widget.addItem(leading_edge_line)
 
             # Fast trigger threshold (orange dashed line)
             fast_threshold = self.hardware_params["fast_threshold"]
@@ -1491,7 +1625,8 @@ class TracesPlotter(QWidget):
             plot_widget.addItem(cfd_threshold_line)
 
             print(
-                f"DEBUG: Added threshold lines - Fast: {baseline + fast_threshold}, CFD: {baseline + cfd_threshold}"
+                f"DEBUG: Added threshold lines - Leading Edge: {leading_edge_threshold:.1f}, "
+                f"Fast: {baseline + fast_threshold:.1f}, CFD: {baseline + cfd_threshold:.1f}"
             )
 
         except Exception as e:
@@ -1605,91 +1740,76 @@ class TracesPlotter(QWidget):
                         energy_trace = energy_result["energy_traces"][0]["result"]
                         trigger_pos = energy_result["energy_traces"][0]["trigger_pos"]
 
-                        slow_filter_range = 2 ** self.hardware_params["energy_R"]  # = 2
-                        samples_per_energy_cycle = (
-                            slow_filter_range * 5
-                        )  # = 10 raw samples
+                        slow_filter_range = 2 ** self.hardware_params["energy_R"]
+                        samples_per_energy_cycle = slow_filter_range * 5
 
                         # Expand energy trace to raw sample timing
                         energy_expanded = np.repeat(
                             energy_trace, samples_per_energy_cycle
                         )
 
-                        # Calculate proper time alignment offset
+                        # Calculate proper trigger alignment
                         fast_trigger_indices = fast_result["trigger_indices"]
                         if (
                             len(fast_trigger_indices) > 0
                             and len(fast_trigger_indices[0]) > 0
                         ):
-                            # Convert FPGA trigger index to raw sample index
+                            # Fast trigger position in raw samples
                             fast_trigger_raw_pos = fast_trigger_indices[0][0] * 5
 
                             # Energy trigger position in raw samples
-                            energy_trigger_raw_pos = (
-                                trigger_pos * samples_per_energy_cycle
-                                if trigger_pos
-                                else 0
-                            )
-
-                            # Calculate alignment offset
-                            alignment_offset = (
-                                fast_trigger_raw_pos - energy_trigger_raw_pos
-                            )
-
-                            print(f"DEBUG Energy Alignment:")
-                            print(f"  Fast trigger raw pos: {fast_trigger_raw_pos}")
-                            print(f"  Energy trigger raw pos: {energy_trigger_raw_pos}")
-                            print(f"  Alignment offset: {alignment_offset}")
-
-                            # Apply alignment by padding at beginning
-                            if alignment_offset > 0:
-                                energy_aligned = np.concatenate(
-                                    [np.zeros(int(alignment_offset)), energy_expanded]
+                            if trigger_pos is not None:
+                                energy_trigger_raw_pos = (
+                                    trigger_pos * samples_per_energy_cycle
                                 )
-                            elif alignment_offset < 0:
-                                trim_amount = int(-alignment_offset)
-                                energy_aligned = (
-                                    energy_expanded[trim_amount:]
-                                    if trim_amount < len(energy_expanded)
-                                    else energy_expanded
+                                alignment_offset = (
+                                    fast_trigger_raw_pos - energy_trigger_raw_pos
                                 )
-                            else:
-                                energy_aligned = energy_expanded
 
-                        else:
-                            energy_aligned = energy_expanded
-                            alignment_offset = 0
+                                # Apply alignment
+                                if alignment_offset > 0:
+                                    energy_aligned = np.concatenate(
+                                        [
+                                            np.zeros(int(alignment_offset)),
+                                            energy_expanded,
+                                        ]
+                                    )
+                                elif alignment_offset < 0:
+                                    trim_amount = int(-alignment_offset)
+                                    energy_aligned = (
+                                        energy_expanded[trim_amount:]
+                                        if trim_amount < len(energy_expanded)
+                                        else energy_expanded
+                                    )
+                                else:
+                                    energy_aligned = energy_expanded
 
-                        # Store corrected energy trigger points
-                        energy_trigger_points = []
-                        if trigger_pos is not None:
-                            corrected_trigger_pos = (
-                                trigger_pos * samples_per_energy_cycle
-                                + (alignment_offset if alignment_offset else 0)
-                            )
-                            if 0 <= corrected_trigger_pos < original_length:
-                                energy_trigger_points = [int(corrected_trigger_pos)]
+                                # Calculate trigger and peak sample points in raw sample coordinates
+                                energy_trigger_points = [
+                                    fast_trigger_raw_pos
+                                ]  # Use fast trigger position
 
-                        energy_trigger_points = []
-                        peak_sample_points = []
-
-                        if trigger_pos is not None:
-                            corrected_trigger_pos = (
-                                trigger_pos * samples_per_energy_cycle
-                                + (alignment_offset if alignment_offset else 0)
-                            )
-                            if 0 <= corrected_trigger_pos < original_length:
-                                energy_trigger_points = [int(corrected_trigger_pos)]
-
-                                # Calculate peak sample position (P samples after trigger)
-                                peak_sample_pos = corrected_trigger_pos + (
+                                # Peak sample is P energy cycles after the energy trigger
+                                peak_sample_raw_pos = fast_trigger_raw_pos + (
                                     self.hardware_params["energy_P"]
                                     * samples_per_energy_cycle
                                 )
-                                if 0 <= peak_sample_pos < original_length:
-                                    peak_sample_points = [int(peak_sample_pos)]
+                                peak_sample_points = (
+                                    [peak_sample_raw_pos]
+                                    if peak_sample_raw_pos < original_length
+                                    else []
+                                )
 
-                        # Store both trigger and peak sample info
+                            else:
+                                energy_aligned = energy_expanded
+                                energy_trigger_points = []
+                                peak_sample_points = []
+                        else:
+                            energy_aligned = energy_expanded
+                            energy_trigger_points = []
+                            peak_sample_points = []
+
+                        # Store trigger and peak sample info
                         self._store_trigger_info(
                             channel,
                             energy_trigger_points,
@@ -1701,30 +1821,6 @@ class TracesPlotter(QWidget):
                         energy_resized = self._resize_trace_to_match(
                             energy_aligned, original_length, "energy_filter"
                         )
-
-                        # Apply amplitude scaling for visibility
-                        if len(energy_resized) > 0 and np.max(energy_resized) > 0:
-                            raw_amplitude = np.max(raw_trace) - np.min(raw_trace)
-                            energy_amplitude = np.max(energy_resized) - np.min(
-                                energy_resized
-                            )
-
-                            if energy_amplitude > 0:
-                                # Scale energy to be 0.8x raw amplitude
-                                scale_factor = (raw_amplitude * 0.8) / energy_amplitude
-                                energy_baseline = np.min(energy_resized)
-                                raw_baseline = np.min(raw_trace)
-
-                                energy_scaled = (
-                                    energy_resized - energy_baseline
-                                ) * scale_factor + raw_baseline
-
-                                print(f"DEBUG Energy Scaling:")
-                                print(f"  Raw amplitude: {raw_amplitude}")
-                                print(f"  Energy amplitude: {energy_amplitude}")
-                                print(f"  Scale factor: {scale_factor}")
-
-                                return energy_scaled
 
                         return energy_resized
 
@@ -1748,6 +1844,7 @@ class TracesPlotter(QWidget):
     ):
         if channel not in self.trigger_points:
             self.trigger_points[channel] = {}
+        if channel not in self.peak_sample_points:
             self.peak_sample_points[channel] = {}
 
         # Clear existing trigger points for this trace type if requested
@@ -1800,15 +1897,50 @@ class TracesPlotter(QWidget):
         print(f"DEBUG: Trigger info for channel {channel}: {trigger_info}")
 
         # Get the latest trace to read signal values
-        if channel in self.trace_data and len(self.trace_data[channel]) > 0:
-            latest_trace = list(self.trace_data[channel])[-1]
-        else:
+        if channel not in self.trace_data or len(self.trace_data[channel]) == 0:
             print(f"DEBUG: No trace data for channel {channel}")
             return
 
-        # Add trigger markers - plot them ON the actual trace signals
+        traces_list = list(self.trace_data[channel])
+        if not traces_list:
+            print(f"DEBUG: Empty trace list for channel {channel}")
+            return
+
+        latest_trace = traces_list[-1]
+        if latest_trace is None or len(latest_trace) == 0:
+            print(f"DEBUG: Invalid latest trace for channel {channel}")
+            return
+
+        if len(time_axis) != len(latest_trace):
+            print(
+                f"WARNING: Time axis length ({len(time_axis)}) != trace length ({len(latest_trace)}) for channel {channel}"
+            )
+            # Recreate time axis to match trace length
+            time_axis = self.calculate_real_time_axis(len(latest_trace), channel)
+
+        # Add main trigger point first
+        if "main_trigger" in trigger_info and trigger_info["main_trigger"]:
+            main_trigger_points = trigger_info["main_trigger"]
+            for trigger_idx in main_trigger_points:
+                if 0 <= trigger_idx < len(time_axis) and 0 <= trigger_idx < len(
+                    latest_trace
+                ):
+                    trigger_time = time_axis[trigger_idx]
+                    trigger_amplitude = latest_trace[trigger_idx]
+                    plot_widget.plot(
+                        [trigger_time],
+                        [trigger_amplitude],
+                        pen=None,
+                        symbol="^",  # Triangle up for leading edge trigger
+                        symbolBrush="darkgreen",
+                        symbolPen=pg.mkPen(color="black", width=2),
+                        symbolSize=10,
+                        name="Leading Edge Trigger",
+                    )
+
+        # Add other trigger markers
         for trace_type, trigger_indices in trigger_info.items():
-            if not trigger_indices:
+            if not trigger_indices or trace_type == "main_trigger":
                 continue
 
             print(f"DEBUG: Adding {len(trigger_indices)} {trace_type} markers")
@@ -1883,42 +2015,51 @@ class TracesPlotter(QWidget):
                             name="CFD Zero Crossing",
                         )
 
-        # Add peak sample markers
+        # Add peak sample markers with proper positioning
         peak_info = self.peak_sample_points.get(channel, {})
         if "energy_filter" in peak_info:
             peak_samples = peak_info["energy_filter"]
             print(f"DEBUG: Adding {len(peak_samples)} peak sample markers")
 
-            # Get energy filter signal for peak sample positioning
-            energy_signal = self.compute_hardware_traces(
-                "energy_filter", latest_trace, channel
-            )
-            if energy_signal is not None and len(energy_signal) > 0:
-                # Apply same scaling as energy filter
-                raw_amplitude = np.max(latest_trace) - np.min(latest_trace)
-                if np.max(energy_signal) > np.min(energy_signal):
-                    signal_amplitude = np.max(energy_signal) - np.min(energy_signal)
-                    scale_factor = (2 * raw_amplitude) / signal_amplitude
-                    energy_signal = (
-                        energy_signal - np.min(energy_signal)
-                    ) * scale_factor + np.min(latest_trace)
+            for peak_idx in peak_samples:
+                if 0 <= peak_idx < len(time_axis) and 0 <= peak_idx < len(latest_trace):
+                    peak_time = time_axis[peak_idx]
 
-                for peak_idx in peak_samples:
-                    if 0 <= peak_idx < len(time_axis) and 0 <= peak_idx < len(
-                        energy_signal
-                    ):
-                        peak_time = time_axis[peak_idx]
+                    # Find the maximum value in the energy filter trace around this time
+                    energy_signal = self.compute_hardware_traces(
+                        "energy_filter", latest_trace, channel
+                    )
+                    if energy_signal is not None and len(energy_signal) > peak_idx:
+                        # Apply same scaling as energy filter
+                        raw_amplitude = np.max(latest_trace) - np.min(latest_trace)
+                        if np.max(energy_signal) > np.min(energy_signal):
+                            signal_amplitude = np.max(energy_signal) - np.min(
+                                energy_signal
+                            )
+                            scale_factor = (2 * raw_amplitude) / signal_amplitude
+                            energy_signal = (
+                                energy_signal - np.min(energy_signal)
+                            ) * scale_factor + np.min(latest_trace)
+
                         peak_amplitude = energy_signal[peak_idx]
-                        plot_widget.plot(
-                            [peak_time],
-                            [peak_amplitude],
-                            pen=None,
-                            symbol="d",
-                            symbolBrush="cyan",
-                            symbolPen=pg.mkPen(color="black", width=2),
-                            symbolSize=12,
-                            name="Peak Sample",
+                    else:
+                        # Fallback to raw trace amplitude
+                        peak_amplitude = (
+                            latest_trace[peak_idx]
+                            if peak_idx < len(latest_trace)
+                            else latest_trace[-1]
                         )
+
+                    plot_widget.plot(
+                        [peak_time],
+                        [peak_amplitude],
+                        pen=None,
+                        symbol="d",
+                        symbolBrush="cyan",
+                        symbolPen=pg.mkPen(color="black", width=2),
+                        symbolSize=12,
+                        name="Peak Sample",
+                    )
 
     def fallback_simulation(self, trace_type, trace):
         if trace_type == "fast_trigger":
