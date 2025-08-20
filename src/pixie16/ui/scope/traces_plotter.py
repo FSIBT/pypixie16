@@ -1377,6 +1377,10 @@ class TracesPlotter(QWidget):
 
     def update_channel_validation_plot(self, channel, plot_widget, curves, label):
         try:
+            if channel in self.trigger_points:
+                self.trigger_points[channel] = {}
+            if channel in self.peak_sample_points:
+                self.peak_sample_points[channel] = {}
             if channel not in self.trace_data or len(self.trace_data[channel]) == 0:
                 for trace_type, curve in curves.items():
                     curve.setData([], [])
@@ -1469,7 +1473,9 @@ class TracesPlotter(QWidget):
             fast_threshold_line = pg.InfiniteLine(
                 pos=baseline + fast_threshold,
                 angle=0,
-                pen=pg.mkPen(color="orange", style=2, width=2),  # style=2 is dashed
+                pen=pg.mkPen(
+                    color="orange", style=pg.QtCore.Qt.PenStyle.DashLine, width=2
+                ),
             )
             plot_widget.addItem(fast_threshold_line)
 
@@ -1478,7 +1484,9 @@ class TracesPlotter(QWidget):
             cfd_threshold_line = pg.InfiniteLine(
                 pos=baseline + cfd_threshold,
                 angle=0,
-                pen=pg.mkPen(color="red", style=3, width=2),  # style=3 is dash-dot
+                pen=pg.mkPen(
+                    color="red", style=pg.QtCore.Qt.PenStyle.DashDotLine, width=2
+                ),
             )
             plot_widget.addItem(cfd_threshold_line)
 
@@ -1524,7 +1532,9 @@ class TracesPlotter(QWidget):
                             raw_trigger_indices.append(raw_idx)
 
                 # Store trigger points
-                self._store_trigger_info(channel, raw_trigger_indices, "fast_trigger")
+                self._store_trigger_info(
+                    channel, raw_trigger_indices, "fast_trigger", clear_existing=True
+                )
 
                 return self._resize_trace_to_match(
                     fast_trigger, original_length, "fast_trigger"
@@ -1729,9 +1739,19 @@ class TracesPlotter(QWidget):
             return np.zeros(original_length)
 
     def _store_trigger_info(
-        self, channel, trigger_indices, trace_type, peak_samples=None
+        self,
+        channel,
+        trigger_indices,
+        trace_type,
+        peak_samples=None,
+        clear_existing=False,
     ):
         if channel not in self.trigger_points:
+            self.trigger_points[channel] = {}
+            self.peak_sample_points[channel] = {}
+
+        # Clear existing trigger points for this trace type if requested
+        if clear_existing:
             self.trigger_points[channel] = {}
             self.peak_sample_points[channel] = {}
 
