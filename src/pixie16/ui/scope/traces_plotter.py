@@ -233,7 +233,7 @@ class TracesPlotter(QWidget):
         self.replay_mode = False
 
         # Time alignment settings
-        self.time_alignment_mode = "none"
+        self.time_alignment_mode = "zero"
         self.alignment_reference_channel = 0
         self.trace_timestamps = {ch: deque(maxlen=1000) for ch in self.channels}
 
@@ -290,7 +290,7 @@ class TracesPlotter(QWidget):
         # Row 2: Time alignment controls
         controls_layout.addWidget(QLabel("Time Alignment:"), 1, 0)
         self.time_alignment_combo = QComboBox()
-        self.time_alignment_combo.addItems(["No Alignment", "Channel Aligned"])
+        self.time_alignment_combo.addItems(["Zero", "Channel", "None"])
         self.time_alignment_combo.currentTextChanged.connect(
             self.update_time_alignment_mode
         )
@@ -422,17 +422,21 @@ class TracesPlotter(QWidget):
             return []
 
     def update_time_alignment_mode(self, mode_text):
-        if mode_text == "No Alignment":
+        if mode_text == "Zero":
             self.time_alignment_mode = "none"
             self.alignment_ref_combo.setEnabled(False)
             self.raw_plot_widget.setTitle("PIXIE-16 Raw Traces - No Time Alignment")
-        elif mode_text == "Channel Aligned":
+        elif mode_text == "Channel":
             self.time_alignment_mode = "channel_aligned"
             self.alignment_ref_combo.setEnabled(True)
             ref_ch = self.channels[self.alignment_ref_combo.currentIndex()]
             self.raw_plot_widget.setTitle(
                 f"PIXIE-16 Raw Traces - Aligned to Ch{ref_ch}"
             )
+        elif mode_text == "Real Time Axis":
+            self.time_alignment_mode = "real_time_axis"
+            self.alignment_ref_combo.setEnabled(False)
+            self.raw_plot_widget.setTitle("PIXIE-16 Raw Traces - Real Time Axis")
 
     def update_alignment_reference(self):
         self.alignment_reference_channel = self.channels[
@@ -457,6 +461,10 @@ class TracesPlotter(QWidget):
             else:
                 # No reference yet, use default
                 return np.arange(trace_length) * self.sampling_period_ns
+
+        elif self.time_alignment_mode == "real_time_axis":
+            # TODO
+            return np.arange(trace_length) * self.sampling_period_ns
 
         else:
             # Fallback to default
@@ -500,66 +508,6 @@ class TracesPlotter(QWidget):
         )
         layout.addWidget(self.replay_widget)
         print(f"Successfully created replay widget: {self.replay_widget}")
-
-        # # Hardware parameter controls
-        # params_group = QGroupBox("Hardware Timing Parameters")
-        # params_layout = QGridLayout()
-
-        # # Fast Trigger Backplane Delay (0-255)
-        # params_layout.addWidget(QLabel("Fast Trigger Backplane Delay:"), 0, 0)
-        # self.ft_backplane_delay_slider = QSlider(Qt.Orientation.Horizontal)
-        # self.ft_backplane_delay_slider.setRange(0, 255)
-        # self.ft_backplane_delay_slider.setValue(100)
-        # self.ft_backplane_delay_slider.valueChanged.connect(
-        #     self.update_ft_backplane_delay
-        # )
-        # params_layout.addWidget(self.ft_backplane_delay_slider, 0, 1)
-        # self.ft_backplane_delay_label = QLabel("100")
-        # params_layout.addWidget(self.ft_backplane_delay_label, 0, 2)
-
-        # # Fast Trigger Backplane Length (1-511)
-        # params_layout.addWidget(QLabel("Fast Trigger Backplane Length:"), 1, 0)
-        # self.ft_backplane_length_slider = QSlider(Qt.Orientation.Horizontal)
-        # self.ft_backplane_length_slider.setRange(1, 511)
-        # self.ft_backplane_length_slider.setValue(100)
-        # self.ft_backplane_length_slider.valueChanged.connect(
-        #     self.update_ft_backplane_length
-        # )
-        # params_layout.addWidget(self.ft_backplane_length_slider, 1, 1)
-        # self.ft_backplane_length_label = QLabel("100")
-        # params_layout.addWidget(self.ft_backplane_length_label, 1, 2)
-
-        # # Channel Trigger Stretch (1-511)
-        # params_layout.addWidget(QLabel("Channel Trigger Stretch:"), 2, 0)
-        # self.channel_trigger_stretch_slider = QSlider(Qt.Orientation.Horizontal)
-        # self.channel_trigger_stretch_slider.setRange(1, 511)
-        # self.channel_trigger_stretch_slider.setValue(100)
-        # self.channel_trigger_stretch_slider.valueChanged.connect(
-        #     self.update_channel_trigger_stretch
-        # )
-        # params_layout.addWidget(self.channel_trigger_stretch_slider, 2, 1)
-        # self.channel_trigger_stretch_label = QLabel("100")
-        # params_layout.addWidget(self.channel_trigger_stretch_label, 2, 2)
-
-        # # External Delay Length (1-511)
-        # params_layout.addWidget(QLabel("External Delay Length:"), 3, 0)
-        # self.external_delay_length_slider = QSlider(Qt.Orientation.Horizontal)
-        # self.external_delay_length_slider.setRange(1, 511)
-        # self.external_delay_length_slider.setValue(100)
-        # self.external_delay_length_slider.valueChanged.connect(
-        #     self.update_external_delay_length
-        # )
-        # params_layout.addWidget(self.external_delay_length_slider, 3, 1)
-        # self.external_delay_length_label = QLabel("100")
-        # params_layout.addWidget(self.external_delay_length_label, 3, 2)
-
-        # # Apply to Hardware button
-        # self.apply_hw_btn = QPushButton("Apply to Hardware")
-        # self.apply_hw_btn.clicked.connect(self.apply_hardware_parameters)
-        # params_layout.addWidget(self.apply_hw_btn, 4, 0, 1, 3)
-
-        # params_group.setLayout(params_layout)
-        # layout.addWidget(params_group)
 
         # Trace type controls
         trace_types_group = QGroupBox("Trace Types")
@@ -1396,8 +1344,7 @@ class TracesPlotter(QWidget):
                                 trace_length, channel, timestamp
                             )
 
-                            offset = i * 0.01
-                            y_data = trace + offset
+                            y_data = trace
 
                             combined_x.extend(time_axis)
                             combined_x.append(np.nan)
