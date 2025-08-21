@@ -45,6 +45,7 @@ from ...analyze import (
     get_fast_trigger_index,
 )
 from .traces_replay import TraceReplayWidget, StoredTrace
+from .coincidence_logic_tab import CoincidenceLogicTab
 
 
 class WindowOptimizationWorker(QThread):
@@ -156,10 +157,6 @@ class TracesPlotter(QWidget):
         self.trace_data = {ch: deque(maxlen=1000) for ch in self.channels}
         self.last_traces = {ch: None for ch in self.channels}
 
-        # Event storage for coincidence analysis
-        self.event_buffer = deque(maxlen=50000)
-        self.coincidence_events = deque(maxlen=10000)
-
         # Display settings (simplified for Raw Traces)
         self.max_traces_display = 10
         self.amplitude_threshold = 0.1
@@ -180,15 +177,6 @@ class TracesPlotter(QWidget):
             "energy_filter": False,
             "cfd": False,
         }
-
-        # Coincidence analysis settings
-        self.coincidence_mode = False
-        self.center_channel = 9
-        self.coincidence_window_ns = 20.0
-        self.validation_window_optimization = False
-        self.optimization_active = False
-        self.optimization_results = {}
-        self.optimal_window_ns = 20.0
 
         # Channel colors
         self.colors = [
@@ -259,8 +247,12 @@ class TracesPlotter(QWidget):
         hardware_validation_tab = self.create_hardware_validation_tab()
         self.tab_widget.addTab(hardware_validation_tab, "Single Trace Validation")
 
-        coincidence_analysis_tab = self.create_coincidence_analysis_tab()
-        self.tab_widget.addTab(coincidence_analysis_tab, "Coincidence Logic")
+        self.coincidence_tab = CoincidenceLogicTab(
+            channels=self.channels, hardware_manager=self.hardware_manager, parent=self
+        )
+        self.coincidence_tab.set_hardware_params(self.hardware_params)
+        self.coincidence_tab.parameter_changed.connect(self.parameter_changed)
+        self.tab_widget.addTab(self.coincidence_tab, "Coincidence Logic")
 
         layout.addWidget(self.tab_widget)
         self.setLayout(layout)
@@ -644,165 +636,11 @@ class TracesPlotter(QWidget):
             )
             self.parameter_info_label.setText(params_text)
 
-    def create_coincidence_analysis_tab(self):
-        tab = QWidget()
-        layout = QVBoxLayout(tab)
-
-        # Coincidence settings
-        settings_group = QGroupBox("Coincidence Settings")
-        settings_layout = QGridLayout()
-
-        # Center channel selection
-        settings_layout.addWidget(QLabel("Center Channel:"), 0, 0)
-        self.center_channel_combo = QComboBox()
-        for ch in self.channels:
-            self.center_channel_combo.addItem(f"Ch {ch}")
-        self.center_channel_combo.setCurrentIndex(9 if 9 in self.channels else 0)
-        self.center_channel_combo.currentIndexChanged.connect(
-            self.update_center_channel
-        )
-        settings_layout.addWidget(self.center_channel_combo, 0, 1)
-
-        # Coincidence window
-        settings_layout.addWidget(QLabel("Time Window:"), 0, 2)
-        self.time_window_spin = QDoubleSpinBox()
-        self.time_window_spin.setRange(5.0, 1000.0)
-        self.time_window_spin.setValue(self.coincidence_window_ns)
-        self.time_window_spin.setSuffix(" ns")
-        self.time_window_spin.valueChanged.connect(self.update_coincidence_window)
-        settings_layout.addWidget(self.time_window_spin, 0, 3)
-
-        # Quick window presets
-        settings_layout.addWidget(QLabel("Quick Presets:"), 1, 0)
-        self.quick_window_combo = QComboBox()
-        self.quick_window_combo.addItems(
-            ["10ns", "20ns", "50ns", "100ns", "200ns", "500ns"]
-        )
-        self.quick_window_combo.setCurrentText("20ns")
-        self.quick_window_combo.currentTextChanged.connect(self.set_quick_window)
-        settings_layout.addWidget(self.quick_window_combo, 1, 1)
-
-        # Live validation mode
-        self.validation_cb = QCheckBox("Live Validation")
-        self.validation_cb.toggled.connect(self.toggle_validation_mode)
-        settings_layout.addWidget(self.validation_cb, 1, 2)
-
-        settings_group.setLayout(settings_layout)
-        layout.addWidget(settings_group)
-
-        # Window optimization controls
-        optimization_group = QGroupBox("Window Optimization")
-        optimization_layout = QGridLayout()
-
-        # Test range
-        optimization_layout.addWidget(QLabel("Test Range:"), 0, 0)
-        self.min_window_spin = QDoubleSpinBox()
-        self.min_window_spin.setRange(5.0, 1000.0)
-        self.min_window_spin.setValue(10.0)
-        self.min_window_spin.setSuffix(" ns")
-        optimization_layout.addWidget(self.min_window_spin, 0, 1)
-
-        optimization_layout.addWidget(QLabel("to"), 0, 2)
-        self.max_window_spin = QDoubleSpinBox()
-        self.max_window_spin.setRange(10.0, 2000.0)
-        self.max_window_spin.setValue(200.0)
-        self.max_window_spin.setSuffix(" ns")
-        optimization_layout.addWidget(self.max_window_spin, 0, 3)
-
-        optimization_layout.addWidget(QLabel("Step:"), 0, 4)
-        self.step_window_spin = QDoubleSpinBox()
-        self.step_window_spin.setRange(1.0, 50.0)
-        self.step_window_spin.setValue(10.0)
-        self.step_window_spin.setSuffix(" ns")
-        optimization_layout.addWidget(self.step_window_spin, 0, 5)
-
-        # Optimize button
-        self.optimize_btn = QPushButton("Optimize Window")
-        self.optimize_btn.clicked.connect(self.start_window_optimization)
-        optimization_layout.addWidget(self.optimize_btn, 1, 0, 1, 2)
-
-        # Progress bar
-        self.optimization_progress = QProgressBar()
-        optimization_layout.addWidget(self.optimization_progress, 1, 2, 1, 4)
-
-        optimization_group.setLayout(optimization_layout)
-        layout.addWidget(optimization_group)
-
-        # Results display in tabbed format
-        results_tabs = QTabWidget()
-
-        # Optimization results tab
-        opt_results_tab = QWidget()
-        opt_results_layout = QVBoxLayout(opt_results_tab)
-
-        self.optimization_plot = pg.PlotWidget()
-        self.optimization_plot.setLabel("left", "Efficiency (%)")
-        self.optimization_plot.setLabel("bottom", "Window Size (ns)")
-        self.optimization_plot.setTitle("Window Optimization Results")
-        self.optimization_plot.showGrid(True, True, alpha=0.3)
-        self.optimization_plot.setBackground("w")
-        opt_results_layout.addWidget(self.optimization_plot)
-
-        self.results_table = QTableWidget()
-        self.results_table.setColumnCount(5)
-        self.results_table.setHorizontalHeaderLabels(
-            [
-                "Window (ns)",
-                "Coincidences",
-                "Efficiency (%)",
-                "Mean Δt (ns)",
-                "Std Δt (ns)",
-            ]
-        )
-        self.results_table.setMaximumHeight(150)
-        opt_results_layout.addWidget(self.results_table)
-
-        results_tabs.addTab(opt_results_tab, "Optimization Results")
-
-        # Timing analysis tab
-        timing_tab = QWidget()
-        timing_layout = QVBoxLayout(timing_tab)
-
-        self.timing_plot = pg.PlotWidget()
-        self.timing_plot.setLabel("left", "Counts")
-        self.timing_plot.setLabel("bottom", "Time Difference (ns)")
-        self.timing_plot.setTitle("Coincidence Timing Distribution")
-        self.timing_plot.showGrid(True, True, alpha=0.3)
-        self.timing_plot.setBackground("w")
-        timing_layout.addWidget(self.timing_plot)
-
-        self.timing_stats_text = QTextEdit()
-        self.timing_stats_text.setMaximumHeight(100)
-        self.timing_stats_text.setReadOnly(True)
-        timing_layout.addWidget(self.timing_stats_text)
-
-        results_tabs.addTab(timing_tab, "Timing Analysis")
-
-        layout.addWidget(results_tabs)
-
-        # Status and control buttons
-        control_layout = QHBoxLayout()
-        self.optimization_status = QLabel("Ready to optimize")
-        control_layout.addWidget(self.optimization_status)
-
-        control_layout.addStretch()
-
-        self.save_settings_btn = QPushButton("Save Settings")
-        self.save_settings_btn.clicked.connect(self.save_coincidence_settings)
-        control_layout.addWidget(self.save_settings_btn)
-
-        self.export_timing_btn = QPushButton("Export Timing Data")
-        self.export_timing_btn.clicked.connect(self.export_timing_data)
-        control_layout.addWidget(self.export_timing_btn)
-
-        layout.addLayout(control_layout)
-
-        return tab
-
     # ==================== Raw Traces Tab Methods ====================
 
     def toggle_simple_coincidence(self, enabled):
-        self.coincidence_mode = enabled
+        if hasattr(self, "coincidence_tab"):
+            self.coincidence_tab.coincidence_mode = enabled
         if enabled:
             self.raw_plot_widget.setTitle("PIXIE-16 Raw Traces - Coincidence Mode")
         else:
@@ -896,382 +734,15 @@ class TracesPlotter(QWidget):
         if trace_type in checkbox_map:
             self.trace_types[trace_type] = checkbox_map[trace_type].isChecked()
 
-    def apply_hardware_parameters(self):
-        if not self.hardware_manager:
-            QMessageBox.warning(self, "No Hardware", "No hardware manager available")
-            return
-
-        if self.hardware_manager.dummy_mode:
-            params_summary = [
-                f"FastTrigBackplaneEna: {self.ft_backplane_delay_slider.value()}",  # MODULE
-                f"FASTTRIGBACKLEN: {self.ft_backplane_length_slider.value()}",  # CHANNEL
-                f"ChanTrigStretch: {self.channel_trigger_stretch_slider.value()}",  # CHANNEL
-                f"ExternDelayLen: {self.external_delay_length_slider.value()}",  # CHANNEL
-                f"Channels: {[self.selected_channel_a, self.selected_channel_b]}",
-            ]
-
-            print("DUMMY MODE: Would apply parameters:")
-            for param in params_summary:
-                print(f"  {param}")
-
-            QMessageBox.information(
-                self,
-                "Dummy Mode",
-                f"DUMMY MODE: Would apply parameters:\n" + "\n".join(params_summary),
-            )
-            return
-
-        try:
-            success_count = 0
-            failed_params = []
-            selected_channels = [self.selected_channel_a, self.selected_channel_b]
-
-            # Module-level parameter
-            try:
-                px.control.set_module_parameter(
-                    "FastTrigBackplaneEna", self.ft_backplane_delay_slider.value(), 0
-                )
-                success_count += 1
-                print(
-                    f"Applied FastTrigBackplaneEna = {self.ft_backplane_delay_slider.value()}"
-                )
-            except Exception as e:
-                failed_params.append(f"FastTrigBackplaneEna: {e}")
-                print(f"Failed FastTrigBackplaneEna: {e}")
-
-            # Channel-level parameters
-            channel_params = {
-                "FASTTRIGBACKLEN": self.ft_backplane_length_slider.value(),
-                "ChanTrigStretch": self.channel_trigger_stretch_slider.value(),
-                "ExternDelayLen": self.external_delay_length_slider.value(),
-            }
-
-            for param_name, value in channel_params.items():
-                param_applied = False
-                for channel in selected_channels:
-                    try:
-                        px.control.set_channel_parameter(param_name, value, 0, channel)
-                        if not param_applied:  # Only count once per parameter
-                            success_count += 1
-                            param_applied = True
-                        print(f"Applied {param_name} = {value} to Ch{channel}")
-                    except Exception as e:
-                        failed_params.append(f"{param_name} Ch{channel}: {e}")
-                        print(f"Failed {param_name} Ch{channel}: {e}")
-
-            try:
-                if hasattr(self.hardware_manager, "stop_acquisition"):
-                    self.hardware_manager.stop_acquisition()
-                time.sleep(0.2)
-                if hasattr(self.hardware_manager, "start_acquisition_mode"):
-                    self.hardware_manager.start_acquisition_mode("traces")
-                print("PIXIE data acquisition restarted")
-            except Exception as e:
-                print(f"Warning: Could not restart acquisition: {e}")
-
-            # Report results
-            if success_count > 0 and not failed_params:
-                QMessageBox.information(
-                    self,
-                    "Parameters Applied",
-                    f"HARDWARE: Successfully applied {success_count} parameter updates\nData acquisition restarted",
-                )
-            elif failed_params:
-                QMessageBox.warning(
-                    self,
-                    "Partial Failure",
-                    f"Applied {success_count} parameters successfully.\nSome parameters failed:\n"
-                    + "\n".join(failed_params),
-                )
-            else:
-                QMessageBox.warning(
-                    self, "Application Failed", "No parameters applied successfully"
-                )
-
-        except Exception as e:
-            print(f"Critical error in apply_hardware_parameters: {e}")
-            QMessageBox.critical(
-                self, "Critical Error", f"Hardware system error: {str(e)}"
-            )
-
-    def update_center_channel(self):
-        self.center_channel = self.channels[self.center_channel_combo.currentIndex()]
-
-    def update_coincidence_window(self):
-        self.coincidence_window_ns = self.time_window_spin.value()
-
-    def set_quick_window(self, window_text):
-        window_ns = float(window_text.replace("ns", ""))
-        self.time_window_spin.setValue(window_ns)
-        self.update_coincidence_window()
-
-    def toggle_validation_mode(self, enabled):
-        self.validation_window_optimization = enabled
-
-    def start_window_optimization(self):
-        if not self.coincidence_events:
-            QMessageBox.warning(
-                self, "No Data", "No coincidence events available for optimization."
-            )
-            return
-
-        if self.optimization_active:
-            QMessageBox.warning(
-                self, "Already Running", "Optimization already in progress."
-            )
-            return
-
-        # Get optimization parameters
-        min_window = self.min_window_spin.value()
-        max_window = self.max_window_spin.value()
-        step = self.step_window_spin.value()
-
-        if min_window >= max_window:
-            QMessageBox.warning(
-                self,
-                "Invalid Range",
-                "Minimum window must be less than maximum window.",
-            )
-            return
-
-        # Start optimization worker
-        self.optimization_active = True
-        self.optimize_btn.setEnabled(False)
-
-        self.optimization_worker = WindowOptimizationWorker(
-            list(self.coincidence_events),
-            (min_window, max_window, step),
-            self.center_channel,
-        )
-
-        self.optimization_worker.progress.connect(self.optimization_progress.setValue)
-        self.optimization_worker.status.connect(self.optimization_status.setText)
-        self.optimization_worker.result.connect(self.handle_optimization_results)
-        self.optimization_worker.finished.connect(self.optimization_finished)
-
-        self.optimization_worker.start()
-
-    def handle_optimization_results(self, results):
-        self.optimization_results = results
-
-        # Plot results
-        windows = list(results.keys())
-        coincidences = [results[w]["coincidences"] for w in windows]
-        efficiencies = [results[w]["efficiency"] * 100 for w in windows]
-
-        self.optimization_plot.clear()
-        self.optimization_plot.plot(
-            windows, efficiencies, pen="b", symbol="o", name="Efficiency"
-        )
-
-        # Find optimal window (maximum efficiency with reasonable count)
-        max_efficiency = max(efficiencies)
-        optimal_windows = [
-            w
-            for w in windows
-            if results[w]["efficiency"] * 100 >= max_efficiency * 0.95
-        ]
-        self.optimal_window_ns = min(optimal_windows)
-
-        # Update results table
-        self.update_results_table(results)
-
-        # Update status
-        self.optimization_status.setText(
-            f"Optimal window: {self.optimal_window_ns:.1f}ns "
-            f"(efficiency: {results[self.optimal_window_ns]['efficiency'] * 100:.1f}%)"
-        )
-
-    def update_results_table(self, results):
-        self.results_table.setRowCount(len(results))
-
-        for i, (window, data) in enumerate(results.items()):
-            self.results_table.setItem(i, 0, QTableWidgetItem(f"{window:.1f}"))
-            self.results_table.setItem(
-                i, 1, QTableWidgetItem(str(data["coincidences"]))
-            )
-            self.results_table.setItem(
-                i, 2, QTableWidgetItem(f"{data['efficiency'] * 100:.1f}")
-            )
-            self.results_table.setItem(i, 3, QTableWidgetItem(f"{data['mean_dt']:.1f}"))
-            self.results_table.setItem(i, 4, QTableWidgetItem(f"{data['std_dt']:.1f}"))
-
-    def optimization_finished(self):
-        self.optimization_active = False
-        self.optimize_btn.setEnabled(True)
-
-        # Ask user if they want to apply optimal window
-        if self.optimization_results:
-            reply = QMessageBox.question(
-                self,
-                "Apply Optimal Window?",
-                f"Apply optimal window of {self.optimal_window_ns:.1f}ns?",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            )
-
-            if reply == QMessageBox.StandardButton.Yes:
-                self.time_window_spin.setValue(self.optimal_window_ns)
-                self.update_coincidence_window()
-
-    def save_coincidence_settings(self):
-        settings = {
-            "center_channel": self.center_channel,
-            "coincidence_window_ns": self.coincidence_window_ns,
-            "optimal_window_ns": self.optimal_window_ns,
-            "optimization_results": self.optimization_results,
-            "timestamp": time.time(),
-        }
-
-        settings_file = Path("coincidence_settings.json")
-        try:
-            with open(settings_file, "w") as f:
-                json.dump(settings, f, indent=2)
-            QMessageBox.information(
-                self, "Settings Saved", f"Coincidence settings saved to {settings_file}"
-            )
-        except Exception as e:
-            QMessageBox.critical(self, "Save Failed", f"Failed to save settings: {e}")
-
-    def export_timing_data(self):
-        if not self.coincidence_events:
-            QMessageBox.warning(
-                self, "No Data", "No coincidence timing data to export."
-            )
-            return
-
-        # Collect all timing data
-        export_data = []
-        for i, coinc_event in enumerate(self.coincidence_events):
-            center_timestamp = coinc_event.center_event.timestamp
-            center_channel = coinc_event.center_event.channel
-            center_energy = getattr(coinc_event.center_event, "energy", 0)
-
-            for j, (event, time_diff) in enumerate(
-                zip(coinc_event.associated_events, coinc_event.time_differences)
-            ):
-                export_data.append(
-                    {
-                        "coincidence_id": i,
-                        "center_channel": center_channel,
-                        "center_timestamp": center_timestamp,
-                        "center_energy": center_energy,
-                        "associated_channel": event[0].channel,
-                        "associated_timestamp": event[0].timestamp,
-                        "associated_energy": getattr(event[0], "energy", 0),
-                        "time_difference_ns": time_diff,
-                        "abs_time_difference_ns": abs(time_diff),
-                    }
-                )
-
-        # Write to CSV
-        try:
-            filename = f"timing_data_{int(time.time())}.csv"
-
-            with open(filename, "w", newline="") as csvfile:
-                if export_data:
-                    fieldnames = export_data[0].keys()
-                    writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
-                    writer.writeheader()
-                    writer.writerows(export_data)
-
-            QMessageBox.information(
-                self, "Export Complete", f"Timing data exported to {filename}"
-            )
-
-        except Exception as e:
-            QMessageBox.critical(self, "Export Failed", f"Failed to export data: {e}")
-
     def add_event_with_trace(self, event, trace_data):
-        # Extract timestamp from event
         event_timestamp = getattr(event, "timestamp", None)
 
-        if not self.coincidence_mode:
-            self.add_trace(event.channel, trace_data, event_timestamp)
-            return
+        # Add to raw traces display
+        self.add_trace(event.channel, trace_data, event_timestamp)
 
-        self.event_buffer.append((event, trace_data))
-
-        # If this is a center channel event, look for coincidences
-        if event.channel == self.center_channel:
-            self._find_and_store_coincidence(event, trace_data)
-
-    def _find_and_store_coincidence(self, center_event, center_trace):
-        coincident_events_with_traces = []
-
-        # Look through recent events for coincidences
-        for buffered_event, buffered_trace in self.event_buffer:
-            if buffered_event == center_event:
-                continue  # Skip the center event itself
-
-            # Calculate time difference using timestamp format
-            time_diff_ns = abs(
-                self._calculate_pixie_time_difference(
-                    buffered_event.timestamp, center_event.timestamp
-                )
-            )
-
-            # Check if within coincidence window
-            if time_diff_ns <= self.coincidence_window_ns:
-                coincident_events_with_traces.append((buffered_event, buffered_trace))
-
-        # Create and store coincidence event
-        if coincident_events_with_traces:  # Only store if there are coincidences
-            coinc_event = CoincidenceEvent(
-                center_event, center_trace, coincident_events_with_traces
-            )
-            self.coincidence_events.append(coinc_event)
-
-            # Add traces to display (center + coincident)
-            self.add_trace(center_event.channel, center_trace)
-            for event, trace in coincident_events_with_traces:
-                self.add_trace(event.channel, trace)
-
-            # Update timing analysis
-            self.update_timing_analysis()
-
-    def _calculate_pixie_time_difference(self, timestamp1, timestamp2):
-        dt_ticks = timestamp1 - timestamp2
-        dt_ns = dt_ticks * 10.0  # ns
-        return dt_ns
-
-    def update_timing_analysis(self):
-        if not self.coincidence_events:
-            return
-
-        all_time_diffs = []
-        for coinc_event in self.coincidence_events:
-            all_time_diffs.extend(coinc_event.time_differences)
-
-        if not all_time_diffs:
-            return
-
-        # Create histogram
-        hist, bins = np.histogram(all_time_diffs, bins=100)
-        self.timing_plot.clear()
-        self.timing_plot.plot(
-            bins[:-1], hist, stepMode=True, fillLevel=0, brush=(0, 0, 255, 80)
-        )
-
-        # Update statistics
-        mean_dt = np.mean(all_time_diffs)
-        std_dt = np.std(all_time_diffs)
-        min_dt = np.min(all_time_diffs)
-        max_dt = np.max(all_time_diffs)
-
-        stats_text = f"""
-            Timing Statistics:
-            Total Coincidences: {len(self.coincidence_events)}
-            Total Time Differences: {len(all_time_diffs)}
-            Mean Δt: {mean_dt:.2f} ns
-            Std Δt: {std_dt:.2f} ns
-            Min Δt: {min_dt:.2f} ns
-            Max Δt: {max_dt:.2f} ns
-
-            Current Window: ±{self.coincidence_window_ns:.1f} ns
-            Center Channel: {self.center_channel}
-        """
-
-        self.timing_stats_text.setPlainText(stats_text)
+        # Feed to coincidence logic tab
+        if hasattr(self, "coincidence_tab"):
+            self.coincidence_tab.add_event_with_trace(event, trace_data)
 
     def add_trace(self, channel, trace_data, event_timestamp=None):
         try:
@@ -1394,8 +865,13 @@ class TracesPlotter(QWidget):
 
             # Update statistics
             stats_text = f"Total Traces: {total_traces} | "
-            if self.coincidence_mode:
-                stats_text += f"Coincidences: {len(self.coincidence_events)} | "
+            if (
+                hasattr(self, "coincidence_tab")
+                and self.coincidence_tab.coincidence_mode
+            ):
+                stats_text += (
+                    f"Coincidences: {len(self.coincidence_tab.coincidence_events)} | "
+                )
             stats_text += f"Displayed Channels: {len(self.display_channels)} | "
             stats_text += f"Alignment: {self.time_alignment_mode}"
             if self.time_alignment_mode == "channel_aligned":
@@ -2079,31 +1555,19 @@ class TracesPlotter(QWidget):
         return energy_filter
 
     def clear_data(self):
+        # Clear raw traces data
         for channel in self.channels:
             self.trace_data[channel].clear()
             self.last_traces[channel] = None
 
-        # Clear coincidence data
-        self.event_buffer.clear()
-        self.coincidence_events.clear()
+        # Clear coincidence tab data
+        if hasattr(self, "coincidence_tab"):
+            self.coincidence_tab.clear_data()
 
-        # Clear optimization results
-        self.optimization_results = {}
-        self.optimization_plot.clear()
-        self.timing_plot.clear()
-        self.timing_stats_text.clear()
-        self.results_table.setRowCount(0)
-
-        # Clear all plot displays
+        # Clear plot displays
         for channel in self.channels:
             if channel in self.raw_curves:
                 self.raw_curves[channel].setData([], [])
-            if channel in self.hw_curves_a:
-                for curve in self.hw_curves_a.values():
-                    curve.setData([], [])
-            if channel in self.hw_curves_b:
-                for curve in self.hw_curves_b.values():
-                    curve.setData([], [])
 
         if self.replay_widget:
             self.replay_widget.clear_traces()
@@ -2136,6 +1600,10 @@ class TracesPlotter(QWidget):
                 pen=pg.mkPen(color=color, width=1.5), name=f"Ch {channel}"
             )
 
+        # Update coincidence tab channels
+        if hasattr(self, "coincidence_tab"):
+            self.coincidence_tab.set_channels(channels)
+
         # Update combo boxes
         self.center_channel_combo.clear()
         self.channel_a_combo.clear()
@@ -2150,6 +1618,28 @@ class TracesPlotter(QWidget):
         if not self.update_timer.isActive():
             self.update_timer.start(100)
             print("Traces Plotter: Started live updates")
+        self.override_coincidence_fast_trigger_computation()
+
+    def override_coincidence_fast_trigger_computation(self):
+        def compute_fast_trigger_binary_override(raw_trace, channel):
+            try:
+                fast_trigger_signal = self.compute_hardware_traces(
+                    "fast_trigger", raw_trace, channel
+                )
+                if fast_trigger_signal is not None and len(fast_trigger_signal) > 0:
+                    threshold = self.hardware_params["fast_threshold"]
+                    return (fast_trigger_signal > threshold).astype(int)
+                else:
+                    return np.zeros(len(raw_trace), dtype=int)
+            except Exception as e:
+                print(f"Error in fast trigger binary computation: {e}")
+                return np.zeros(len(raw_trace), dtype=int)
+
+        # Replace the method in coincidence tab
+        if hasattr(self, "coincidence_tab"):
+            self.coincidence_tab.compute_fast_trigger_binary = (
+                compute_fast_trigger_binary_override
+            )
 
     def stop_live_updates(self):
         if self.update_timer.isActive():
@@ -2161,49 +1651,10 @@ class TracesPlotter(QWidget):
         self.sampling_period_ns = settings.get("sampling_period_ns", 2.0)
 
     def get_coincidence_statistics(self):
-        stats = {
-            "coincidence_mode": self.coincidence_mode,
-            "center_channel": self.center_channel,
-            "coincidence_window_ns": self.coincidence_window_ns,
-            "optimal_window_ns": self.optimal_window_ns,
-            "total_coincidences": len(self.coincidence_events),
-            "events_in_buffer": len(self.event_buffer),
-            "optimization_active": self.optimization_active,
-        }
-
-        if len(self.coincidence_events) > 0:
-            recent_coincidences = list(self.coincidence_events)[-100:]
-            all_time_diffs = []
-            for coinc in recent_coincidences:
-                all_time_diffs.extend(coinc.time_differences)
-
-            if all_time_diffs:
-                stats.update(
-                    {
-                        "mean_time_difference_ns": np.mean(all_time_diffs),
-                        "std_time_difference_ns": np.std(all_time_diffs),
-                        "min_time_difference_ns": np.min(all_time_diffs),
-                        "max_time_difference_ns": np.max(all_time_diffs),
-                        "events_in_window": len(
-                            [
-                                dt
-                                for dt in all_time_diffs
-                                if abs(dt) <= self.coincidence_window_ns
-                            ]
-                        ),
-                        "window_efficiency": len(
-                            [
-                                dt
-                                for dt in all_time_diffs
-                                if abs(dt) <= self.coincidence_window_ns
-                            ]
-                        )
-                        / len(all_time_diffs)
-                        * 100,
-                    }
-                )
-
-        return stats
+        if hasattr(self, "coincidence_tab"):
+            return self.coincidence_tab.get_coincidence_statistics()
+        else:
+            return {}
 
     def on_hardware_replay_trace_selected(self, stored_trace):
         if self.replay_mode and stored_trace:
