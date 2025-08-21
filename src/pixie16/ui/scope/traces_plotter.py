@@ -232,6 +232,10 @@ class TracesPlotter(QWidget):
         self.replay_widget = None
         self.replay_mode = False
 
+        # Store when alignment mode was activated
+        self.alignment_reference_timestamp = None
+        self.alignment_mode_start_time = None
+
         # Time alignment settings
         self.time_alignment_mode = "zero"
         self.alignment_reference_channel = 0
@@ -425,13 +429,19 @@ class TracesPlotter(QWidget):
         if mode_text == "Zero":
             self.time_alignment_mode = "none"
             self.alignment_ref_combo.setEnabled(False)
+            self.alignment_reference_timestamp = None
             self.raw_plot_widget.setTitle("PIXIE-16 Raw Traces - No Time Alignment")
         elif mode_text == "Channel":
             self.time_alignment_mode = "channel_aligned"
             self.alignment_ref_combo.setEnabled(True)
+            self.alignment_reference_timestamp = None
+
             ref_ch = self.channels[self.alignment_ref_combo.currentIndex()]
             self.raw_plot_widget.setTitle(
                 f"PIXIE-16 Raw Traces - Aligned to Ch{ref_ch}"
+            )
+            print(
+                f"DEBUG: Channel alignment mode enabled, waiting for Ch{ref_ch} trace..."
             )
         elif mode_text == "Real Time Axis":
             self.time_alignment_mode = "real_time_axis"
@@ -442,6 +452,7 @@ class TracesPlotter(QWidget):
         self.alignment_reference_channel = self.channels[
             self.alignment_ref_combo.currentIndex()
         ]
+        self.alignment_reference_timestamp = None
         if self.time_alignment_mode == "channel_aligned":
             self.raw_plot_widget.setTitle(
                 f"PIXIE-16 Raw Traces - Aligned to Ch{self.alignment_reference_channel}"
@@ -457,6 +468,7 @@ class TracesPlotter(QWidget):
             if ref_timestamp is not None:
                 # Calculate time difference in ns (assuming 10ns timestamp units)
                 time_offset = (event_timestamp - ref_timestamp) * 10.0
+
                 return np.arange(trace_length) * self.sampling_period_ns + time_offset
             else:
                 # No reference yet, use default
@@ -471,10 +483,19 @@ class TracesPlotter(QWidget):
             return np.arange(trace_length) * self.sampling_period_ns
 
     def get_reference_timestamp(self):
-        ref_ch = self.alignment_reference_channel
-        if ref_ch in self.trace_timestamps and len(self.trace_timestamps[ref_ch]) > 0:
-            return self.trace_timestamps[ref_ch][-1]
-        return None
+        if self.alignment_reference_timestamp is None:
+            # Set reference when first trace from reference channel arrives
+            ref_ch = self.alignment_reference_channel
+            if (
+                ref_ch in self.trace_timestamps
+                and len(self.trace_timestamps[ref_ch]) > 0
+            ):
+                self.alignment_reference_timestamp = self.trace_timestamps[ref_ch][-1]
+                print(
+                    f"DEBUG: Auto-set reference timestamp to {self.alignment_reference_timestamp} from Ch{ref_ch}"
+                )
+
+        return self.alignment_reference_timestamp
 
     def create_hardware_validation_tab(self):
         tab = QWidget()
