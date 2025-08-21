@@ -427,10 +427,10 @@ class TracesPlotter(QWidget):
 
     def update_time_alignment_mode(self, mode_text):
         if mode_text == "Zero":
-            self.time_alignment_mode = "none"
+            self.time_alignment_mode = "zero"
             self.alignment_ref_combo.setEnabled(False)
             self.alignment_reference_timestamp = None
-            self.raw_plot_widget.setTitle("PIXIE-16 Raw Traces - No Time Alignment")
+            self.raw_plot_widget.setTitle("PIXIE-16 Raw Traces - Zero Alignment")
         elif mode_text == "Channel":
             self.time_alignment_mode = "channel_aligned"
             self.alignment_ref_combo.setEnabled(True)
@@ -443,10 +443,12 @@ class TracesPlotter(QWidget):
             print(
                 f"DEBUG: Channel alignment mode enabled, waiting for Ch{ref_ch} trace..."
             )
-        elif mode_text == "Real Time Axis":
+        elif mode_text == "None":
             self.time_alignment_mode = "real_time_axis"
             self.alignment_ref_combo.setEnabled(False)
-            self.raw_plot_widget.setTitle("PIXIE-16 Raw Traces - Real Time Axis")
+            self.raw_plot_widget.setTitle(
+                "PIXIE-16 Raw Traces - Relative Time Alignment"
+            )
 
     def update_alignment_reference(self):
         self.alignment_reference_channel = self.channels[
@@ -458,7 +460,7 @@ class TracesPlotter(QWidget):
                 f"PIXIE-16 Raw Traces - Aligned to Ch{self.alignment_reference_channel}"
             )
 
-    def calculate_aligned_time_axis(self, trace_length, channel, event_timestamp=None):
+    def calculate_aligned_time_axis(self, trace_length, event_timestamp=None):
         if (
             self.time_alignment_mode == "channel_aligned"
             and event_timestamp is not None
@@ -474,13 +476,28 @@ class TracesPlotter(QWidget):
                 # No reference yet, use default
                 return np.arange(trace_length) * self.sampling_period_ns
 
-        elif self.time_alignment_mode == "real_time_axis":
-            # TODO
+        elif (
+            self.time_alignment_mode == "real_time_axis" and event_timestamp is not None
+        ):
+            latest_timestamp = self.get_latest_timestamp_across_channels()
+
+            if latest_timestamp is not None:
+                time_from_now = (event_timestamp - latest_timestamp) * 10.0
+
+                # Create time axis starting from this relative time
+                trace_time_axis = np.arange(trace_length) * self.sampling_period_ns
+                return trace_time_axis + time_from_now
+        else:
             return np.arange(trace_length) * self.sampling_period_ns
 
-        else:
-            # Fallback to default
-            return np.arange(trace_length) * self.sampling_period_ns
+    def get_latest_timestamp_across_channels(self):
+        latest = None
+        for ch in self.channels:
+            if ch in self.trace_timestamps and len(self.trace_timestamps[ch]) > 0:
+                ch_latest = self.trace_timestamps[ch][-1]
+                if latest is None or ch_latest > latest:
+                    latest = ch_latest
+        return latest
 
     def get_reference_timestamp(self):
         if self.alignment_reference_timestamp is None:
@@ -1362,7 +1379,7 @@ class TracesPlotter(QWidget):
                         if len(trace) == trace_length:
                             # Calculate time axis with alignment
                             time_axis = self.calculate_aligned_time_axis(
-                                trace_length, channel, timestamp
+                                trace_length, timestamp
                             )
 
                             y_data = trace
