@@ -152,7 +152,7 @@ class CoincidenceLogicTab(QWidget):
         self.optimal_window_ns = 20.0
 
         # Binary logic visualization settings
-        self.binary_logic_enabled = False
+        self.binary_logic_enabled = True
         self.binary_selected_channel = self.channels[0]
         self.binary_time_window_us = 2.0  # microseconds to display
         self.binary_logic_steps = [
@@ -274,6 +274,7 @@ class CoincidenceLogicTab(QWidget):
 
         # Enable binary visualization
         self.binary_enable_cb = QCheckBox("Enable Binary Logic View")
+        self.binary_enable_cb.setChecked(True)
         self.binary_enable_cb.toggled.connect(self.toggle_binary_logic)
         binary_controls_layout.addWidget(self.binary_enable_cb)
 
@@ -647,16 +648,20 @@ class CoincidenceLogicTab(QWidget):
                 binary_data = binary_results[step]
                 # Offset each trace vertically
                 y_offset = i
-                y_data = binary_data + y_offset
 
                 # Create step plot for binary data
                 step_x = []
                 step_y = []
                 for j in range(len(binary_data)):
-                    step_x.extend([time_axis[j], time_axis[j]])
-                    step_y.extend([y_offset, y_offset + binary_data[j]])
-                    if j < len(binary_data) - 1:
-                        step_x.append(time_axis[j + 1])
+                    if j == 0:
+                        step_x.extend([time_axis[j], time_axis[j]])
+                        step_y.extend([y_offset, y_offset + binary_data[j]])
+                    else:
+                        # Add horizontal line from previous point
+                        step_x.append(time_axis[j])
+                        step_y.append(y_offset + binary_data[j - 1])
+                        # Add vertical transition
+                        step_x.append(time_axis[j])
                         step_y.append(y_offset + binary_data[j])
 
                 color = colors[i % len(colors)]

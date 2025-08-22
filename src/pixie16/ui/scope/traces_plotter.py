@@ -252,6 +252,7 @@ class TracesPlotter(QWidget):
         )
         self.coincidence_tab.set_hardware_params(self.hardware_params)
         self.coincidence_tab.parameter_changed.connect(self.parameter_changed)
+        self.override_coincidence_fast_trigger_computation()
         self.tab_widget.addTab(self.coincidence_tab, "Coincidence Logic")
 
         layout.addWidget(self.tab_widget)
@@ -1604,15 +1605,8 @@ class TracesPlotter(QWidget):
         if hasattr(self, "coincidence_tab"):
             self.coincidence_tab.set_channels(channels)
 
-        # Update combo boxes
-        self.center_channel_combo.clear()
-        self.channel_a_combo.clear()
-        self.channel_b_combo.clear()
-
         for ch in self.channels:
-            self.center_channel_combo.addItem(f"Ch {ch}")
-            self.channel_a_combo.addItem(f"Ch {ch}")
-            self.channel_b_combo.addItem(f"Ch {ch}")
+            self.channel_combo.addItem(f"Ch {ch}")
 
     def start_live_updates(self):
         if not self.update_timer.isActive():
