@@ -31,6 +31,14 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import QTimer, QThread, pyqtSignal
 import pyqtgraph as pg
 
+from ...analyze import (
+    compute_fast_trigger_validation,
+    compute_energy_filter,
+    convert_trace_to_FPGA,
+    calculate_CFD,
+    calculate_filter,
+    get_fast_trigger_index,
+)
 
 class WindowOptimizationWorker(QThread):
     progress = pyqtSignal(int)
@@ -123,9 +131,6 @@ class CoincidenceEvent:
 
 
 class CoincidenceLogicTab(QWidget):
-    """
-    Coincidence Logic Tab with binary waveform visualization.
-    """
 
     # Signals
     parameter_changed = pyqtSignal(
@@ -191,8 +196,11 @@ class CoincidenceLogicTab(QWidget):
         }
 
         self.sampling_period_ns = 2.0  # 500MHz module
-
+        
         self.init_ui()
+
+        if self.hardware_manager:
+            self.update_binary_hardware_params()
 
     def init_ui(self):
         layout = QVBoxLayout()
@@ -477,42 +485,44 @@ class CoincidenceLogicTab(QWidget):
             return
 
         try:
-            # Read actual hardware parameters if available
-            if hasattr(self.hardware_manager, "get_channel_parameter"):
-                channel = self.binary_selected_channel
-                self.binary_hardware_params.update(
-                    {
-                        "fast_trigger_backplane_length_ns": self.hardware_manager.get_channel_parameter(
-                            "FASTTRIGBACKLEN", 0, channel
-                        )
-                        * 1000,
-                        "channel_trigger_stretch_ns": self.hardware_manager.get_channel_parameter(
-                            "CHANTRIGSTRETCH", 0, channel
-                        )
-                        * 1000,
-                        "external_delay_length_ns": self.hardware_manager.get_channel_parameter(
-                            "EXTERNDELAYLEN", 0, channel
-                        )
-                        * 1000,
-                        "multiplicity_mask_l": self.hardware_manager.get_channel_parameter(
-                            "MULTIPLICITYMASKL", 0, channel
-                        ),
-                        "multiplicity_mask_h": self.hardware_manager.get_channel_parameter(
-                            "MULTIPLICITYMASKH", 0, channel
-                        ),
-                    }
-                )
+            channel = self.binary_selected_channel
+            # Use the correct method name
+            hw_params = self.hardware_manager.get_hardware_timing_parameters(channel)
+            
+            # Map the parameters correctly
+            if hw_params:
+                self.hardware_params.update({
+                    'fast_L': self._convert_time_to_fpga_cycles(hw_params.get('TRIGGER_RISETIME', 0.1)),
+                    'fast_G': self._convert_time_to_fpga_cycles(hw_params.get('TRIGGER_FLATTOP', 0.1)),
+                    'fast_threshold': hw_params.get('TRIGGER_THRESHOLD', 100),
+                })
+                
+                # Also update binary hardware params for timing
+                self.binary_hardware_params.update({
+                    'channel_trigger_stretch_ns': hw_params.get('ChanTrigStretch', 0) * 1000,
+                    'external_delay_length_ns': hw_params.get('ExternDelayLen', 0) * 1000,
+                    'fast_trigger_backplane_length_ns': hw_params.get('FastTrigBackLen', 0) * 1000,
+                    'multiplicity_mask_l': hw_params.get('MultiplicityMaskL', 0),
+                    'multiplicity_mask_h': hw_params.get('MultiplicityMaskH', 0),
+                })
         except Exception as e:
             print(f"Could not read hardware parameters: {e}")
-
-        # Update display
+        
+        self._update_parameter_display()
+    
+    def _update_parameter_display(self):
         params_text = (
-            f"FastTrigBackLen: {self.binary_hardware_params['fast_trigger_backplane_length_ns']:.0f}ns | "
-            f"ChanTrigStretch: {self.binary_hardware_params['channel_trigger_stretch_ns']:.0f}ns | "
-            f"ExtDelayLen: {self.binary_hardware_params['external_delay_length_ns']:.0f}ns | "
+            f"FastL/G: {self.hardware_params.get('fast_L', 2)}/{self.hardware_params.get('fast_G', 2)} | "
+            f"Threshold: {self.hardware_params.get('fast_threshold', 100)} | "
+            f"TrigStretch: {self.binary_hardware_params['channel_trigger_stretch_ns']:.0f}ns | "
             f"MultMask: 0x{self.binary_hardware_params['multiplicity_mask_l']:08X}"
         )
         self.binary_params_label.setText(params_text)
+
+    def _convert_time_to_fpga_cycles(self, time_us):
+        # For 500MHz module: 2ns per ADC sample, 10ns per FPGA cycle
+        # time_us * 1000ns/us * 1cycle/10ns = time_us * 100 cycles/us
+        return int(time_us * 100)
 
     def compute_binary_logic_steps(self, raw_trace, channel, event_timestamp):
         if not self.binary_logic_enabled or channel != self.binary_selected_channel:
@@ -521,17 +531,17 @@ class CoincidenceLogicTab(QWidget):
         trace_length = len(raw_trace)
         time_axis = np.arange(trace_length) * self.sampling_period_ns
 
-        # Step 1: Raw signal > threshold
+        # Raw signal > threshold
         threshold = self.binary_hardware_params["fast_threshold"]
         baseline = (
             np.mean(raw_trace[:100]) if len(raw_trace) > 100 else np.mean(raw_trace)
         )
         raw_binary = (raw_trace > (baseline + threshold)).astype(int)
 
-        # Step 2: Fast trigger (FO0) - needs parent implementation
+        # Fast trigger (FO0) - needs parent implementation
         fast_trigger_binary = self.compute_fast_trigger_binary(raw_trace, channel)
 
-        # Step 3: Backplane signal (delayed version of fast trigger)
+        # Backplane signal (delayed version of fast trigger)
         backplane_delay_samples = int(
             self.binary_hardware_params["fast_trigger_backplane_delay_ns"]
             / self.sampling_period_ns
@@ -540,12 +550,12 @@ class CoincidenceLogicTab(QWidget):
         if backplane_delay_samples > 0:
             backplane_binary[:backplane_delay_samples] = 0
 
-        # Step 4: Multiplicity logic
+        # Multiplicity logic
         multiplicity_binary = self.compute_multiplicity_logic(
             event_timestamp, trace_length
         )
 
-        # Step 5: Validation window (stretched multiplicity result)
+        # Validation window (stretched multiplicity result)
         stretch_samples = int(
             self.binary_hardware_params["channel_trigger_stretch_ns"]
             / self.sampling_period_ns
@@ -555,7 +565,7 @@ class CoincidenceLogicTab(QWidget):
         )
         validation_binary = (validation_binary > 0).astype(int)
 
-        # Step 6: Delayed local trigger
+        # Delayed local trigger
         ext_delay_samples = int(
             self.binary_hardware_params["external_delay_length_ns"]
             / self.sampling_period_ns
@@ -564,7 +574,7 @@ class CoincidenceLogicTab(QWidget):
         if ext_delay_samples > 0:
             delayed_local_binary[:ext_delay_samples] = 0
 
-        # Step 7: Final event validation (AND of delayed local and validation window)
+        # Final event validation (AND of delayed local and validation window)
         event_accepted_binary = delayed_local_binary & validation_binary
 
         # Store results
@@ -587,51 +597,89 @@ class CoincidenceLogicTab(QWidget):
 
     def compute_multiplicity_logic(self, event_timestamp, trace_length):
         """
-        Returns binary array showing when System FPGA coincidence logic fires.
+        Simulate System FPGA multiplicity logic based on actual hardware masks
         """
         multiplicity_binary = np.zeros(trace_length, dtype=int)
-
-        # Only show multiplicity logic if we actually found coincidences
-        if not self.coincidence_events:
+        
+        mult_mask_l = self.binary_hardware_params.get('multiplicity_mask_l', 0)
+        mult_mask_h = self.binary_hardware_params.get('multiplicity_mask_h', 0)
+        
+        if mult_mask_l == 0 and mult_mask_h == 0:
             return multiplicity_binary
-
-        # Check if current event is part of any stored coincidence
-        current_time = event_timestamp
-        window_ticks = self.coincidence_window_ns / 10.0
-
-        for coinc_event in self.coincidence_events:
-            # Check if this trace's timestamp matches a coincidence event
-            center_time = coinc_event.center_event.timestamp
-            time_diff = abs(current_time - center_time)
-
-            if time_diff <= window_ticks:
-                # This trace is part of a real coincidence
-                # Show multiplicity logic firing during the coincidence window
-
-                # Calculate where in the trace the coincidence logic would fire
-                pulse_start = trace_length // 3  # Middle of trace
-                pulse_width = min(50, trace_length // 10)  # 50 samples or 10% of trace
-                pulse_end = min(pulse_start + pulse_width, trace_length)
-
-                multiplicity_binary[pulse_start:pulse_end] = 1
-                break  # Only need to find one matching coincidence
-
+        
+        # checking other channels within timing window
+        current_channel = self.binary_selected_channel
+        coincident_channels = []
+        
+        # Check recent events from other channels in the buffer
+        current_time_ticks = event_timestamp
+        window_ticks = self.coincidence_window_ns / 10.0  # Convert ns to 10ns ticks
+        
+        for buffered_event, buffered_trace in list(self.event_buffer)[-50:]:  # Check last 50 events
+            if not hasattr(buffered_event, 'channel') or not hasattr(buffered_event, 'timestamp'):
+                continue
+                
+            if buffered_event.channel == current_channel:
+                continue  # Skip same channel
+                
+            time_diff_ticks = abs(buffered_event.timestamp - current_time_ticks)
+            
+            if time_diff_ticks <= window_ticks:
+                # This channel fired within the coincidence window
+                channel_bit = 1 << buffered_event.channel
+                
+                # Check if this channel is enabled in multiplicity mask
+                if (channel_bit & mult_mask_l) or (channel_bit & mult_mask_h):
+                    coincident_channels.append(buffered_event.channel)
+        
+        # If we found coincident channels, show multiplicity logic firing
+        if coincident_channels:
+            # Simulate multiplicity logic pulse in middle of trace
+            pulse_start = trace_length // 3
+            pulse_width = min(50, trace_length // 10)
+            pulse_end = min(pulse_start + pulse_width, trace_length)
+            multiplicity_binary[pulse_start:pulse_end] = 1
+        
         return multiplicity_binary
 
     def compute_fast_trigger_binary(self, raw_trace, channel):
-        """
-        Override in parent class
-        """
         if len(raw_trace) < 10:
-            return np.zeros(len(raw_trace), dtype=int)  # fallback
-
-        # Simple derivative-based fast trigger simulation
-        diff = np.diff(raw_trace)
-        fast_trigger = np.zeros(len(raw_trace))
-        fast_trigger[1:] = diff
-
-        threshold = self.binary_hardware_params["fast_threshold"]
-        return (fast_trigger > threshold).astype(int)
+            return np.zeros(len(raw_trace), dtype=int)
+        
+        # Get hardware parameters for this channel
+        fast_L = self.hardware_params.get('fast_L', 2)
+        fast_G = self.hardware_params.get('fast_G', 2) 
+        fast_threshold = self.hardware_params.get('fast_threshold', 100)
+        
+        try:
+            result = compute_fast_trigger_validation(
+                raw_trace.reshape(1, -1),  # Ensure 2D array
+                L=fast_L,
+                G=fast_G, 
+                threshold=fast_threshold
+            )
+            
+            if result['validation_passed'] and result['fast_triggers'] is not None:
+                # Convert fast filter output to binary trigger
+                fast_filter = result['fast_triggers'][0]  # Get first trace result
+                
+                # Pad to match original trace length
+                if len(fast_filter) < len(raw_trace):
+                    pad_length = len(raw_trace) - len(fast_filter)
+                    fast_filter = np.pad(fast_filter, (pad_length, 0), mode='constant', constant_values=0)
+                elif len(fast_filter) > len(raw_trace):
+                    fast_filter = fast_filter[:len(raw_trace)]
+                    
+                # Create binary output based on threshold crossing
+                binary_output = (fast_filter > fast_threshold).astype(int)
+                return binary_output
+                
+        except Exception as e:
+            print(f"Fast trigger calculation failed: {e}")
+            # return average of first 100 samples
+            baseline = np.mean(raw_trace[:100]) if len(raw_trace) > 100 else np.mean(raw_trace)
+            threshold = self.binary_hardware_params.get('fast_threshold', 100)
+            return (raw_trace > (baseline + threshold)).astype(int)
 
     def update_binary_visualization(self, binary_results):
         if not self.binary_logic_enabled:
@@ -702,8 +750,6 @@ class CoincidenceLogicTab(QWidget):
                 brush=pg.mkBrush(color=(128, 128, 255, 50)),  # Semi-transparent blue
             )
             self.binary_plot.addItem(hist_item)
-
-    # ==================== COINCIDENCE ANALYSIS METHODS ====================
 
     def update_center_channel(self):
         self.center_channel = self.channels[self.center_channel_combo.currentIndex()]

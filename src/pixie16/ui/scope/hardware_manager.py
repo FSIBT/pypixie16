@@ -492,6 +492,30 @@ class DynamicPixieHardwareManager:
             logger.error(f"Error reading list mode data: {e}")
             return []
 
+    def get_hardware_timing_parameters(self, channel: int = 0) -> dict:
+        try:
+            params = {
+                # Read from existing parameter cache
+                "TRIGGER_RISETIME": self.get_parameter("TRIGGER_RISETIME", 0, channel),
+                "TRIGGER_FLATTOP": self.get_parameter("TRIGGER_FLATTOP", 0, channel), 
+                "TRIGGER_THRESHOLD": self.get_parameter("TRIGGER_THRESHOLD", 0, channel),
+                "ENERGY_RISETIME": self.get_parameter("ENERGY_RISETIME", 0, channel),
+                "ENERGY_FLATTOP": self.get_parameter("ENERGY_FLATTOP", 0, channel),
+                "TAU": self.get_parameter("TAU", 0, channel),
+            }
+            
+            # Filter out None values
+            hardware_params = {}
+            for key, value in params.items():
+                if value is not None:
+                    hardware_params[key] = value
+            
+            return hardware_params
+            
+        except Exception as e:
+            logger.error(f"Failed to read hardware timing parameters: {e}")
+            return {}
+
     def get_parameter(self, param_name: str, module: int = 0, channel: int = 0) -> any:
         try:
             if module in self.state.current_parameters:
@@ -539,6 +563,11 @@ class DynamicPixieHardwareManager:
             "TRACE_DELAY",
             "VOFFSET",
             "BASELINE_PERCENT",
+            "ChanTrigStretch",
+            "ExternDelayLen", 
+            "FastTrigBackLen",
+            "MultiplicityMaskL",
+            "MultiplicityMaskH",
         ]
 
         updated_params = {}
