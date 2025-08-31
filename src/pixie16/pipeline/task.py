@@ -1,3 +1,26 @@
+"""Base Task class for pipeline data processing components.
+
+This module defines the Task base class that all pipeline processing
+components inherit from. Tasks run as independent processes and communicate
+via ZeroMQ messages, enabling distributed and parallel data processing.
+
+Key Features
+------------
+- Multiprocessing with ZeroMQ communication
+- Automatic task registration system
+- State machine with error handling
+- Memory and performance monitoring
+- Extensible callback system
+
+Task Lifecycle
+--------------
+1. Registration (automatic via __init_subclass__)
+2. Instantiation by Pipeline
+3. Process startup and ZeroMQ connection
+4. Message handling loop
+5. Graceful shutdown
+"""
+
 import io
 import abc
 import sys
@@ -21,31 +44,48 @@ SECONDS_WAIT = 0.1
 
 
 class Task(multiprocessing.Process):
-    """
-    Represents jobs.
+    """Base class for pipeline processing tasks.
 
-    This class as four sets of methods: callbacks, handlers, senders, and
-    actions. Handlers address incoming messages, senders dispatch outgoing
-    messages, and actions provides the user interface. Callbacks facilliate
-    subclassing.
+    Task represents a single processing unit in the data analysis pipeline.
+    Each task runs as an independent process and communicates via ZeroMQ
+    messages. Tasks implement specific data processing algorithms and can
+    be chained together to create complex workflows.
 
-    This class uses the following states:
-        * ⏸️ WAITING: Task waiting.
-        * ▶️ RUNNING: Task running.
-        * 🏁 FINISHED: Task finished
-        * ⏏️ DYING: Task dying.
-        * 🆘 PANICKING: Task panicking.
+    Architecture
+    ------------
+    Tasks follow a message-driven architecture with four method categories:
+    - **Handlers**: Process incoming messages from other tasks/pipeline
+    - **Senders**: Dispatch outgoing messages and data
+    - **Actions**: User interface methods for external control
+    - **Callbacks**: Extension points for subclass customization
 
-    This class send or handles the following messages:
-        * ℹ️ CONFIGURE: Update user parameters.
-        * 🔁 CONNECT: Update system parameters.
-        * ▶️ START: Begin starting.
-        * ⏹️ STOP: Begin waiting.
-        * ⏏️ QUIT: Begin dying.
-        * 📶 DATA: Transmit data.
-        * 🆗 REPORT: Transmit info.
-        * 🔣 PRINT: Transmit print.
-        * 🆘 ERROR: Transmit error.
+    Task States
+    -----------
+    - ⏸️ WAITING: Task idle, ready to process
+    - ▶️ RUNNING: Task actively processing data
+    - 🏁 FINISHED: Task completed successfully
+    - ⏏️ DYING: Task shutting down
+    - 🆘 PANICKING: Task in error state
+
+    Message Protocol
+    ----------------
+    - ℹ️ CONFIGURE: Update user parameters
+    - 🔁 CONNECT: Update system parameters
+    - ▶️ START: Begin processing
+    - ⏹️ STOP: Pause processing
+    - ⏏️ QUIT: Shutdown task
+    - 📶 DATA: Inter-task data flow
+    - 🆗 REPORT: Status/monitoring info
+    - 🔣 PRINT: Debug output
+    - 🆘 ERROR: Error conditions
+
+    Examples
+    --------
+    >>> class MyTask(Task):
+    ...     def callback_process(self, data):
+    ...         return process_data(data)
+    >>> task = MyTask()
+    >>> task.start()
     """
 
     # Dunders
@@ -53,22 +93,39 @@ class Task(multiprocessing.Process):
     class_registry = {}
 
     def __init_subclass__(cls, **kwargs):
-        """
-        Saves ``Task`` subclasses.
+        """Register Task subclasses in global registry.
 
-        Parameters:
-            kwargs: Initialization parameters.
+        Automatically registers each Task subclass by name, enabling
+        dynamic task creation by the Pipeline class.
+
+        Parameters
+        ----------
+        **kwargs
+            Additional subclass initialization parameters.
+
+        Notes
+        -----
+        Task registration is automatic - no manual registration required.
         """
 
         super().__init_subclass__(**kwargs)
         Task.class_registry[cls.__name__] = cls
 
     def __init__(self, **kwargs):
-        """
-        Initializes ``Task``.
+        """Initialize a new Task instance.
 
-        Notes:
-            Called by ``Pipeline.create_task``.
+        Sets up the task's multiprocessing environment, ZeroMQ messaging,
+        and internal state management structures.
+
+        Parameters
+        ----------
+        **kwargs
+            Task-specific configuration parameters passed from Pipeline.
+
+        Notes
+        -----
+        Typically called automatically by Pipeline.create_task() rather
+        than directly by user code.
         """
 
         super().__init__()

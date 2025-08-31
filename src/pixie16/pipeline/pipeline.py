@@ -1,3 +1,19 @@
+"""Pipeline orchestration for multi-process data analysis workflows.
+
+This module implements the main Pipeline class that coordinates distributed
+data processing tasks using ZeroMQ for inter-process communication. The
+pipeline provides real-time monitoring, error handling, and dynamic task
+management for complex analysis workflows.
+
+Key Components
+--------------
+- Pipeline: Main orchestrator class
+- ZeroMQ-based message routing
+- Dynamic task creation and management
+- Real-time status monitoring
+- Error propagation and handling
+"""
+
 import sys
 import copy
 import time
@@ -16,30 +32,36 @@ from rich import print
 
 
 class Pipeline:
-    """
-    Represents daisychain of jobs.
+    """Main orchestrator for multi-process data analysis workflows.
 
-    This class as four sets of methods: callbacks, handlers, senders, and
-    actions. Handlers address incoming messages, senders dispatch outgoing
-    messages, and actions provides the user interface. Callbacks facilliate
-    subclassing.
+    The Pipeline class manages a collection of Task processes connected via
+    ZeroMQ messaging. It provides a framework for building complex data
+    processing workflows with real-time monitoring and control.
 
-    This class uses the following states:
-        * ⏸️ WAITING: Pipeline waiting.
-        * ▶️ RUNNING: Pipeline running.
-        * ⏏️ DYING: Pipeline dying.
-        * 🆘 PANICKING: Pipeline panicking.
+    The pipeline operates as a state machine with four main states:
+    - ⏸️ WAITING: Pipeline idle, ready to accept tasks
+    - ▶️ RUNNING: Pipeline actively processing data
+    - ⏏️ DYING: Pipeline shutting down gracefully
+    - 🆘 PANICKING: Pipeline in error state
 
-    This class send or handles the following messages:
-        * ℹ️ CONFIGURE: Update user parameters.
-        * 🔁 CONNECT: Update system parameters.
-        * ▶️ START: Begin starting.
-        * ⏹️ STOP: Begin waiting.
-        * ⏏️ QUIT: Begin dying.
-        * 📶 DATA: Transmit data.
-        * 🆗 REPORT: Transmit info.
-        * 🔣 PRINT: Transmit print.
-        * 🆘 ERROR: Transmit error.
+    Message Types
+    -------------
+    - ℹ️ CONFIGURE: Update user-configurable parameters
+    - 🔁 CONNECT: Update system/network parameters
+    - ▶️ START: Begin data processing
+    - ⏹️ STOP: Pause processing, return to waiting
+    - ⏏️ QUIT: Shutdown pipeline and all tasks
+    - 📶 DATA: Inter-task data transmission
+    - 🆗 REPORT: Status and monitoring information
+    - 🔣 PRINT: Debug/logging output
+    - 🆘 ERROR: Error conditions and exceptions
+
+    Examples
+    --------
+    >>> pipeline = Pipeline()
+    >>> pipeline.create_task("GatherData")
+    >>> pipeline.create_task("ConvertToEvents")
+    >>> pipeline.start()
     """
 
     # Dunders
@@ -56,14 +78,25 @@ class Pipeline:
         self.address_router = f"tcp://127.0.0.1:{port}"
 
     def create_task(self, name: str):
-        """
-        Creates tasks using class names.
+        """Create and register a new task process.
 
-        Parameters:
-            name: Task class name.
+        Instantiates a task class by name from the global task registry,
+        configures it with pipeline parameters, and starts the process.
 
-        Raises:
-            ValueError: Task not found, i.e. not in ``Task.class_registry``.
+        Parameters
+        ----------
+        name : str
+            Task class name as registered in Task.class_registry.
+
+        Raises
+        ------
+        ValueError
+            If task name not found in Task.class_registry.
+
+        Notes
+        -----
+        Tasks are automatically connected to the pipeline's ZeroMQ router
+        and inherit any task_kwargs passed to the pipeline constructor.
         """
 
         if name in self.tasks_all:

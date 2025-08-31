@@ -34,9 +34,39 @@ from ..config import LocalSettings
 
 
 class DataAcquisition(QWidget):
-    """App to acquire data using Pixie 16.
+    """Main GUI application for PIXIE-16 data acquisition and control.
 
-    Note: when closing the window/app where this is used, self.pipeline.quit() needs to be called
+    Provides a comprehensive interface for configuring, monitoring, and controlling
+    PIXIE-16 nuclear physics data acquisition systems. Integrates with the pipeline
+    framework for real-time data processing and analysis.
+
+    Features
+    --------
+    - Real-time module status monitoring
+    - Pipeline task management and control
+    - Data acquisition start/stop controls
+    - System resource monitoring (CPU, memory)
+    - Task configuration and parameter adjustment
+    - Progress tracking and error reporting
+
+    Parameters
+    ----------
+    app : QApplication
+        The main Qt application instance.
+    init_modes : bool
+        If True, initializes with dummy data mode for testing.
+
+    Notes
+    -----
+    When closing the application, ensure self.pipeline.quit() is called
+    to properly shutdown all background processes.
+
+    Examples
+    --------
+    >>> app = QApplication([])
+    >>> daq = DataAcquisition(app, init_modes=False)
+    >>> daq.show()
+    >>> app.exec()
     """
 
     def __init__(self, app, init_modes):
