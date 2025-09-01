@@ -30,9 +30,18 @@ __all__ = [
 
 if not SDK.load_library():
     print("INFO Mocking pixie16.control since SDK library not found in ini file")
+    # Functions that don't use SDK and should NOT be mocked
+    non_sdk_functions = {
+        "_set_bits",
+        "_expand_values",
+        "_expand_list",
+        "_create_coincidence_masks",
+        "_handle_coincidences",
+    }
+
     for name in dir(control):
         obj = getattr(control, name)
-        if callable(obj):
+        if callable(obj) and name not in non_sdk_functions:
             setattr(
                 control,
                 name,

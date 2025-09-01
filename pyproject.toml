@@ -31,6 +31,7 @@ dependencies = [
     "pint",
     "platformdirs",
     "psutil",
+    "pyarrow",
     "PyQt6",
     "pyqtgraph",
     "pyzmq",

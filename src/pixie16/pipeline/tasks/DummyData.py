@@ -8,7 +8,7 @@ from .. import task
 
 PAUSE: float = 0.2
 DEFAULT_MODULES: list[int] = [2]
-DEFAULT_RUNTIME: int = 10
+DEFAULT_RUNTIME: int = 2
 DEFAULT_CHUNK_SIZE: int = 20_000
 
 
@@ -39,6 +39,11 @@ class DummyData(task.Task):
             "runtime": DEFAULT_RUNTIME,
             "chunk_size": DEFAULT_CHUNK_SIZE,
         }
+
+        # Set default values directly as attributes
+        self.modules = DEFAULT_MODULES
+        self.runtime = DEFAULT_RUNTIME
+        self.chunk_size = DEFAULT_CHUNK_SIZE
 
     def do_configure(self, config: dict):
         """

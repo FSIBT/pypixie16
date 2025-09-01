@@ -23,6 +23,9 @@ class GatherEvents(task.Task):
             "size": DEFAULT_SIZE,
         }
 
+        # Set default values directly as attributes
+        self.size = DEFAULT_SIZE
+
     def do_configure(self, config: dict):
         """
         Configures the task.

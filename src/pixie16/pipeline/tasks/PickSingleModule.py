@@ -20,6 +20,9 @@ class PickSingleModule(task.Task):
 
         self.config = {"module": 2}
 
+        # Set default values directly as attributes
+        self.module = 2
+
     def do_configure(self, config: dict):
         """
         Configures the task.
