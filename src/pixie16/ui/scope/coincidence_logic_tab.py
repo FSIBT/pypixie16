@@ -27,6 +27,7 @@ from PyQt6.QtWidgets import (
     QTableWidgetItem,
     QProgressBar,
     QMessageBox,
+    QSizePolicy,
 )
 from PyQt6.QtCore import QTimer, QThread, pyqtSignal
 import pyqtgraph as pg
@@ -39,73 +40,6 @@ from ...analyze import (
     calculate_filter,
     get_fast_trigger_index,
 )
-
-class WindowOptimizationWorker(QThread):
-    progress = pyqtSignal(int)
-    result = pyqtSignal(dict)
-    status = pyqtSignal(str)
-
-    def __init__(self, coincidence_events, window_range, center_channel):
-        super().__init__()
-        self.coincidence_events = coincidence_events
-        self.window_range = window_range  # (min_ns, max_ns, step_ns)
-        self.center_channel = center_channel
-
-    def run(self):
-        min_window, max_window, step = self.window_range
-        results = {}
-
-        total_steps = int((max_window - min_window) / step) + 1
-
-        for i, window_ns in enumerate(np.arange(min_window, max_window + step, step)):
-            self.status.emit(f"Testing {window_ns:.1f}ns window...")
-
-            valid_coincidences = 0
-            total_time_diffs = []
-
-            for coinc_event in self.coincidence_events:
-                # Count events within this window
-                events_in_window = []
-                for event, trace in coinc_event.associated_events:
-                    time_diff = abs(
-                        self._calculate_time_difference(
-                            event.timestamp, coinc_event.center_event.timestamp
-                        )
-                    )
-
-                    if time_diff <= window_ns:
-                        events_in_window.append((event, time_diff))
-                        total_time_diffs.append(time_diff)
-
-                if events_in_window:
-                    valid_coincidences += 1
-
-            # Calculate statistics
-            efficiency = (
-                valid_coincidences / len(self.coincidence_events)
-                if self.coincidence_events
-                else 0
-            )
-            mean_dt = np.mean(total_time_diffs) if total_time_diffs else 0
-            std_dt = np.std(total_time_diffs) if total_time_diffs else 0
-
-            results[window_ns] = {
-                "coincidences": valid_coincidences,
-                "efficiency": efficiency,
-                "mean_dt": mean_dt,
-                "std_dt": std_dt,
-                "total_events": len(total_time_diffs),
-            }
-
-            self.progress.emit(int((i + 1) / total_steps * 100))
-
-        self.result.emit(results)
-        self.status.emit("Optimization complete")
-
-    def _calculate_time_difference(self, timestamp1, timestamp2):
-        dt_ticks = timestamp1 - timestamp2
-        dt_ns = dt_ticks * 10.0  # Convert to nanoseconds
-        return dt_ns
 
 
 class CoincidenceEvent:
@@ -151,10 +85,6 @@ class CoincidenceLogicTab(QWidget):
         self.coincidence_mode = False
         self.center_channel = 9 if 9 in self.channels else self.channels[0]
         self.coincidence_window_ns = 20.0
-        self.validation_window_optimization = False
-        self.optimization_active = False
-        self.optimization_results = {}
-        self.optimal_window_ns = 20.0
 
         # Binary logic visualization settings
         self.binary_logic_enabled = True
@@ -205,31 +135,23 @@ class CoincidenceLogicTab(QWidget):
     def init_ui(self):
         layout = QVBoxLayout()
 
-        # Coincidence settings
         settings_group = self.create_coincidence_settings_group()
-        layout.addWidget(settings_group)
+        layout.addWidget(settings_group, 0)
 
-        # Binary Logic Visualization Group
         binary_group = self.create_binary_logic_group()
-        layout.addWidget(binary_group)
+        layout.addWidget(binary_group, 1)
 
-        # Window optimization controls
-        optimization_group = self.create_optimization_group()
-        layout.addWidget(optimization_group)
-
-        # Results display in tabbed format
-        results_tabs = self.create_results_tabs()
-        layout.addWidget(results_tabs)
-
-        # Status and control buttons
         control_layout = self.create_control_buttons()
-        layout.addLayout(control_layout)
-
+        layout.addLayout(control_layout, 0)
+        
         self.setLayout(layout)
 
     def create_coincidence_settings_group(self):
         settings_group = QGroupBox("Coincidence Settings")
         settings_layout = QGridLayout()
+
+        settings_layout.setContentsMargins(5, 5, 5, 5)
+        settings_layout.setSpacing(5)
 
         # Center channel selection
         settings_layout.addWidget(QLabel("Center Channel:"), 0, 0)
@@ -265,12 +187,9 @@ class CoincidenceLogicTab(QWidget):
         self.quick_window_combo.currentTextChanged.connect(self.set_quick_window)
         settings_layout.addWidget(self.quick_window_combo, 1, 1)
 
-        # Live validation mode
-        self.validation_cb = QCheckBox("Live Validation")
-        self.validation_cb.toggled.connect(self.toggle_validation_mode)
-        settings_layout.addWidget(self.validation_cb, 1, 2)
-
         settings_group.setLayout(settings_layout)
+        settings_group.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Minimum)
+        
         return settings_group
 
     def create_binary_logic_group(self):
@@ -315,7 +234,8 @@ class CoincidenceLogicTab(QWidget):
         self.binary_plot.setTitle("Coincidence Logic Steps - Channel 0")
         self.binary_plot.showGrid(True, True, alpha=0.3)
         self.binary_plot.setBackground("w")
-        self.binary_plot.setMinimumHeight(300)
+        self.binary_plot.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        self.binary_plot.setMinimumHeight(200)
 
         # Set up Y-axis for logic steps
         y_labels = [
@@ -330,107 +250,17 @@ class CoincidenceLogicTab(QWidget):
         self.binary_plot.getAxis("left").setTicks([y_labels])
         self.binary_plot.setYRange(-0.5, 6.5)
 
-        binary_layout.addWidget(self.binary_plot)
+        binary_layout.addWidget(self.binary_plot, 1)
 
         # Hardware parameter display
         self.binary_params_label = QLabel("Hardware Parameters: Not loaded")
         self.binary_params_label.setStyleSheet(
             "font-family: monospace; font-size: 9pt;"
         )
-        binary_layout.addWidget(self.binary_params_label)
+        binary_layout.addWidget(self.binary_params_label, 0)
 
         binary_group.setLayout(binary_layout)
         return binary_group
-
-    def create_optimization_group(self):
-        optimization_group = QGroupBox("Window Optimization")
-        optimization_layout = QGridLayout()
-
-        # Test range
-        optimization_layout.addWidget(QLabel("Test Range:"), 0, 0)
-        self.min_window_spin = QDoubleSpinBox()
-        self.min_window_spin.setRange(5.0, 1000.0)
-        self.min_window_spin.setValue(10.0)
-        self.min_window_spin.setSuffix(" ns")
-        optimization_layout.addWidget(self.min_window_spin, 0, 1)
-
-        optimization_layout.addWidget(QLabel("to"), 0, 2)
-        self.max_window_spin = QDoubleSpinBox()
-        self.max_window_spin.setRange(10.0, 2000.0)
-        self.max_window_spin.setValue(200.0)
-        self.max_window_spin.setSuffix(" ns")
-        optimization_layout.addWidget(self.max_window_spin, 0, 3)
-
-        optimization_layout.addWidget(QLabel("Step:"), 0, 4)
-        self.step_window_spin = QDoubleSpinBox()
-        self.step_window_spin.setRange(1.0, 50.0)
-        self.step_window_spin.setValue(10.0)
-        self.step_window_spin.setSuffix(" ns")
-        optimization_layout.addWidget(self.step_window_spin, 0, 5)
-
-        # Optimize button
-        self.optimize_btn = QPushButton("Optimize Window")
-        self.optimize_btn.clicked.connect(self.start_window_optimization)
-        optimization_layout.addWidget(self.optimize_btn, 1, 0, 1, 2)
-
-        # Progress bar
-        self.optimization_progress = QProgressBar()
-        optimization_layout.addWidget(self.optimization_progress, 1, 2, 1, 4)
-
-        optimization_group.setLayout(optimization_layout)
-        return optimization_group
-
-    def create_results_tabs(self):
-        results_tabs = QTabWidget()
-
-        # Optimization results tab
-        opt_results_tab = QWidget()
-        opt_results_layout = QVBoxLayout(opt_results_tab)
-
-        self.optimization_plot = pg.PlotWidget()
-        self.optimization_plot.setLabel("left", "Efficiency (%)")
-        self.optimization_plot.setLabel("bottom", "Window Size (ns)")
-        self.optimization_plot.setTitle("Window Optimization Results")
-        self.optimization_plot.showGrid(True, True, alpha=0.3)
-        self.optimization_plot.setBackground("w")
-        opt_results_layout.addWidget(self.optimization_plot)
-
-        self.results_table = QTableWidget()
-        self.results_table.setColumnCount(5)
-        self.results_table.setHorizontalHeaderLabels(
-            [
-                "Window (ns)",
-                "Coincidences",
-                "Efficiency (%)",
-                "Mean Δt (ns)",
-                "Std Δt (ns)",
-            ]
-        )
-        self.results_table.setMaximumHeight(150)
-        opt_results_layout.addWidget(self.results_table)
-
-        results_tabs.addTab(opt_results_tab, "Optimization Results")
-
-        # Timing analysis tab
-        timing_tab = QWidget()
-        timing_layout = QVBoxLayout(timing_tab)
-
-        self.timing_plot = pg.PlotWidget()
-        self.timing_plot.setLabel("left", "Counts")
-        self.timing_plot.setLabel("bottom", "Time Difference (ns)")
-        self.timing_plot.setTitle("Coincidence Timing Distribution")
-        self.timing_plot.showGrid(True, True, alpha=0.3)
-        self.timing_plot.setBackground("w")
-        timing_layout.addWidget(self.timing_plot)
-
-        self.timing_stats_text = QTextEdit()
-        self.timing_stats_text.setMaximumHeight(100)
-        self.timing_stats_text.setReadOnly(True)
-        timing_layout.addWidget(self.timing_stats_text)
-
-        results_tabs.addTab(timing_tab, "Timing Analysis")
-
-        return results_tabs
 
     def create_control_buttons(self):
         control_layout = QHBoxLayout()
@@ -448,8 +278,6 @@ class CoincidenceLogicTab(QWidget):
         control_layout.addWidget(self.export_timing_btn)
 
         return control_layout
-
-    # ==================== BINARY LOGIC METHODS ====================
 
     def toggle_binary_logic(self, enabled):
         self.binary_logic_enabled = enabled
@@ -762,119 +590,10 @@ class CoincidenceLogicTab(QWidget):
         self.time_window_spin.setValue(window_ns)
         self.update_coincidence_window()
 
-    def toggle_validation_mode(self, enabled):
-        self.validation_window_optimization = enabled
-
-    def start_window_optimization(self):
-        if not self.coincidence_events:
-            QMessageBox.warning(
-                self, "No Data", "No coincidence events available for optimization."
-            )
-            return
-
-        if self.optimization_active:
-            QMessageBox.warning(
-                self, "Already Running", "Optimization already in progress."
-            )
-            return
-
-        # Get optimization parameters
-        min_window = self.min_window_spin.value()
-        max_window = self.max_window_spin.value()
-        step = self.step_window_spin.value()
-
-        if min_window >= max_window:
-            QMessageBox.warning(
-                self,
-                "Invalid Range",
-                "Minimum window must be less than maximum window.",
-            )
-            return
-
-        # Start optimization worker
-        self.optimization_active = True
-        self.optimize_btn.setEnabled(False)
-
-        self.optimization_worker = WindowOptimizationWorker(
-            list(self.coincidence_events),
-            (min_window, max_window, step),
-            self.center_channel,
-        )
-
-        self.optimization_worker.progress.connect(self.optimization_progress.setValue)
-        self.optimization_worker.status.connect(self.optimization_status.setText)
-        self.optimization_worker.result.connect(self.handle_optimization_results)
-        self.optimization_worker.finished.connect(self.optimization_finished)
-
-        self.optimization_worker.start()
-
-    def handle_optimization_results(self, results):
-        self.optimization_results = results
-
-        # Plot results
-        windows = list(results.keys())
-        efficiencies = [results[w]["efficiency"] * 100 for w in windows]
-
-        self.optimization_plot.clear()
-        self.optimization_plot.plot(
-            windows, efficiencies, pen="b", symbol="o", name="Efficiency"
-        )
-
-        # Find optimal window
-        max_efficiency = max(efficiencies)
-        optimal_windows = [
-            w
-            for w in windows
-            if results[w]["efficiency"] * 100 >= max_efficiency * 0.95
-        ]
-        self.optimal_window_ns = min(optimal_windows)
-
-        # Update results table
-        self.update_results_table(results)
-
-        # Update status
-        self.optimization_status.setText(
-            f"Optimal window: {self.optimal_window_ns:.1f}ns "
-            f"(efficiency: {results[self.optimal_window_ns]['efficiency'] * 100:.1f}%)"
-        )
-
-    def update_results_table(self, results):
-        self.results_table.setRowCount(len(results))
-
-        for i, (window, data) in enumerate(results.items()):
-            self.results_table.setItem(i, 0, QTableWidgetItem(f"{window:.1f}"))
-            self.results_table.setItem(
-                i, 1, QTableWidgetItem(str(data["coincidences"]))
-            )
-            self.results_table.setItem(
-                i, 2, QTableWidgetItem(f"{data['efficiency'] * 100:.1f}")
-            )
-            self.results_table.setItem(i, 3, QTableWidgetItem(f"{data['mean_dt']:.1f}"))
-            self.results_table.setItem(i, 4, QTableWidgetItem(f"{data['std_dt']:.1f}"))
-
-    def optimization_finished(self):
-        self.optimization_active = False
-        self.optimize_btn.setEnabled(True)
-
-        # Ask user if they want to apply optimal window
-        if self.optimization_results:
-            reply = QMessageBox.question(
-                self,
-                "Apply Optimal Window?",
-                f"Apply optimal window of {self.optimal_window_ns:.1f}ns?",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            )
-
-            if reply == QMessageBox.StandardButton.Yes:
-                self.time_window_spin.setValue(self.optimal_window_ns)
-                self.update_coincidence_window()
-
     def save_coincidence_settings(self):
         settings = {
             "center_channel": self.center_channel,
             "coincidence_window_ns": self.coincidence_window_ns,
-            "optimal_window_ns": self.optimal_window_ns,
-            "optimization_results": self.optimization_results,
             "binary_logic_enabled": self.binary_logic_enabled,
             "binary_selected_channel": self.binary_selected_channel,
             "binary_hardware_params": self.binary_hardware_params,
@@ -984,54 +703,10 @@ class CoincidenceLogicTab(QWidget):
             )
             self.coincidence_events.append(coinc_event)
 
-            # Update timing analysis
-            self.update_timing_analysis()
-
     def _calculate_pixie_time_difference(self, timestamp1, timestamp2):
         dt_ticks = timestamp1 - timestamp2
         dt_ns = dt_ticks * 10.0  # Convert to nanoseconds
         return dt_ns
-
-    def update_timing_analysis(self):
-        if not self.coincidence_events:
-            return
-
-        all_time_diffs = []
-        for coinc_event in self.coincidence_events:
-            all_time_diffs.extend(coinc_event.time_differences)
-
-        if not all_time_diffs:
-            return
-
-        # Create histogram
-        hist, bins = np.histogram(all_time_diffs, bins=100)
-        self.timing_plot.clear()
-        self.timing_plot.plot(
-            bins[:-1], hist, stepMode=True, fillLevel=0, brush=(0, 0, 255, 80)
-        )
-
-        # Update statistics
-        mean_dt = np.mean(all_time_diffs)
-        std_dt = np.std(all_time_diffs)
-        min_dt = np.min(all_time_diffs)
-        max_dt = np.max(all_time_diffs)
-
-        stats_text = f"""
-            Timing Statistics:
-            Total Coincidences: {len(self.coincidence_events)}
-            Total Time Differences: {len(all_time_diffs)}
-            Mean Δt: {mean_dt:.2f} ns
-            Std Δt: {std_dt:.2f} ns
-            Min Δt: {min_dt:.2f} ns
-            Max Δt: {max_dt:.2f} ns
-
-            Current Window: ±{self.coincidence_window_ns:.1f} ns
-            Center Channel: {self.center_channel}
-        """
-
-        self.timing_stats_text.setPlainText(stats_text)
-
-    # ==================== UTILITY METHODS ====================
 
     def clear_data(self):
         self.event_buffer.clear()
@@ -1039,10 +714,6 @@ class CoincidenceLogicTab(QWidget):
         self.clear_binary_data()
 
         # Clear plots
-        self.optimization_plot.clear()
-        self.timing_plot.clear()
-        self.timing_stats_text.clear()
-        self.results_table.setRowCount(0)
         self.binary_plot.clear()
 
     def get_coincidence_statistics(self):
@@ -1050,10 +721,8 @@ class CoincidenceLogicTab(QWidget):
             "coincidence_mode": self.coincidence_mode,
             "center_channel": self.center_channel,
             "coincidence_window_ns": self.coincidence_window_ns,
-            "optimal_window_ns": self.optimal_window_ns,
             "total_coincidences": len(self.coincidence_events),
             "events_in_buffer": len(self.event_buffer),
-            "optimization_active": self.optimization_active,
             "binary_logic_enabled": self.binary_logic_enabled,
         }
 
@@ -1090,8 +759,6 @@ class CoincidenceLogicTab(QWidget):
                 )
 
         return stats
-
-    # ==================== INTERFACE METHODS FOR PARENT CLASS ====================
 
     def set_hardware_params(self, params):
         self.hardware_params.update(params)
