@@ -113,9 +113,9 @@ class ParameterControls(QGroupBox):
         main_container_layout.setContentsMargins(0, 0, 0, 0)
         main_container_layout.setSpacing(0)
 
-        self.param_header_btn = QPushButton("▼ Parameter Controls")
+        self.param_header_btn = QPushButton("▶ Parameter Controls")
         self.param_header_btn.setCheckable(True)
-        self.param_header_btn.setChecked(True)
+        self.param_header_btn.setChecked(False)
         self.param_header_btn.clicked.connect(self.toggle_parameter_section)
         self.param_header_btn.setStyleSheet("""
             QPushButton {
@@ -152,6 +152,7 @@ class ParameterControls(QGroupBox):
         content_layout.addWidget(button_group)
 
         self.param_content_widget.setLayout(content_layout)
+        self.param_content_widget.setVisible(False)
 
         main_container_layout.addWidget(self.param_header_btn)
         main_container_layout.addWidget(self.param_content_widget)

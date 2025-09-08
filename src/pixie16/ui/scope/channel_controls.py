@@ -72,9 +72,9 @@ class ChannelDisplayControls(QGroupBox):
         main_container_layout.setContentsMargins(0, 0, 0, 0)
 
         # Clickable header button
-        self.channel_header_btn = QPushButton("▼ Channel Selection")
+        self.channel_header_btn = QPushButton("▶ Channel Selection")
         self.channel_header_btn.setCheckable(True)
-        self.channel_header_btn.setChecked(True)
+        self.channel_header_btn.setChecked(False)
         self.channel_header_btn.clicked.connect(self.toggle_channel_selection)
         self.channel_header_btn.setStyleSheet("""
             QPushButton {
@@ -159,6 +159,7 @@ class ChannelDisplayControls(QGroupBox):
             self.channel_stats_labels[channel] = stats_label
 
         self.channel_content_group.setLayout(grid_layout)
+        self.channel_content_group.setVisible(False)
 
         # Assemble the collapsible container
         main_container_layout.addWidget(self.channel_header_btn)
@@ -174,9 +175,9 @@ class ChannelDisplayControls(QGroupBox):
         container_layout.setContentsMargins(0, 0, 0, 0)
 
         # Clickable header
-        self.quick_header_btn = QPushButton("▼ Quick Select")
+        self.quick_header_btn = QPushButton("▶ Quick Select")
         self.quick_header_btn.setCheckable(True)
-        self.quick_header_btn.setChecked(True)
+        self.quick_header_btn.setChecked(False)
         self.quick_header_btn.clicked.connect(self.toggle_quick_selection)
         self.quick_header_btn.setStyleSheet("""
             QPushButton {
@@ -208,6 +209,7 @@ class ChannelDisplayControls(QGroupBox):
         layout.addWidget(none_btn, 0, 1)
 
         self.quick_content_group.setLayout(layout)
+        self.quick_content_group.setVisible(False)
 
         container_layout.addWidget(self.quick_header_btn)
         container_layout.addWidget(self.quick_content_group)
