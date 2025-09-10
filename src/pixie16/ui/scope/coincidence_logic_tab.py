@@ -126,6 +126,16 @@ class CoincidenceLogicTab(QWidget):
         }
 
         self.sampling_period_ns = 2.0  # 500MHz module
+
+        # Two-channel support
+        self.two_channel_mode = True  # Enable two-channel mode by default
+        self.binary_second_channel = self.channels[1] if len(self.channels) > 1 else self.channels[0]
+        self.time_alignment_offset_ns = 0.0  # User adjustable offset between channels
+        
+        # Binary states for second channel
+        self.binary_states_ch2 = {
+            step: deque(maxlen=5000) for step in self.binary_logic_steps
+        }
         
         self.init_ui()
 
@@ -205,15 +215,41 @@ class CoincidenceLogicTab(QWidget):
         self.binary_enable_cb.toggled.connect(self.toggle_binary_logic)
         binary_controls_layout.addWidget(self.binary_enable_cb)
 
-        # Channel selection for binary view
-        binary_controls_layout.addWidget(QLabel("Channel:"))
+        # ADD: Two-channel mode toggle
+        self.two_channel_cb = QCheckBox("Two Channel Mode")
+        self.two_channel_cb.setChecked(True)
+        self.two_channel_cb.toggled.connect(self.toggle_two_channel_mode)
+        binary_controls_layout.addWidget(self.two_channel_cb)
+
+        # Channel 1 selection 
+        binary_controls_layout.addWidget(QLabel("Ch1:"))
         self.binary_channel_combo = QComboBox()
         for ch in self.channels:
             self.binary_channel_combo.addItem(f"Ch {ch}")
-        self.binary_channel_combo.currentIndexChanged.connect(
-            self.update_binary_channel
-        )
+        self.binary_channel_combo.currentIndexChanged.connect(self.update_binary_channel)
         binary_controls_layout.addWidget(self.binary_channel_combo)
+
+        # ADD: Channel 2 selection
+        self.ch2_label = QLabel("Ch2:")
+        binary_controls_layout.addWidget(self.ch2_label)
+        self.binary_channel2_combo = QComboBox()
+        for ch in self.channels:
+            self.binary_channel2_combo.addItem(f"Ch {ch}")
+        if len(self.channels) > 1:
+            self.binary_channel2_combo.setCurrentIndex(1)  # Default to second channel
+        self.binary_channel2_combo.currentIndexChanged.connect(self.update_binary_channel2)
+        binary_controls_layout.addWidget(self.binary_channel2_combo)
+
+        # ADD: Time alignment offset control (as per TODO: "Ch 9 trigger somewhere and everything is right of the trigger")
+        binary_controls_layout.addWidget(QLabel("Offset:"))
+        self.time_offset_spin = QDoubleSpinBox()
+        self.time_offset_spin.setRange(-500.0, 500.0)
+        self.time_offset_spin.setValue(0.0)
+        self.time_offset_spin.setSuffix(" ns")
+        self.time_offset_spin.setDecimals(1)
+        self.time_offset_spin.setSingleStep(0.1)
+        self.time_offset_spin.valueChanged.connect(self.update_time_offset)
+        binary_controls_layout.addWidget(self.time_offset_spin)
 
         # Time window control
         binary_controls_layout.addWidget(QLabel("Time Window:"))
@@ -227,36 +263,39 @@ class CoincidenceLogicTab(QWidget):
         binary_controls_layout.addStretch()
         binary_layout.addLayout(binary_controls_layout)
 
-        # Binary logic plot
+        # Binary logic plot - MODIFIED for two-channel display
         self.binary_plot = pg.PlotWidget()
-        self.binary_plot.setLabel("left", "Logic Steps")
-        self.binary_plot.setLabel("bottom", "Time (ns)")
-        self.binary_plot.setTitle("Coincidence Logic Steps - Channel 0")
+        self.binary_plot.setLabel("left", "Logic Steps (±Ch Offset)")
+        self.binary_plot.setLabel("bottom", "Time (ns) - Aligned to Trigger")
+        self.binary_plot.setTitle("Coincidence Logic - Two Channel View")
         self.binary_plot.showGrid(True, True, alpha=0.3)
         self.binary_plot.setBackground("w")
         self.binary_plot.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self.binary_plot.setMinimumHeight(200)
 
-        # Set up Y-axis for logic steps
-        y_labels = [
-            (0, "Event Accepted"),
-            (1, "Delayed Local"),
-            (2, "Validation Window"),
-            (3, "Multiplicity Logic"),
-            (4, "Backplane Signal"),
-            (5, "Fast Trigger"),
-            (6, "Raw > Threshold"),
+        # MODIFIED Y-axis labels for two-channel display (as per TODO: "+- on the axis")
+        y_labels_two_channel = [
+            # Channel 1 (positive side)
+            (4, "Ch1 Event Accepted"),
+            (3, "Ch1 Validation Window"), 
+            (2, "Ch1 Fast Trigger"),
+            (1, "Ch1 Raw > Threshold"),
+            # Reference line at y=0 (trigger reference)
+            (0, "Trigger Reference (t=0)"),
+            # Channel 2 (negative side)  
+            (-1, "Ch2 Raw > Threshold"),
+            (-2, "Ch2 Fast Trigger"),
+            (-3, "Ch2 Validation Window"),
+            (-4, "Ch2 Event Accepted"),
         ]
-        self.binary_plot.getAxis("left").setTicks([y_labels])
-        self.binary_plot.setYRange(-0.5, 6.5)
-
+        self.binary_plot.getAxis("left").setTicks([y_labels_two_channel])
+        self.binary_plot.setYRange(-5, 5)  # Expand range for two channels
+        
         binary_layout.addWidget(self.binary_plot, 1)
 
         # Hardware parameter display
         self.binary_params_label = QLabel("Hardware Parameters: Not loaded")
-        self.binary_params_label.setStyleSheet(
-            "font-family: monospace; font-size: 9pt;"
-        )
+        self.binary_params_label.setStyleSheet("font-family: monospace; font-size: 9pt;")
         binary_layout.addWidget(self.binary_params_label, 0)
 
         binary_group.setLayout(binary_layout)
@@ -302,9 +341,76 @@ class CoincidenceLogicTab(QWidget):
     def update_binary_time_window(self):
         self.binary_time_window_us = self.binary_time_spin.value()
 
+    def toggle_two_channel_mode(self, enabled):
+        self.two_channel_mode = enabled
+        
+        # Show/hide second channel controls
+        self.ch2_label.setVisible(enabled)
+        self.binary_channel2_combo.setVisible(enabled)
+        self.time_offset_spin.setVisible(enabled)
+        
+        if enabled:
+            self.binary_plot.setTitle("Coincidence Logic - Two Channel View") 
+            self.binary_plot.setYRange(-5, 5)
+            # Update Y-axis for two channel mode
+            y_labels_two_channel = [
+                (4, "Ch1 Event Accepted"), (3, "Ch1 Validation Window"), 
+                (2, "Ch1 Fast Trigger"), (1, "Ch1 Raw > Threshold"),
+                (0, "Trigger Reference (t=0)"),
+                (-1, "Ch2 Raw > Threshold"), (-2, "Ch2 Fast Trigger"),
+                (-3, "Ch2 Validation Window"), (-4, "Ch2 Event Accepted"),
+            ]
+            self.binary_plot.getAxis("left").setTicks([y_labels_two_channel])
+        else:
+            self.binary_plot.setTitle(f"Coincidence Logic - Channel {self.binary_selected_channel}")
+            self.binary_plot.setYRange(-0.5, 6.5)
+            # Revert to single channel Y-axis
+            y_labels_single = [
+                (0, "Event Accepted"), (1, "Delayed Local"), (2, "Validation Window"),
+                (3, "Multiplicity Logic"), (4, "Backplane Signal"), 
+                (5, "Fast Trigger"), (6, "Raw > Threshold"),
+            ]
+            self.binary_plot.getAxis("left").setTicks([y_labels_single])
+            
+        self.clear_binary_data()
+    
+    def get_event_trigger_time(self, event):
+        # Check if CFD is enabled for this channel
+        cfd_enabled = getattr(event, 'cfd_enabled', False)
+        
+        if cfd_enabled and hasattr(event, 'cfd_time'):
+            # CFD is on - use CFD timestamp  
+            trigger_time = event.cfd_time
+        else:
+            # CFD is off - use fast trigger time (as per TODO: "if you dont do CFD then fast trigger is the time stamp")
+            if hasattr(event, 'fast_trigger_time'):
+                trigger_time = event.fast_trigger_time
+            else:
+                # Estimate from trace (fast trigger usually at ~30% of trace)
+                trigger_time = len(getattr(event, 'trace', [])) * 0.3
+                
+        return trigger_time
+    
+    def set_hardware_params_from_parent(self, hardware_params):
+        self.hardware_params.update(hardware_params)
+        
+        # Also update binary-specific parameters
+        self.binary_hardware_params['fast_threshold'] = hardware_params.get('fast_threshold', 100)
+        self._update_parameter_display()
+
+    def update_binary_channel2(self):
+        self.binary_second_channel = self.channels[self.binary_channel2_combo.currentIndex()]
+        if self.two_channel_mode:
+            self.clear_binary_data()
+
+    def update_time_offset(self):
+        self.time_alignment_offset_ns = self.time_offset_spin.value()
+
     def clear_binary_data(self):
         for step in self.binary_logic_steps:
             self.binary_states[step].clear()
+            if hasattr(self, 'binary_states_ch2'):
+                self.binary_states_ch2[step].clear()
         self.binary_timestamps.clear()
         self.binary_plot.clear()
 
@@ -352,76 +458,114 @@ class CoincidenceLogicTab(QWidget):
         # time_us * 1000ns/us * 1cycle/10ns = time_us * 100 cycles/us
         return int(time_us * 100)
 
-    def compute_binary_logic_steps(self, raw_trace, channel, event_timestamp):
-        if not self.binary_logic_enabled or channel != self.binary_selected_channel:
+    def compute_binary_logic_steps(self, raw_trace, channel, event_timestamp):        
+        if not self.binary_logic_enabled:
+            return None
+
+        # Determine which channel we're processing
+        is_channel1 = (channel == self.binary_selected_channel)
+        is_channel2 = (channel == self.binary_second_channel and self.two_channel_mode)
+        
+        if not (is_channel1 or is_channel2):
             return None
 
         trace_length = len(raw_trace)
-        time_axis = np.arange(trace_length) * self.sampling_period_ns
+        
+        # Create time axis aligned to trigger (as per TODO: "Ch 9 trigger somewhere and everything is right of the trigger")
+        # Estimate trigger position (typically around 30% into trace)
+        trigger_position_samples = int(trace_length * 0.3)
+        trigger_time_ns = trigger_position_samples * self.sampling_period_ns
+        
+        # Time axis with trigger at t=0 
+        time_axis = np.arange(trace_length) * self.sampling_period_ns - trigger_time_ns
+        
+        # Apply channel-specific time offset for alignment
+        if is_channel2:
+            time_axis += self.time_alignment_offset_ns
 
+        # Compute binary logic steps
+        binary_results = self._compute_channel_binary_logic(raw_trace, channel, event_timestamp, time_axis)
+        
+        # Store results for appropriate channel
+        if is_channel1:
+            self._store_binary_results_for_channel(binary_results, 'ch1')
+        elif is_channel2:
+            self._store_binary_results_for_channel(binary_results, 'ch2')
+        
+        # Update visualization
+        if self.two_channel_mode:
+            self.update_two_channel_binary_visualization()
+        else:
+            self.update_binary_visualization(binary_results)
+            
+        return binary_results
+    
+    def _compute_channel_binary_logic(self, raw_trace, channel, event_timestamp, time_axis):        
+        trace_length = len(raw_trace)
+        
         # Raw signal > threshold
         threshold = self.binary_hardware_params["fast_threshold"]
-        baseline = (
-            np.mean(raw_trace[:100]) if len(raw_trace) > 100 else np.mean(raw_trace)
-        )
+        baseline = np.mean(raw_trace[:100]) if len(raw_trace) > 100 else np.mean(raw_trace)
         raw_binary = (raw_trace > (baseline + threshold)).astype(int)
 
-        # Fast trigger (FO0) - needs parent implementation
+        # Fast trigger
         fast_trigger_binary = self.compute_fast_trigger_binary(raw_trace, channel)
 
-        # Backplane signal (delayed version of fast trigger)
-        backplane_delay_samples = int(
-            self.binary_hardware_params["fast_trigger_backplane_delay_ns"]
-            / self.sampling_period_ns
-        )
-        backplane_binary = np.roll(fast_trigger_binary, backplane_delay_samples)
-        if backplane_delay_samples > 0:
-            backplane_binary[:backplane_delay_samples] = 0
+        # Validation window
+        # show multiplicity logic firing when coincidences are detected
+        validation_binary = self.compute_validation_window(event_timestamp, trace_length, channel)
+        event_accepted_binary = fast_trigger_binary & validation_binary
 
-        # Multiplicity logic
-        multiplicity_binary = self.compute_multiplicity_logic(
-            event_timestamp, trace_length
-        )
-
-        # Validation window (stretched multiplicity result)
-        stretch_samples = int(
-            self.binary_hardware_params["channel_trigger_stretch_ns"]
-            / self.sampling_period_ns
-        )
-        validation_binary = np.convolve(
-            multiplicity_binary, np.ones(stretch_samples), mode="same"
-        )
-        validation_binary = (validation_binary > 0).astype(int)
-
-        # Delayed local trigger
-        ext_delay_samples = int(
-            self.binary_hardware_params["external_delay_length_ns"]
-            / self.sampling_period_ns
-        )
-        delayed_local_binary = np.roll(fast_trigger_binary, ext_delay_samples)
-        if ext_delay_samples > 0:
-            delayed_local_binary[:ext_delay_samples] = 0
-
-        # Final event validation (AND of delayed local and validation window)
-        event_accepted_binary = delayed_local_binary & validation_binary
-
-        # Store results
-        binary_results = {
+        return {
             "raw_threshold": raw_binary,
             "fast_trigger": fast_trigger_binary,
-            "backplane_signal": backplane_binary,
-            "multiplicity_logic": multiplicity_binary,
             "validation_window": validation_binary,
-            "delayed_local": delayed_local_binary,
             "event_accepted": event_accepted_binary,
             "time_axis": time_axis,
             "timestamp": event_timestamp,
+            "channel": channel
         }
+    
+    def compute_validation_window(self, event_timestamp, trace_length, channel):        
+        validation_binary = np.zeros(trace_length, dtype=int)
+        
+        # Check for coincident events from other channels
+        current_time_ticks = event_timestamp
+        window_ticks = self.coincidence_window_ns / 10.0  # Convert ns to 10ns ticks
+        
+        coincident_found = False
+        for buffered_event, buffered_trace in list(self.event_buffer)[-50:]:
+            if not hasattr(buffered_event, 'channel') or not hasattr(buffered_event, 'timestamp'):
+                continue
+                
+            if buffered_event.channel == channel:
+                continue  # Skip same channel
+                
+            time_diff_ticks = abs(buffered_event.timestamp - current_time_ticks)
+            
+            if time_diff_ticks <= window_ticks:
+                coincident_found = True
+                break
+        
+        # If coincidence found, show validation window active
+        if coincident_found:
+            # Show validation pulse in middle portion of trace (where trigger typically occurs)
+            pulse_start = trace_length // 3
+            pulse_width = min(100, trace_length // 5)  # Reasonable pulse width
+            pulse_end = min(pulse_start + pulse_width, trace_length)
+            validation_binary[pulse_start:pulse_end] = 1
+        
+        return validation_binary
 
-        # Update visualization
-        self.update_binary_visualization(binary_results)
-
-        return binary_results
+    def _store_binary_results_for_channel(self, binary_results, channel_id):        
+        storage = self.binary_states if channel_id == 'ch1' else self.binary_states_ch2
+        
+        # Store only the key steps for two-channel display
+        key_steps = ["raw_threshold", "fast_trigger", "validation_window", "event_accepted"]
+        
+        for step in key_steps:
+            if step in binary_results:
+                storage[step].append(binary_results[step])
 
     def compute_multiplicity_logic(self, event_timestamp, trace_length):
         """
@@ -547,6 +691,94 @@ class CoincidenceLogicTab(QWidget):
 
         # Add timing histogram in background if we have coincidence data
         self.add_timing_histogram_background()
+    
+    def update_two_channel_binary_visualization(self):
+        if not self.two_channel_mode or not self.binary_logic_enabled:
+            return
+            
+        self.binary_plot.clear()
+        
+        # Colors for different logic steps
+        colors = ["red", "orange", "green", "blue"]
+        key_steps = ["raw_threshold", "fast_trigger", "validation_window", "event_accepted"]
+        
+        # Plot Channel 1 (positive Y axis)
+        if any(len(self.binary_states[step]) > 0 for step in key_steps):
+            self._plot_channel_binary_traces('ch1', colors, y_offset_base=1)
+            
+        # Plot Channel 2 (negative Y axis) 
+        if any(len(self.binary_states_ch2[step]) > 0 for step in key_steps):
+            self._plot_channel_binary_traces('ch2', colors, y_offset_base=-1)
+            
+        # Add trigger reference line at y=0 (as per TODO: "Ch 9 trigger somewhere")
+        trigger_ref_line = pg.InfiniteLine(pos=0, angle=0, 
+                                         pen=pg.mkPen(color='black', width=2, style=pg.QtCore.Qt.PenStyle.DashLine))
+        self.binary_plot.addItem(trigger_ref_line)
+        
+        # Add time reference line at x=0 (trigger time)
+        time_ref_line = pg.InfiniteLine(pos=0, angle=90,
+                                      pen=pg.mkPen(color='gray', width=1, style=pg.QtCore.Qt.PenStyle.DotLine))  
+        self.binary_plot.addItem(time_ref_line)
+    
+    def _plot_channel_binary_traces(self, channel_id, colors, y_offset_base):        
+        storage = self.binary_states if channel_id == 'ch1' else self.binary_states_ch2
+        y_multiplier = 1 if channel_id == 'ch1' else -1  # Positive for ch1, negative for ch2
+        
+        key_steps = ["raw_threshold", "fast_trigger", "validation_window", "event_accepted"]
+        
+        for i, step in enumerate(key_steps):
+            if step not in storage or len(storage[step]) == 0:
+                continue
+                
+            # Get most recent trace for this step
+            binary_data = storage[step][-1]  # Most recent
+            
+            if len(binary_data) == 0:
+                continue
+                
+            # Create time axis aligned to trigger
+            trace_length = len(binary_data)
+            trigger_position_samples = int(trace_length * 0.3)
+            trigger_time_ns = trigger_position_samples * self.sampling_period_ns
+            time_axis = np.arange(trace_length) * self.sampling_period_ns - trigger_time_ns
+            
+            # Apply channel time offset
+            if channel_id == 'ch2':
+                time_axis += self.time_alignment_offset_ns
+                
+            # Y offset for this logic step (as per TODO: "+- on the axis")
+            y_offset = y_offset_base + (i * y_multiplier)
+            
+            # Create step plot for clean digital display
+            step_x, step_y = self._create_step_plot_data(time_axis, binary_data, y_offset)
+            
+            color = colors[i % len(colors)]
+            channel_num = self.binary_selected_channel if channel_id == 'ch1' else self.binary_second_channel
+            
+            self.binary_plot.plot(
+                step_x, step_y,
+                pen=pg.mkPen(color=color, width=2),
+                name=f"{step.replace('_', ' ').title()} (Ch{channel_num})"
+            )
+
+    def _create_step_plot_data(self, time_axis, binary_data, y_offset):
+        step_x = []
+        step_y = []
+        
+        for i in range(len(binary_data)):
+            if i == 0:
+                # Initial point
+                step_x.extend([time_axis[i], time_axis[i]]) 
+                step_y.extend([y_offset, y_offset + binary_data[i]])
+            else:
+                # Horizontal line from previous point
+                step_x.append(time_axis[i])
+                step_y.append(y_offset + binary_data[i-1])
+                # Vertical transition 
+                step_x.append(time_axis[i])
+                step_y.append(y_offset + binary_data[i])
+        
+        return step_x, step_y
 
     def add_timing_histogram_background(self):
         if not self.coincidence_events:

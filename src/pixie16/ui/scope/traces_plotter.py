@@ -1,8 +1,5 @@
 """
-TracesPlotter with Reorganized Functional Tabs
-- Raw Traces: Simplified trace display only
-- Hardware Trigger Validation: Real-time parameter control and signal visualization
-- Coincidence Analysis: Statistical analysis and window optimization
+TracesPlotter Tab
 """
 
 import numpy as np
@@ -234,6 +231,11 @@ class TracesPlotter(QWidget):
         # Update timer
         self.update_timer = QTimer()
         self.update_timer.timeout.connect(self.update_plots)
+    
+    def sync_parameters_to_coincidence_tab(self):
+        if hasattr(self, 'coincidence_tab') and self.coincidence_tab:
+            self.coincidence_tab.set_hardware_params_from_parent(self.hardware_params)
+
 
     def init_ui(self):
         layout = QVBoxLayout()
@@ -254,6 +256,8 @@ class TracesPlotter(QWidget):
         self.coincidence_tab.parameter_changed.connect(self.parameter_changed)
         self.override_coincidence_fast_trigger_computation()
         self.tab_widget.addTab(self.coincidence_tab, "Coincidence Logic")
+
+        self.sync_parameters_to_coincidence_tab()
 
         layout.addWidget(self.tab_widget)
         self.setLayout(layout)
@@ -637,7 +641,7 @@ class TracesPlotter(QWidget):
             )
             self.parameter_info_label.setText(params_text)
 
-    # ==================== Raw Traces Tab Methods ====================
+            self.sync_parameters_to_coincidence_tab()
 
     def toggle_simple_coincidence(self, enabled):
         if hasattr(self, "coincidence_tab"):
@@ -741,9 +745,18 @@ class TracesPlotter(QWidget):
         # Add to raw traces display
         self.add_trace(event.channel, trace_data, event_timestamp)
 
-        # Feed to coincidence logic tab
+        # Feed to coincidence logic tab AND process for two-channel binary logic
         if hasattr(self, "coincidence_tab"):
             self.coincidence_tab.add_event_with_trace(event, trace_data)
+            
+            # Process for binary logic if this is one of the selected channels
+            if (event.channel == self.coincidence_tab.binary_selected_channel or 
+                (self.coincidence_tab.two_channel_mode and 
+                 event.channel == self.coincidence_tab.binary_second_channel)):
+                
+                self.coincidence_tab.compute_binary_logic_steps(
+                    trace_data, event.channel, event_timestamp
+                )
 
     def add_trace(self, channel, trace_data, event_timestamp=None):
         try:
@@ -1758,3 +1771,48 @@ class TracesPlotter(QWidget):
 
         except Exception as e:
             print(f"Error updating {label} replay plot: {e}")
+    
+    def enable_enhanced_coincidence_analysis(self, reference_channel=9):
+        print("Enabling enhanced coincidence analysis for 500MHz PIXIE-16:")
+        
+        if not hasattr(self, 'coincidence_tab'):
+            print("No coincidence tab available")
+            return
+        
+        # Set reference channel (channel 9 from TODO)
+        if reference_channel in self.channels:
+            ref_idx = self.channels.index(reference_channel)
+            self.coincidence_tab.center_channel_combo.setCurrentIndex(ref_idx)
+            self.coincidence_tab.center_channel = reference_channel
+            
+            # Set as first channel for binary logic
+            self.coincidence_tab.binary_channel_combo.setCurrentIndex(ref_idx)
+            self.coincidence_tab.binary_selected_channel = reference_channel
+        
+        # Find second channel for two-channel mode
+        second_channel = next((ch for ch in self.channels if ch != reference_channel), self.channels[0])
+        if second_channel in self.channels:
+            ch2_idx = self.channels.index(second_channel)
+            self.coincidence_tab.binary_channel2_combo.setCurrentIndex(ch2_idx)
+            self.coincidence_tab.binary_second_channel = second_channel
+        
+        # Enable two-channel mode
+        self.coincidence_tab.two_channel_cb.setChecked(True)
+        self.coincidence_tab.toggle_two_channel_mode(True)
+        
+        # Set reasonable coincidence window
+        self.coincidence_tab.time_window_spin.setValue(20.0)
+        self.coincidence_tab.update_coincidence_window()
+        
+        # Enable binary logic visualization
+        self.coincidence_tab.binary_enable_cb.setChecked(True)
+        self.coincidence_tab.toggle_binary_logic(True)
+        
+        # Sync parameters
+        self.sync_parameters_to_coincidence_tab()
+        
+        print(f"  Reference channel: {reference_channel}")
+        print(f"  Second channel: {second_channel}")
+        print(f"  Two-channel mode: Enabled")
+        print(f"  Binary logic visualization: Enabled")
+        print("Enhanced coincidence analysis ready!")
