@@ -1080,6 +1080,7 @@ class TracesPlotter(QWidget):
         if not persistence_traces:
             return
 
+        # Get the last N traces
         display_traces = persistence_traces[-self.single_persistence_count:]
         if not display_traces:
             return
@@ -1087,15 +1088,26 @@ class TracesPlotter(QWidget):
         trace_length = len(display_traces[0])
         time_axis = self.calculate_real_time_axis(trace_length, channel)
 
+        # Original trace type colors
+        trace_colors = {
+            "raw": "#1f77b4",  # Blue
+            "fast_trigger": "#ff7f0e",  # Orange
+            "energy_filter": "#2ca02c",  # Green
+            "cfd": "#d62728",  # Red
+        }
+
+        # Plot each enabled trace type for all persistence traces
         for trace_type, enabled in self.trace_types.items():
             if not enabled:
                 continue
 
+            # Plot each trace - older ones in gray, latest in original colors
             for i, trace in enumerate(display_traces):
                 if len(trace) != trace_length:
                     continue
 
                 try:
+                    # Process the signal based on trace type
                     if trace_type == "raw":
                         signal = trace
                     else:
@@ -1131,9 +1143,9 @@ class TracesPlotter(QWidget):
                     is_latest = (i == len(display_traces) - 1)
                     
                     if is_latest:
-                        # Latest trace - bright blue
-                        color = "#0066ff"
-                        width = 2.5
+                        # Latest trace - use original trace type color
+                        color = trace_colors.get(trace_type, "#1f77b4")
+                        width = 2.0
                         trace_name = trace_type.replace('_', ' ').title()
                     else:
                         # Older traces - light gray with optional alpha fade
