@@ -106,6 +106,10 @@ class CoincidenceLogicTab(QWidget):
         }
         self.binary_timestamps = deque(maxlen=5000)
 
+        self.binary_states_ch2 = {
+            step: deque(maxlen=5000) for step in self.binary_logic_steps
+        }
+
         # Hardware parameters for timing calculations
         self.binary_hardware_params = {
             "fast_trigger_backplane_delay_ns": 0,
@@ -127,20 +131,23 @@ class CoincidenceLogicTab(QWidget):
 
         self.sampling_period_ns = 2.0  # 500MHz module
 
-        # Two-channel support
-        self.two_channel_mode = True  # Enable two-channel mode by default
-        self.binary_second_channel = self.channels[1] if len(self.channels) > 1 else self.channels[0]
-        self.time_alignment_offset_ns = 0.0  # User adjustable offset between channels
-        
-        # Binary states for second channel
-        self.binary_states_ch2 = {
-            step: deque(maxlen=5000) for step in self.binary_logic_steps
-        }
+        self.two_channel_mode = True
+        if len(self.channels) > 1:
+            self.binary_second_channel = self.channels[1]
+        else:
+            self.binary_second_channel = self.channels[0]  # Fallback to same channel
+            self.two_channel_mode = False
+        self.time_alignment_offset_ns = 0.0
         
         self.init_ui()
 
+        self.update_timer = QTimer(self)
+        self.update_timer.setSingleShot(False)
+
         if self.hardware_manager:
             self.update_binary_hardware_params()
+        else:
+            print(f"Warning: No hardware manager detected")
 
     def init_ui(self):
         layout = QVBoxLayout()
@@ -212,13 +219,20 @@ class CoincidenceLogicTab(QWidget):
         # Enable binary visualization
         self.binary_enable_cb = QCheckBox("Enable Binary Logic View")
         self.binary_enable_cb.setChecked(True)
-        self.binary_enable_cb.toggled.connect(self.toggle_binary_logic)
+        # CRITICAL FIX 6: Safe signal connection with error handling
+        try:
+            self.binary_enable_cb.toggled.connect(self.toggle_binary_logic)
+        except Exception as e:
+            print(f"Error connecting binary enable signal: {e}")
         binary_controls_layout.addWidget(self.binary_enable_cb)
 
-        # ADD: Two-channel mode toggle
+        # Two-channel mode toggle
         self.two_channel_cb = QCheckBox("Two Channel Mode")
-        self.two_channel_cb.setChecked(True)
-        self.two_channel_cb.toggled.connect(self.toggle_two_channel_mode)
+        self.two_channel_cb.setChecked(self.two_channel_mode)
+        try:
+            self.two_channel_cb.toggled.connect(self.toggle_two_channel_mode)
+        except Exception as e:
+            print(f"Error connecting two channel signal: {e}")
         binary_controls_layout.addWidget(self.two_channel_cb)
 
         # Channel 1 selection 
@@ -226,21 +240,27 @@ class CoincidenceLogicTab(QWidget):
         self.binary_channel_combo = QComboBox()
         for ch in self.channels:
             self.binary_channel_combo.addItem(f"Ch {ch}")
-        self.binary_channel_combo.currentIndexChanged.connect(self.update_binary_channel)
+        try:
+            self.binary_channel_combo.currentIndexChanged.connect(self.update_binary_channel)
+        except Exception as e:
+            print(f"Error connecting channel 1 signal: {e}")
         binary_controls_layout.addWidget(self.binary_channel_combo)
 
-        # ADD: Channel 2 selection
+        # Channel 2 selection
         self.ch2_label = QLabel("Ch2:")
         binary_controls_layout.addWidget(self.ch2_label)
         self.binary_channel2_combo = QComboBox()
         for ch in self.channels:
             self.binary_channel2_combo.addItem(f"Ch {ch}")
         if len(self.channels) > 1:
-            self.binary_channel2_combo.setCurrentIndex(1)  # Default to second channel
-        self.binary_channel2_combo.currentIndexChanged.connect(self.update_binary_channel2)
+            self.binary_channel2_combo.setCurrentIndex(1)
+        try:
+            self.binary_channel2_combo.currentIndexChanged.connect(self.update_binary_channel2)
+        except Exception as e:
+            print(f"Error connecting channel 2 signal: {e}")
         binary_controls_layout.addWidget(self.binary_channel2_combo)
 
-        # ADD: Time alignment offset control (as per TODO: "Ch 9 trigger somewhere and everything is right of the trigger")
+        # Time alignment offset control
         binary_controls_layout.addWidget(QLabel("Offset:"))
         self.time_offset_spin = QDoubleSpinBox()
         self.time_offset_spin.setRange(-500.0, 500.0)
@@ -248,7 +268,10 @@ class CoincidenceLogicTab(QWidget):
         self.time_offset_spin.setSuffix(" ns")
         self.time_offset_spin.setDecimals(1)
         self.time_offset_spin.setSingleStep(0.1)
-        self.time_offset_spin.valueChanged.connect(self.update_time_offset)
+        try:
+            self.time_offset_spin.valueChanged.connect(self.update_time_offset)
+        except Exception as e:
+            print(f"Error connecting time offset signal: {e}")
         binary_controls_layout.addWidget(self.time_offset_spin)
 
         # Time window control
@@ -263,35 +286,24 @@ class CoincidenceLogicTab(QWidget):
         binary_controls_layout.addStretch()
         binary_layout.addLayout(binary_controls_layout)
 
-        # Binary logic plot - MODIFIED for two-channel display
-        self.binary_plot = pg.PlotWidget()
-        self.binary_plot.setLabel("left", "Logic Steps (±Ch Offset)")
-        self.binary_plot.setLabel("bottom", "Time (ns) - Aligned to Trigger")
-        self.binary_plot.setTitle("Coincidence Logic - Two Channel View")
-        self.binary_plot.showGrid(True, True, alpha=0.3)
-        self.binary_plot.setBackground("w")
-        self.binary_plot.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
-        self.binary_plot.setMinimumHeight(200)
+        try:
+            self.binary_plot = pg.PlotWidget()
+            self.binary_plot.setLabel("left", "Logic Steps (±Ch Offset)")
+            self.binary_plot.setLabel("bottom", "Time (ns) - Aligned to Trigger")
+            self.binary_plot.setTitle("Coincidence Logic - Two Channel View")
+            self.binary_plot.showGrid(True, True, alpha=0.3)
+            self.binary_plot.setBackground("w")
+            self.binary_plot.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+            self.binary_plot.setMinimumHeight(200)
 
-        # MODIFIED Y-axis labels for two-channel display (as per TODO: "+- on the axis")
-        y_labels_two_channel = [
-            # Channel 1 (positive side)
-            (4, "Ch1 Event Accepted"),
-            (3, "Ch1 Validation Window"), 
-            (2, "Ch1 Fast Trigger"),
-            (1, "Ch1 Raw > Threshold"),
-            # Reference line at y=0 (trigger reference)
-            (0, "Trigger Reference (t=0)"),
-            # Channel 2 (negative side)  
-            (-1, "Ch2 Raw > Threshold"),
-            (-2, "Ch2 Fast Trigger"),
-            (-3, "Ch2 Validation Window"),
-            (-4, "Ch2 Event Accepted"),
-        ]
-        self.binary_plot.getAxis("left").setTicks([y_labels_two_channel])
-        self.binary_plot.setYRange(-5, 5)  # Expand range for two channels
-        
-        binary_layout.addWidget(self.binary_plot, 1)
+            # Initialize Y-axis for two-channel display
+            self._setup_plot_axis()
+
+            binary_layout.addWidget(self.binary_plot, 1)
+        except Exception as e:
+            print(f"Error creating binary plot: {e}")
+            error_label = QLabel(f"Plot Error: {e}")
+            binary_layout.addWidget(error_label, 1)
 
         # Hardware parameter display
         self.binary_params_label = QLabel("Hardware Parameters: Not loaded")
@@ -300,6 +312,30 @@ class CoincidenceLogicTab(QWidget):
 
         binary_group.setLayout(binary_layout)
         return binary_group
+    
+    def _setup_plot_axis(self):
+        try:
+            if self.two_channel_mode:
+                y_labels_two_channel = [
+                    (4, "Ch1 Event Accepted"), (3, "Ch1 Validation Window"), 
+                    (2, "Ch1 Fast Trigger"), (1, "Ch1 Raw > Threshold"),
+                    (0, "Trigger Reference (t=0)"),
+                    (-1, "Ch2 Raw > Threshold"), (-2, "Ch2 Fast Trigger"),
+                    (-3, "Ch2 Validation Window"), (-4, "Ch2 Event Accepted"),
+                ]
+                self.binary_plot.getAxis("left").setTicks([y_labels_two_channel])
+                self.binary_plot.setYRange(-5, 5)
+            else:
+                y_labels_single = [
+                    (0, "Event Accepted"), (1, "Delayed Local"), (2, "Validation Window"),
+                    (3, "Multiplicity Logic"), (4, "Backplane Signal"), 
+                    (5, "Fast Trigger"), (6, "Raw > Threshold"),
+                ]
+                self.binary_plot.getAxis("left").setTicks([y_labels_single])
+                self.binary_plot.setYRange(-0.5, 6.5)
+        except Exception as e:
+            print(f"Error setting up plot axis: {e}")
+
 
     def create_control_buttons(self):
         control_layout = QHBoxLayout()
@@ -329,51 +365,47 @@ class CoincidenceLogicTab(QWidget):
             self.binary_plot.clear()
 
     def update_binary_channel(self):
-        self.binary_selected_channel = self.channels[
-            self.binary_channel_combo.currentIndex()
-        ]
-        if self.binary_logic_enabled:
-            self.binary_plot.setTitle(
-                f"Coincidence Logic Steps - Channel {self.binary_selected_channel}"
-            )
-            self.clear_binary_data()
+        try:
+            if hasattr(self, 'binary_channel_combo'):
+                index = self.binary_channel_combo.currentIndex()
+                if 0 <= index < len(self.channels):
+                    self.binary_selected_channel = self.channels[index]
+                    if self.binary_logic_enabled:
+                        if hasattr(self, 'binary_plot'):
+                            if not self.two_channel_mode:
+                                self.binary_plot.setTitle(f"Coincidence Logic - Channel {self.binary_selected_channel}")
+                        self.clear_binary_data()
+        except Exception as e:
+            print(f"Error updating binary channel: {e}")
 
     def update_binary_time_window(self):
         self.binary_time_window_us = self.binary_time_spin.value()
 
     def toggle_two_channel_mode(self, enabled):
-        self.two_channel_mode = enabled
-        
-        # Show/hide second channel controls
-        self.ch2_label.setVisible(enabled)
-        self.binary_channel2_combo.setVisible(enabled)
-        self.time_offset_spin.setVisible(enabled)
-        
-        if enabled:
-            self.binary_plot.setTitle("Coincidence Logic - Two Channel View") 
-            self.binary_plot.setYRange(-5, 5)
-            # Update Y-axis for two channel mode
-            y_labels_two_channel = [
-                (4, "Ch1 Event Accepted"), (3, "Ch1 Validation Window"), 
-                (2, "Ch1 Fast Trigger"), (1, "Ch1 Raw > Threshold"),
-                (0, "Trigger Reference (t=0)"),
-                (-1, "Ch2 Raw > Threshold"), (-2, "Ch2 Fast Trigger"),
-                (-3, "Ch2 Validation Window"), (-4, "Ch2 Event Accepted"),
-            ]
-            self.binary_plot.getAxis("left").setTicks([y_labels_two_channel])
-        else:
-            self.binary_plot.setTitle(f"Coincidence Logic - Channel {self.binary_selected_channel}")
-            self.binary_plot.setYRange(-0.5, 6.5)
-            # Revert to single channel Y-axis
-            y_labels_single = [
-                (0, "Event Accepted"), (1, "Delayed Local"), (2, "Validation Window"),
-                (3, "Multiplicity Logic"), (4, "Backplane Signal"), 
-                (5, "Fast Trigger"), (6, "Raw > Threshold"),
-            ]
-            self.binary_plot.getAxis("left").setTicks([y_labels_single])
+        try:
+            self.two_channel_mode = enabled
             
-        self.clear_binary_data()
-    
+            # Show/hide second channel controls safely
+            if hasattr(self, 'ch2_label'):
+                self.ch2_label.setVisible(enabled)
+            if hasattr(self, 'binary_channel2_combo'):
+                self.binary_channel2_combo.setVisible(enabled)
+            if hasattr(self, 'time_offset_spin'):
+                self.time_offset_spin.setVisible(enabled)
+            
+            # Update plot safely
+            if hasattr(self, 'binary_plot'):
+                if enabled:
+                    self.binary_plot.setTitle("Coincidence Logic - Two Channel View") 
+                else:
+                    self.binary_plot.setTitle(f"Coincidence Logic - Channel {self.binary_selected_channel}")
+                
+                self._setup_plot_axis()
+                self.clear_binary_data()
+                
+        except Exception as e:
+            print(f"Error toggling two channel mode: {e}")
+
     def get_event_trigger_time(self, event):
         # Check if CFD is enabled for this channel
         cfd_enabled = getattr(event, 'cfd_enabled', False)
@@ -399,20 +431,34 @@ class CoincidenceLogicTab(QWidget):
         self._update_parameter_display()
 
     def update_binary_channel2(self):
-        self.binary_second_channel = self.channels[self.binary_channel2_combo.currentIndex()]
-        if self.two_channel_mode:
-            self.clear_binary_data()
+        try:
+            if hasattr(self, 'binary_channel2_combo'):
+                index = self.binary_channel2_combo.currentIndex()
+                if 0 <= index < len(self.channels):
+                    self.binary_second_channel = self.channels[index]
+                    if self.two_channel_mode:
+                        self.clear_binary_data()
+        except Exception as e:
+            print(f"Error updating binary channel 2: {e}")
 
     def update_time_offset(self):
         self.time_alignment_offset_ns = self.time_offset_spin.value()
 
     def clear_binary_data(self):
-        for step in self.binary_logic_steps:
-            self.binary_states[step].clear()
-            if hasattr(self, 'binary_states_ch2'):
-                self.binary_states_ch2[step].clear()
-        self.binary_timestamps.clear()
-        self.binary_plot.clear()
+        try:
+            for step in self.binary_logic_steps:
+                if step in self.binary_states:
+                    self.binary_states[step].clear()
+                if hasattr(self, 'binary_states_ch2') and step in self.binary_states_ch2:
+                    self.binary_states_ch2[step].clear()
+            
+            if hasattr(self, 'binary_timestamps'):
+                self.binary_timestamps.clear()
+            
+            if hasattr(self, 'binary_plot'):
+                self.binary_plot.clear()
+        except Exception as e:
+            print(f"Error clearing binary data: {e}")
 
     def update_binary_hardware_params(self):
         if not self.hardware_manager:
@@ -558,14 +604,28 @@ class CoincidenceLogicTab(QWidget):
         return validation_binary
 
     def _store_binary_results_for_channel(self, binary_results, channel_id):        
-        storage = self.binary_states if channel_id == 'ch1' else self.binary_states_ch2
-        
-        # Store only the key steps for two-channel display
-        key_steps = ["raw_threshold", "fast_trigger", "validation_window", "event_accepted"]
-        
-        for step in key_steps:
-            if step in binary_results:
-                storage[step].append(binary_results[step])
+        try:
+            if channel_id == 'ch1':
+                storage = self.binary_states
+            elif channel_id == 'ch2':
+                # Ensure ch2 storage exists
+                if not hasattr(self, 'binary_states_ch2'):
+                    self.binary_states_ch2 = {
+                        step: deque(maxlen=5000) for step in self.binary_logic_steps
+                    }
+                storage = self.binary_states_ch2
+            else:
+                print(f"Warning: Unknown channel_id {channel_id}")
+                return
+
+            key_steps = ["raw_threshold", "fast_trigger", "validation_window", "event_accepted"]
+            
+            for step in key_steps:
+                if step in binary_results and step in storage:
+                    storage[step].append(binary_results[step])
+                    
+        except Exception as e:
+            print(f"Error storing binary results for {channel_id}: {e}")
 
     def compute_multiplicity_logic(self, event_timestamp, trace_length):
         """

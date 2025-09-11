@@ -229,9 +229,10 @@ class TracesPlotter(QWidget):
         self.init_ui()
 
         # Update timer
-        self.update_timer = QTimer()
+        self.update_timer = QTimer(self)  # Add self as parent
         self.update_timer.timeout.connect(self.update_plots)
-    
+        self.update_timer.setSingleShot(False)
+        
     def sync_parameters_to_coincidence_tab(self):
         if hasattr(self, 'coincidence_tab') and self.coincidence_tab:
             self.coincidence_tab.set_hardware_params_from_parent(self.hardware_params)
@@ -1622,6 +1623,12 @@ class TracesPlotter(QWidget):
             self.channel_combo.addItem(f"Ch {ch}")
 
     def start_live_updates(self):
+        if self.update_timer.thread() != self.thread():
+            print("WARNING: Timer thread mismatch - recreating timer")
+            self.update_timer = QTimer(self)
+            self.update_timer.timeout.connect(self.update_plots)
+            self.update_timer.setSingleShot(False)
+    
         if not self.update_timer.isActive():
             self.update_timer.start(100)
             print("Traces Plotter: Started live updates")
