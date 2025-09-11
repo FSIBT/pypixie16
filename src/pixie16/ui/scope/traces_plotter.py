@@ -226,6 +226,12 @@ class TracesPlotter(QWidget):
         self.alignment_reference_channel = 0
         self.trace_timestamps = {ch: deque(maxlen=1000) for ch in self.channels}
 
+        self.single_channel_persistence = False
+        self.single_persistence_count = 3
+        self.single_persistence_normalize = False
+        self.single_persistence_alpha_fade = False
+        self.single_persistence_data = {ch: deque(maxlen=100) for ch in self.channels}
+
         self.init_ui()
 
         # Update timer
@@ -576,6 +582,33 @@ class TracesPlotter(QWidget):
         trace_types_group.setLayout(trace_types_layout)
         layout.addWidget(trace_types_group)
 
+        # Add persistence controls for single channel
+        persistence_group = QGroupBox("Persistence Controls")
+        persistence_layout = QHBoxLayout()
+        
+        self.single_persistence_cb = QCheckBox("Persistence Mode")
+        self.single_persistence_cb.toggled.connect(self.toggle_single_persistence)
+        persistence_layout.addWidget(self.single_persistence_cb)
+        
+        persistence_layout.addWidget(QLabel("Traces:"))
+        self.single_persistence_count_spin = QSpinBox()
+        self.single_persistence_count_spin.setRange(2, 20)
+        self.single_persistence_count_spin.setValue(3)
+        self.single_persistence_count_spin.valueChanged.connect(self.update_single_persistence_count)
+        persistence_layout.addWidget(self.single_persistence_count_spin)
+        
+        self.single_normalize_cb = QCheckBox("Normalize")
+        self.single_normalize_cb.toggled.connect(self.toggle_single_normalize)
+        persistence_layout.addWidget(self.single_normalize_cb)
+        
+        self.single_alpha_fade_cb = QCheckBox("Alpha Fade")
+        self.single_alpha_fade_cb.toggled.connect(self.toggle_single_alpha_fade)
+        persistence_layout.addWidget(self.single_alpha_fade_cb)
+        
+        persistence_layout.addStretch()
+        persistence_group.setLayout(persistence_layout)
+        layout.addWidget(persistence_group)
+
         params_info_group = QGroupBox("Current Parameters")
         params_info_layout = QVBoxLayout()
         params_info_layout.setContentsMargins(8, 2, 8, 2)
@@ -660,6 +693,18 @@ class TracesPlotter(QWidget):
 
     def toggle_auto_scale(self, enabled):
         self.auto_scale = enabled
+
+    def toggle_single_persistence(self, enabled):
+        self.single_channel_persistence = enabled
+
+    def update_single_persistence_count(self):
+        self.single_persistence_count = self.single_persistence_count_spin.value()
+
+    def toggle_single_normalize(self, enabled):
+        self.single_persistence_normalize = enabled
+
+    def toggle_single_alpha_fade(self, enabled):
+        self.single_persistence_alpha_fade = enabled
 
     # Hardware validation
     def update_selected_channel(self):
@@ -780,6 +825,11 @@ class TracesPlotter(QWidget):
                 if amplitude >= self.amplitude_threshold:
                     # Store in original buffer
                     self.trace_data[channel].append(trace_data)
+
+                    # Store in single channel persistence buffer
+                    if self.single_channel_persistence:
+                        self.single_persistence_data[channel].append(trace_data)
+
 
                     # Store in replay buffer
                     if (
@@ -927,119 +977,21 @@ class TracesPlotter(QWidget):
                 self.peak_sample_points[channel] = {}
 
             if channel not in self.trace_data or len(self.trace_data[channel]) == 0:
-                for trace_type, curve in curves.items():
-                    curve.setData([], [])
+                plot_widget.clear()
                 return
-
-            # Get latest trace with safety checks
-            traces_list = list(self.trace_data[channel])
-            if not traces_list:
-                for trace_type, curve in curves.items():
-                    curve.setData([], [])
-                return
-
-            latest_trace = traces_list[-1]
-            if latest_trace is None or len(latest_trace) == 0:
-                print(f"DEBUG: Empty or None trace for channel {channel}")
-                for trace_type, curve in curves.items():
-                    curve.setData([], [])
-                return
-
-            time_axis = self.calculate_real_time_axis(len(latest_trace), channel)
-
-            try:
-                main_trigger_points = self.calculate_main_trigger_point(
-                    latest_trace, channel
-                )
-                if main_trigger_points:
-                    self._store_trigger_info(
-                        channel, main_trigger_points, "main_trigger"
-                    )
-                else:
-                    # Store empty list so we know we tried
-                    self._store_trigger_info(channel, [], "main_trigger")
-            except Exception as e:
-                print(f"Error calculating main trigger for channel {channel}: {e}")
-                self._store_trigger_info(channel, [], "main_trigger")
 
             # Clear plot
             plot_widget.clear()
 
-            # Plot enabled traces with proper scaling
-            plotted_traces = {}
-
-            for trace_type, enabled in self.trace_types.items():
-                if not enabled:
-                    continue
-
-                try:
-                    if trace_type == "raw":
-                        signal = latest_trace
-                        color = "#1f77b4"  # Blue
-                        name = "Raw Trace"
-
-                    else:
-                        signal = self.compute_hardware_traces(
-                            trace_type, latest_trace, channel
-                        )
-                        if signal is None or len(signal) == 0:
-                            print(
-                                f"DEBUG: No {trace_type} signal for channel {channel}"
-                            )
-                            continue
-
-                        trace_colors = {
-                            "fast_trigger": "#ff7f0e",  # Orange
-                            "energy_filter": "#2ca02c",  # Green
-                            "cfd": "#d62728",  # Red
-                        }
-                        color = trace_colors.get(trace_type, "#333333")
-                        name = trace_type.replace("_", " ").title()
-
-                        # Apply amplitude scaling for visibility
-                        if trace_type == "fast_trigger":
-                            raw_amplitude = np.max(latest_trace) - np.min(latest_trace)
-                            if np.max(signal) > 0:
-                                scale_factor = raw_amplitude / (3 * np.max(signal))
-                                signal = signal * scale_factor
-
-                        elif trace_type == "cfd":
-                            baseline = np.mean(latest_trace[:100])
-                            signal = signal + baseline
-
-                        elif trace_type == "energy_filter":
-                            raw_amplitude = np.max(latest_trace) - np.min(latest_trace)
-                            if np.max(signal) > np.min(signal):
-                                signal_amplitude = np.max(signal) - np.min(signal)
-                                scale_factor = (2 * raw_amplitude) / signal_amplitude
-                                signal = (
-                                    signal - np.min(signal)
-                                ) * scale_factor + np.min(latest_trace)
-
-                    # Plot the trace
-                    plotted_traces[trace_type] = plot_widget.plot(
-                        time_axis, signal, pen=pg.mkPen(color=color, width=2), name=name
-                    )
-
-                except Exception as e:
-                    print(f"Error plotting {trace_type} for channel {channel}: {e}")
-
-            try:
-                self._add_trigger_markers(plot_widget, channel, time_axis)
-            except Exception as e:
-                print(f"Error adding trigger markers for channel {channel}: {e}")
-
-            try:
-                self._add_threshold_lines(plot_widget, latest_trace)
-            except Exception as e:
-                print(f"Error adding threshold lines for channel {channel}: {e}")
+            if self.single_channel_persistence and len(self.single_persistence_data[channel]) > 0:
+                # Persistence mode - plot multiple overlaid traces
+                self._plot_persistence_traces_single_channel(channel, plot_widget)
+            else:
+                # Normal mode - plot just the latest trace
+                self._plot_single_trace(channel, plot_widget)
 
             plot_widget.setTitle(f"{label} - Ch {channel}")
-
-            try:
-                plot_widget.addLegend()
-            except Exception as e:
-                print(f"Error adding legend for channel {channel}: {e}")
+            plot_widget.addLegend()
 
         except Exception as e:
             print(f"CRITICAL ERROR updating {label} plot for channel {channel}: {e}")
@@ -1048,6 +1000,181 @@ class TracesPlotter(QWidget):
                 plot_widget.setTitle(f"{label} - Ch {channel} (ERROR)")
             except:
                 pass
+
+    def _plot_single_trace(self, channel, plot_widget):
+        traces_list = list(self.trace_data[channel])
+        if not traces_list:
+            return
+
+        latest_trace = traces_list[-1]
+        if latest_trace is None or len(latest_trace) == 0:
+            return
+
+        time_axis = self.calculate_real_time_axis(len(latest_trace), channel)
+
+        # Calculate trigger points for the latest trace
+        try:
+            main_trigger_points = self.calculate_main_trigger_point(latest_trace, channel)
+            if main_trigger_points:
+                self._store_trigger_info(channel, main_trigger_points, "main_trigger")
+            else:
+                self._store_trigger_info(channel, [], "main_trigger")
+        except Exception as e:
+            print(f"Error calculating main trigger for channel {channel}: {e}")
+            self._store_trigger_info(channel, [], "main_trigger")
+
+        # Plot enabled traces with proper scaling
+        for trace_type, enabled in self.trace_types.items():
+            if not enabled:
+                continue
+
+            try:
+                if trace_type == "raw":
+                    signal = latest_trace
+                    color = "#1f77b4"  # Blue
+                    name = "Raw Trace"
+                else:
+                    signal = self.compute_hardware_traces(trace_type, latest_trace, channel)
+                    if signal is None or len(signal) == 0:
+                        continue
+
+                    trace_colors = {
+                        "fast_trigger": "#ff7f0e",  # Orange
+                        "energy_filter": "#2ca02c",  # Green
+                        "cfd": "#d62728",  # Red
+                    }
+                    color = trace_colors.get(trace_type, "#333333")
+                    name = trace_type.replace("_", " ").title()
+
+                    # Apply amplitude scaling for visibility
+                    if trace_type == "fast_trigger":
+                        raw_amplitude = np.max(latest_trace) - np.min(latest_trace)
+                        if np.max(signal) > 0:
+                            scale_factor = raw_amplitude / (3 * np.max(signal))
+                            signal = signal * scale_factor
+                    elif trace_type == "cfd":
+                        baseline = np.mean(latest_trace[:100])
+                        signal = signal + baseline
+                    elif trace_type == "energy_filter":
+                        raw_amplitude = np.max(latest_trace) - np.min(latest_trace)
+                        if np.max(signal) > np.min(signal):
+                            signal_amplitude = np.max(signal) - np.min(signal)
+                            scale_factor = (2 * raw_amplitude) / signal_amplitude
+                            signal = (signal - np.min(signal)) * scale_factor + np.min(latest_trace)
+
+                # Plot the trace
+                plot_widget.plot(time_axis, signal, pen=pg.mkPen(color=color, width=2), name=name)
+
+            except Exception as e:
+                print(f"Error plotting {trace_type} for channel {channel}: {e}")
+
+        # Add trigger markers and threshold lines
+        try:
+            self._add_trigger_markers(plot_widget, channel, time_axis)
+            self._add_threshold_lines(plot_widget, latest_trace)
+        except Exception as e:
+            print(f"Error adding markers/lines for channel {channel}: {e}")
+
+    def _plot_persistence_traces_single_channel(self, channel, plot_widget):
+        persistence_traces = list(self.single_persistence_data[channel])
+        if not persistence_traces:
+            return
+
+        # Get the last N traces
+        display_traces = persistence_traces[-self.single_persistence_count:]
+        if not display_traces:
+            return
+
+        trace_length = len(display_traces[0])
+        time_axis = self.calculate_real_time_axis(trace_length, channel)
+
+        # Plot each enabled trace type for all persistence traces
+        for trace_type, enabled in self.trace_types.items():
+            if not enabled:
+                continue
+
+            trace_colors = {
+                "raw": "#1f77b4",  # Blue
+                "fast_trigger": "#ff7f0e",  # Orange
+                "energy_filter": "#2ca02c",  # Green
+                "cfd": "#d62728",  # Red
+            }
+            base_color = trace_colors.get(trace_type, "#1f77b4")
+
+            # Plot each trace with increasing alpha (newer = more opaque)
+            for i, trace in enumerate(display_traces):
+                if len(trace) != trace_length:
+                    continue
+
+                try:
+                    if trace_type == "raw":
+                        signal = trace
+                    else:
+                        signal = self.compute_hardware_traces(trace_type, trace, channel)
+                        if signal is None or len(signal) == 0:
+                            continue
+
+                        # Apply same scaling as single trace mode
+                        if trace_type == "fast_trigger":
+                            raw_amplitude = np.max(trace) - np.min(trace)
+                            if np.max(signal) > 0:
+                                scale_factor = raw_amplitude / (3 * np.max(signal))
+                                signal = signal * scale_factor
+                        elif trace_type == "cfd":
+                            baseline = np.mean(trace[:100])
+                            signal = signal + baseline
+                        elif trace_type == "energy_filter":
+                            raw_amplitude = np.max(trace) - np.min(trace)
+                            if np.max(signal) > np.min(signal):
+                                signal_amplitude = np.max(signal) - np.min(signal)
+                                scale_factor = (2 * raw_amplitude) / signal_amplitude
+                                signal = (signal - np.min(signal)) * scale_factor + np.min(trace)
+
+                    # Apply normalization if enabled
+                    if self.single_persistence_normalize and trace_type == "raw":
+                        baseline = np.mean(signal[:50]) if len(signal) > 50 else np.mean(signal)
+                        signal_normalized = signal - baseline
+                        max_val = np.max(np.abs(signal_normalized))
+                        if max_val > 0:
+                            signal = signal_normalized / max_val
+                        else:
+                            signal = signal_normalized
+
+                    # Calculate alpha (older traces more transparent)
+                    if self.single_persistence_alpha_fade:
+                        alpha = 0.2 + 0.8 * (i / len(display_traces))  # 0.2 to 1.0
+                    else:
+                        alpha = 1.0
+
+                    # Convert alpha to hex for PyQtGraph
+                    alpha_hex = hex(int(255 * alpha))[2:].zfill(2)
+                    color_with_alpha = base_color + alpha_hex
+
+                    # Create trace name with index for legend
+                    trace_name = f"{trace_type.replace('_', ' ').title()} {i+1}" if len(display_traces) > 1 else trace_type.replace('_', ' ').title()
+
+                    # Plot the trace
+                    plot_widget.plot(
+                        time_axis, signal, 
+                        pen=pg.mkPen(color=color_with_alpha, width=1.5),
+                        name=trace_name
+                    )
+
+                except Exception as e:
+                    print(f"Error plotting persistence trace {i} {trace_type} for channel {channel}: {e}")
+
+        # Add markers only for the latest trace
+        if display_traces:
+            latest_trace = display_traces[-1]
+            try:
+                main_trigger_points = self.calculate_main_trigger_point(latest_trace, channel)
+                if main_trigger_points:
+                    self._store_trigger_info(channel, main_trigger_points, "main_trigger")
+                
+                self._add_trigger_markers(plot_widget, channel, time_axis)
+                self._add_threshold_lines(plot_widget, latest_trace)
+            except Exception as e:
+                print(f"Error adding markers for persistence plot: {e}")
 
     def _add_threshold_lines(self, plot_widget, raw_trace):
         try:
