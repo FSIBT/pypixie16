@@ -1080,7 +1080,6 @@ class TracesPlotter(QWidget):
         if not persistence_traces:
             return
 
-        # Get the last N traces
         display_traces = persistence_traces[-self.single_persistence_count:]
         if not display_traces:
             return
@@ -1088,20 +1087,10 @@ class TracesPlotter(QWidget):
         trace_length = len(display_traces[0])
         time_axis = self.calculate_real_time_axis(trace_length, channel)
 
-        # Plot each enabled trace type for all persistence traces
         for trace_type, enabled in self.trace_types.items():
             if not enabled:
                 continue
 
-            trace_colors = {
-                "raw": "#1f77b4",  # Blue
-                "fast_trigger": "#ff7f0e",  # Orange
-                "energy_filter": "#2ca02c",  # Green
-                "cfd": "#d62728",  # Red
-            }
-            base_color = trace_colors.get(trace_type, "#1f77b4")
-
-            # Plot each trace with increasing alpha (newer = more opaque)
             for i, trace in enumerate(display_traces):
                 if len(trace) != trace_length:
                     continue
@@ -1114,7 +1103,7 @@ class TracesPlotter(QWidget):
                         if signal is None or len(signal) == 0:
                             continue
 
-                        # Apply same scaling as single trace mode
+                        # Apply scaling for non-raw traces
                         if trace_type == "fast_trigger":
                             raw_amplitude = np.max(trace) - np.min(trace)
                             if np.max(signal) > 0:
@@ -1130,40 +1119,46 @@ class TracesPlotter(QWidget):
                                 scale_factor = (2 * raw_amplitude) / signal_amplitude
                                 signal = (signal - np.min(signal)) * scale_factor + np.min(trace)
 
-                    # Apply normalization if enabled
+                    # Apply normalization if enabled (only for raw traces)
                     if self.single_persistence_normalize and trace_type == "raw":
                         baseline = np.mean(signal[:50]) if len(signal) > 50 else np.mean(signal)
                         signal_normalized = signal - baseline
                         max_val = np.max(np.abs(signal_normalized))
                         if max_val > 0:
                             signal = signal_normalized / max_val
-                        else:
-                            signal = signal_normalized
 
-                    # Calculate alpha (older traces more transparent)
-                    if self.single_persistence_alpha_fade:
-                        alpha = 0.2 + 0.8 * (i / len(display_traces))  # 0.2 to 1.0
+                    # Determine color and line properties
+                    is_latest = (i == len(display_traces) - 1)
+                    
+                    if is_latest:
+                        # Latest trace - bright blue
+                        color = "#0066ff"
+                        width = 2.5
+                        trace_name = trace_type.replace('_', ' ').title()
                     else:
-                        alpha = 1.0
-
-                    # Convert alpha to hex for PyQtGraph
-                    alpha_hex = hex(int(255 * alpha))[2:].zfill(2)
-                    color_with_alpha = base_color + alpha_hex
-
-                    # Create trace name with index for legend
-                    trace_name = f"{trace_type.replace('_', ' ').title()} {i+1}" if len(display_traces) > 1 else trace_type.replace('_', ' ').title()
+                        # Older traces - light gray with optional alpha fade
+                        if self.single_persistence_alpha_fade:
+                            # Varying transparency for older traces (older = more transparent)
+                            alpha = 0.3 + 0.4 * (i / max(1, len(display_traces) - 2))
+                            alpha_hex = hex(int(255 * alpha))[2:].zfill(2)
+                            color = "#808080" + alpha_hex
+                        else:
+                            color = "#c0c0c0"  # Light gray
+                        width = 1.0
+                        # Don't add old traces to legend to avoid clutter
+                        trace_name = None
 
                     # Plot the trace
                     plot_widget.plot(
                         time_axis, signal, 
-                        pen=pg.mkPen(color=color_with_alpha, width=1.5),
+                        pen=pg.mkPen(color=color, width=width),
                         name=trace_name
                     )
 
                 except Exception as e:
                     print(f"Error plotting persistence trace {i} {trace_type} for channel {channel}: {e}")
 
-        # Add markers only for the latest trace
+        # Add markers and lines only for the latest trace
         if display_traces:
             latest_trace = display_traces[-1]
             try:
