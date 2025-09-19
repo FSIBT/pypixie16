@@ -230,7 +230,7 @@ class TracesPlotter(QWidget):
         self.single_persistence_count = 3
         self.single_persistence_normalize = False
         self.single_persistence_alpha_fade = False
-        self.single_persistence_data = {ch: deque(maxlen=100) for ch in self.channels}
+        self.single_persistence_data = {ch: deque() for ch in self.channels}
 
         self.init_ui()
 
@@ -592,8 +592,8 @@ class TracesPlotter(QWidget):
         
         persistence_layout.addWidget(QLabel("Traces:"))
         self.single_persistence_count_spin = QSpinBox()
-        self.single_persistence_count_spin.setRange(2, 20)
-        self.single_persistence_count_spin.setValue(3)
+        self.single_persistence_count_spin.setRange(2, 10000)
+        self.single_persistence_count_spin.setValue(50)
         self.single_persistence_count_spin.valueChanged.connect(self.update_single_persistence_count)
         persistence_layout.addWidget(self.single_persistence_count_spin)
         
@@ -604,6 +604,14 @@ class TracesPlotter(QWidget):
         self.single_alpha_fade_cb = QCheckBox("Alpha Fade")
         self.single_alpha_fade_cb.toggled.connect(self.toggle_single_alpha_fade)
         persistence_layout.addWidget(self.single_alpha_fade_cb)
+
+        self.save_traces_btn = QPushButton("Save Traces Buffer")
+        self.save_traces_btn.clicked.connect(self.save_traces_buffer)
+        persistence_layout.addWidget(self.save_traces_btn)
+
+        self.clear_persistence_btn = QPushButton("Clear Persistence")
+        self.clear_persistence_btn.clicked.connect(self.clear_persistence_only)
+        persistence_layout.addWidget(self.clear_persistence_btn)
         
         persistence_layout.addStretch()
         persistence_group.setLayout(persistence_layout)
@@ -635,6 +643,10 @@ class TracesPlotter(QWidget):
         self.hardware_status_label = QLabel("Hardware Status: Ready")
         layout.addWidget(self.hardware_status_label)
 
+        # Persistence statistics
+        self.persistence_stats_label = QLabel("Persistence: Ready")
+        layout.addWidget(self.persistence_stats_label)
+
         # Initialize plot curves for hardware validation
         self.hw_curves = {}
 
@@ -659,7 +671,81 @@ class TracesPlotter(QWidget):
             )
 
         return tab
+    
+    def clear_persistence_only(self):
+        for channel in self.channels:
+            self.single_persistence_data[channel].clear()
+        
+        # Update statistics
+        selected_channel = self.channels[self.channel_combo.currentIndex()]
+        self.update_persistence_statistics(selected_channel)
+        
+        print("Cleared persistence data for all channels")
 
+    def save_traces_buffer(self):
+        try:
+            timestamp = int(time.time())
+            save_dir = Path("traces_buffer")
+            save_dir.mkdir(exist_ok=True)
+            
+            selected_channel = self.channels[self.channel_combo.currentIndex()]
+            
+            # Save single channel persistence data if available
+            if (selected_channel in self.single_persistence_data and 
+                len(self.single_persistence_data[selected_channel]) > 0):
+                
+                traces_list = list(self.single_persistence_data[selected_channel])
+                trace_count = len(traces_list)
+                
+                # Warn user about large datasets
+                if trace_count > 5000:
+                    from PyQt6.QtWidgets import QMessageBox
+                    reply = QMessageBox.question(
+                        self, "Large Dataset Warning", 
+                        f"You are about to save {trace_count} traces. This may take a while and create a large file. Continue?",
+                        QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+                    )
+                    if reply != QMessageBox.StandardButton.Yes:
+                        return
+                
+                traces_array = np.array(traces_list)
+                filename = save_dir / f"traces_ch{selected_channel}_{timestamp}.npy"
+                np.save(filename, traces_array)
+                
+                # Save metadata
+                metadata = {
+                    "channel": selected_channel,
+                    "timestamp": timestamp,
+                    "trace_count": trace_count,
+                    "sampling_period_ns": self.sampling_period_ns,
+                    "hardware_params": self.hardware_params.copy()
+                }
+                
+                metadata_file = save_dir / f"traces_ch{selected_channel}_{timestamp}_metadata.json"
+                with open(metadata_file, 'w') as f:
+                    json.dump(metadata, f, indent=2)
+                
+                file_size_mb = filename.stat().st_size / (1024 * 1024)
+                QMessageBox.information(
+                    self, "Traces Saved", 
+                    f"Saved {trace_count} traces to {filename}\n"
+                    f"File size: {file_size_mb:.1f} MB\n"
+                    f"Metadata: {metadata_file}"
+                )
+            else:
+                QMessageBox.warning(
+                    self, "No Data", 
+                    f"No persistence data available for channel {selected_channel}"
+                )
+                
+        except Exception as e:
+            QMessageBox.critical(self, "Save Error", f"Failed to save traces: {e}")
+
+    def update_single_persistence_count(self):
+        new_count = self.single_persistence_count_spin.value()
+        self.single_persistence_count = new_count
+        print(f"Updated persistence display count to {new_count} traces")
+        
     def update_parameter_info_display(self):
         if self.parameter_info_label:
             params_text = (
@@ -830,7 +916,6 @@ class TracesPlotter(QWidget):
                     if self.single_channel_persistence:
                         self.single_persistence_data[channel].append(trace_data)
 
-
                     # Store in replay buffer
                     if (
                         hasattr(self, "replay_widget")
@@ -986,12 +1071,16 @@ class TracesPlotter(QWidget):
             if self.single_channel_persistence and len(self.single_persistence_data[channel]) > 0:
                 # Persistence mode - plot multiple overlaid traces
                 self._plot_persistence_traces_single_channel(channel, plot_widget)
+                # Calculate display statistics for persistence mode
+                total_stored = len(self.single_persistence_data[channel])
+                displayed = min(self.single_persistence_count, total_stored)
+                plot_widget.setTitle(f"{label} - Ch {channel} (Persistence: {displayed}/{total_stored} traces)")
             else:
                 # Normal mode - plot just the latest trace
                 self._plot_single_trace(channel, plot_widget)
-
-            plot_widget.setTitle(f"{label} - Ch {channel}")
+                plot_widget.setTitle(f"{label} - Ch {channel}")
             plot_widget.addLegend()
+            self.update_persistence_statistics(channel)
 
         except Exception as e:
             print(f"CRITICAL ERROR updating {label} plot for channel {channel}: {e}")
@@ -1000,6 +1089,17 @@ class TracesPlotter(QWidget):
                 plot_widget.setTitle(f"{label} - Ch {channel} (ERROR)")
             except:
                 pass
+    
+    def update_persistence_statistics(self, channel):
+        if hasattr(self, 'persistence_stats_label'):
+            if self.single_channel_persistence:
+                total_stored = len(self.single_persistence_data[channel])
+                displayed = min(self.single_persistence_count, total_stored)
+                self.persistence_stats_label.setText(
+                    f"Persistence: {displayed}/{total_stored} traces stored (unlimited)"
+                )
+            else:
+                self.persistence_stats_label.setText("Persistence: Disabled")
 
     def _plot_single_trace(self, channel, plot_widget):
         traces_list = list(self.trace_data[channel])
@@ -1704,19 +1804,16 @@ class TracesPlotter(QWidget):
         return energy_filter
 
     def clear_data(self):
-        # Clear raw traces data
         for channel in self.channels:
             self.trace_data[channel].clear()
             self.last_traces[channel] = None
-
-        # Clear coincidence tab data
         if hasattr(self, "coincidence_tab"):
             self.coincidence_tab.clear_data()
-
-        # Clear plot displays
         for channel in self.channels:
             if channel in self.raw_curves:
                 self.raw_curves[channel].setData([], [])
+        for channel in self.channels:
+            self.single_persistence_data[channel].clear()
 
         if self.replay_widget:
             self.replay_widget.clear_traces()
