@@ -254,7 +254,7 @@ class TracesPlotter(QWidget):
         self.tab_widget.addTab(raw_traces_tab, "Raw Traces")
 
         hardware_validation_tab = self.create_hardware_validation_tab()
-        self.tab_widget.addTab(hardware_validation_tab, "Single Trace Validation")
+        self.tab_widget.addTab(hardware_validation_tab, "Single Channel Analysis")
 
         self.coincidence_tab = CoincidenceLogicTab(
             channels=self.channels, hardware_manager=self.hardware_manager, parent=self
@@ -946,6 +946,8 @@ class TracesPlotter(QWidget):
         sampling_period_ns = 2.0  # For 500 MHz module
         sample_times = np.arange(trace_length) * sampling_period_ns
         real_times = sample_times - trace_delay
+
+        # TODO: set limit, divide bt 10^9
 
         return real_times
 

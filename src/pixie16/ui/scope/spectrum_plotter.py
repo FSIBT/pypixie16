@@ -143,13 +143,6 @@ class ContinuousSpectrumPlotter(QWidget):
         self.auto_scale_cb.setChecked(True)
         self.auto_scale_cb.toggled.connect(self.toggle_auto_scale)
 
-        self.update_rate_label = QLabel("Update Rate (s):")
-        self.update_rate_spin = QDoubleSpinBox()
-        self.update_rate_spin.setRange(0.1, 10.0)
-        self.update_rate_spin.setValue(self.update_rate)
-        self.update_rate_spin.setSingleStep(0.1)
-        self.update_rate_spin.valueChanged.connect(self.update_update_rate)
-
         self.clear_btn = QPushButton("Clear Spectra")
         self.clear_btn.clicked.connect(self.clear_data)
 
@@ -174,11 +167,6 @@ class ContinuousSpectrumPlotter(QWidget):
         layout.addWidget(QLabel("Bins:"))
         self.bins_spin.setMaximumWidth(70)
         layout.addWidget(self.bins_spin)
-
-        # Update rate
-        layout.addWidget(QLabel("Rate:"))
-        self.update_rate_spin.setMaximumWidth(60)
-        layout.addWidget(self.update_rate_spin)
 
         # Checkboxes with shorter text
         self.log_scale_cb.setText("Log")
@@ -312,12 +300,6 @@ class ContinuousSpectrumPlotter(QWidget):
 
     def update_bins(self):
         self.bins = self.bins_spin.value()
-
-    def update_update_rate(self):
-        self.update_rate = self.update_rate_spin.value()
-        if self.update_timer.isActive():
-            self.update_timer.stop()
-            self.update_timer.start(int(self.update_rate * 1000))
 
     def toggle_log_scale(self, checked):
         if checked:
