@@ -241,8 +241,7 @@ class TracesPlotter(QWidget):
         
     def sync_parameters_to_coincidence_tab(self):
         if hasattr(self, 'coincidence_tab') and self.coincidence_tab:
-            self.coincidence_tab.set_hardware_params_from_parent(self.hardware_params)
-
+            self.coincidence_tab.set_hardware_params(self.hardware_params)
 
     def init_ui(self):
         layout = QVBoxLayout()
@@ -261,7 +260,6 @@ class TracesPlotter(QWidget):
         )
         self.coincidence_tab.set_hardware_params(self.hardware_params)
         self.coincidence_tab.parameter_changed.connect(self.parameter_changed)
-        self.override_coincidence_fast_trigger_computation()
         self.tab_widget.addTab(self.coincidence_tab, "Coincidence Logic")
 
         self.sync_parameters_to_coincidence_tab()
@@ -877,18 +875,9 @@ class TracesPlotter(QWidget):
         # Add to raw traces display
         self.add_trace(event.channel, trace_data, event_timestamp)
 
-        # Feed to coincidence logic tab AND process for two-channel binary logic
+        # Feed to coincidence logic tab
         if hasattr(self, "coincidence_tab"):
             self.coincidence_tab.add_event_with_trace(event, trace_data)
-            
-            # Process for binary logic if this is one of the selected channels
-            if (event.channel == self.coincidence_tab.binary_selected_channel or 
-                (self.coincidence_tab.two_channel_mode and 
-                 event.channel == self.coincidence_tab.binary_second_channel)):
-                
-                self.coincidence_tab.compute_binary_logic_steps(
-                    trace_data, event.channel, event_timestamp
-                )
 
     def add_trace(self, channel, trace_data, event_timestamp=None):
         try:
@@ -1865,28 +1854,6 @@ class TracesPlotter(QWidget):
         if not self.update_timer.isActive():
             self.update_timer.start(100)
             print("Traces Plotter: Started live updates")
-        self.override_coincidence_fast_trigger_computation()
-
-    def override_coincidence_fast_trigger_computation(self):
-        def compute_fast_trigger_binary_override(raw_trace, channel):
-            try:
-                fast_trigger_signal = self.compute_hardware_traces(
-                    "fast_trigger", raw_trace, channel
-                )
-                if fast_trigger_signal is not None and len(fast_trigger_signal) > 0:
-                    threshold = self.hardware_params["fast_threshold"]
-                    return (fast_trigger_signal > threshold).astype(int)
-                else:
-                    return np.zeros(len(raw_trace), dtype=int)
-            except Exception as e:
-                print(f"Error in fast trigger binary computation: {e}")
-                return np.zeros(len(raw_trace), dtype=int)
-
-        # Replace the method in coincidence tab
-        if hasattr(self, "coincidence_tab"):
-            self.coincidence_tab.compute_fast_trigger_binary = (
-                compute_fast_trigger_binary_override
-            )
 
     def stop_live_updates(self):
         if self.update_timer.isActive():
@@ -2019,33 +1986,29 @@ class TracesPlotter(QWidget):
             print("No coincidence tab available")
             return
         
-        # Set reference channel (channel 9 from TODO)
+        # Set reference channel 
         if reference_channel in self.channels:
             ref_idx = self.channels.index(reference_channel)
             self.coincidence_tab.center_channel_combo.setCurrentIndex(ref_idx)
             self.coincidence_tab.center_channel = reference_channel
             
             # Set as first channel for binary logic
-            self.coincidence_tab.binary_channel_combo.setCurrentIndex(ref_idx)
-            self.coincidence_tab.binary_selected_channel = reference_channel
+            self.coincidence_tab.ch1_combo.setCurrentIndex(ref_idx)
+            self.coincidence_tab.channel1 = reference_channel
         
-        # Find second channel for two-channel mode
+        # Find second channel 
         second_channel = next((ch for ch in self.channels if ch != reference_channel), self.channels[0])
         if second_channel in self.channels:
             ch2_idx = self.channels.index(second_channel)
-            self.coincidence_tab.binary_channel2_combo.setCurrentIndex(ch2_idx)
-            self.coincidence_tab.binary_second_channel = second_channel
-        
-        # Enable two-channel mode
-        self.coincidence_tab.two_channel_cb.setChecked(True)
-        self.coincidence_tab.toggle_two_channel_mode(True)
+            self.coincidence_tab.ch2_combo.setCurrentIndex(ch2_idx)
+            self.coincidence_tab.channel2 = second_channel
         
         # Set reasonable coincidence window
         self.coincidence_tab.time_window_spin.setValue(20.0)
         self.coincidence_tab.update_coincidence_window()
         
         # Enable binary logic visualization
-        self.coincidence_tab.binary_enable_cb.setChecked(True)
+        self.coincidence_tab.enable_checkbox.setChecked(True)
         self.coincidence_tab.toggle_binary_logic(True)
         
         # Sync parameters
@@ -2053,6 +2016,4 @@ class TracesPlotter(QWidget):
         
         print(f"  Reference channel: {reference_channel}")
         print(f"  Second channel: {second_channel}")
-        print(f"  Two-channel mode: Enabled")
-        print(f"  Binary logic visualization: Enabled")
         print("Enhanced coincidence analysis ready!")
