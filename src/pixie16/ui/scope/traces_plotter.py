@@ -433,10 +433,14 @@ class TracesPlotter(QWidget):
             self.alignment_ref_combo.setEnabled(False)
             self.alignment_reference_timestamp = None
             self.raw_plot_widget.setTitle("PIXIE-16 Raw Traces - Zero Alignment")
+            if self.auto_scale:
+                self.raw_plot_widget.autoRange()
+            self.raw_plot_widget.setLabel("bottom", "Time (ns)")
+            
         elif mode_text == "Channel":
             self.time_alignment_mode = "channel_aligned"
             self.alignment_ref_combo.setEnabled(True)
-            self.alignment_reference_timestamp = None
+            self.alignment_reference_timestamp = None  # Reset reference
 
             ref_ch = self.channels[self.alignment_ref_combo.currentIndex()]
             self.raw_plot_widget.setTitle(
@@ -445,22 +449,30 @@ class TracesPlotter(QWidget):
             print(
                 f"DEBUG: Channel alignment mode enabled, waiting for Ch{ref_ch} trace..."
             )
+            
         elif mode_text == "None":
             self.time_alignment_mode = "real_time_axis"
             self.alignment_ref_combo.setEnabled(False)
+            self.alignment_reference_timestamp = None
             self.raw_plot_widget.setTitle(
                 "PIXIE-16 Raw Traces - Relative Time Alignment"
             )
+            if self.auto_scale:
+                self.raw_plot_widget.autoRange()
+            self.raw_plot_widget.setLabel("bottom", "Time (ns)")
 
     def update_alignment_reference(self):
         self.alignment_reference_channel = self.channels[
             self.alignment_ref_combo.currentIndex()
         ]
+        # Reset reference timestamp when changing reference channel
         self.alignment_reference_timestamp = None
+        
         if self.time_alignment_mode == "channel_aligned":
             self.raw_plot_widget.setTitle(
                 f"PIXIE-16 Raw Traces - Aligned to Ch{self.alignment_reference_channel}"
             )
+            print(f"DEBUG: Changed alignment reference to Ch{self.alignment_reference_channel}, reset reference timestamp")
 
     def calculate_aligned_time_axis(self, trace_length, event_timestamp=None):
         if (
@@ -470,10 +482,12 @@ class TracesPlotter(QWidget):
             # Get reference timestamp for alignment
             ref_timestamp = self.get_reference_timestamp()
             if ref_timestamp is not None:
-                # Calculate time difference in ns (assuming 10ns timestamp units)
-                time_offset = (event_timestamp - ref_timestamp) * 10.0
-
-                return np.arange(trace_length) * self.sampling_period_ns + time_offset
+                # Calculate time difference in ns (timestamps are in 10ns units)
+                time_offset_ns = (event_timestamp - ref_timestamp) * 10.0
+                
+                # Create time axis in nanoseconds (keep existing scale)
+                trace_time_axis_ns = np.arange(trace_length) * self.sampling_period_ns
+                return trace_time_axis_ns + time_offset_ns
             else:
                 # No reference yet, use default
                 return np.arange(trace_length) * self.sampling_period_ns
@@ -484,12 +498,13 @@ class TracesPlotter(QWidget):
             latest_timestamp = self.get_latest_timestamp_across_channels()
 
             if latest_timestamp is not None:
-                time_from_now = (event_timestamp - latest_timestamp) * 10.0
+                time_from_now_ns = (event_timestamp - latest_timestamp) * 10.0
 
                 # Create time axis starting from this relative time
-                trace_time_axis = np.arange(trace_length) * self.sampling_period_ns
-                return trace_time_axis + time_from_now
+                trace_time_axis_ns = np.arange(trace_length) * self.sampling_period_ns
+                return trace_time_axis_ns + time_from_now_ns
         else:
+            # Default: keep original behavior
             return np.arange(trace_length) * self.sampling_period_ns
 
     def get_latest_timestamp_across_channels(self):
@@ -509,9 +524,11 @@ class TracesPlotter(QWidget):
                 ref_ch in self.trace_timestamps
                 and len(self.trace_timestamps[ref_ch]) > 0
             ):
-                self.alignment_reference_timestamp = self.trace_timestamps[ref_ch][-1]
+                # Use the first timestamp as reference, not the latest
+                # This prevents all previous traces from becoming "misaligned"
+                self.alignment_reference_timestamp = self.trace_timestamps[ref_ch][0]
                 print(
-                    f"DEBUG: Auto-set reference timestamp to {self.alignment_reference_timestamp} from Ch{ref_ch}"
+                    f"DEBUG: Set reference timestamp to {self.alignment_reference_timestamp} from first Ch{ref_ch} trace"
                 )
 
         return self.alignment_reference_timestamp
@@ -591,7 +608,7 @@ class TracesPlotter(QWidget):
         persistence_layout.addWidget(QLabel("Traces:"))
         self.single_persistence_count_spin = QSpinBox()
         self.single_persistence_count_spin.setRange(2, 10000)
-        self.single_persistence_count_spin.setValue(50)
+        self.single_persistence_count_spin.setValue(1000)
         self.single_persistence_count_spin.valueChanged.connect(self.update_single_persistence_count)
         persistence_layout.addWidget(self.single_persistence_count_spin)
         
@@ -894,18 +911,21 @@ class TracesPlotter(QWidget):
             if event_timestamp is not None:
                 self.trace_timestamps[channel].append(event_timestamp)
 
-            # Apply amplitude threshold filter
+            # In channel alignment mode, only keep traces within ±50µs of reference
+            if (self.time_alignment_mode == "channel_aligned" 
+                and hasattr(self, 'alignment_reference_timestamp')
+                and self.alignment_reference_timestamp is not None
+                and event_timestamp is not None):
+                
+                time_diff_ns = abs((event_timestamp - self.alignment_reference_timestamp) * 10.0)
+                if time_diff_ns > 500000:  # 500µs in nanoseconds
+                    # Skip traces too far from reference
+                    return
+
             if len(trace_data) > 10:
                 amplitude = np.max(trace_data) - np.min(trace_data)
                 if amplitude >= self.amplitude_threshold:
-                    # Store in original buffer
                     self.trace_data[channel].append(trace_data)
-
-                    # Store in single channel persistence buffer
-                    if self.single_channel_persistence:
-                        self.single_persistence_data[channel].append(trace_data)
-
-                    # Store in replay buffer
                     if (
                         hasattr(self, "replay_widget")
                         and self.replay_widget is not None
@@ -913,10 +933,7 @@ class TracesPlotter(QWidget):
                     ):
                         self.replay_widget.add_trace(trace_data, channel, amplitude)
             else:
-                # Store in original buffer
                 self.trace_data[channel].append(trace_data)
-
-                # Store in replay buffer
                 if (
                     hasattr(self, "replay_widget")
                     and self.replay_widget is not None
@@ -936,8 +953,6 @@ class TracesPlotter(QWidget):
         sample_times = np.arange(trace_length) * sampling_period_ns
         real_times = sample_times - trace_delay
 
-        # TODO: set limit, divide bt 10^9
-
         return real_times
 
     def update_plots(self):
@@ -955,7 +970,7 @@ class TracesPlotter(QWidget):
 
             total_traces = 0
 
-            # Process all channels for raw traces display
+            # Process all channels for raw traces display (no trace limiting)
             for channel in self.channels:
                 has_data = (
                     channel in self.trace_data and len(self.trace_data[channel]) > 0
@@ -972,9 +987,11 @@ class TracesPlotter(QWidget):
                     else [None] * len(traces)
                 )
                 total_traces += len(traces)
-                display_traces = traces[-self.max_traces_display :]
+                
+                # Use all traces, don't limit
+                display_traces = traces[-self.max_traces_display:]
                 display_timestamps = (
-                    timestamps[-self.max_traces_display :]
+                    timestamps[-self.max_traces_display:]
                     if timestamps
                     else [None] * len(display_traces)
                 )
@@ -1004,6 +1021,21 @@ class TracesPlotter(QWidget):
                     if combined_x and combined_y:
                         self.raw_curves[channel].setData(combined_x, combined_y)
 
+            # Set focused axis limits for channel alignment mode
+            if self.time_alignment_mode == "channel_aligned" and total_traces > 0:
+                alignment_window_ns = 20000
+                self.raw_plot_widget.setXRange(-alignment_window_ns, alignment_window_ns)
+                
+                ref_ch = self.alignment_reference_channel
+                self.raw_plot_widget.setLabel("bottom", "Time (ns)", f"Relative to Ch{ref_ch} trigger")
+                
+                # Disable auto-range in alignment mode to maintain focus
+                auto_range_enabled = False
+            else:
+                # Re-enable auto-range for other modes
+                auto_range_enabled = self.auto_scale
+                self.raw_plot_widget.setLabel("bottom", "Time (ns)")
+
             # Update statistics
             stats_text = f"Total Traces: {total_traces} | "
             if (
@@ -1016,15 +1048,17 @@ class TracesPlotter(QWidget):
             stats_text += f"Displayed Channels: {len(self.display_channels)} | "
             stats_text += f"Alignment: {self.time_alignment_mode}"
             if self.time_alignment_mode == "channel_aligned":
-                stats_text += f" (Ref: Ch{self.alignment_reference_channel})"
+                stats_text += f" (Ref: Ch{self.alignment_reference_channel}, ±20µs window)"
 
             self.raw_stats_label.setText(stats_text)
 
-            if self.auto_scale and total_traces > 0:
+            # Apply auto-range only when appropriate
+            if auto_range_enabled and total_traces > 0:
                 self.raw_plot_widget.autoRange()
 
         except Exception as e:
             print(f"Error updating raw traces plot: {e}")
+
 
     def update_hardware_validation_plots(self):
         try:
