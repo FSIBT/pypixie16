@@ -144,6 +144,9 @@ class CoincidenceLogicTab(QWidget):
         
         # PIXIE-16 timing constants
         self.sampling_period_ns = 2.0  # 500MHz module
+        self.update_timer = QTimer(self)
+        self.update_timer.setSingleShot(True)
+        self.update_timer.timeout.connect(self.update_visualization)
         
         self.init_ui()
         
@@ -382,8 +385,8 @@ class CoincidenceLogicTab(QWidget):
                 self.detect_coincidence(event, trace_data)
                 
             # Update visualization
-            if self.binary_logic_enabled:
-                self.update_visualization()
+            if self.binary_logic_enabled and not self.update_timer.isActive():
+                self.update_timer.start(50)
                 
         except Exception as e:
             print(f"Error processing event: {e}")
