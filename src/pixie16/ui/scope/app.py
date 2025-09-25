@@ -122,6 +122,24 @@ class PixieHardwareManager:
     def refresh_parameters(self, module: int = 0, channel: int = 0):
         self.hw_manager.refresh_parameter_cache(module, channel)
 
+    def get_hardware_timing_parameters(self, channel: int = 0) -> dict:
+        return self.hw_manager.get_hardware_timing_parameters(channel)
+
+    def get_all_parameters(self, module: int = 0, channel: int = 0) -> dict:
+        return self.hw_manager.get_all_parameters(module, channel)
+
+    def read_parameter_from_hardware(self, param_name: str, module: int = 0, channel: int = 0):
+        return self.hw_manager.read_parameter_from_hardware(param_name, module, channel)
+
+    def refresh_parameter_cache(self, module: int = 0, channel: int = 0):
+        return self.hw_manager.refresh_parameter_cache(module, channel)
+
+    def is_parameter_cached(self, param_name: str, module: int = 0, channel: int = 0) -> bool:
+        return self.hw_manager.is_parameter_cached(param_name, module, channel)
+
+    def get_state(self):
+        return self.hw_manager.get_state()
+
 
 class PixieScopeApp(QMainWindow):
     shutdown_requested = pyqtSignal()
