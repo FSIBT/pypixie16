@@ -43,7 +43,7 @@ from ...analyze import (
 )
 from .traces_replay import TraceReplayWidget, StoredTrace
 from .coincidence_logic_tab import CoincidenceLogicTab
-
+from .persistence_histogram import PersistenceHistogram
 
 class WindowOptimizationWorker(QThread):
     """Worker thread for optimizing coincidence windows"""
@@ -231,6 +231,9 @@ class TracesPlotter(QWidget):
         self.single_persistence_normalize = False
         self.single_persistence_alpha_fade = False
         self.single_persistence_data = {ch: deque() for ch in self.channels}
+        # Persistence histogram for efficient visualization
+        self.persistence_histogram = {ch: PersistenceHistogram() for ch in self.channels}
+        self.persistence_image_item = None
 
         self.init_ui()
 
@@ -275,8 +278,7 @@ class TracesPlotter(QWidget):
         controls_group.setMaximumHeight(120)
         controls_layout = (
             QGridLayout()
-        )  # Changed to QGridLayout for better organization
-
+        )  
         # Row 1: Basic controls
         controls_layout.addWidget(QLabel("Max Traces:"), 0, 0)
         self.max_traces_spin = QSpinBox()
@@ -331,8 +333,6 @@ class TracesPlotter(QWidget):
 
         controls_group.setLayout(controls_layout)
         layout.addWidget(controls_group)
-
-        # Rest of the method remains the same...
         # Plot area
         self.raw_plot_widget = pg.PlotWidget()
         self.raw_plot_widget.setLabel("left", "Amplitude (V)")
@@ -358,7 +358,6 @@ class TracesPlotter(QWidget):
         return tab
 
     def calculate_main_trigger_point(self, raw_trace, channel):
-        """Calculate the main trigger point - leading edge detection for nuclear spectroscopy"""
         try:
             if raw_trace is None or len(raw_trace) == 0:
                 return []
@@ -690,12 +689,11 @@ class TracesPlotter(QWidget):
     def clear_persistence_only(self):
         for channel in self.channels:
             self.single_persistence_data[channel].clear()
+            self.persistence_histogram[channel].reset()
         
-        # Update statistics
         selected_channel = self.channels[self.channel_combo.currentIndex()]
         self.update_persistence_statistics(selected_channel)
-        
-        print("Cleared persistence data for all channels")
+        print("Cleared persistence data and histogram for all channels")
 
     def save_traces_buffer(self):
         try:
@@ -797,6 +795,11 @@ class TracesPlotter(QWidget):
 
     def toggle_single_persistence(self, enabled):
         self.single_channel_persistence = enabled
+        
+        if enabled:
+            selected_channel = self.channels[self.channel_combo.currentIndex()]
+            self.persistence_histogram[selected_channel].reset()
+            print(f"Persistence histogram mode enabled for channel {selected_channel}")
 
     def update_single_persistence_count(self):
         self.single_persistence_count = self.single_persistence_count_spin.value()
@@ -931,7 +934,9 @@ class TracesPlotter(QWidget):
                     # Store in single channel persistence buffer
                     if self.single_channel_persistence:
                         self.single_persistence_data[channel].append(trace_data)
-
+                        # Update histogram in real-time
+                        time_axis = self.calculate_real_time_axis(len(trace_data), channel)
+                        self.persistence_histogram[channel].add_trace(time_axis, trace_data)
                     # Store in replay buffer
                     if (
                         hasattr(self, "replay_widget")
@@ -1128,14 +1133,13 @@ class TracesPlotter(QWidget):
     def update_persistence_statistics(self, channel):
         if hasattr(self, 'persistence_stats_label'):
             if self.single_channel_persistence:
-                total_stored = len(self.single_persistence_data[channel])
-                displayed = min(self.single_persistence_count, total_stored)
+                total_stored = self.persistence_histogram[channel].trace_count
                 self.persistence_stats_label.setText(
-                    f"Persistence: {displayed}/{total_stored} traces stored (unlimited)"
+                    f"Persistence: {total_stored} traces (histogram mode)"
                 )
             else:
                 self.persistence_stats_label.setText("Persistence: Disabled")
-
+                
     def _plot_single_trace(self, channel, plot_widget):
         traces_list = list(self.trace_data[channel])
         if not traces_list:
@@ -1211,112 +1215,103 @@ class TracesPlotter(QWidget):
             print(f"Error adding markers/lines for channel {channel}: {e}")
 
     def _plot_persistence_traces_single_channel(self, channel, plot_widget):
-        persistence_traces = list(self.single_persistence_data[channel])
-        if not persistence_traces:
-            return
-
-        # Get the last N traces
-        display_traces = persistence_traces[-self.single_persistence_count:]
-        if not display_traces:
-            return
-
-        trace_length = len(display_traces[0])
-        time_axis = self.calculate_real_time_axis(trace_length, channel)
-
-        # Original trace type colors
-        trace_colors = {
-            "raw": "#1f77b4",  # Blue
-            "fast_trigger": "#ff7f0e",  # Orange
-            "energy_filter": "#2ca02c",  # Green
-            "cfd": "#d62728",  # Red
-        }
-
-        # Plot each enabled trace type for all persistence traces
-        for trace_type, enabled in self.trace_types.items():
-            if not enabled:
-                continue
-
-            # Plot each trace - older ones in gray, latest in original colors
-            for i, trace in enumerate(display_traces):
-                if len(trace) != trace_length:
-                    continue
-
-                try:
-                    # Process the signal based on trace type
-                    if trace_type == "raw":
-                        signal = trace
-                    else:
-                        signal = self.compute_hardware_traces(trace_type, trace, channel)
-                        if signal is None or len(signal) == 0:
-                            continue
-
-                        # Apply scaling for non-raw traces
-                        if trace_type == "fast_trigger":
-                            raw_amplitude = np.max(trace) - np.min(trace)
-                            if np.max(signal) > 0:
-                                scale_factor = raw_amplitude / (3 * np.max(signal))
-                                signal = signal * scale_factor
-                        elif trace_type == "cfd":
-                            baseline = np.mean(trace[:100])
-                            signal = signal + baseline
-                        elif trace_type == "energy_filter":
-                            raw_amplitude = np.max(trace) - np.min(trace)
-                            if np.max(signal) > np.min(signal):
-                                signal_amplitude = np.max(signal) - np.min(signal)
-                                scale_factor = (2 * raw_amplitude) / signal_amplitude
-                                signal = (signal - np.min(signal)) * scale_factor + np.min(trace)
-
-                    # Apply normalization if enabled (only for raw traces)
-                    if self.single_persistence_normalize and trace_type == "raw":
-                        baseline = np.mean(signal[:50]) if len(signal) > 50 else np.mean(signal)
-                        signal_normalized = signal - baseline
-                        max_val = np.max(np.abs(signal_normalized))
-                        if max_val > 0:
-                            signal = signal_normalized / max_val
-
-                    # Determine color and line properties
-                    is_latest = (i == len(display_traces) - 1)
+        try:
+            img_data, x_range, y_range = self.persistence_histogram[channel].get_image_data(log_scale=True)
+            
+            if img_data is None:
+                return
+            
+            # Create or update image item
+            if self.persistence_image_item is None:
+                self.persistence_image_item = pg.ImageItem()
+                plot_widget.addItem(self.persistence_image_item)
+            
+            # Normalize to 0-1 range for colormap
+            img_min, img_max = img_data.min(), img_data.max()
+            if img_max > img_min:
+                img_normalized = (img_data - img_min) / (img_max - img_min)
+            else:
+                img_normalized = img_data
+            
+            # Apply inferno-like colormap (pyqtgraph style)
+            # Scale to 0-255 and create RGB image
+            img_scaled = (img_normalized * 255).astype(np.uint8)
+            
+            # Simple hot colormap (can be replaced with matplotlib's inferno if available)
+            # For now, use pyqtgraph's built-in
+            self.persistence_image_item.setImage(img_scaled.T, levels=[0, 255])
+            self.persistence_image_item.setLookupTable(pg.colormap.get('inferno').getLookupTable())
+            
+            # Set proper rect to map image to data coordinates
+            self.persistence_image_item.setRect(
+                pg.QtCore.QRectF(x_range[0], y_range[0], 
+                                x_range[1] - x_range[0], 
+                                y_range[1] - y_range[0])
+            )
+            
+            # Overlay latest trace if enabled
+            if self.trace_types.get("raw", True):
+                if channel in self.trace_data and len(self.trace_data[channel]) > 0:
+                    latest_trace = list(self.trace_data[channel])[-1]
+                    time_axis = self.calculate_real_time_axis(len(latest_trace), channel)
                     
-                    if is_latest:
-                        # Latest trace - use original trace type color
-                        color = trace_colors.get(trace_type, "#1f77b4")
-                        width = 2.0
-                        trace_name = trace_type.replace('_', ' ').title()
-                    else:
-                        # Older traces - light gray with optional alpha fade
-                        if self.single_persistence_alpha_fade:
-                            # Varying transparency for older traces (older = more transparent)
-                            alpha = 0.3 + 0.4 * (i / max(1, len(display_traces) - 2))
-                            alpha_hex = hex(int(255 * alpha))[2:].zfill(2)
-                            color = "#808080" + alpha_hex
-                        else:
-                            color = "#c0c0c0"  # Light gray
-                        width = 1.0
-                        # Don't add old traces to legend to avoid clutter
-                        trace_name = None
-
-                    # Plot the trace
                     plot_widget.plot(
-                        time_axis, signal, 
-                        pen=pg.mkPen(color=color, width=width),
-                        name=trace_name
+                        time_axis, latest_trace,
+                        pen=pg.mkPen(color='cyan', width=2),
+                        name='Latest Trace'
                     )
-
-                except Exception as e:
-                    print(f"Error plotting persistence trace {i} {trace_type} for channel {channel}: {e}")
-
-        # Add markers and lines only for the latest trace
-        if display_traces:
-            latest_trace = display_traces[-1]
-            try:
+            
+            # Add other trace types for latest trace
+            if channel in self.trace_data and len(self.trace_data[channel]) > 0:
+                latest_trace = list(self.trace_data[channel])[-1]
+                time_axis = self.calculate_real_time_axis(len(latest_trace), channel)
+                
+                for trace_type, enabled in self.trace_types.items():
+                    if not enabled or trace_type == "raw":
+                        continue
+                        
+                    signal = self.compute_hardware_traces(trace_type, latest_trace, channel)
+                    if signal is None or len(signal) == 0:
+                        continue
+                    
+                    trace_colors = {
+                        "fast_trigger": "#ff7f0e",
+                        "energy_filter": "#2ca02c",
+                        "cfd": "#d62728",
+                    }
+                    color = trace_colors.get(trace_type, "#333333")
+                    name = trace_type.replace("_", " ").title()
+                    
+                    # Apply scaling (same as before)
+                    if trace_type == "fast_trigger":
+                        raw_amplitude = np.max(latest_trace) - np.min(latest_trace)
+                        if np.max(signal) > 0:
+                            scale_factor = raw_amplitude / (3 * np.max(signal))
+                            signal = signal * scale_factor
+                    elif trace_type == "cfd":
+                        baseline = np.mean(latest_trace[:100])
+                        signal = signal + baseline
+                    elif trace_type == "energy_filter":
+                        raw_amplitude = np.max(latest_trace) - np.min(latest_trace)
+                        if np.max(signal) > np.min(signal):
+                            signal_amplitude = np.max(signal) - np.min(signal)
+                            scale_factor = (2 * raw_amplitude) / signal_amplitude
+                            signal = (signal - np.min(signal)) * scale_factor + np.min(latest_trace)
+                    
+                    plot_widget.plot(time_axis, signal, pen=pg.mkPen(color=color, width=2), name=name)
+                
+                # Add markers for latest trace
                 main_trigger_points = self.calculate_main_trigger_point(latest_trace, channel)
                 if main_trigger_points:
                     self._store_trigger_info(channel, main_trigger_points, "main_trigger")
                 
                 self._add_trigger_markers(plot_widget, channel, time_axis)
                 self._add_threshold_lines(plot_widget, latest_trace)
-            except Exception as e:
-                print(f"Error adding markers for persistence plot: {e}")
+            
+        except Exception as e:
+            print(f"Error plotting persistence histogram: {e}")
+            import traceback
+            traceback.print_exc()
 
     def _add_threshold_lines(self, plot_widget, raw_trace):
         try:
