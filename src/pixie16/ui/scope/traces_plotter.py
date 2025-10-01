@@ -925,7 +925,14 @@ class TracesPlotter(QWidget):
             if len(trace_data) > 10:
                 amplitude = np.max(trace_data) - np.min(trace_data)
                 if amplitude >= self.amplitude_threshold:
+                    # Store in original buffer
                     self.trace_data[channel].append(trace_data)
+
+                    # Store in single channel persistence buffer
+                    if self.single_channel_persistence:
+                        self.single_persistence_data[channel].append(trace_data)
+
+                    # Store in replay buffer
                     if (
                         hasattr(self, "replay_widget")
                         and self.replay_widget is not None
@@ -933,7 +940,10 @@ class TracesPlotter(QWidget):
                     ):
                         self.replay_widget.add_trace(trace_data, channel, amplitude)
             else:
+                # Store in original buffer
                 self.trace_data[channel].append(trace_data)
+
+                # Store in replay buffer
                 if (
                     hasattr(self, "replay_widget")
                     and self.replay_widget is not None
