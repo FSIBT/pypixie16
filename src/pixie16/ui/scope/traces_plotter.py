@@ -925,7 +925,6 @@ class TracesPlotter(QWidget):
                 
                 time_diff_ns = abs((event_timestamp - self.alignment_reference_timestamp) * 10.0)
                 if time_diff_ns > 500000:  # 500µs in nanoseconds
-                    # Skip traces too far from reference
                     return
 
             if len(trace_data) > 10:
@@ -934,12 +933,13 @@ class TracesPlotter(QWidget):
                     # Store in original buffer
                     self.trace_data[channel].append(trace_data)
 
-                    # Store in single channel persistence buffer
+                    # Store in single channel persistence buffer AND update histogram
                     if self.single_channel_persistence:
                         self.single_persistence_data[channel].append(trace_data)
-                        # Update histogram in real-time
+                        # Update histogram in real-time for RAW traces only
                         time_axis = self.calculate_real_time_axis(len(trace_data), channel)
                         self.persistence_histogram[channel].add_trace(time_axis, trace_data)
+                    
                     # Store in replay buffer
                     if (
                         hasattr(self, "replay_widget")
@@ -1221,101 +1221,98 @@ class TracesPlotter(QWidget):
 
     def _plot_persistence_traces_single_channel(self, channel, plot_widget):
         try:
-            img_data, x_range, y_range = self.persistence_histogram[channel].get_image_data(log_scale=True)
-            
-            if img_data is None or img_data.size == 0:
-                print(f"No histogram data yet for channel {channel}")
-                return
-            
-            # Create or reuse image item for this channel
-            if self.persistence_image_item.get(channel) is None:
-                self.persistence_image_item[channel] = pg.ImageItem()
-                plot_widget.addItem(self.persistence_image_item[channel])
-                print(f"Created new ImageItem for channel {channel}")
-            
-            # Normalize to 0-1 range for colormap
-            img_min, img_max = img_data.min(), img_data.max()
-            if img_max > img_min:
-                # Use a softer normalization - don't let it get fully black
-                # Map so that img_min -> 0.0 and img_max -> 0.9 (never fully black)
-                img_normalized = 0.9 * (img_data - img_min) / (img_max - img_min)
-            else:
-                img_normalized = img_data * 0.1  # Very light if no variation
-            
-            # Apply inferno colormap (or use 'viridis', 'plasma', 'hot')
-            # Transpose for correct orientation
-            self.persistence_image_item[channel].setImage(img_normalized.T, levels=[0, 1])
-            
-            # Get colormap - try inferno, fall back to hot if not available
-            try:
-                cmap = pg.colormap.get('inferno')
-            except:
-                try:
-                    cmap = pg.colormap.get('hot')
-                except:
-                    # Fallback: create simple grayscale
+            if self.trace_types.get("raw", True):
+                img_data, x_range, y_range = self.persistence_histogram[channel].get_image_data(log_scale=False)
+                
+                if img_data is not None and img_data.size > 0:
+                    # Create or reuse image item for this channel
+                    if self.persistence_image_item.get(channel) is None:
+                        self.persistence_image_item[channel] = pg.ImageItem()
+                        plot_widget.addItem(self.persistence_image_item[channel])
+                        # Set z-value to put it behind everything else
+                        self.persistence_image_item[channel].setZValue(-100)
+                        print(f"Created new ImageItem for channel {channel}")
+                    
+                    img_min, img_max = img_data.min(), img_data.max()
+                    if img_max > img_min:
+                        # Invert: 1.0 (white) for min counts, 0.0 (black) for max counts
+                        img_normalized = 1.0 - 0.7 * (img_data - img_min) / (img_max - img_min)
+                    else:
+                        img_normalized = np.ones_like(img_data)  # All white if no variation
+                    
+                    # Use grayscale: white (background) to dark gray (high density)
+                    # Transpose for correct orientation
+                    self.persistence_image_item[channel].setImage(img_normalized.T, levels=[0, 1])
+                    
+                    # Create inverted grayscale colormap (white -> black)
                     cmap = pg.colormap.ColorMap(
                         pos=[0.0, 1.0],
-                        color=[(255, 255, 255), (0, 0, 0)]  # White to black
+                        color=[(0, 0, 0), (255, 255, 255)]  # Black at 0, White at 1
                     )
+                    
+                    self.persistence_image_item[channel].setLookupTable(cmap.getLookupTable())
+                    
+                    # Set proper rect to map image to data coordinates
+                    self.persistence_image_item[channel].setRect(
+                        pg.QtCore.QRectF(x_range[0], y_range[0], 
+                                        x_range[1] - x_range[0], 
+                                        y_range[1] - y_range[0])
+                    )
+                    
+                    print(f"Updated histogram: shape={img_data.shape}, counts range=({img_min:.0f}, {img_max:.0f})")
             
-            self.persistence_image_item[channel].setLookupTable(cmap.getLookupTable())
-            
-            # Set proper rect to map image to data coordinates
-            self.persistence_image_item[channel].setRect(
-                pg.QtCore.QRectF(x_range[0], y_range[0], 
-                                x_range[1] - x_range[0], 
-                                y_range[1] - y_range[0])
-            )
-            
-            print(f"Updated histogram image: data shape={img_data.shape}, range=({img_min:.2f}, {img_max:.2f}), x_range={x_range}, y_range={y_range}")
-            
-            # Overlay latest trace in cyan for reference
             if channel in self.trace_data and len(self.trace_data[channel]) > 0:
                 latest_trace = list(self.trace_data[channel])[-1]
                 time_axis = self.calculate_real_time_axis(len(latest_trace), channel)
                 
-                # Plot latest trace
-                plot_widget.plot(
-                    time_axis, latest_trace,
-                    pen=pg.mkPen(color='cyan', width=2),
-                    name='Latest Trace'
-                )
-                
-                # Add other trace types for latest trace
+                # Plot all enabled trace types
                 for trace_type, enabled in self.trace_types.items():
-                    if not enabled or trace_type == "raw":
-                        continue
-                        
-                    signal = self.compute_hardware_traces(trace_type, latest_trace, channel)
-                    if signal is None or len(signal) == 0:
+                    if not enabled:
                         continue
                     
-                    trace_colors = {
-                        "fast_trigger": "#ff7f0e",
-                        "energy_filter": "#2ca02c",
-                        "cfd": "#d62728",
-                    }
-                    color = trace_colors.get(trace_type, "#333333")
-                    name = trace_type.replace("_", " ").title()
-                    
-                    # Apply scaling
-                    if trace_type == "fast_trigger":
-                        raw_amplitude = np.max(latest_trace) - np.min(latest_trace)
-                        if np.max(signal) > 0:
-                            scale_factor = raw_amplitude / (3 * np.max(signal))
-                            signal = signal * scale_factor
-                    elif trace_type == "cfd":
-                        baseline = np.mean(latest_trace[:100])
-                        signal = signal + baseline
-                    elif trace_type == "energy_filter":
-                        raw_amplitude = np.max(latest_trace) - np.min(latest_trace)
-                        if np.max(signal) > np.min(signal):
-                            signal_amplitude = np.max(signal) - np.min(signal)
-                            scale_factor = (2 * raw_amplitude) / signal_amplitude
-                            signal = (signal - np.min(signal)) * scale_factor + np.min(latest_trace)
-                    
-                    plot_widget.plot(time_axis, signal, pen=pg.mkPen(color=color, width=2), name=name)
+                    try:
+                        if trace_type == "raw":
+                            signal = latest_trace
+                            color = "#1f77b4"  # Blue
+                            name = "Raw Trace (Latest)"
+                        else:
+                            signal = self.compute_hardware_traces(trace_type, latest_trace, channel)
+                            if signal is None or len(signal) == 0:
+                                continue
+
+                            trace_colors = {
+                                "fast_trigger": "#ff7f0e",  # Orange
+                                "energy_filter": "#2ca02c",  # Green
+                                "cfd": "#d62728",  # Red
+                            }
+                            color = trace_colors.get(trace_type, "#333333")
+                            name = trace_type.replace("_", " ").title() + " (Latest)"
+
+                            # Apply amplitude scaling for visibility
+                            if trace_type == "fast_trigger":
+                                raw_amplitude = np.max(latest_trace) - np.min(latest_trace)
+                                if np.max(signal) > 0:
+                                    scale_factor = raw_amplitude / (3 * np.max(signal))
+                                    signal = signal * scale_factor
+                            elif trace_type == "cfd":
+                                baseline = np.mean(latest_trace[:100])
+                                signal = signal + baseline
+                            elif trace_type == "energy_filter":
+                                raw_amplitude = np.max(latest_trace) - np.min(latest_trace)
+                                if np.max(signal) > np.min(signal):
+                                    signal_amplitude = np.max(signal) - np.min(signal)
+                                    scale_factor = (2 * raw_amplitude) / signal_amplitude
+                                    signal = (signal - np.min(signal)) * scale_factor + np.min(latest_trace)
+
+                        # Plot with original colors and thicker lines to stand out
+                        plot_widget.plot(
+                            time_axis, signal, 
+                            pen=pg.mkPen(color=color, width=2.5),
+                            name=name
+                        )
+
+                    except Exception as e:
+                        print(f"Error plotting {trace_type}: {e}")
                 
                 # Add markers for latest trace
                 main_trigger_points = self.calculate_main_trigger_point(latest_trace, channel)
