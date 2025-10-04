@@ -233,7 +233,7 @@ class TracesPlotter(QWidget):
         self.single_persistence_data = {ch: deque() for ch in self.channels}
         # Persistence histogram for efficient visualization
         self.persistence_histogram = {ch: PersistenceHistogram() for ch in self.channels}
-        self.persistence_image_item = None
+        self.persistence_image_item = {ch: None for ch in self.channels}  # Per-channel image items
 
         self.init_ui()
 
@@ -690,11 +690,14 @@ class TracesPlotter(QWidget):
         for channel in self.channels:
             self.single_persistence_data[channel].clear()
             self.persistence_histogram[channel].reset()
+            if self.persistence_image_item.get(channel) is not None:
+                self.channel_plot.removeItem(self.persistence_image_item[channel])
+                self.persistence_image_item[channel] = None
         
         selected_channel = self.channels[self.channel_combo.currentIndex()]
         self.update_persistence_statistics(selected_channel)
         print("Cleared persistence data and histogram for all channels")
-
+    
     def save_traces_buffer(self):
         try:
             timestamp = int(time.time())
@@ -1105,13 +1108,13 @@ class TracesPlotter(QWidget):
                 plot_widget.clear()
                 return
 
-            # Clear plot
-            plot_widget.clear()
+            # Only clear plot if NOT in persistence mode
+            if not (self.single_channel_persistence and len(self.single_persistence_data[channel]) > 0):
+                plot_widget.clear()
 
             if self.single_channel_persistence and len(self.single_persistence_data[channel]) > 0:
-                # Persistence mode - plot multiple overlaid traces
+                # Persistence mode - plot histogram
                 self._plot_persistence_traces_single_channel(channel, plot_widget)
-                # Calculate display statistics for persistence mode
                 total_stored = len(self.single_persistence_data[channel])
                 displayed = min(self.single_persistence_count, total_stored)
                 plot_widget.setTitle(f"{label} - Ch {channel} (Persistence: {displayed}/{total_stored} traces)")
@@ -1124,6 +1127,8 @@ class TracesPlotter(QWidget):
 
         except Exception as e:
             print(f"CRITICAL ERROR updating {label} plot for channel {channel}: {e}")
+            import traceback
+            traceback.print_exc()
             try:
                 plot_widget.clear()
                 plot_widget.setTitle(f"{label} - Ch {channel} (ERROR)")
@@ -1218,54 +1223,66 @@ class TracesPlotter(QWidget):
         try:
             img_data, x_range, y_range = self.persistence_histogram[channel].get_image_data(log_scale=True)
             
-            if img_data is None:
+            if img_data is None or img_data.size == 0:
+                print(f"No histogram data yet for channel {channel}")
                 return
             
-            # Create or update image item
-            if self.persistence_image_item is None:
-                self.persistence_image_item = pg.ImageItem()
-                plot_widget.addItem(self.persistence_image_item)
+            # Create or reuse image item for this channel
+            if self.persistence_image_item.get(channel) is None:
+                self.persistence_image_item[channel] = pg.ImageItem()
+                plot_widget.addItem(self.persistence_image_item[channel])
+                print(f"Created new ImageItem for channel {channel}")
             
             # Normalize to 0-1 range for colormap
             img_min, img_max = img_data.min(), img_data.max()
             if img_max > img_min:
-                img_normalized = (img_data - img_min) / (img_max - img_min)
+                # Use a softer normalization - don't let it get fully black
+                # Map so that img_min -> 0.0 and img_max -> 0.9 (never fully black)
+                img_normalized = 0.9 * (img_data - img_min) / (img_max - img_min)
             else:
-                img_normalized = img_data
+                img_normalized = img_data * 0.1  # Very light if no variation
             
-            # Apply inferno-like colormap (pyqtgraph style)
-            # Scale to 0-255 and create RGB image
-            img_scaled = (img_normalized * 255).astype(np.uint8)
+            # Apply inferno colormap (or use 'viridis', 'plasma', 'hot')
+            # Transpose for correct orientation
+            self.persistence_image_item[channel].setImage(img_normalized.T, levels=[0, 1])
             
-            # Simple hot colormap (can be replaced with matplotlib's inferno if available)
-            # For now, use pyqtgraph's built-in
-            self.persistence_image_item.setImage(img_scaled.T, levels=[0, 255])
-            self.persistence_image_item.setLookupTable(pg.colormap.get('inferno').getLookupTable())
+            # Get colormap - try inferno, fall back to hot if not available
+            try:
+                cmap = pg.colormap.get('inferno')
+            except:
+                try:
+                    cmap = pg.colormap.get('hot')
+                except:
+                    # Fallback: create simple grayscale
+                    cmap = pg.colormap.ColorMap(
+                        pos=[0.0, 1.0],
+                        color=[(255, 255, 255), (0, 0, 0)]  # White to black
+                    )
+            
+            self.persistence_image_item[channel].setLookupTable(cmap.getLookupTable())
             
             # Set proper rect to map image to data coordinates
-            self.persistence_image_item.setRect(
+            self.persistence_image_item[channel].setRect(
                 pg.QtCore.QRectF(x_range[0], y_range[0], 
                                 x_range[1] - x_range[0], 
                                 y_range[1] - y_range[0])
             )
             
-            # Overlay latest trace if enabled
-            if self.trace_types.get("raw", True):
-                if channel in self.trace_data and len(self.trace_data[channel]) > 0:
-                    latest_trace = list(self.trace_data[channel])[-1]
-                    time_axis = self.calculate_real_time_axis(len(latest_trace), channel)
-                    
-                    plot_widget.plot(
-                        time_axis, latest_trace,
-                        pen=pg.mkPen(color='cyan', width=2),
-                        name='Latest Trace'
-                    )
+            print(f"Updated histogram image: data shape={img_data.shape}, range=({img_min:.2f}, {img_max:.2f}), x_range={x_range}, y_range={y_range}")
             
-            # Add other trace types for latest trace
+            # Overlay latest trace in cyan for reference
             if channel in self.trace_data and len(self.trace_data[channel]) > 0:
                 latest_trace = list(self.trace_data[channel])[-1]
                 time_axis = self.calculate_real_time_axis(len(latest_trace), channel)
                 
+                # Plot latest trace
+                plot_widget.plot(
+                    time_axis, latest_trace,
+                    pen=pg.mkPen(color='cyan', width=2),
+                    name='Latest Trace'
+                )
+                
+                # Add other trace types for latest trace
                 for trace_type, enabled in self.trace_types.items():
                     if not enabled or trace_type == "raw":
                         continue
@@ -1282,7 +1299,7 @@ class TracesPlotter(QWidget):
                     color = trace_colors.get(trace_type, "#333333")
                     name = trace_type.replace("_", " ").title()
                     
-                    # Apply scaling (same as before)
+                    # Apply scaling
                     if trace_type == "fast_trigger":
                         raw_amplitude = np.max(latest_trace) - np.min(latest_trace)
                         if np.max(signal) > 0:
