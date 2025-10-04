@@ -1671,7 +1671,7 @@ class TracesPlotter(QWidget):
                         [trigger_time],
                         [trigger_amplitude],
                         pen=None,
-                        symbol="^",  # Triangle up for leading edge trigger
+                        symbol="t1",
                         symbolBrush="darkgreen",
                         symbolPen=pg.mkPen(color="black", width=2),
                         symbolSize=10,
