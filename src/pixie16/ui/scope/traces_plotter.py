@@ -46,8 +46,6 @@ from .coincidence_logic_tab import CoincidenceLogicTab
 from .persistence_histogram import PersistenceHistogram
 
 class WindowOptimizationWorker(QThread):
-    """Worker thread for optimizing coincidence windows"""
-
     progress = pyqtSignal(int)
     result = pyqtSignal(dict)
     status = pyqtSignal(str)
@@ -231,9 +229,11 @@ class TracesPlotter(QWidget):
         self.single_persistence_normalize = False
         self.single_persistence_alpha_fade = False
         self.single_persistence_data = {ch: deque() for ch in self.channels}
-        # Persistence histogram for efficient visualization
+        # Persistence histogram
         self.persistence_histogram = {ch: PersistenceHistogram() for ch in self.channels}
-        self.persistence_image_item = {ch: None for ch in self.channels}  # Per-channel image items
+        self.persistence_image_item = None 
+        self.persistence_update_counter = {ch: 0 for ch in self.channels}  # Track traces since last update
+        self.persistence_update_interval = 10  # Update image every N traces
 
         self.init_ui()
 
@@ -690,14 +690,17 @@ class TracesPlotter(QWidget):
         for channel in self.channels:
             self.single_persistence_data[channel].clear()
             self.persistence_histogram[channel].reset()
-            if self.persistence_image_item.get(channel) is not None:
-                self.channel_plot.removeItem(self.persistence_image_item[channel])
-                self.persistence_image_item[channel] = None
+            self.persistence_update_counter[channel] = 0  # Reset counter
+        
+        # Clear the image item if it exists
+        if self.persistence_image_item is not None:
+            self.channel_plot.removeItem(self.persistence_image_item)
+            self.persistence_image_item = None
         
         selected_channel = self.channels[self.channel_combo.currentIndex()]
         self.update_persistence_statistics(selected_channel)
         print("Cleared persistence data and histogram for all channels")
-    
+            
     def save_traces_buffer(self):
         try:
             timestamp = int(time.time())
@@ -933,13 +936,16 @@ class TracesPlotter(QWidget):
                     # Store in original buffer
                     self.trace_data[channel].append(trace_data)
 
-                    # Store in single channel persistence buffer AND update histogram
+                    # Store in single channel persistence buffer
                     if self.single_channel_persistence:
                         self.single_persistence_data[channel].append(trace_data)
-                        # Update histogram in real-time for RAW traces only
+                        # Update histogram in real-time for raw traces
                         time_axis = self.calculate_real_time_axis(len(trace_data), channel)
                         self.persistence_histogram[channel].add_trace(time_axis, trace_data)
-                    
+                        
+                        # Increment counter for this channel
+                        self.persistence_update_counter[channel] += 1
+
                     # Store in replay buffer
                     if (
                         hasattr(self, "replay_widget")
@@ -1221,46 +1227,69 @@ class TracesPlotter(QWidget):
 
     def _plot_persistence_traces_single_channel(self, channel, plot_widget):
         try:
-            if self.trace_types.get("raw", True):
+            # Only regenerate the image every N traces for performance
+            should_update_image = (
+                self.persistence_update_counter[channel] >= self.persistence_update_interval or
+                self.persistence_image_item is None  # Always update if image doesn't exist yet
+            )
+            
+            if should_update_image:
+                # Get histogram data for raw traces
                 img_data, x_range, y_range = self.persistence_histogram[channel].get_image_data(log_scale=False)
                 
                 if img_data is not None and img_data.size > 0:
-                    # Create or reuse image item for this channel
-                    if self.persistence_image_item.get(channel) is None:
-                        self.persistence_image_item[channel] = pg.ImageItem()
-                        plot_widget.addItem(self.persistence_image_item[channel])
+                    # Create or reuse image item
+                    if self.persistence_image_item is None:
+                        self.persistence_image_item = pg.ImageItem()
+                        plot_widget.addItem(self.persistence_image_item)
                         # Set z-value to put it behind everything else
-                        self.persistence_image_item[channel].setZValue(-100)
-                        print(f"Created new ImageItem for channel {channel}")
+                        self.persistence_image_item.setZValue(-100)
+                        print(f"Created new ImageItem for persistence heatmap")
                     
+                    # Normalize: low counts = white/transparent, high counts = light gray
                     img_min, img_max = img_data.min(), img_data.max()
+                    
                     if img_max > img_min:
-                        # Invert: 1.0 (white) for min counts, 0.0 (black) for max counts
-                        img_normalized = 1.0 - 0.7 * (img_data - img_min) / (img_max - img_min)
+                        # Normalize to 0-1 range
+                        img_normalized = (img_data - img_min) / (img_max - img_min)
+                        
+                        # Apply a power law to emphasize differences
+                        # Higher power = more contrast, lower = softer
+                        img_normalized = np.power(img_normalized, 0.5)  # sqrt for gentler curve
+                        
+                        # Invert so that:
+                        # 0 counts (normalized=0) -> 1.0 (white)
+                        # max counts (normalized=1) -> 0.3 (light gray, not too dark)
+                        img_display = 1.0 - (0.7 * img_normalized)
                     else:
-                        img_normalized = np.ones_like(img_data)  # All white if no variation
+                        # No variation, keep everything white
+                        img_display = np.ones_like(img_data)
                     
-                    # Use grayscale: white (background) to dark gray (high density)
                     # Transpose for correct orientation
-                    self.persistence_image_item[channel].setImage(img_normalized.T, levels=[0, 1])
+                    self.persistence_image_item.setImage(img_display.T, levels=[0, 1])
                     
-                    # Create inverted grayscale colormap (white -> black)
+                    # Create grayscale colormap: 0=black, 1=white
+                    # Since we inverted above, low density appears white, high density appears gray
                     cmap = pg.colormap.ColorMap(
                         pos=[0.0, 1.0],
-                        color=[(0, 0, 0), (255, 255, 255)]  # Black at 0, White at 1
+                        color=[(50, 50, 50), (255, 255, 255)]  # Dark gray to white
                     )
                     
-                    self.persistence_image_item[channel].setLookupTable(cmap.getLookupTable())
+                    self.persistence_image_item.setLookupTable(cmap.getLookupTable())
                     
                     # Set proper rect to map image to data coordinates
-                    self.persistence_image_item[channel].setRect(
+                    self.persistence_image_item.setRect(
                         pg.QtCore.QRectF(x_range[0], y_range[0], 
                                         x_range[1] - x_range[0], 
                                         y_range[1] - y_range[0])
                     )
                     
-                    print(f"Updated histogram: shape={img_data.shape}, counts range=({img_min:.0f}, {img_max:.0f})")
+                    # Reset counter after updating
+                    self.persistence_update_counter[channel] = 0
+                    
+                    print(f"Updated persistence heatmap: shape={img_data.shape}, counts=({img_min:.0f}-{img_max:.0f})")
             
+            # ALWAYS overlay the latest trace (this happens every update, not just when image regenerates)
             if channel in self.trace_data and len(self.trace_data[channel]) > 0:
                 latest_trace = list(self.trace_data[channel])[-1]
                 time_axis = self.calculate_real_time_axis(len(latest_trace), channel)
@@ -1304,10 +1333,10 @@ class TracesPlotter(QWidget):
                                     scale_factor = (2 * raw_amplitude) / signal_amplitude
                                     signal = (signal - np.min(signal)) * scale_factor + np.min(latest_trace)
 
-                        # Plot with original colors and thicker lines to stand out
+                        # Plot with original colors and visible line width
                         plot_widget.plot(
                             time_axis, signal, 
-                            pen=pg.mkPen(color=color, width=2.5),
+                            pen=pg.mkPen(color=color, width=2.0),
                             name=name
                         )
 
@@ -1323,7 +1352,7 @@ class TracesPlotter(QWidget):
                 self._add_threshold_lines(plot_widget, latest_trace)
             
         except Exception as e:
-            print(f"Error plotting persistence histogram: {e}")
+            print(f"Error plotting persistence heatmap: {e}")
             import traceback
             traceback.print_exc()
 
