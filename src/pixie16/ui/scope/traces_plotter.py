@@ -690,7 +690,7 @@ class TracesPlotter(QWidget):
         for channel in self.channels:
             self.single_persistence_data[channel].clear()
             self.persistence_histogram[channel].reset()
-            self.persistence_update_counter[channel] = 0  # Reset counter
+            self.persistence_update_counter[channel] = 0
         
         # Clear the image item if it exists
         if self.persistence_image_item is not None:
@@ -699,8 +699,11 @@ class TracesPlotter(QWidget):
         
         selected_channel = self.channels[self.channel_combo.currentIndex()]
         self.update_persistence_statistics(selected_channel)
+        
+        self.update_plots()
+        
         print("Cleared persistence data and histogram for all channels")
-            
+                
     def save_traces_buffer(self):
         try:
             timestamp = int(time.time())
@@ -1244,13 +1247,14 @@ class TracesPlotter(QWidget):
                         self.persistence_image_item.setZValue(-100)
                         print(f"Created new ImageItem for persistence heatmap")
                     
-                    # Normalize: low counts = white, high counts = dark gray
+                    # Normalize: low counts = white, high counts = DARKER gray (increased contrast)
                     img_min, img_max = img_data.min(), img_data.max()
                     
                     if img_max > img_min:
                         img_normalized = (img_data - img_min) / (img_max - img_min)
-                        img_normalized = np.power(img_normalized, 0.5)
-                        img_display = 1.0 - (0.7 * img_normalized)
+                        img_normalized = np.power(img_normalized, 0.3)  # Lower = more contrast
+                        # Map: 0 counts -> 1.0 (white), max counts -> 0.1 (darker gray)
+                        img_display = 1.0 - (0.9 * img_normalized)
                     else:
                         img_display = np.ones_like(img_data)
                     
@@ -1258,7 +1262,7 @@ class TracesPlotter(QWidget):
                     
                     cmap = pg.colormap.ColorMap(
                         pos=[0.0, 1.0],
-                        color=[(50, 50, 50), (255, 255, 255)]
+                        color=[(20, 20, 20), (255, 255, 255)]  # Darker gray to white
                     )
                     
                     self.persistence_image_item.setLookupTable(cmap.getLookupTable())
@@ -1272,26 +1276,29 @@ class TracesPlotter(QWidget):
                     self.persistence_update_counter[channel] = 0
                     print(f"Updated persistence heatmap: shape={img_data.shape}, counts=({img_min:.0f}-{img_max:.0f})")
             
+            # Plot PAST traces for NON-RAW types in GRAY with optional alpha fade
             persistence_traces = list(self.single_persistence_data[channel])
-            if len(persistence_traces) > 1:  # Need at least 2 traces (one will be latest)
-                # Get all traces except the latest
+            if len(persistence_traces) > 1:
                 past_traces = persistence_traces[:-1]
-                
-                # Limit how many past traces to plot for performance
                 max_past_traces = min(len(past_traces), self.single_persistence_count)
                 past_traces_to_plot = past_traces[-max_past_traces:]
                 
-                for past_trace in past_traces_to_plot:
+                for trace_idx, past_trace in enumerate(past_traces_to_plot):
                     if len(past_trace) == 0:
                         continue
                         
                     time_axis = self.calculate_real_time_axis(len(past_trace), channel)
                     
-                    # Plot non-raw trace types in semi-transparent GRAY (only if checkbox enabled)
+                    # Calculate alpha based on age if alpha fade is enabled
+                    if self.single_persistence_alpha_fade:
+                        # Older traces more transparent, newer traces more opaque
+                        alpha = int(50 + 150 * (trace_idx / max(1, len(past_traces_to_plot) - 1)))
+                    else:
+                        alpha = 100
+                    
                     for trace_type in ["fast_trigger", "energy_filter", "cfd"]:
-                        # CHECK IF THIS TRACE TYPE IS ENABLED
                         if not self.trace_types.get(trace_type, False):
-                            continue  # Skip if checkbox is not checked
+                            continue
                         
                         try:
                             signal = self.compute_hardware_traces(trace_type, past_trace, channel)
@@ -1314,8 +1321,8 @@ class TracesPlotter(QWidget):
                                     scale_factor = (2 * raw_amplitude) / signal_amplitude
                                     signal = (signal - np.min(signal)) * scale_factor + np.min(past_trace)
                             
-                            gray_color = pg.mkColor("#808080")  # Gray
-                            gray_color.setAlpha(80)  # Semi-transparent
+                            gray_color = pg.mkColor("#909090")  # Light gray
+                            gray_color.setAlpha(alpha)
                             
                             plot_widget.plot(
                                 time_axis, signal,
@@ -1336,18 +1343,20 @@ class TracesPlotter(QWidget):
                     
                     try:
                         if trace_type == "raw":
+                            # Plot current raw trace as BRIGHT BLUE line on top of heatmap
                             signal = latest_trace
                             color = "#1f77b4"  # Blue
-                            name = "Raw"
+                            name = "Raw (Current)"
                         else:
+                            # Plot NON-RAW trace types in original colors
                             signal = self.compute_hardware_traces(trace_type, latest_trace, channel)
                             if signal is None or len(signal) == 0:
                                 continue
 
                             trace_colors = {
-                                "fast_trigger": "#ff7f0e",  # Orange
-                                "energy_filter": "#2ca02c",  # Green
-                                "cfd": "#d62728",  # Red
+                                "fast_trigger": "#ff7f0e",
+                                "energy_filter": "#2ca02c",
+                                "cfd": "#d62728",
                             }
                             color = trace_colors.get(trace_type, "#333333")
                             
@@ -1377,13 +1386,13 @@ class TracesPlotter(QWidget):
                         plot_widget.plot(
                             time_axis, signal, 
                             pen=pg.mkPen(color=color, width=2.5),
-                            name=name  # Add to legend
+                            name=name
                         )
 
                     except Exception as e:
                         print(f"Error plotting latest {trace_type}: {e}")
                 
-                # Add markers for latest
+                # Add markers only for latest
                 main_trigger_points = self.calculate_main_trigger_point(latest_trace, channel)
                 if main_trigger_points:
                     self._store_trigger_info(channel, main_trigger_points, "main_trigger")
