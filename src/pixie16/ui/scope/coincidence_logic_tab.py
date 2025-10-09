@@ -341,21 +341,23 @@ class CoincidenceLogicTab(QWidget):
     
     def update_channel1(self):
         new_ch1 = self.channels[self.ch1_combo.currentIndex()]
-        if new_ch1 != self.channel2:
-            self.channel1 = new_ch1
-            self.binary_data.clear()
-            self.ch1_event_count = 0
-            print(f"Channel 1 set to Ch{new_ch1}")
-            self.update_params_display()
+        self.channel1 = new_ch1
+        self.binary_data.clear()
+        self.ch1_event_count = 0
+        print(f"Channel 1 set to Ch{new_ch1}")
+        if new_ch1 == self.channel2:
+            print(f"  WARNING: Ch1 and Ch2 are both Ch{new_ch1} - will show duplicate traces")
+        self.update_params_display()
     
     def update_channel2(self):
         new_ch2 = self.channels[self.ch2_combo.currentIndex()]
-        if new_ch2 != self.channel1:
-            self.channel2 = new_ch2
-            self.binary_data.clear()
-            self.ch2_event_count = 0
-            print(f"Channel 2 set to Ch{new_ch2}")
-            self.update_params_display()
+        self.channel2 = new_ch2
+        self.binary_data.clear()
+        self.ch2_event_count = 0
+        print(f"Channel 2 set to Ch{new_ch2}")
+        if new_ch2 == self.channel1:
+            print(f"  WARNING: Ch1 and Ch2 are both Ch{new_ch2} - will show duplicate traces")
+        self.update_params_display()
     
     def update_time_offset(self):
         self.time_alignment_offset_ns = self.offset_spin.value()
@@ -431,8 +433,9 @@ class CoincidenceLogicTab(QWidget):
                                   f"raw={np.sum(binary_results['raw_threshold'])}, "
                                   f"fast={np.sum(binary_results['fast_trigger'])}, "
                                   f"valid={np.sum(binary_results['validation_window'])}")
-                        
-                elif event.channel == self.channel2:
+                
+                # Process for Ch2 if matches (separate check, not elif!)
+                if event.channel == self.channel2:
                     self.ch2_event_count += 1
                     binary_results = self.compute_binary_logic(
                         trace_data, event.channel, event.timestamp, 2
@@ -450,6 +453,7 @@ class CoincidenceLogicTab(QWidget):
             traceback.print_exc()
     
     def compute_binary_logic(self, raw_trace, channel, event_timestamp, channel_id):
+        """Compute binary logic - ALWAYS returns data even without coincidence"""
         if not self.binary_logic_enabled or len(raw_trace) < 20:
             return None
         
