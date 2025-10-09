@@ -1117,12 +1117,34 @@ class TracesPlotter(QWidget):
                 plot_widget.clear()
                 return
 
-            # Only clear plot if NOT in persistence mode
-            if not (self.single_channel_persistence and len(self.single_persistence_data[channel]) > 0):
+            if self.single_channel_persistence and len(self.single_persistence_data[channel]) > 0:
+                # In persistence mode: remove ALL items except the persistence image
+                items_to_remove = []
+                for item in plot_widget.items():
+                    # Keep the image item, remove everything else
+                    if item != self.persistence_image_item:
+                        items_to_remove.append(item)
+                
+                for item in items_to_remove:
+                    plot_widget.removeItem(item)
+                
+                # Clear the legend
+                if plot_widget.plotItem.legend is not None:
+                    plot_widget.plotItem.legend.scene().removeItem(plot_widget.plotItem.legend)
+                    plot_widget.plotItem.legend = None
+            else:
+                # Not in persistence mode: clear everything including image
                 plot_widget.clear()
+                # Make sure image item is gone
+                if self.persistence_image_item is not None:
+                    try:
+                        plot_widget.removeItem(self.persistence_image_item)
+                    except:
+                        pass
+                    self.persistence_image_item = None
 
             if self.single_channel_persistence and len(self.single_persistence_data[channel]) > 0:
-                # Persistence mode - plot histogram
+                # Persistence mode - plot histogram + overlays
                 self._plot_persistence_traces_single_channel(channel, plot_widget)
                 total_stored = len(self.single_persistence_data[channel])
                 displayed = min(self.single_persistence_count, total_stored)
@@ -1131,7 +1153,10 @@ class TracesPlotter(QWidget):
                 # Normal mode - plot just the latest trace
                 self._plot_single_trace(channel, plot_widget)
                 plot_widget.setTitle(f"{label} - Ch {channel}")
+            
+            # Add legend (it will be recreated with each update)
             plot_widget.addLegend()
+                
             self.update_persistence_statistics(channel)
 
         except Exception as e:
