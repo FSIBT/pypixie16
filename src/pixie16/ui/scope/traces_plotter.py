@@ -1230,71 +1230,106 @@ class TracesPlotter(QWidget):
             # Only regenerate the image every N traces for performance
             should_update_image = (
                 self.persistence_update_counter[channel] >= self.persistence_update_interval or
-                self.persistence_image_item is None  # Always update if image doesn't exist yet
+                self.persistence_image_item is None
             )
             
             if should_update_image:
-                # Get histogram data for raw traces
+                # Get histogram data for RAW traces only
                 img_data, x_range, y_range = self.persistence_histogram[channel].get_image_data(log_scale=False)
                 
                 if img_data is not None and img_data.size > 0:
-                    # Create or reuse image item
                     if self.persistence_image_item is None:
                         self.persistence_image_item = pg.ImageItem()
                         plot_widget.addItem(self.persistence_image_item)
-                        # Set z-value to put it behind everything else
                         self.persistence_image_item.setZValue(-100)
                         print(f"Created new ImageItem for persistence heatmap")
                     
-                    # Normalize: low counts = white/transparent, high counts = light gray
+                    # Normalize: low counts = white, high counts = dark gray
                     img_min, img_max = img_data.min(), img_data.max()
                     
                     if img_max > img_min:
-                        # Normalize to 0-1 range
                         img_normalized = (img_data - img_min) / (img_max - img_min)
-                        
-                        # Apply a power law to emphasize differences
-                        # Higher power = more contrast, lower = softer
-                        img_normalized = np.power(img_normalized, 0.5)  # sqrt for gentler curve
-                        
-                        # Invert so that:
-                        # 0 counts (normalized=0) -> 1.0 (white)
-                        # max counts (normalized=1) -> 0.3 (light gray, not too dark)
+                        img_normalized = np.power(img_normalized, 0.5)
                         img_display = 1.0 - (0.7 * img_normalized)
                     else:
-                        # No variation, keep everything white
                         img_display = np.ones_like(img_data)
                     
-                    # Transpose for correct orientation
                     self.persistence_image_item.setImage(img_display.T, levels=[0, 1])
                     
-                    # Create grayscale colormap: 0=black, 1=white
-                    # Since we inverted above, low density appears white, high density appears gray
                     cmap = pg.colormap.ColorMap(
                         pos=[0.0, 1.0],
-                        color=[(50, 50, 50), (255, 255, 255)]  # Dark gray to white
+                        color=[(50, 50, 50), (255, 255, 255)]
                     )
                     
                     self.persistence_image_item.setLookupTable(cmap.getLookupTable())
                     
-                    # Set proper rect to map image to data coordinates
                     self.persistence_image_item.setRect(
                         pg.QtCore.QRectF(x_range[0], y_range[0], 
                                         x_range[1] - x_range[0], 
                                         y_range[1] - y_range[0])
                     )
                     
-                    # Reset counter after updating
                     self.persistence_update_counter[channel] = 0
-                    
                     print(f"Updated persistence heatmap: shape={img_data.shape}, counts=({img_min:.0f}-{img_max:.0f})")
             
-            # ALWAYS overlay the latest trace (this happens every update, not just when image regenerates)
+            persistence_traces = list(self.single_persistence_data[channel])
+            if len(persistence_traces) > 1:  # Need at least 2 traces (one will be latest)
+                # Get all traces except the latest
+                past_traces = persistence_traces[:-1]
+                
+                # Limit how many past traces to plot for performance
+                max_past_traces = min(len(past_traces), self.single_persistence_count)
+                past_traces_to_plot = past_traces[-max_past_traces:]
+                
+                for past_trace in past_traces_to_plot:
+                    if len(past_trace) == 0:
+                        continue
+                        
+                    time_axis = self.calculate_real_time_axis(len(past_trace), channel)
+                    
+                    # Plot non-raw trace types in semi-transparent GRAY (only if checkbox enabled)
+                    for trace_type in ["fast_trigger", "energy_filter", "cfd"]:
+                        # CHECK IF THIS TRACE TYPE IS ENABLED
+                        if not self.trace_types.get(trace_type, False):
+                            continue  # Skip if checkbox is not checked
+                        
+                        try:
+                            signal = self.compute_hardware_traces(trace_type, past_trace, channel)
+                            if signal is None or len(signal) == 0:
+                                continue
+                            
+                            # Apply scaling
+                            if trace_type == "fast_trigger":
+                                raw_amplitude = np.max(past_trace) - np.min(past_trace)
+                                if np.max(signal) > 0:
+                                    scale_factor = raw_amplitude / (3 * np.max(signal))
+                                    signal = signal * scale_factor
+                            elif trace_type == "cfd":
+                                baseline = np.mean(past_trace[:100])
+                                signal = signal + baseline
+                            elif trace_type == "energy_filter":
+                                raw_amplitude = np.max(past_trace) - np.min(past_trace)
+                                if np.max(signal) > np.min(signal):
+                                    signal_amplitude = np.max(signal) - np.min(signal)
+                                    scale_factor = (2 * raw_amplitude) / signal_amplitude
+                                    signal = (signal - np.min(signal)) * scale_factor + np.min(past_trace)
+                            
+                            gray_color = pg.mkColor("#808080")  # Gray
+                            gray_color.setAlpha(80)  # Semi-transparent
+                            
+                            plot_widget.plot(
+                                time_axis, signal,
+                                pen=pg.mkPen(color=gray_color, width=1.0)
+                            )
+                        
+                        except Exception as e:
+                            print(f"Error plotting past {trace_type}: {e}")
+            
             if channel in self.trace_data and len(self.trace_data[channel]) > 0:
                 latest_trace = list(self.trace_data[channel])[-1]
                 time_axis = self.calculate_real_time_axis(len(latest_trace), channel)
                 
-                # Plot all enabled trace types
+                # Plot all enabled trace types in their original colors
                 for trace_type, enabled in self.trace_types.items():
                     if not enabled:
                         continue
@@ -1303,7 +1338,7 @@ class TracesPlotter(QWidget):
                         if trace_type == "raw":
                             signal = latest_trace
                             color = "#1f77b4"  # Blue
-                            name = "Raw Trace (Latest)"
+                            name = "Raw"
                         else:
                             signal = self.compute_hardware_traces(trace_type, latest_trace, channel)
                             if signal is None or len(signal) == 0:
@@ -1315,9 +1350,15 @@ class TracesPlotter(QWidget):
                                 "cfd": "#d62728",  # Red
                             }
                             color = trace_colors.get(trace_type, "#333333")
-                            name = trace_type.replace("_", " ").title() + " (Latest)"
+                            
+                            trace_names = {
+                                "fast_trigger": "Fast Filter",
+                                "energy_filter": "Energy",
+                                "cfd": "CFD",
+                            }
+                            name = trace_names.get(trace_type, trace_type)
 
-                            # Apply amplitude scaling for visibility
+                            # Apply scaling
                             if trace_type == "fast_trigger":
                                 raw_amplitude = np.max(latest_trace) - np.min(latest_trace)
                                 if np.max(signal) > 0:
@@ -1333,17 +1374,16 @@ class TracesPlotter(QWidget):
                                     scale_factor = (2 * raw_amplitude) / signal_amplitude
                                     signal = (signal - np.min(signal)) * scale_factor + np.min(latest_trace)
 
-                        # Plot with original colors and visible line width
                         plot_widget.plot(
                             time_axis, signal, 
-                            pen=pg.mkPen(color=color, width=2.0),
-                            name=name
+                            pen=pg.mkPen(color=color, width=2.5),
+                            name=name  # Add to legend
                         )
 
                     except Exception as e:
-                        print(f"Error plotting {trace_type}: {e}")
+                        print(f"Error plotting latest {trace_type}: {e}")
                 
-                # Add markers for latest trace
+                # Add markers for latest
                 main_trigger_points = self.calculate_main_trigger_point(latest_trace, channel)
                 if main_trigger_points:
                     self._store_trigger_info(channel, main_trigger_points, "main_trigger")
@@ -1379,9 +1419,9 @@ class TracesPlotter(QWidget):
             leading_edge_line = pg.InfiniteLine(
                 pos=leading_edge_threshold,
                 angle=0,
-                pen=pg.mkPen(
-                    color="darkgreen", style=pg.QtCore.Qt.PenStyle.DotLine, width=2
-                ),
+                pen=pg.mkPen(color="darkgreen", style=pg.QtCore.Qt.PenStyle.DotLine, width=2),
+                label="Leading Edge Threshold",
+                labelOpts={'position':0.95, 'color': 'darkgreen'}
             )
             plot_widget.addItem(leading_edge_line)
 
@@ -1390,27 +1430,22 @@ class TracesPlotter(QWidget):
             fast_threshold_line = pg.InfiniteLine(
                 pos=baseline + fast_threshold,
                 angle=0,
-                pen=pg.mkPen(
-                    color="orange", style=pg.QtCore.Qt.PenStyle.DashLine, width=2
-                ),
+                pen=pg.mkPen(color="orange", style=pg.QtCore.Qt.PenStyle.DashLine, width=2),
+                label="Fast Threshold",
+                labelOpts={'position':0.9, 'color': 'orange'}
             )
             plot_widget.addItem(fast_threshold_line)
 
-            # CFD threshold (red dashed line)
+            # CFD threshold
             cfd_threshold = self.hardware_params["cfd_threshold"]
             cfd_threshold_line = pg.InfiniteLine(
                 pos=baseline + cfd_threshold,
                 angle=0,
-                pen=pg.mkPen(
-                    color="red", style=pg.QtCore.Qt.PenStyle.DashDotLine, width=2
-                ),
+                pen=pg.mkPen(color="red", style=pg.QtCore.Qt.PenStyle.DashDotLine, width=2),
+                label="CFD Threshold",
+                labelOpts={'position':0.85, 'color': 'red'}
             )
             plot_widget.addItem(cfd_threshold_line)
-
-            print(
-                f"DEBUG: Added threshold lines - Leading Edge: {leading_edge_threshold:.1f}, "
-                f"Fast: {baseline + fast_threshold:.1f}, CFD: {baseline + cfd_threshold:.1f}"
-            )
 
         except Exception as e:
             print(f"Error adding threshold lines: {e}")
@@ -1698,18 +1733,19 @@ class TracesPlotter(QWidget):
             print(
                 f"WARNING: Time axis length ({len(time_axis)}) != trace length ({len(latest_trace)}) for channel {channel}"
             )
-            # Recreate time axis to match trace length
             time_axis = self.calculate_real_time_axis(len(latest_trace), channel)
 
-        # Add main trigger point first
+        # Track which marker types we've added to legend
+        added_to_legend = set()
+
+        # Add main trigger point (add to legend ONCE)
         if "main_trigger" in trigger_info and trigger_info["main_trigger"]:
             main_trigger_points = trigger_info["main_trigger"]
-            for trigger_idx in main_trigger_points:
-                if 0 <= trigger_idx < len(time_axis) and 0 <= trigger_idx < len(
-                    latest_trace
-                ):
+            for idx, trigger_idx in enumerate(main_trigger_points):
+                if 0 <= trigger_idx < len(time_axis) and 0 <= trigger_idx < len(latest_trace):
                     trigger_time = time_axis[trigger_idx]
                     trigger_amplitude = latest_trace[trigger_idx]
+                    # add name to first instance
                     plot_widget.plot(
                         [trigger_time],
                         [trigger_amplitude],
@@ -1718,7 +1754,7 @@ class TracesPlotter(QWidget):
                         symbolBrush="darkgreen",
                         symbolPen=pg.mkPen(color="black", width=2),
                         symbolSize=10,
-                        name="Leading Edge Trigger",
+                        name="Leading Edge" if idx == 0 else None,
                     )
 
         # Add other trigger markers
@@ -1732,9 +1768,7 @@ class TracesPlotter(QWidget):
             if trace_type == "raw":
                 signal_data = latest_trace
             else:
-                signal_data = self.compute_hardware_traces(
-                    trace_type, latest_trace, channel
-                )
+                signal_data = self.compute_hardware_traces(trace_type, latest_trace, channel)
                 if signal_data is None or len(signal_data) == 0:
                     continue
 
@@ -1752,15 +1786,11 @@ class TracesPlotter(QWidget):
                     if np.max(signal_data) > np.min(signal_data):
                         signal_amplitude = np.max(signal_data) - np.min(signal_data)
                         scale_factor = (2 * raw_amplitude) / signal_amplitude
-                        signal_data = (
-                            signal_data - np.min(signal_data)
-                        ) * scale_factor + np.min(latest_trace)
+                        signal_data = (signal_data - np.min(signal_data)) * scale_factor + np.min(latest_trace)
 
-            # Plot markers at the actual signal amplitude
-            for trigger_idx in trigger_indices:
-                if 0 <= trigger_idx < len(time_axis) and 0 <= trigger_idx < len(
-                    signal_data
-                ):
+            # Plot markers
+            for idx, trigger_idx in enumerate(trigger_indices):
+                if 0 <= trigger_idx < len(time_axis) and 0 <= trigger_idx < len(signal_data):
                     trigger_time = time_axis[trigger_idx]
                     trigger_amplitude = signal_data[trigger_idx]
 
@@ -1773,7 +1803,7 @@ class TracesPlotter(QWidget):
                             symbolBrush="red",
                             symbolPen=pg.mkPen(color="black", width=2),
                             symbolSize=10,
-                            name="Fast Trigger",
+                            name="Fast Trigger" if idx == 0 else None,
                         )
                     elif trace_type == "energy_filter":
                         plot_widget.plot(
@@ -1784,7 +1814,7 @@ class TracesPlotter(QWidget):
                             symbolBrush="blue",
                             symbolPen=pg.mkPen(color="black", width=2),
                             symbolSize=8,
-                            name="Energy Trigger",
+                            name="Energy Trigger" if idx == 0 else None,
                         )
                     elif trace_type == "cfd":
                         plot_widget.plot(
@@ -1795,43 +1825,30 @@ class TracesPlotter(QWidget):
                             symbolBrush="magenta",
                             symbolPen=pg.mkPen(color="black", width=2),
                             symbolSize=8,
-                            name="CFD Zero Crossing",
+                            name="CFD Crossing" if idx == 0 else None,
                         )
 
-        # Add peak sample markers with proper positioning
+        # Add peak sample markers
         peak_info = self.peak_sample_points.get(channel, {})
         if "energy_filter" in peak_info:
             peak_samples = peak_info["energy_filter"]
             print(f"DEBUG: Adding {len(peak_samples)} peak sample markers")
 
-            for peak_idx in peak_samples:
+            for idx, peak_idx in enumerate(peak_samples):
                 if 0 <= peak_idx < len(time_axis) and 0 <= peak_idx < len(latest_trace):
                     peak_time = time_axis[peak_idx]
 
-                    # Find the maximum value in the energy filter trace around this time
-                    energy_signal = self.compute_hardware_traces(
-                        "energy_filter", latest_trace, channel
-                    )
+                    energy_signal = self.compute_hardware_traces("energy_filter", latest_trace, channel)
                     if energy_signal is not None and len(energy_signal) > peak_idx:
-                        # Apply same scaling as energy filter
                         raw_amplitude = np.max(latest_trace) - np.min(latest_trace)
                         if np.max(energy_signal) > np.min(energy_signal):
-                            signal_amplitude = np.max(energy_signal) - np.min(
-                                energy_signal
-                            )
+                            signal_amplitude = np.max(energy_signal) - np.min(energy_signal)
                             scale_factor = (2 * raw_amplitude) / signal_amplitude
-                            energy_signal = (
-                                energy_signal - np.min(energy_signal)
-                            ) * scale_factor + np.min(latest_trace)
+                            energy_signal = (energy_signal - np.min(energy_signal)) * scale_factor + np.min(latest_trace)
 
                         peak_amplitude = energy_signal[peak_idx]
                     else:
-                        # Fallback to raw trace amplitude
-                        peak_amplitude = (
-                            latest_trace[peak_idx]
-                            if peak_idx < len(latest_trace)
-                            else latest_trace[-1]
-                        )
+                        peak_amplitude = latest_trace[peak_idx] if peak_idx < len(latest_trace) else latest_trace[-1]
 
                     plot_widget.plot(
                         [peak_time],
@@ -1841,7 +1858,7 @@ class TracesPlotter(QWidget):
                         symbolBrush="cyan",
                         symbolPen=pg.mkPen(color="black", width=2),
                         symbolSize=12,
-                        name="Peak Sample",
+                        name="Peak Sample" if idx == 0 else None,
                     )
 
     def fallback_simulation(self, trace_type, trace):
