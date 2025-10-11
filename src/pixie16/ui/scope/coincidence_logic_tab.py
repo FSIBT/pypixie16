@@ -353,8 +353,6 @@ class CoincidenceLogicTab(QWidget):
             self.binary_plot.addItem(time_line)
             self.reference_lines.append(time_line)
             
-            print(f"DEBUG: Setup plot - set {len(y_ticks[0])} custom Y-axis labels")
-            print(f"DEBUG: Y-axis order (top to bottom):")
             for val, label in sorted(y_ticks[0], key=lambda x: x[0], reverse=True):
                 print(f"  Row {val}: {label}")
                 
