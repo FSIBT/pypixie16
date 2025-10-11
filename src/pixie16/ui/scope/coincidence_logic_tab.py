@@ -288,23 +288,21 @@ class CoincidenceLogicTab(QWidget):
             
             self.binary_plot.showGrid(True, True, alpha=0.3)
             
-            # CRITICAL: Y-axis labels - Must be list of tuples
+            # Y-axis labels
             y_ticks = [
-                # Major ticks with labels
                 [
-                    (12, "A: Valid Trig Proc"),
-                    (11, "A: Local FT Proc"),
-                    (10, "A: Chan Valid Trig"),
-                    (9, "A: Chan Trig"),
-                    (8, "A: FT BP"),
-                    (7, "A: Local FT"),
-                    (6, "═══ t=0 Ref ═══"),
-                    (5, "B: Local FT"),
-                    (4, "B: FT BP"),
-                    (3, "B: Chan Trig"),
-                    (2, "B: Chan Valid Trig"),
-                    (1, "B: Local FT Proc"),
-                    (0, "B: Valid Trig Proc"),
+                    (11, "Local Fast Trig A"),
+                    (10, "Local Fast Trig BP A"),
+                    (9, "Local Fast Trig B"),
+                    (8, "Local Fast Trig BP B"),
+                    (7, "ChanTrig A (A AND B)"),
+                    (6, "ChanTrig B (A AND B)"),
+                    (5, "Chan Valid Trig A"),
+                    (4, "Local FT Proc A"),
+                    (3, "Valid Trig Proc A"),
+                    (2, "Chan Valid Trig B"),
+                    (1, "Local FT Proc B"),
+                    (0, "Valid Trig Proc B"),
                 ],
                 []  # Minor ticks (empty)
             ]
@@ -312,23 +310,40 @@ class CoincidenceLogicTab(QWidget):
             # Force set the ticks
             left_axis = self.binary_plot.getAxis("left")
             left_axis.setTicks(y_ticks)
-            left_axis.setStyle(tickTextOffset=10)  # Offset text from axis
-            left_axis.setWidth(180)  # Wide enough for labels
+            left_axis.setStyle(tickTextOffset=10)
+            left_axis.setWidth(200)
             
             # Set Y range with padding
-            self.binary_plot.setYRange(-0.5, 12.5, padding=0)
+            self.binary_plot.setYRange(-0.5, 11.5, padding=0)
             
             # Set labels
             self.binary_plot.setLabel("left", "")  # Clear default label
             self.binary_plot.setLabel("bottom", "Time (ns)")
             
-            # Reference line at y=6
-            ref_line = pg.InfiniteLine(
-                pos=6, angle=0,
-                pen=pg.mkPen(color='black', width=3, style=pg.QtCore.Qt.PenStyle.DashLine)
+            # Add reference lines at logical separation points
+            # Between BP and ChanTrig
+            ref_line1 = pg.InfiniteLine(
+                pos=7.5, angle=0,
+                pen=pg.mkPen(color='gray', width=1, style=pg.QtCore.Qt.PenStyle.DotLine)
             )
-            self.binary_plot.addItem(ref_line)
-            self.reference_lines.append(ref_line)
+            self.binary_plot.addItem(ref_line1)
+            self.reference_lines.append(ref_line1)
+            
+            # Between ChanTrig and Validation
+            ref_line2 = pg.InfiniteLine(
+                pos=5.5, angle=0,
+                pen=pg.mkPen(color='gray', width=1, style=pg.QtCore.Qt.PenStyle.DotLine)
+            )
+            self.binary_plot.addItem(ref_line2)
+            self.reference_lines.append(ref_line2)
+            
+            # Between A validation and B validation
+            ref_line3 = pg.InfiniteLine(
+                pos=2.5, angle=0,
+                pen=pg.mkPen(color='gray', width=1, style=pg.QtCore.Qt.PenStyle.DotLine)
+            )
+            self.binary_plot.addItem(ref_line3)
+            self.reference_lines.append(ref_line3)
             
             # Time = 0 line
             time_line = pg.InfiniteLine(
@@ -339,7 +354,9 @@ class CoincidenceLogicTab(QWidget):
             self.reference_lines.append(time_line)
             
             print(f"DEBUG: Setup plot - set {len(y_ticks[0])} custom Y-axis labels")
-            print(f"DEBUG: Y-axis ticks: {y_ticks[0][:3]}...")  # Show first 3
+            print(f"DEBUG: Y-axis order (top to bottom):")
+            for val, label in sorted(y_ticks[0], key=lambda x: x[0], reverse=True):
+                print(f"  Row {val}: {label}")
                 
         except Exception as e:
             print(f"ERROR in setup_plot: {e}")
@@ -631,38 +648,46 @@ class CoincidenceLogicTab(QWidget):
             
             # Colors for each signal type
             colors = {
-                "local_fast_trigger": "#FF0000",       # Red
-                "fast_trigger_bp": "#FF6600",          # Orange
-                "chan_trig": "#FFAA00",                # Yellow-Orange
-                "chan_validation_trig": "#00AA00",     # Green
-                "local_fast_for_processing": "#0066FF", # Blue
-                "validated_trig_for_processing": "#AA00FF" # Purple
+                "local_fast_trigger": "#FF0000",            # Red
+                "fast_trigger_bp": "#FF6600",               # Orange
+                "chan_trig": "#FFAA00",                     # Yellow-Orange
+                "chan_validation_trig": "#00AA00",          # Green
+                "local_fast_for_processing": "#0066FF",     # Blue
+                "validated_trig_for_processing": "#AA00FF"  # Purple
             }
             
-            # Y-offsets for Channel A (top half)
-            y_offsets_a = {
-                "validated_trig_for_processing": 12,
-                "local_fast_for_processing": 11,
-                "chan_validation_trig": 10,
-                "chan_trig": 9,
-                "fast_trigger_bp": 8,
-                "local_fast_trigger": 7,
+            # Y-offsets matching the NEW EXACT ORDER (top to bottom)
+            y_offsets = {
+                # Row 11-10: A initial triggers
+                ("A", "local_fast_trigger"): 11,
+                ("A", "fast_trigger_bp"): 10,
+                
+                # Row 9-8: B initial triggers
+                ("B", "local_fast_trigger"): 9,
+                ("B", "fast_trigger_bp"): 8,
+                
+                # Row 7-6: ChanTrig (coincidence)
+                ("A", "chan_trig"): 7,
+                ("B", "chan_trig"): 6,
+                
+                # Row 5-3: A validation chain
+                ("A", "chan_validation_trig"): 5,
+                ("A", "local_fast_for_processing"): 4,
+                ("A", "validated_trig_for_processing"): 3,
+                
+                # Row 2-0: B validation chain
+                ("B", "chan_validation_trig"): 2,
+                ("B", "local_fast_for_processing"): 1,
+                ("B", "validated_trig_for_processing"): 0,
             }
             
-            # Y-offsets for Channel B (bottom half)
-            y_offsets_b = {
-                "local_fast_trigger": 5,
-                "fast_trigger_bp": 4,
-                "chan_trig": 3,
-                "chan_validation_trig": 2,
-                "local_fast_for_processing": 1,
-                "validated_trig_for_processing": 0,
-            }
-            
-            # Plot Channel A
+            # Plot Channel A signals
             if has_ch_a:
-                for step, y_offset in y_offsets_a.items():
+                for step in ["local_fast_trigger", "fast_trigger_bp", "chan_trig",
+                            "chan_validation_trig", "local_fast_for_processing", 
+                            "validated_trig_for_processing"]:
                     if data['ch_a'][step] is not None:
+                        y_offset = y_offsets[("A", step)]
                         self.plot_binary_step(
                             data['ch_a'][step],
                             data['ch_a_time_axis'],
@@ -671,10 +696,13 @@ class CoincidenceLogicTab(QWidget):
                             f"A: {step}"
                         )
             
-            # Plot Channel B
+            # Plot Channel B signals
             if has_ch_b:
-                for step, y_offset in y_offsets_b.items():
+                for step in ["local_fast_trigger", "fast_trigger_bp", "chan_trig",
+                            "chan_validation_trig", "local_fast_for_processing",
+                            "validated_trig_for_processing"]:
                     if data['ch_b'][step] is not None:
+                        y_offset = y_offsets[("B", step)]
                         self.plot_binary_step(
                             data['ch_b'][step],
                             data['ch_b_time_axis'],
