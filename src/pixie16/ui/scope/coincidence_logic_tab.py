@@ -3,7 +3,7 @@ Coincidence logic tab with binary waveform visualization
 """
 
 import numpy as np
-from collections import deque
+from collections import deque, defaultdict
 import time
 import json
 from pathlib import Path
@@ -11,12 +11,67 @@ import csv
 
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QGroupBox,
-    QLabel, QDoubleSpinBox, QComboBox, QPushButton, QMessageBox, QSizePolicy,
+    QLabel, QDoubleSpinBox, QComboBox, QPushButton, QMessageBox, 
+    QSizePolicy, QCheckBox, QSpinBox,
 )
 from PyQt6.QtCore import QTimer, pyqtSignal, QMutex, QMutexLocker
 import pyqtgraph as pg
 
 from ...analyze import calculate_filter
+
+
+class BinaryHistogramData:
+    def __init__(self, time_bins=2000, time_range_ns=4000):
+        self.time_bins = time_bins
+        self.time_range_ns = time_range_ns
+        self.bin_edges = np.linspace(-time_range_ns/2, time_range_ns/2, time_bins+1)
+        
+        # Histogram for each logic step
+        self.histograms = {
+            "local_fast_trigger": np.zeros(time_bins),
+            "fast_trigger_bp": np.zeros(time_bins),
+            "chan_trig": np.zeros(time_bins),
+            "chan_validation_trig": np.zeros(time_bins),
+            "local_fast_for_processing": np.zeros(time_bins),
+            "validated_trig_for_processing": np.zeros(time_bins),
+        }
+        
+        self.total_events = 0
+    
+    def add_binary_trace(self, time_axis, binary_data, step_name):
+        if step_name not in self.histograms:
+            return
+        
+        # Find where signal is HIGH (value = 1)
+        high_indices = np.where(binary_data > 0)[0]
+        
+        if len(high_indices) > 0:
+            # Get times where signal is HIGH
+            high_times = time_axis[high_indices]
+            
+            # Add to histogram
+            hist, _ = np.histogram(high_times, bins=self.bin_edges)
+            self.histograms[step_name] += hist
+            
+        self.total_events += 1
+    
+    def get_histogram(self, step_name, normalize=False):
+        if step_name not in self.histograms:
+            return None, None
+        
+        hist = self.histograms[step_name].copy()
+        
+        if normalize and self.total_events > 0:
+            hist = hist / self.total_events
+        
+        # Return histogram and bin centers
+        bin_centers = (self.bin_edges[:-1] + self.bin_edges[1:]) / 2
+        return bin_centers, hist
+    
+    def clear(self):
+        for key in self.histograms:
+            self.histograms[key].fill(0)
+        self.total_events = 0
 
 
 class DualChannelBinaryData:    
@@ -39,20 +94,31 @@ class DualChannelBinaryData:
         self.ch_a_time_axis = None
         self.ch_b_time_axis = None
         
+        # Histogram persistence data
+        self.ch_a_histogram = BinaryHistogramData()
+        self.ch_b_histogram = BinaryHistogramData()
+        
     def add_channel_data(self, channel_id, binary_results):
         with QMutexLocker(self.mutex):
             if channel_id == 'A':
                 storage = self.ch_a_data
+                histogram = self.ch_a_histogram
                 self.ch_a_time_axis = binary_results.get("time_axis")
             elif channel_id == 'B':
                 storage = self.ch_b_data
+                histogram = self.ch_b_histogram
                 self.ch_b_time_axis = binary_results.get("time_axis")
             else:
                 return
-                
+            
+            time_axis = binary_results.get("time_axis")
+            
             for step in self.logic_steps:
                 if step in binary_results:
                     storage[step].append(binary_results[step])
+                    # Add to histogram
+                    if time_axis is not None:
+                        histogram.add_binary_trace(time_axis, binary_results[step], step)
     
     def get_latest_data(self):
         with QMutexLocker(self.mutex):
@@ -65,6 +131,23 @@ class DualChannelBinaryData:
                 'ch_b_time_axis': self.ch_b_time_axis,
             }
     
+    def get_histogram_data(self, channel_id, normalize=False):
+        with QMutexLocker(self.mutex):
+            if channel_id == 'A':
+                histogram = self.ch_a_histogram
+            elif channel_id == 'B':
+                histogram = self.ch_b_histogram
+            else:
+                return {}
+            
+            histograms = {}
+            for step in self.logic_steps:
+                bin_centers, hist = histogram.get_histogram(step, normalize)
+                if hist is not None:
+                    histograms[step] = (bin_centers, hist)
+            
+            return histograms, histogram.total_events
+    
     def clear(self):
         with QMutexLocker(self.mutex):
             for step in self.logic_steps:
@@ -72,6 +155,8 @@ class DualChannelBinaryData:
                 self.ch_b_data[step].clear()
             self.ch_a_time_axis = None
             self.ch_b_time_axis = None
+            self.ch_a_histogram.clear()
+            self.ch_b_histogram.clear()
 
 
 class CoincidenceLogicTab(QWidget):    
@@ -90,41 +175,38 @@ class CoincidenceLogicTab(QWidget):
         self.event_buffer = deque(maxlen=50000)
         self.coincidence_events = deque(maxlen=10000)
         
-        # Channel selection - A and B
+        # Channel selection
         self.channel_a = self.channels[0]
         self.channel_b = self.channels[1] if len(self.channels) > 1 else self.channels[0]
         
         # Always enabled
         self.binary_logic_enabled = True
         
-        # Hardware timing parameters (all in nanoseconds)
+        # Histogram settings
+        self.show_histograms = True
+        self.histogram_normalize = False
+        self.histogram_alpha = 0.3  # Transparency
+        
+        # Hardware timing parameters (ns)
+        # These are read from hardware or can be adjusted manually
         self.hardware_params = {
-            # Fast trigger parameters
-            "fast_L": 2,  # FPGA cycles
-            "fast_G": 2,  # FPGA cycles  
+            "fast_L": 2,
+            "fast_G": 2,
             "fast_threshold": 100,
-            
-            # Backplane delays and stretches
-            "fast_trig_backplane_delay": 0,  # ns (FastTrigBackplaneEna)
-            "fast_trig_backplane_len": 200,  # ns (FASTTRIGBACKLEN)
-            
-            # Channel trigger stretch
-            "chan_trig_stretch": 200,  # ns (ChanTrigStretch)
-            
-            # External delay (to coincidence trigger)
-            "external_delay_len": 300,  # ns (ExternDelayLen)
-            
-            # Validation window
-            "validation_window": 1000,  # ns
+            "fast_trig_backplane_delay": 0,
+            "fast_trig_backplane_len": 200,
+            "chan_trig_stretch": 200,
+            "external_delay_len": 300,
+            "validation_window": 1000,
         }
         
         # PIXIE-16 timing
-        self.sampling_period_ns = 2.0  # 500MHz = 2ns/sample
-        self.fpga_period_ns = 10.0     # 10ns/FPGA cycle (5 samples)
+        self.sampling_period_ns = 2.0
+        self.fpga_period_ns = 10.0
         
         self.binary_data = DualChannelBinaryData(maxlen=100)
         
-        # Update timer - 10Hz continuous
+        # Update timer
         self.update_timer = QTimer(self)
         self.update_timer.setSingleShot(False)
         self.update_timer.timeout.connect(self.update_visualization)
@@ -132,6 +214,7 @@ class CoincidenceLogicTab(QWidget):
         # Plot tracking
         self.plot_items = []
         self.reference_lines = []
+        self.histogram_items = []
         
         # Event counters
         self.ch_a_event_count = 0
@@ -140,8 +223,6 @@ class CoincidenceLogicTab(QWidget):
         self.last_update_time = time.time()
         
         self.init_ui()
-        
-        # CRITICAL: Setup plot immediately on initialization
         self.setup_plot()
         
         if self.hardware_manager:
@@ -150,27 +231,24 @@ class CoincidenceLogicTab(QWidget):
             except Exception as e:
                 print(f"Hardware parameter update failed: {e}")
         
-        # Start visualization immediately
         self.update_timer.start(100)
-        
         print(f"PIXIE-16 Binary Logic initialized - Ch{self.channel_a}(A) vs Ch{self.channel_b}(B)")
     
     def init_ui(self):
         layout = QVBoxLayout()
         
-        # Channel selection (no enable/disable toggle)
         channel_group = self.create_channel_selection()
         layout.addWidget(channel_group)
         
-        # Timing parameters
         timing_group = self.create_timing_controls()
         layout.addWidget(timing_group)
         
-        # Binary visualization plot
+        histogram_group = self.create_histogram_controls()
+        layout.addWidget(histogram_group)
+        
         binary_group = self.create_binary_visualization()
         layout.addWidget(binary_group)
         
-        # Control buttons
         control_layout = self.create_control_buttons()
         layout.addLayout(control_layout)
         
@@ -199,7 +277,6 @@ class CoincidenceLogicTab(QWidget):
         layout.addWidget(QLabel("Time Ref:"))
         self.time_ref_combo = QComboBox()
         self.time_ref_combo.addItems(["Channel A", "Channel B", "Coincidence Trigger"])
-        self.time_ref_combo.currentIndexChanged.connect(self.update_time_reference)
         layout.addWidget(self.time_ref_combo)
         
         layout.addStretch()
@@ -229,7 +306,6 @@ class CoincidenceLogicTab(QWidget):
         self.ft_bp_len_spin.valueChanged.connect(self.update_timing_params)
         layout.addWidget(self.ft_bp_len_spin, 0, 3)
         
-        # Channel trigger stretch
         layout.addWidget(QLabel("Chan Trig Stretch:"), 1, 0)
         self.chan_stretch_spin = QDoubleSpinBox()
         self.chan_stretch_spin.setRange(10, 2000)
@@ -238,7 +314,6 @@ class CoincidenceLogicTab(QWidget):
         self.chan_stretch_spin.valueChanged.connect(self.update_timing_params)
         layout.addWidget(self.chan_stretch_spin, 1, 1)
         
-        # External delay
         layout.addWidget(QLabel("External Delay:"), 1, 2)
         self.ext_delay_spin = QDoubleSpinBox()
         self.ext_delay_spin.setRange(0, 2000)
@@ -247,7 +322,6 @@ class CoincidenceLogicTab(QWidget):
         self.ext_delay_spin.valueChanged.connect(self.update_timing_params)
         layout.addWidget(self.ext_delay_spin, 1, 3)
         
-        # Validation window
         layout.addWidget(QLabel("Validation Window:"), 2, 0)
         self.validation_win_spin = QDoubleSpinBox()
         self.validation_win_spin.setRange(100, 5000)
@@ -260,22 +334,55 @@ class CoincidenceLogicTab(QWidget):
         group.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Minimum)
         return group
     
+    def create_histogram_controls(self):
+        group = QGroupBox("Histogram Persistence (Shows Timing Jitter)")
+        layout = QHBoxLayout()
+        
+        self.hist_enable_cb = QCheckBox("Show Histograms")
+        self.hist_enable_cb.setChecked(True)
+        self.hist_enable_cb.toggled.connect(self.toggle_histograms)
+        layout.addWidget(self.hist_enable_cb)
+        
+        self.hist_normalize_cb = QCheckBox("Normalize")
+        self.hist_normalize_cb.setChecked(False)
+        self.hist_normalize_cb.toggled.connect(self.toggle_normalize)
+        layout.addWidget(self.hist_normalize_cb)
+        
+        layout.addWidget(QLabel("Alpha:"))
+        self.hist_alpha_spin = QDoubleSpinBox()
+        self.hist_alpha_spin.setRange(0.1, 0.9)
+        self.hist_alpha_spin.setValue(0.3)
+        self.hist_alpha_spin.setSingleStep(0.1)
+        self.hist_alpha_spin.valueChanged.connect(self.update_histogram_alpha)
+        layout.addWidget(self.hist_alpha_spin)
+        
+        clear_hist_btn = QPushButton("Clear Histograms")
+        clear_hist_btn.clicked.connect(self.clear_histograms)
+        layout.addWidget(clear_hist_btn)
+        
+        self.hist_stats_label = QLabel("Events: 0")
+        layout.addWidget(self.hist_stats_label)
+        
+        layout.addStretch()
+        
+        group.setLayout(layout)
+        group.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Minimum)
+        return group
+    
     def create_binary_visualization(self):
         group = QGroupBox("PIXIE-16 Coincidence Logic Chain")
         layout = QVBoxLayout()
         
-        # Binary logic plot
         self.binary_plot = pg.PlotWidget()
         self.binary_plot.setLabel("left", "Logic Signals")
         self.binary_plot.setLabel("bottom", "Time (ns)")
         self.binary_plot.setTitle(f"Ch{self.channel_a} (A) vs Ch{self.channel_b} (B)")
         self.binary_plot.setBackground("w")
         self.binary_plot.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
-        self.binary_plot.setMinimumHeight(500)
+        self.binary_plot.setMinimumHeight(600)
         
         layout.addWidget(self.binary_plot, 1)
         
-        # Status
         self.status_label = QLabel("Ready - Waiting for events...")
         layout.addWidget(self.status_label)
         
@@ -304,46 +411,26 @@ class CoincidenceLogicTab(QWidget):
                     (1, "Local FT Proc B"),
                     (0, "Valid Trig Proc B"),
                 ],
-                []  # Minor ticks (empty)
+                []
             ]
             
-            # Force set the ticks
             left_axis = self.binary_plot.getAxis("left")
             left_axis.setTicks(y_ticks)
             left_axis.setStyle(tickTextOffset=10)
             left_axis.setWidth(200)
             
-            # Set Y range with padding
             self.binary_plot.setYRange(-0.5, 11.5, padding=0)
-            
-            # Set labels
-            self.binary_plot.setLabel("left", "")  # Clear default label
+            self.binary_plot.setLabel("left", "")
             self.binary_plot.setLabel("bottom", "Time (ns)")
             
-            # Add reference lines at logical separation points
-            # Between BP and ChanTrig
-            ref_line1 = pg.InfiniteLine(
-                pos=7.5, angle=0,
-                pen=pg.mkPen(color='gray', width=1, style=pg.QtCore.Qt.PenStyle.DotLine)
-            )
-            self.binary_plot.addItem(ref_line1)
-            self.reference_lines.append(ref_line1)
-            
-            # Between ChanTrig and Validation
-            ref_line2 = pg.InfiniteLine(
-                pos=5.5, angle=0,
-                pen=pg.mkPen(color='gray', width=1, style=pg.QtCore.Qt.PenStyle.DotLine)
-            )
-            self.binary_plot.addItem(ref_line2)
-            self.reference_lines.append(ref_line2)
-            
-            # Between A validation and B validation
-            ref_line3 = pg.InfiniteLine(
-                pos=2.5, angle=0,
-                pen=pg.mkPen(color='gray', width=1, style=pg.QtCore.Qt.PenStyle.DotLine)
-            )
-            self.binary_plot.addItem(ref_line3)
-            self.reference_lines.append(ref_line3)
+            # Reference lines
+            for y_pos in [7.5, 5.5, 2.5]:
+                ref_line = pg.InfiniteLine(
+                    pos=y_pos, angle=0,
+                    pen=pg.mkPen(color='gray', width=1, style=pg.QtCore.Qt.PenStyle.DotLine)
+                )
+                self.binary_plot.addItem(ref_line)
+                self.reference_lines.append(ref_line)
             
             # Time = 0 line
             time_line = pg.InfiniteLine(
@@ -352,9 +439,6 @@ class CoincidenceLogicTab(QWidget):
             )
             self.binary_plot.addItem(time_line)
             self.reference_lines.append(time_line)
-            
-            for val, label in sorted(y_ticks[0], key=lambda x: x[0], reverse=True):
-                print(f"  Row {val}: {label}")
                 
         except Exception as e:
             print(f"ERROR in setup_plot: {e}")
@@ -363,12 +447,13 @@ class CoincidenceLogicTab(QWidget):
     
     def clear_plot_safely(self):
         try:
-            for item in self.plot_items:
+            for item in self.plot_items + self.histogram_items:
                 try:
                     self.binary_plot.removeItem(item)
                 except:
                     pass
             self.plot_items.clear()
+            self.histogram_items.clear()
             
             for line in self.reference_lines:
                 try:
@@ -401,12 +486,12 @@ class CoincidenceLogicTab(QWidget):
         
         return layout
     
+    # Event handlers
     def update_channel_a(self):
         self.channel_a = self.channels[self.ch_a_combo.currentIndex()]
         self.binary_data.clear()
         self.ch_a_event_count = 0
         self.binary_plot.setTitle(f"Ch{self.channel_a} (A) vs Ch{self.channel_b} (B)")
-        print(f"Channel A set to Ch{self.channel_a}")
         self.update_params_display()
     
     def update_channel_b(self):
@@ -414,13 +499,7 @@ class CoincidenceLogicTab(QWidget):
         self.binary_data.clear()
         self.ch_b_event_count = 0
         self.binary_plot.setTitle(f"Ch{self.channel_a} (A) vs Ch{self.channel_b} (B)")
-        print(f"Channel B set to Ch{self.channel_b}")
         self.update_params_display()
-    
-    def update_time_reference(self):
-        ref = self.time_ref_combo.currentText()
-        print(f"Time reference: {ref}")
-        # Will be used in compute_binary_logic to adjust time axis
     
     def update_timing_params(self):
         self.hardware_params.update({
@@ -432,6 +511,22 @@ class CoincidenceLogicTab(QWidget):
         })
         self.update_params_display()
     
+    def toggle_histograms(self, enabled):
+        self.show_histograms = enabled
+    
+    def toggle_normalize(self, enabled):
+        self.histogram_normalize = enabled
+    
+    def update_histogram_alpha(self, value):
+        self.histogram_alpha = value
+    
+    def clear_histograms(self):
+        self.binary_data.ch_a_histogram.clear()
+        self.binary_data.ch_b_histogram.clear()
+        self.ch_a_event_count = 0
+        self.ch_b_event_count = 0
+        print("Histograms cleared")
+    
     def add_event_with_trace(self, event, trace_data):
         if not hasattr(event, "timestamp") or not hasattr(event, "channel"):
             return
@@ -439,7 +534,6 @@ class CoincidenceLogicTab(QWidget):
         try:
             self.event_buffer.append((event, trace_data))
             
-            # Process for Ch A
             if event.channel == self.channel_a:
                 self.ch_a_event_count += 1
                 binary_results = self.compute_binary_logic(
@@ -448,7 +542,6 @@ class CoincidenceLogicTab(QWidget):
                 if binary_results:
                     self.binary_data.add_channel_data('A', binary_results)
             
-            # Process for Ch B
             if event.channel == self.channel_b:
                 self.ch_b_event_count += 1
                 binary_results = self.compute_binary_logic(
@@ -459,8 +552,6 @@ class CoincidenceLogicTab(QWidget):
                 
         except Exception as e:
             print(f"ERROR in add_event_with_trace: {e}")
-            import traceback
-            traceback.print_exc()
     
     def compute_binary_logic(self, raw_trace, channel, event_timestamp, channel_id):
         if len(raw_trace) < 20:
@@ -470,18 +561,15 @@ class CoincidenceLogicTab(QWidget):
             raw_trace = np.asarray(raw_trace, dtype=np.uint16)
             trace_length = len(raw_trace)
             
-            # Time axis
             trigger_position = int(trace_length * 0.3)
             trigger_time_ns = trigger_position * self.sampling_period_ns
             time_axis = np.arange(trace_length) * self.sampling_period_ns - trigger_time_ns
             
-            # Baseline and threshold
             baseline_samples = min(100, trace_length // 3)
             baseline = np.mean(raw_trace[:baseline_samples])
             threshold = self.hardware_params.get("fast_threshold", 100)
             
-            # STEP 1: Local Fast Trigger (10ns pulse)
-            # Using analyze.py fast trigger
+            # STEP 1: Local Fast Trigger
             try:
                 fast_L_us = self.hardware_params.get("fast_L", 2) * 0.01
                 fast_G_us = self.hardware_params.get("fast_G", 2) * 0.01
@@ -495,21 +583,18 @@ class CoincidenceLogicTab(QWidget):
                 
                 fast_filter = fast_result[0]
                 
-                # Resize
                 if len(fast_filter) < trace_length:
                     fast_filter = np.pad(fast_filter, (0, trace_length - len(fast_filter)), mode='constant')
                 elif len(fast_filter) > trace_length:
                     fast_filter = fast_filter[:trace_length]
                 
-                # Find first trigger point
                 trigger_indices = np.where(fast_filter > threshold)[0]
                 if len(trigger_indices) > 0:
                     first_trigger_idx = trigger_indices[0]
                     first_trigger_time_ns = time_axis[first_trigger_idx]
                     
-                    # Create 10ns pulse
                     local_fast_trigger = np.zeros(trace_length, dtype=np.int8)
-                    pulse_samples = int(10 / self.sampling_period_ns)  # 10ns pulse
+                    pulse_samples = int(10 / self.sampling_period_ns)
                     pulse_end = min(first_trigger_idx + pulse_samples, trace_length)
                     local_fast_trigger[first_trigger_idx:pulse_end] = 1
                 else:
@@ -517,12 +602,10 @@ class CoincidenceLogicTab(QWidget):
                     first_trigger_time_ns = None
                     
             except Exception as e:
-                print(f"Fast trigger calc failed: {e}")
                 local_fast_trigger = np.zeros(trace_length, dtype=np.int8)
                 first_trigger_time_ns = None
             
             if first_trigger_time_ns is None:
-                # No trigger, return empty signals
                 return {
                     "local_fast_trigger": local_fast_trigger,
                     "fast_trigger_bp": np.zeros(trace_length, dtype=np.int8),
@@ -535,7 +618,7 @@ class CoincidenceLogicTab(QWidget):
                     "channel": channel,
                 }
             
-            # STEP 2: Fast Trigger Backplane (delayed and stretched)
+            # STEP 2: Fast Trigger Backplane
             bp_delay_ns = self.hardware_params["fast_trig_backplane_delay"]
             bp_len_ns = self.hardware_params["fast_trig_backplane_len"]
             
@@ -548,26 +631,23 @@ class CoincidenceLogicTab(QWidget):
             if bp_start_idx < trace_length and bp_end_idx <= trace_length:
                 fast_trigger_bp[bp_start_idx:bp_end_idx] = 1
             
-            # STEP 3: Channel Trigger (AND of A and B backplane triggers)
-            # For this channel, check if OTHER channel had a trigger in buffer
+            # STEP 3: Channel Trigger (AND of A and B)
             other_channel = self.channel_b if channel_id == 'A' else self.channel_a
             other_had_trigger = self._check_other_channel_trigger(other_channel, event_timestamp, window_ns=500)
             
             chan_trig = np.zeros(trace_length, dtype=np.int8)
             if other_had_trigger:
-                # Calculate when coincidence trigger fires (~110ns after both triggers)
                 coinc_delay_ns = 110
                 coinc_time = first_trigger_time_ns + bp_delay_ns + coinc_delay_ns
                 coinc_idx = np.searchsorted(time_axis, coinc_time)
                 
-                # 10ns coincidence pulse
                 coinc_pulse_samples = int(10 / self.sampling_period_ns)
                 coinc_end_idx = min(coinc_idx + coinc_pulse_samples, trace_length)
                 if coinc_idx < trace_length:
                     chan_trig[coinc_idx:coinc_end_idx] = 1
                     self.coincidence_count += 1
             
-            # STEP 4: Channel Validation Trigger (stretched chan_trig)
+            # STEP 4: Channel Validation Trigger
             chan_stretch_ns = self.hardware_params["chan_trig_stretch"]
             chan_validation_trig = np.zeros(trace_length, dtype=np.int8)
             
@@ -578,7 +658,7 @@ class CoincidenceLogicTab(QWidget):
                 if val_end_idx <= trace_length:
                     chan_validation_trig[val_start_idx:val_end_idx] = 1
             
-            # STEP 5: Local Fast for Processing (original trigger + external delay)
+            # STEP 5: Local Fast for Processing
             ext_delay_ns = self.hardware_params["external_delay_len"]
             local_fast_for_processing = np.zeros(trace_length, dtype=np.int8)
             
@@ -589,7 +669,7 @@ class CoincidenceLogicTab(QWidget):
             if proc_start_idx < trace_length:
                 local_fast_for_processing[proc_start_idx:proc_end_idx] = 1
             
-            # STEP 6: Validated Trigger for Processing (AND of processing trigger and validation)
+            # STEP 6: Validated Trigger for Processing
             validated_trig_for_processing = local_fast_for_processing & chan_validation_trig
             
             return {
@@ -606,12 +686,10 @@ class CoincidenceLogicTab(QWidget):
             
         except Exception as e:
             print(f"ERROR compute_binary_logic Ch{channel}: {e}")
-            import traceback
-            traceback.print_exc()
             return None
     
     def _check_other_channel_trigger(self, other_channel, event_timestamp, window_ns=500):
-        window_ticks = window_ns / 10.0  # Convert to 10ns ticks
+        window_ticks = window_ns / 10.0
         
         for buffered_event, _ in list(self.event_buffer)[-200:]:
             if not hasattr(buffered_event, 'channel') or not hasattr(buffered_event, 'timestamp'):
@@ -644,40 +722,35 @@ class CoincidenceLogicTab(QWidget):
             self.clear_plot_safely()
             self.setup_plot()
             
-            # Colors for each signal type
+            # Colors for signals
             colors = {
-                "local_fast_trigger": "#FF0000",            # Red
-                "fast_trigger_bp": "#FF6600",               # Orange
-                "chan_trig": "#FFAA00",                     # Yellow-Orange
-                "chan_validation_trig": "#00AA00",          # Green
-                "local_fast_for_processing": "#0066FF",     # Blue
-                "validated_trig_for_processing": "#AA00FF"  # Purple
+                "local_fast_trigger": "#FF0000",
+                "fast_trigger_bp": "#FF6600",
+                "chan_trig": "#FFAA00",
+                "chan_validation_trig": "#00AA00",
+                "local_fast_for_processing": "#0066FF",
+                "validated_trig_for_processing": "#AA00FF"
             }
             
-            # Y-offsets matching the NEW EXACT ORDER (top to bottom)
+            # Y-offsets
             y_offsets = {
-                # Row 11-10: A initial triggers
                 ("A", "local_fast_trigger"): 11,
                 ("A", "fast_trigger_bp"): 10,
-                
-                # Row 9-8: B initial triggers
                 ("B", "local_fast_trigger"): 9,
                 ("B", "fast_trigger_bp"): 8,
-                
-                # Row 7-6: ChanTrig (coincidence)
                 ("A", "chan_trig"): 7,
                 ("B", "chan_trig"): 6,
-                
-                # Row 5-3: A validation chain
                 ("A", "chan_validation_trig"): 5,
                 ("A", "local_fast_for_processing"): 4,
                 ("A", "validated_trig_for_processing"): 3,
-                
-                # Row 2-0: B validation chain
                 ("B", "chan_validation_trig"): 2,
                 ("B", "local_fast_for_processing"): 1,
                 ("B", "validated_trig_for_processing"): 0,
             }
+            
+            # Plot histograms FIRST (behind binary traces)
+            if self.show_histograms:
+                self.plot_histograms(y_offsets, colors)
             
             # Plot Channel A signals
             if has_ch_a:
@@ -709,17 +782,77 @@ class CoincidenceLogicTab(QWidget):
                             f"B: {step}"
                         )
             
-            # Update status
+            # Update status with histogram info
+            hist_a, total_a = self.binary_data.get_histogram_data('A', self.histogram_normalize)
+            hist_b, total_b = self.binary_data.get_histogram_data('B', self.histogram_normalize)
+            
             self.status_label.setText(
                 f"Ch{self.channel_a}(A):{self.ch_a_event_count} | "
                 f"Ch{self.channel_b}(B):{self.ch_b_event_count} | "
                 f"Coinc:{self.coincidence_count} | "
                 f"{time.strftime('%H:%M:%S')}"
             )
+            
+            self.hist_stats_label.setText(f"Events: A={total_a}, B={total_b}")
+            
             self.last_update_time = time.time()
             
         except Exception as e:
             print(f"ERROR update_visualization: {e}")
+            import traceback
+            traceback.print_exc()
+    
+    def plot_histograms(self, y_offsets, colors):
+        try:
+            # Get histogram data
+            hist_a, total_a = self.binary_data.get_histogram_data('A', self.histogram_normalize)
+            hist_b, total_b = self.binary_data.get_histogram_data('B', self.histogram_normalize)
+            
+            if not hist_a and not hist_b:
+                return
+            
+            # Plot histograms for each signal
+            for channel_id, histograms, total_events in [('A', hist_a, total_a), ('B', hist_b, total_b)]:
+                if not histograms:
+                    continue
+                
+                for step, (bin_centers, hist_data) in histograms.items():
+                    if hist_data is None or len(hist_data) == 0:
+                        continue
+                    
+                    if np.sum(hist_data) == 0:
+                        continue
+                    
+                    y_offset = y_offsets.get((channel_id, step))
+                    if y_offset is None:
+                        continue
+                    
+                    # Normalize histogram to 0-0.8 range (leave room for binary trace)
+                    max_val = np.max(hist_data)
+                    if max_val > 0:
+                        normalized_hist = (hist_data / max_val) * 0.8
+                    else:
+                        normalized_hist = hist_data
+                    
+                    # Create filled area plot
+                    y_bottom = np.full_like(bin_centers, y_offset)
+                    y_top = y_bottom + normalized_hist
+                    
+                    # Use gray color with alpha transparency
+                    color = colors.get(step, "#808080")
+                    
+                    # Create filled curve
+                    fill_item = pg.FillBetweenItem(
+                        pg.PlotDataItem(bin_centers, y_bottom),
+                        pg.PlotDataItem(bin_centers, y_top),
+                        brush=pg.mkBrush(color=color, alpha=int(self.histogram_alpha * 255))
+                    )
+                    
+                    self.binary_plot.addItem(fill_item)
+                    self.histogram_items.append(fill_item)
+                    
+        except Exception as e:
+            print(f"ERROR plotting histograms: {e}")
             import traceback
             traceback.print_exc()
     
@@ -766,38 +899,55 @@ class CoincidenceLogicTab(QWidget):
             for channel in [self.channel_a, self.channel_b]:
                 hw_params = self.hardware_manager.get_hardware_timing_parameters(channel)
                 if hw_params:
+                    # Read trigger parameters
                     trigger_risetime_us = hw_params.get('TRIGGER_RISETIME', 0.02)
                     trigger_flattop_us = hw_params.get('TRIGGER_FLATTOP', 0.02)
                     
                     self.hardware_params.update({
-                        'fast_L': int(trigger_risetime_us * 100),
+                        'fast_L': int(trigger_risetime_us * 100),  # Convert to FPGA cycles
                         'fast_G': int(trigger_flattop_us * 100),
                         'fast_threshold': int(hw_params.get('TRIGGER_THRESHOLD', 100)),
                     })
                     
-                    # Try to get hardware timing values
-                    if 'FastTrigBackplaneEna' in hw_params:
-                        self.hardware_params['fast_trig_backplane_delay'] = hw_params['FastTrigBackplaneEna']
-                        self.ft_bp_delay_spin.setValue(hw_params['FastTrigBackplaneEna'])
+                    # Try to read timing parameters from hardware
+                    # These come from DSP variables (see variables.py)
+                    all_params = self.hardware_manager.get_all_parameters(0, channel)
                     
-                    if 'FASTTRIGBACKLEN' in hw_params:
-                        self.hardware_params['fast_trig_backplane_len'] = hw_params['FASTTRIGBACKLEN']
-                        self.ft_bp_len_spin.setValue(hw_params['FASTTRIGBACKLEN'])
+                    if 'FastTrigBackplaneEna' in all_params:
+                        # This is in FPGA cycles, convert to ns
+                        self.hardware_params['fast_trig_backplane_delay'] = all_params['FastTrigBackplaneEna'] * self.fpga_period_ns
+                        self.ft_bp_delay_spin.setValue(self.hardware_params['fast_trig_backplane_delay'])
                     
-                    if 'ChanTrigStretch' in hw_params:
-                        self.hardware_params['chan_trig_stretch'] = hw_params['ChanTrigStretch']
-                        self.chan_stretch_spin.setValue(hw_params['ChanTrigStretch'])
+                    if 'FastTrigBackLen' in all_params:
+                        # In microseconds, convert to ns
+                        self.hardware_params['fast_trig_backplane_len'] = all_params['FastTrigBackLen'] * 1000
+                        self.ft_bp_len_spin.setValue(self.hardware_params['fast_trig_backplane_len'])
                     
-                    if 'ExternDelayLen' in hw_params:
-                        self.hardware_params['external_delay_len'] = hw_params['ExternDelayLen']
-                        self.ext_delay_spin.setValue(hw_params['ExternDelayLen'])
+                    if 'ChanTrigStretch' in all_params:
+                        # In microseconds, convert to ns
+                        self.hardware_params['chan_trig_stretch'] = all_params['ChanTrigStretch'] * 1000
+                        self.chan_stretch_spin.setValue(self.hardware_params['chan_trig_stretch'])
                     
-                    break
+                    if 'ExternDelayLen' in all_params:
+                        # In microseconds, convert to ns
+                        self.hardware_params['external_delay_len'] = all_params['ExternDelayLen'] * 1000
+                        self.ext_delay_spin.setValue(self.hardware_params['external_delay_len'])
+                    
+                    print(f"Loaded hardware parameters from Ch{channel}:")
+                    print(f"  Fast L/G: {self.hardware_params['fast_L']}/{self.hardware_params['fast_G']} FPGA cycles")
+                    print(f"  BP Delay: {self.hardware_params['fast_trig_backplane_delay']:.1f} ns")
+                    print(f"  BP Length: {self.hardware_params['fast_trig_backplane_len']:.1f} ns")
+                    print(f"  Chan Stretch: {self.hardware_params['chan_trig_stretch']:.1f} ns")
+                    print(f"  Ext Delay: {self.hardware_params['external_delay_len']:.1f} ns")
+                    
+                    break  # Use first channel's parameters
             
             self.update_params_display()
             
         except Exception as e:
             print(f"Hardware param update failed: {e}")
+            import traceback
+            traceback.print_exc()
     
     def update_params_display(self):
         params_text = (
@@ -805,36 +955,9 @@ class CoincidenceLogicTab(QWidget):
             f"BP Delay={self.hardware_params['fast_trig_backplane_delay']:.0f}ns, "
             f"BP Len={self.hardware_params['fast_trig_backplane_len']:.0f}ns, "
             f"Chan Stretch={self.hardware_params['chan_trig_stretch']:.0f}ns, "
-            f"Ext Delay={self.hardware_params['external_delay_len']:.0f}ns, "
-            f"Val Win={self.hardware_params['validation_window']:.0f}ns"
+            f"Ext Delay={self.hardware_params['external_delay_len']:.0f}ns"
         )
         self.params_label.setText(params_text)
-    
-    def detect_coincidence(self, center_event, center_trace):
-        try:
-            coincident_events = []
-            
-            for buffered_event, buffered_trace in self.event_buffer:
-                if buffered_event == center_event:
-                    continue
-                
-                time_diff_ns = abs(self._calculate_time_difference(
-                    buffered_event.timestamp, center_event.timestamp
-                ))
-                
-                if time_diff_ns <= 500:  # 500ns window
-                    coincident_events.append((buffered_event, buffered_trace))
-            
-            if coincident_events:
-                from .traces_plotter import CoincidenceEvent
-                coinc_event = CoincidenceEvent(center_event, center_trace, coincident_events)
-                self.coincidence_events.append(coinc_event)
-                
-        except Exception as e:
-            print(f"Coincidence detection error: {e}")
-    
-    def _calculate_time_difference(self, timestamp1, timestamp2):
-        return (timestamp1 - timestamp2) * 10.0
     
     def clear_data(self):
         try:
@@ -858,6 +981,9 @@ class CoincidenceLogicTab(QWidget):
             "channel_a": self.channel_a,
             "channel_b": self.channel_b,
             "hardware_params": self.hardware_params,
+            "show_histograms": self.show_histograms,
+            "histogram_normalize": self.histogram_normalize,
+            "histogram_alpha": self.histogram_alpha,
             "timestamp": time.time(),
         }
         
@@ -867,8 +993,7 @@ class CoincidenceLogicTab(QWidget):
                 json.dump(settings, f, indent=2)
             QMessageBox.information(
                 self, "Settings Saved", 
-                f"Saved to {settings_file}\n\n"
-                f"Ch A: {self.channel_a}, Ch B: {self.channel_b}"
+                f"Saved to {settings_file}"
             )
         except Exception as e:
             QMessageBox.critical(self, "Save Failed", f"Error: {e}")
@@ -883,7 +1008,6 @@ class CoincidenceLogicTab(QWidget):
             for i, coinc_event in enumerate(self.coincidence_events):
                 center_timestamp = coinc_event.center_event.timestamp
                 center_channel = coinc_event.center_event.channel
-                center_energy = getattr(coinc_event.center_event, "energy", 0)
                 
                 for event, time_diff in zip(
                     coinc_event.associated_events, coinc_event.time_differences
@@ -892,12 +1016,9 @@ class CoincidenceLogicTab(QWidget):
                         "coincidence_id": i,
                         "center_channel": center_channel,
                         "center_timestamp": center_timestamp,
-                        "center_energy": center_energy,
                         "associated_channel": event[0].channel,
                         "associated_timestamp": event[0].timestamp,
-                        "associated_energy": getattr(event[0], "energy", 0),
                         "time_difference_ns": time_diff,
-                        "abs_time_difference_ns": abs(time_diff),
                     })
             
             filename = f"pixie_timing_data_{int(time.time())}.csv"
@@ -909,8 +1030,7 @@ class CoincidenceLogicTab(QWidget):
             
             QMessageBox.information(
                 self, "Export Complete", 
-                f"Exported {len(export_data)} events to:\n{filename}\n\n"
-                f"Total coincidences: {len(self.coincidence_events)}"
+                f"Exported {len(export_data)} events to {filename}"
             )
         except Exception as e:
             QMessageBox.critical(self, "Export Failed", f"Error: {e}")
@@ -925,21 +1045,6 @@ class CoincidenceLogicTab(QWidget):
             "ch_b_events": self.ch_b_event_count,
             "coincidences_detected": self.coincidence_count,
         }
-        
-        if self.coincidence_events:
-            recent = list(self.coincidence_events)[-100:]
-            all_diffs = []
-            for coinc in recent:
-                all_diffs.extend(coinc.time_differences)
-            
-            if all_diffs:
-                abs_diffs = [abs(dt) for dt in all_diffs]
-                stats.update({
-                    "mean_time_diff_ns": float(np.mean(all_diffs)),
-                    "std_time_diff_ns": float(np.std(all_diffs)),
-                    "min_time_diff_ns": float(np.min(abs_diffs)),
-                    "max_time_diff_ns": float(np.max(abs_diffs)),
-                })
         
         return stats
     
