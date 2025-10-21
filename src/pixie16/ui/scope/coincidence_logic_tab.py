@@ -289,7 +289,6 @@ class CoincidenceLogicTab(QWidget):
         group = QGroupBox("Hardware Timing Parameters (ns)")
         layout = QGridLayout()
         
-        # Fast trigger backplane
         layout.addWidget(QLabel("FT BP Delay:"), 0, 0)
         self.ft_bp_delay_spin = QDoubleSpinBox()
         self.ft_bp_delay_spin.setRange(0, 1000)
@@ -827,25 +826,24 @@ class CoincidenceLogicTab(QWidget):
                     if y_offset is None:
                         continue
                     
-                    # Normalize histogram to 0-0.8 range (leave room for binary trace)
+                    # Normalize histogram to 0-0.8 range
                     max_val = np.max(hist_data)
                     if max_val > 0:
-                        normalized_hist = (hist_data / max_val) * 0.8
+                        normalized_hist = (hist_data / max_val) * 0.5  # limit height
                     else:
                         normalized_hist = hist_data
                     
-                    # Create filled area plot
+                    # filled area plot
                     y_bottom = np.full_like(bin_centers, y_offset)
                     y_top = y_bottom + normalized_hist
                     
-                    # Use gray color with alpha transparency
-                    color = colors.get(step, "#808080")
+                    gray_color = "#808080"  # Medium gray
                     
-                    # Create filled curve
+                    # Create filled curve with gray and transparency
                     fill_item = pg.FillBetweenItem(
                         pg.PlotDataItem(bin_centers, y_bottom),
                         pg.PlotDataItem(bin_centers, y_top),
-                        brush=pg.mkBrush(color=color, alpha=int(self.histogram_alpha * 255))
+                        brush=pg.mkBrush(color=gray_color, alpha=int(self.histogram_alpha * 255))
                     )
                     
                     self.binary_plot.addItem(fill_item)
