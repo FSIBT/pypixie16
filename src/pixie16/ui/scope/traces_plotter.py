@@ -786,13 +786,18 @@ class TracesPlotter(QWidget):
             self.sync_parameters_to_coincidence_tab()
 
     def toggle_simple_coincidence(self, enabled):
-        if hasattr(self, "coincidence_tab"):
-            self.coincidence_tab.coincidence_mode = enabled
+        if hasattr(self, "coincidence_tab") and self.coincidence_tab:
+            if hasattr(self.coincidence_tab, 'set_coincidence_mode'):
+                self.coincidence_tab.set_coincidence_mode(enabled)
+            elif hasattr(self.coincidence_tab, 'coincidence_mode'):
+                self.coincidence_tab.coincidence_mode = enabled
+        
+        # Update the plot title
         if enabled:
             self.raw_plot_widget.setTitle("PIXIE-16 Raw Traces - Coincidence Mode")
         else:
             self.raw_plot_widget.setTitle("PIXIE-16 Raw Traces")
-
+            
     def update_max_traces(self):
         self.max_traces_display = self.max_traces_spin.value()
 
@@ -1065,13 +1070,11 @@ class TracesPlotter(QWidget):
 
             # Update statistics
             stats_text = f"Total Traces: {total_traces} | "
-            if (
-                hasattr(self, "coincidence_tab")
-                and self.coincidence_tab.coincidence_mode
-            ):
+            if (hasattr(self, "coincidence_tab") and self.coincidence_tab and hasattr(self.coincidence_tab, "coincidence_mode") and self.coincidence_tab.coincidence_mode):
                 stats_text += (
                     f"Coincidences: {len(self.coincidence_tab.coincidence_events)} | "
                 )
+
             stats_text += f"Displayed Channels: {len(self.display_channels)} | "
             stats_text += f"Alignment: {self.time_alignment_mode}"
             if self.time_alignment_mode == "channel_aligned":

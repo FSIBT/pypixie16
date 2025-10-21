@@ -174,6 +174,8 @@ class CoincidenceLogicTab(QWidget):
         # Event storage
         self.event_buffer = deque(maxlen=50000)
         self.coincidence_events = deque(maxlen=10000)
+
+        self.coincidence_mode = False
         
         # Channel selection
         self.channel_a = self.channels[0]
@@ -443,6 +445,10 @@ class CoincidenceLogicTab(QWidget):
             print(f"ERROR in setup_plot: {e}")
             import traceback
             traceback.print_exc()
+
+    def set_coincidence_mode(self, enabled):
+        self.coincidence_mode = enabled
+        print(f"CoincidenceLogicTab: coincidence_mode set to {enabled}")
     
     def clear_plot_safely(self):
         try:
