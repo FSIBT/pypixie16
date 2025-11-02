@@ -263,43 +263,49 @@ class PixieScopeApp(QMainWindow):
 
         # Right side - controls
         right_widget = QWidget()
-        right_layout = QVBoxLayout(right_widget)
-        right_layout.setContentsMargins(5, 5, 5, 5)
-        right_layout.setSpacing(5)
-
+        self.right_layout = QVBoxLayout(right_widget)  # *** Store as self.right_layout ***
+        self.right_layout.setContentsMargins(5, 5, 5, 5)
+        self.right_layout.setSpacing(5)
+        
         # Binary loader
         self.binary_loader = BinaryFileLoader(parent_scope=self)
         self.binary_loader.setSizePolicy(
             QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum
         )
-        right_layout.addWidget(self.binary_loader)
-
-        # Create channel controls (using logical module 0)
+        self.right_layout.addWidget(self.binary_loader)
+        
+        # default controls (channel + parameter controls)
+        self.default_controls_widget = QWidget()
+        default_controls_layout = QVBoxLayout()
+        default_controls_layout.setContentsMargins(0, 0, 0, 0)
+        default_controls_layout.setSpacing(5)
+        
+        # Channel controls
         self.channel_controls = ChannelDisplayControls(
             channels=[(0, ch) for ch in self.channel_numbers], title="Channels"
         )
         self.channel_controls.channels_changed.connect(self.update_display_channels)
-        right_layout.addWidget(self.channel_controls)
-
+        default_controls_layout.addWidget(self.channel_controls)
+        
+        # Parameter controls
         self.parameter_controls = ParameterControls(
             initial_module=0,
             title="Parameters",
-            module_type="500MHz",  # Adjust based on hardware later
+            module_type="500MHz",
         )
-
         self.parameter_controls.parameter_changed.connect(self.handle_parameter_change)
-        self.parameter_controls.apply_all_requested.connect(
-            self.handle_apply_all_parameters
-        )
+        self.parameter_controls.apply_all_requested.connect(self.handle_apply_all_parameters)
         self.parameter_controls.status_message.connect(self.update_info_bar)
-
-        self.parameter_controls.read_hw_btn.clicked.connect(
-            self.read_parameters_from_hardware
-        )
-
-        right_layout.addWidget(self.parameter_controls)
-        right_layout.addStretch()
-
+        self.parameter_controls.read_hw_btn.clicked.connect(self.read_parameters_from_hardware)
+        default_controls_layout.addWidget(self.parameter_controls)
+        
+        default_controls_layout.addStretch()
+        self.default_controls_widget.setLayout(default_controls_layout)
+        
+        self.right_layout.addWidget(self.default_controls_widget)
+        
+        self.custom_controls_widget = None
+        
         # Set sizes
         left_widget.setMinimumWidth(400)
         right_widget.setMinimumWidth(200)
@@ -307,17 +313,17 @@ class PixieScopeApp(QMainWindow):
         right_widget.setSizePolicy(
             QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred
         )
-
+        
         # Add to splitter
         main_splitter.addWidget(left_widget)
         main_splitter.addWidget(right_widget)
         main_splitter.setSizes([int(window_width * 0.75), int(window_width * 0.25)])
-
+        
         # Main layout
         main_layout = QVBoxLayout()
         main_layout.setContentsMargins(5, 5, 5, 5)
         main_layout.addWidget(main_splitter)
-
+        
         # Info bar
         mode_status = "DUMMY MODE - " if self.dummy_mode else ""
         self.info_bar = QLabel(
@@ -325,7 +331,7 @@ class PixieScopeApp(QMainWindow):
         )
         self.info_bar.setMaximumHeight(25)
         main_layout.addWidget(self.info_bar)
-
+        
         main_widget.setLayout(main_layout)
 
     def create_control_panel(self):
@@ -374,21 +380,58 @@ class PixieScopeApp(QMainWindow):
         layout.addLayout(status_layout)
         group.setLayout(layout)
         return group
+    
+    def swap_right_panel_controls(self, custom_widget):
+        try:
+            # Remove current custom widget if exists
+            if self.custom_controls_widget is not None:
+                self.right_layout.removeWidget(self.custom_controls_widget)
+                self.custom_controls_widget.setParent(None)
+                self.custom_controls_widget = None
+            
+            if custom_widget is None:
+                # Restore default controls
+                if not self.default_controls_widget.parent():
+                    self.right_layout.addWidget(self.default_controls_widget)
+                self.default_controls_widget.setVisible(True)
+                print("PixieScopeApp: Restored default controls on right panel")
+            else:
+                # Hide default controls and show custom widget
+                self.default_controls_widget.setVisible(False)
+                self.right_layout.addWidget(custom_widget)
+                self.custom_controls_widget = custom_widget
+                print("PixieScopeApp: Swapped to custom controls on right panel")
+            
+        except Exception as e:
+            print(f"Error swapping right panel controls: {e}")
+            import traceback
+            traceback.print_exc()
 
     def on_mode_changed(self, mode_text):
         if self.is_acquiring:
             self.stop_acquisition()
-
+        
         old_mode = self.current_mode
         self.current_mode = mode_text.lower().replace(" ", "_")
-
+        
         # Clean up old spectrum tab
         if hasattr(self, "spectrum_tab") and self.spectrum_tab:
             if hasattr(self.spectrum_tab, "stop_live_updates"):
                 self.spectrum_tab.stop_live_updates()
+            
+            if hasattr(self.spectrum_tab, "request_right_panel_swap"):
+                try:
+                    self.spectrum_tab.request_right_panel_swap.disconnect()
+                except:
+                    pass
+            
+            # Restore default controls when leaving traces mode
+            if old_mode == "listmode_traces":
+                self.swap_right_panel_controls(None)
+            
             self.left_layout.removeWidget(self.spectrum_tab)
             self.spectrum_tab.setParent(None)
-
+        
         # Create new spectrum tab
         if self.current_mode == "mca_mode":
             self.spectrum_tab = MCASpectrumPlotter(
@@ -407,13 +450,17 @@ class PixieScopeApp(QMainWindow):
             self.spectrum_tab = TracesPlotter(
                 channels=self.channel_numbers,
                 title="PIXIE-16 Traces",
-                hardware_manager=self.pixie_hw,  # Enable hardware validation tab
+                hardware_manager=self.pixie_hw,
             )
-
-            self.spectrum_tab.parameter_changed.connect(
-                self.handle_traces_parameter_change
-            )
-
+            
+            # Connect parameter changes from traces plotter
+            self.spectrum_tab.parameter_changed.connect(self.handle_traces_parameter_change)
+            
+            # Connect right-panel swap signal
+            if hasattr(self.spectrum_tab, "request_right_panel_swap"):
+                self.spectrum_tab.request_right_panel_swap.connect(self.swap_right_panel_controls)
+                print("PixieScopeApp: Connected right-panel swap signal from TracesPlotter")
+        
         self.left_layout.addWidget(self.spectrum_tab)
         self.info_bar.setText(f"Mode changed: {old_mode} → {self.current_mode}")
 
@@ -747,6 +794,11 @@ class PixieScopeApp(QMainWindow):
                     self.spectrum_tab.stop_live_updates()
                 except RuntimeError:
                     pass  # Widget already deleted
+
+            if self.current_mode == "listmode_traces":
+                self.swap_right_panel_controls(None)
+            
+            self.is_acquiring = False
 
             # Stop data source
             if hasattr(self, "data_source") and self.data_source:

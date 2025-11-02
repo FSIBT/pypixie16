@@ -141,6 +141,8 @@ class TracesPlotter(QWidget):
         str, object, int, int
     )  # param_name, value, module, channel
 
+    request_right_panel_swap = pyqtSignal(object)
+
     def __init__(self, channels=None, title="PIXIE-16 Traces", hardware_manager=None):
         super().__init__()
 
@@ -263,9 +265,14 @@ class TracesPlotter(QWidget):
         )
         self.coincidence_tab.set_hardware_params(self.hardware_params)
         self.coincidence_tab.parameter_changed.connect(self.parameter_changed)
+        
+        self.coincidence_tab.request_controls_widget.connect(self.handle_controls_widget_request)
+        
         self.tab_widget.addTab(self.coincidence_tab, "Coincidence Logic")
 
         self.sync_parameters_to_coincidence_tab()
+
+        self.tab_widget.currentChanged.connect(self.on_tab_changed)
 
         layout.addWidget(self.tab_widget)
         self.setLayout(layout)
@@ -2153,3 +2160,26 @@ class TracesPlotter(QWidget):
         print(f"  Reference channel: {reference_channel}")
         print(f"  Second channel: {second_channel}")
         print("Enhanced coincidence analysis ready!")
+    
+    def handle_controls_widget_request(self, widget):
+        # Forward the request to main app
+        self.request_right_panel_swap.emit(widget)
+        print(f"TracesPlotter: Forwarding controls widget request: {widget}")
+    
+    def on_tab_changed(self, index):
+        # Get current tab
+        current_tab = self.tab_widget.widget(index)
+        
+        # Deactivate all tabs first
+        for i in range(self.tab_widget.count()):
+            tab = self.tab_widget.widget(i)
+            if hasattr(tab, 'on_tab_deactivated'):
+                if tab != current_tab:  # Don't deactivate the one we're activating
+                    tab.on_tab_deactivated()
+        
+        # Activate current tab
+        if hasattr(current_tab, 'on_tab_activated'):
+            current_tab.on_tab_activated()
+        
+        tab_name = self.tab_widget.tabText(index)
+        print(f"TracesPlotter: Tab changed to index {index}, name: {tab_name}")

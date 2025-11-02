@@ -3,7 +3,7 @@ Coincidence logic tab with binary waveform visualization
 """
 
 import numpy as np
-from collections import deque, defaultdict
+from collections import deque
 import time
 import json
 from pathlib import Path
@@ -46,10 +46,7 @@ class BinaryHistogramData:
         high_indices = np.where(binary_data > 0)[0]
         
         if len(high_indices) > 0:
-            # Get times where signal is HIGH
             high_times = time_axis[high_indices]
-            
-            # Add to histogram
             hist, _ = np.histogram(high_times, bins=self.bin_edges)
             self.histograms[step_name] += hist
             
@@ -161,6 +158,7 @@ class DualChannelBinaryData:
 
 class CoincidenceLogicTab(QWidget):    
     parameter_changed = pyqtSignal(str, object, int, int)
+    request_controls_widget = pyqtSignal(object)
     
     def __init__(self, channels=None, hardware_manager=None, parent=None):
         super().__init__(parent)
@@ -202,48 +200,34 @@ class CoincidenceLogicTab(QWidget):
             "validation_window": 1000,
         }
         
-        # PIXIE-16 timing
         self.sampling_period_ns = 2.0
         self.fpga_period_ns = 10.0
         
         self.binary_data = DualChannelBinaryData(maxlen=100)
         
-        # Update timer
         self.update_timer = QTimer(self)
         self.update_timer.setSingleShot(False)
         self.update_timer.timeout.connect(self.update_visualization)
         
-        # Plot tracking
         self.plot_items = []
         self.reference_lines = []
         self.histogram_items = []
         
-        # Event counters
         self.ch_a_event_count = 0
         self.ch_b_event_count = 0
         self.coincidence_count = 0
         self.last_update_time = time.time()
         
+        self.controls_widget = None
+        
         self.init_ui()
         self.setup_plot()
-        
-        if self.hardware_manager:
-            try:
-                self.update_hardware_params()
-            except Exception as e:
-                print(f"Hardware parameter update failed: {e}")
         
         self.update_timer.start(100)
         print(f"PIXIE-16 Binary Logic initialized - Ch{self.channel_a}(A) vs Ch{self.channel_b}(B)")
     
     def init_ui(self):
         layout = QVBoxLayout()
-        
-        channel_group = self.create_channel_selection()
-        layout.addWidget(channel_group)
-        
-        timing_group = self.create_timing_controls()
-        layout.addWidget(timing_group)
         
         histogram_group = self.create_histogram_controls()
         layout.addWidget(histogram_group)
@@ -256,84 +240,128 @@ class CoincidenceLogicTab(QWidget):
         
         self.setLayout(layout)
     
-    def create_channel_selection(self):
-        group = QGroupBox("Channel Selection")
-        layout = QHBoxLayout()
+    def create_coincidence_controls_widget(self):
+        if self.controls_widget is not None:
+            return self.controls_widget
         
-        layout.addWidget(QLabel("Channel A:"))
+        widget = QWidget()
+        layout = QVBoxLayout()
+        layout.setContentsMargins(5, 5, 5, 5)
+        layout.setSpacing(5)
+        
+        # Channel Selection
+        channel_group = QGroupBox("Channel Selection")
+        channel_layout = QGridLayout()
+        
+        channel_layout.addWidget(QLabel("Channel A:"), 0, 0)
         self.ch_a_combo = QComboBox()
         for ch in self.channels:
             self.ch_a_combo.addItem(f"Ch {ch}")
         self.ch_a_combo.currentIndexChanged.connect(self.update_channel_a)
-        layout.addWidget(self.ch_a_combo)
+        channel_layout.addWidget(self.ch_a_combo, 0, 1)
         
-        layout.addWidget(QLabel("Channel B:"))
+        channel_layout.addWidget(QLabel("Channel B:"), 1, 0)
         self.ch_b_combo = QComboBox()
         for ch in self.channels:
             self.ch_b_combo.addItem(f"Ch {ch}")
         if len(self.channels) > 1:
             self.ch_b_combo.setCurrentIndex(1)
         self.ch_b_combo.currentIndexChanged.connect(self.update_channel_b)
-        layout.addWidget(self.ch_b_combo)
+        channel_layout.addWidget(self.ch_b_combo, 1, 1)
         
-        layout.addWidget(QLabel("Time Ref:"))
+        channel_layout.addWidget(QLabel("Time Ref:"), 2, 0)
         self.time_ref_combo = QComboBox()
         self.time_ref_combo.addItems(["Channel A", "Channel B", "Coincidence Trigger"])
-        layout.addWidget(self.time_ref_combo)
+        channel_layout.addWidget(self.time_ref_combo, 2, 1)
         
-        layout.addStretch()
+        channel_group.setLayout(channel_layout)
+        channel_group.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
+        layout.addWidget(channel_group)
         
-        group.setLayout(layout)
-        group.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Minimum)
-        return group
-    
-    def create_timing_controls(self):
-        group = QGroupBox("Hardware Timing Parameters (ns)")
-        layout = QGridLayout()
+        # Hardware Timing Parameters
+        timing_group = QGroupBox("Hardware Timing Parameters (ns)")
+        timing_layout = QGridLayout()
         
-        layout.addWidget(QLabel("FT BP Delay:"), 0, 0)
+        row = 0
+        timing_layout.addWidget(QLabel("FT BP Delay:"), row, 0)
         self.ft_bp_delay_spin = QDoubleSpinBox()
         self.ft_bp_delay_spin.setRange(0, 1000)
         self.ft_bp_delay_spin.setValue(0)
         self.ft_bp_delay_spin.setSuffix(" ns")
         self.ft_bp_delay_spin.valueChanged.connect(self.update_timing_params)
-        layout.addWidget(self.ft_bp_delay_spin, 0, 1)
+        timing_layout.addWidget(self.ft_bp_delay_spin, row, 1)
         
-        layout.addWidget(QLabel("FT BP Length:"), 0, 2)
+        row += 1
+        timing_layout.addWidget(QLabel("FT BP Length:"), row, 0)
         self.ft_bp_len_spin = QDoubleSpinBox()
-        self.ft_bp_len_spin.setRange(10, 2000)
+        self.ft_bp_len_spin.setRange(10, 10000)
         self.ft_bp_len_spin.setValue(200)
         self.ft_bp_len_spin.setSuffix(" ns")
         self.ft_bp_len_spin.valueChanged.connect(self.update_timing_params)
-        layout.addWidget(self.ft_bp_len_spin, 0, 3)
+        timing_layout.addWidget(self.ft_bp_len_spin, row, 1)
         
-        layout.addWidget(QLabel("Chan Trig Stretch:"), 1, 0)
+        row += 1
+        timing_layout.addWidget(QLabel("Chan Trig Stretch:"), row, 0)
         self.chan_stretch_spin = QDoubleSpinBox()
-        self.chan_stretch_spin.setRange(10, 2000)
+        self.chan_stretch_spin.setRange(10, 10000)
         self.chan_stretch_spin.setValue(200)
         self.chan_stretch_spin.setSuffix(" ns")
         self.chan_stretch_spin.valueChanged.connect(self.update_timing_params)
-        layout.addWidget(self.chan_stretch_spin, 1, 1)
+        timing_layout.addWidget(self.chan_stretch_spin, row, 1)
         
-        layout.addWidget(QLabel("External Delay:"), 1, 2)
+        row += 1
+        timing_layout.addWidget(QLabel("External Delay:"), row, 0)
         self.ext_delay_spin = QDoubleSpinBox()
-        self.ext_delay_spin.setRange(0, 2000)
+        self.ext_delay_spin.setRange(0, 10000)
         self.ext_delay_spin.setValue(300)
         self.ext_delay_spin.setSuffix(" ns")
         self.ext_delay_spin.valueChanged.connect(self.update_timing_params)
-        layout.addWidget(self.ext_delay_spin, 1, 3)
+        timing_layout.addWidget(self.ext_delay_spin, row, 1)
         
-        layout.addWidget(QLabel("Validation Window:"), 2, 0)
+        row += 1
+        timing_layout.addWidget(QLabel("Validation Window:"), row, 0)
         self.validation_win_spin = QDoubleSpinBox()
-        self.validation_win_spin.setRange(100, 5000)
+        self.validation_win_spin.setRange(100, 10000)
         self.validation_win_spin.setValue(1000)
         self.validation_win_spin.setSuffix(" ns")
         self.validation_win_spin.valueChanged.connect(self.update_timing_params)
-        layout.addWidget(self.validation_win_spin, 2, 1)
+        timing_layout.addWidget(self.validation_win_spin, row, 1)
         
-        group.setLayout(layout)
-        group.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Minimum)
-        return group
+        row += 1
+        apply_hw_btn = QPushButton("Apply to Hardware")
+        apply_hw_btn.clicked.connect(self.apply_timing_to_hardware)
+        timing_layout.addWidget(apply_hw_btn, row, 0, 1, 2)
+        
+        timing_group.setLayout(timing_layout)
+        timing_group.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
+        layout.addWidget(timing_group)
+        
+        # Info display
+        info_group = QGroupBox("Current Settings")
+        info_layout = QVBoxLayout()
+        self.params_label = QLabel("")
+        self.params_label.setWordWrap(True)
+        self.params_label.setStyleSheet("QLabel { font-size: 9pt; padding: 5px; }")
+        self.update_params_display()
+        info_layout.addWidget(self.params_label)
+        info_group.setLayout(info_layout)
+        info_group.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
+        layout.addWidget(info_group)
+        
+        layout.addStretch()
+        
+        widget.setLayout(layout)
+        self.controls_widget = widget
+        return widget
+    
+    def on_tab_activated(self):
+        controls = self.create_coincidence_controls_widget()
+        self.request_controls_widget.emit(controls)
+        print("CoincidenceLogicTab: Requested custom controls widget for right panel")
+    
+    def on_tab_deactivated(self):
+        self.request_controls_widget.emit(None)  # None = restore default
+        print("CoincidenceLogicTab: Requested restore default controls")
     
     def create_histogram_controls(self):
         group = QGroupBox("Histogram Persistence (Shows Timing Jitter)")
@@ -396,7 +424,6 @@ class CoincidenceLogicTab(QWidget):
             
             self.binary_plot.showGrid(True, True, alpha=0.3)
             
-            # Y-axis labels
             y_ticks = [
                 [
                     (11, "Local Fast Trig A"),
@@ -424,7 +451,6 @@ class CoincidenceLogicTab(QWidget):
             self.binary_plot.setLabel("left", "")
             self.binary_plot.setLabel("bottom", "Time (ns)")
             
-            # Reference lines
             for y_pos in [7.5, 5.5, 2.5]:
                 ref_line = pg.InfiniteLine(
                     pos=y_pos, angle=0,
@@ -433,7 +459,6 @@ class CoincidenceLogicTab(QWidget):
                 self.binary_plot.addItem(ref_line)
                 self.reference_lines.append(ref_line)
             
-            # Time = 0 line
             time_line = pg.InfiniteLine(
                 pos=0, angle=90,
                 pen=pg.mkPen(color='darkred', width=2, style=pg.QtCore.Qt.PenStyle.DotLine)
@@ -475,10 +500,6 @@ class CoincidenceLogicTab(QWidget):
     def create_control_buttons(self):
         layout = QHBoxLayout()
         
-        self.params_label = QLabel("")
-        self.update_params_display()
-        layout.addWidget(self.params_label)
-        
         layout.addStretch()
         
         save_btn = QPushButton("Save Settings")
@@ -491,7 +512,6 @@ class CoincidenceLogicTab(QWidget):
         
         return layout
     
-    # Event handlers
     def update_channel_a(self):
         self.channel_a = self.channels[self.ch_a_combo.currentIndex()]
         self.binary_data.clear()
@@ -507,6 +527,7 @@ class CoincidenceLogicTab(QWidget):
         self.update_params_display()
     
     def update_timing_params(self):
+        """Update internal parameters from spinboxes"""
         self.hardware_params.update({
             "fast_trig_backplane_delay": self.ft_bp_delay_spin.value(),
             "fast_trig_backplane_len": self.ft_bp_len_spin.value(),
@@ -515,6 +536,33 @@ class CoincidenceLogicTab(QWidget):
             "validation_window": self.validation_win_spin.value(),
         })
         self.update_params_display()
+    
+    def apply_timing_to_hardware(self):
+        if not self.hardware_manager:
+            QMessageBox.warning(self, "No Hardware", "Hardware manager not available")
+            return
+        
+        try:
+            # Convert ns to appropriate units and emit parameter changes
+            bp_delay_cycles = int(self.hardware_params["fast_trig_backplane_delay"] / self.fpga_period_ns)
+            bp_len_us = self.hardware_params["fast_trig_backplane_len"] / 1000.0
+            chan_stretch_us = self.hardware_params["chan_trig_stretch"] / 1000.0
+            ext_delay_us = self.hardware_params["external_delay_len"] / 1000.0
+            
+            # Emit parameter changes for both channels
+            for channel in [self.channel_a, self.channel_b]:
+                self.parameter_changed.emit("FastTrigBackplaneEna", bp_delay_cycles, 0, channel)
+                self.parameter_changed.emit("FASTTRIGBACKLEN", bp_len_us, 0, channel)
+                self.parameter_changed.emit("ChanTrigStretch", chan_stretch_us, 0, channel)
+                self.parameter_changed.emit("ExternDelayLen", ext_delay_us, 0, channel)
+            
+            QMessageBox.information(
+                self, "Parameters Applied",
+                f"Timing parameters applied to Ch{self.channel_a} and Ch{self.channel_b}"
+            )
+            
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to apply parameters: {e}")
     
     def toggle_histograms(self, enabled):
         self.show_histograms = enabled
@@ -955,13 +1003,15 @@ class CoincidenceLogicTab(QWidget):
     
     def update_params_display(self):
         params_text = (
-            f"A=Ch{self.channel_a}, B=Ch{self.channel_b} | "
-            f"BP Delay={self.hardware_params['fast_trig_backplane_delay']:.0f}ns, "
-            f"BP Len={self.hardware_params['fast_trig_backplane_len']:.0f}ns, "
-            f"Chan Stretch={self.hardware_params['chan_trig_stretch']:.0f}ns, "
-            f"Ext Delay={self.hardware_params['external_delay_len']:.0f}ns"
+            f"<b>Channels:</b> A=Ch{self.channel_a}, B=Ch{self.channel_b}<br>"
+            f"<b>BP Delay:</b> {self.hardware_params['fast_trig_backplane_delay']:.0f} ns<br>"
+            f"<b>BP Length:</b> {self.hardware_params['fast_trig_backplane_len']:.0f} ns<br>"
+            f"<b>Chan Stretch:</b> {self.hardware_params['chan_trig_stretch']:.0f} ns<br>"
+            f"<b>Ext Delay:</b> {self.hardware_params['external_delay_len']:.0f} ns<br>"
+            f"<b>Validation:</b> {self.hardware_params['validation_window']:.0f} ns"
         )
-        self.params_label.setText(params_text)
+        if hasattr(self, 'params_label'):
+            self.params_label.setText(params_text)
     
     def clear_data(self):
         try:
@@ -1065,17 +1115,10 @@ class CoincidenceLogicTab(QWidget):
         if self.channel_b not in self.channels:
             self.channel_b = self.channels[1] if len(self.channels) > 1 else self.channels[0]
         
-        self.ch_a_combo.clear()
-        self.ch_b_combo.clear()
-        
-        for ch in self.channels:
-            self.ch_a_combo.addItem(f"Ch {ch}")
-            self.ch_b_combo.addItem(f"Ch {ch}")
-        
-        if self.channel_a in self.channels:
-            self.ch_a_combo.setCurrentIndex(self.channels.index(self.channel_a))
-        if self.channel_b in self.channels:
-            self.ch_b_combo.setCurrentIndex(self.channels.index(self.channel_b))
+        # Recreate controls widget with new channels
+        if hasattr(self, 'controls_widget') and self.controls_widget:
+            self.controls_widget.setParent(None)
+            self.controls_widget = None
         
         if old_channels != self.channels:
             self.binary_data.clear()
