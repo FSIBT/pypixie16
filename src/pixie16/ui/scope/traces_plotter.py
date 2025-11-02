@@ -21,12 +21,8 @@ from PyQt6.QtWidgets import (
     QCheckBox,
     QPushButton,
     QComboBox,
-    QTextEdit,
     QTabWidget,
-    QTableWidget,
-    QTableWidgetItem,
-    QProgressBar,
-    QMessageBox,
+    QSizePolicy
 )
 from PyQt6.QtCore import QTimer, QThread, pyqtSignal
 import pyqtgraph as pg
@@ -236,6 +232,8 @@ class TracesPlotter(QWidget):
         self.persistence_image_item = None 
         self.persistence_update_counter = {ch: 0 for ch in self.channels}  # Track traces since last update
         self.persistence_update_interval = 10  # Update image every N traces
+
+        self.single_channel_controls_widget = None
 
         self.init_ui()
 
@@ -538,120 +536,44 @@ class TracesPlotter(QWidget):
                 )
 
         return self.alignment_reference_timestamp
+    
+    def on_tab_changed(self, index):
+        current_tab = self.tab_widget.widget(index)
+        tab_name = self.tab_widget.tabText(index)
+        
+        print(f"TracesPlotter: Tab changed to index {index}, name: {tab_name}")
+        
+        # Deactivate all tabs
+        for i in range(self.tab_widget.count()):
+            tab = self.tab_widget.widget(i)
+            if hasattr(tab, 'on_tab_deactivated'):
+                if tab != current_tab:
+                    tab.on_tab_deactivated()
+        
+        # Handle based on which tab was selected
+        if tab_name == "Single Channel Analysis":
+            # Show single channel controls
+            controls = self.create_single_channel_controls_widget()
+            self.request_right_panel_swap.emit(controls)
+            print(f"TracesPlotter: Emitted right panel swap with widget: {controls}")
+            
+        elif tab_name == "Coincidence Logic":
+            # Coincidence tab handles its own activation
+            if hasattr(current_tab, 'on_tab_activated'):
+                current_tab.on_tab_activated()
+                
+        else:
+            # Raw Traces or other tabs - restore default controls
+            self.request_right_panel_swap.emit(None)
+            print("TracesPlotter: Requested default controls")
 
     def create_hardware_validation_tab(self):
         tab = QWidget()
         layout = QVBoxLayout(tab)
-
-        # Channel selector
-        selector_group = QGroupBox("Channel Selection")
-        selector_layout = QHBoxLayout()
-        selector_layout.setContentsMargins(8, 2, 8, 2)
-        selector_layout.setSpacing(8)
-
-        selector_layout.addWidget(QLabel("Channel:"))
-        self.channel_combo = QComboBox()
-        for ch in self.channels:
-            self.channel_combo.addItem(f"Ch {ch}")
-        self.channel_combo.setCurrentIndex(0)
-        self.channel_combo.currentIndexChanged.connect(self.update_selected_channel)
-        selector_layout.addWidget(self.channel_combo)
-
-        selector_layout.addStretch()
-        selector_group.setLayout(selector_layout)
-        layout.addWidget(selector_group)
-
-        # Add replay controls for single trace validation
-        self.replay_widget = TraceReplayWidget(initial_buffer_size=1000)
-        self.replay_widget.trace_selected.connect(
-            self.on_hardware_replay_trace_selected
-        )
-        self.replay_widget.replay_mode_changed.connect(
-            self.on_hardware_replay_mode_changed
-        )
-        layout.addWidget(self.replay_widget)
-        print(f"Successfully created replay widget: {self.replay_widget}")
-
-        # Trace type controls
-        trace_types_group = QGroupBox("Trace Types")
-        trace_types_layout = QHBoxLayout()
-        trace_types_layout.setContentsMargins(8, 2, 8, 2)
-        trace_types_layout.setSpacing(12)
-
-        self.raw_traces_cb = QCheckBox("Raw Traces")
-        self.raw_traces_cb.setChecked(True)
-        self.raw_traces_cb.toggled.connect(lambda: self.toggle_trace_type("raw"))
-        trace_types_layout.addWidget(self.raw_traces_cb)
-
-        self.fast_trigger_cb = QCheckBox("Fast Trigger (FO0)")
-        self.fast_trigger_cb.toggled.connect(
-            lambda: self.toggle_trace_type("fast_trigger")
-        )
-        trace_types_layout.addWidget(self.fast_trigger_cb)
-
-        self.energy_filter_cb = QCheckBox("Energy Filter")
-        self.energy_filter_cb.toggled.connect(
-            lambda: self.toggle_trace_type("energy_filter")
-        )
-        trace_types_layout.addWidget(self.energy_filter_cb)
-
-        self.cfd_cb = QCheckBox("CFD Traces")
-        self.cfd_cb.toggled.connect(lambda: self.toggle_trace_type("cfd"))
-        trace_types_layout.addWidget(self.cfd_cb)
-
-        trace_types_layout.addStretch()
-        trace_types_group.setLayout(trace_types_layout)
-        layout.addWidget(trace_types_group)
-
-        # Add persistence controls for single channel
-        persistence_group = QGroupBox("Persistence Controls")
-        persistence_layout = QHBoxLayout()
+        layout.setContentsMargins(5, 5, 5, 5)
+        layout.setSpacing(5)
         
-        self.single_persistence_cb = QCheckBox("Persistence Mode")
-        self.single_persistence_cb.toggled.connect(self.toggle_single_persistence)
-        persistence_layout.addWidget(self.single_persistence_cb)
-        
-        persistence_layout.addWidget(QLabel("Traces:"))
-        self.single_persistence_count_spin = QSpinBox()
-        self.single_persistence_count_spin.setRange(2, 10000)
-        self.single_persistence_count_spin.setValue(1000)
-        self.single_persistence_count_spin.valueChanged.connect(self.update_single_persistence_count)
-        persistence_layout.addWidget(self.single_persistence_count_spin)
-        
-        self.single_normalize_cb = QCheckBox("Normalize")
-        self.single_normalize_cb.toggled.connect(self.toggle_single_normalize)
-        persistence_layout.addWidget(self.single_normalize_cb)
-        
-        self.single_alpha_fade_cb = QCheckBox("Alpha Fade")
-        self.single_alpha_fade_cb.toggled.connect(self.toggle_single_alpha_fade)
-        persistence_layout.addWidget(self.single_alpha_fade_cb)
-
-        self.save_traces_btn = QPushButton("Save Traces Buffer")
-        self.save_traces_btn.clicked.connect(self.save_traces_buffer)
-        persistence_layout.addWidget(self.save_traces_btn)
-
-        self.clear_persistence_btn = QPushButton("Clear Persistence")
-        self.clear_persistence_btn.clicked.connect(self.clear_persistence_only)
-        persistence_layout.addWidget(self.clear_persistence_btn)
-        
-        persistence_layout.addStretch()
-        persistence_group.setLayout(persistence_layout)
-        layout.addWidget(persistence_group)
-
-        params_info_group = QGroupBox("Current Parameters")
-        params_info_layout = QVBoxLayout()
-        params_info_layout.setContentsMargins(8, 2, 8, 2)
-
-        self.parameter_info_label = QLabel()
-        self.parameter_info_label.setStyleSheet(
-            "font-family: monospace; font-size: 10pt;"
-        )
-        self.update_parameter_info_display()
-        params_info_layout.addWidget(self.parameter_info_label)
-
-        params_info_group.setLayout(params_info_layout)
-        layout.addWidget(params_info_group)
-
+        # Just keep the plot and status labels
         self.channel_plot = pg.PlotWidget()
         self.channel_plot.setLabel("left", "Amplitude")
         self.channel_plot.setLabel("bottom", "Time (ns)")
@@ -659,38 +581,43 @@ class TracesPlotter(QWidget):
         self.channel_plot.showGrid(True, True, alpha=0.3)
         self.channel_plot.setBackground("w")
         self.channel_plot.addLegend(offset=(10, 10))
-        layout.addWidget(self.channel_plot)
-
+        
+        self.channel_plot.setSizePolicy(
+            QSizePolicy.Policy.Expanding,  # Horizontal: expand
+            QSizePolicy.Policy.Expanding   # Vertical: expand (allows resizing)
+        )
+        self.channel_plot.setMinimumHeight(300)  # Minimum height
+        
+        layout.addWidget(self.channel_plot, stretch=1)
+        
         self.hardware_status_label = QLabel("Hardware Status: Ready")
+        self.hardware_status_label.setMaximumHeight(25)
         layout.addWidget(self.hardware_status_label)
-
-        # Persistence statistics
+        
         self.persistence_stats_label = QLabel("Persistence: Ready")
+        self.persistence_stats_label.setMaximumHeight(25)
         layout.addWidget(self.persistence_stats_label)
-
-        # Initialize plot curves for hardware validation
+        
+        # Initialize plot curves
         self.hw_curves = {}
-
         trace_colors = {
-            "raw": "#1f77b4",  # Blue
-            "fast_trigger": "#ff7f0e",  # Orange
-            "energy_filter": "#2ca02c",  # Green
-            "cfd": "#d62728",  # Red
+            "raw": "#1f77b4",
+            "fast_trigger": "#ff7f0e",
+            "energy_filter": "#2ca02c",
+            "cfd": "#d62728",
         }
-
         trace_names = {
             "raw": "Raw Trace",
             "fast_trigger": "Fast Trigger",
             "energy_filter": "Energy Filter",
             "cfd": "CFD",
         }
-
         for trace_type in self.trace_types.keys():
             self.hw_curves[trace_type] = self.channel_plot.plot(
                 pen=pg.mkPen(color=trace_colors[trace_type], width=2),
                 name=trace_names[trace_type],
             )
-
+        
         return tab
     
     def clear_persistence_only(self):
@@ -2056,6 +1983,134 @@ class TracesPlotter(QWidget):
             # Return to live mode for hardware validation
             self.hardware_status_label.setText("Hardware Status: Live mode resumed")
 
+    def create_single_channel_controls_widget(self):
+        if self.single_channel_controls_widget is not None:
+            return self.single_channel_controls_widget
+        
+        widget = QWidget()
+        layout = QVBoxLayout()
+        layout.setContentsMargins(5, 5, 5, 5)
+        layout.setSpacing(5)
+        
+        # ===== Channel Selection =====
+        selector_group = QGroupBox("Channel Selection")
+        selector_layout = QHBoxLayout()
+        selector_layout.addWidget(QLabel("Channel:"))
+        
+        channel_combo = QComboBox()
+        for ch in self.channels:
+            channel_combo.addItem(f"Ch {ch}")
+        channel_combo.setCurrentIndex(0)
+        channel_combo.currentIndexChanged.connect(self.update_selected_channel)
+        selector_layout.addWidget(channel_combo)
+        self.channel_combo = channel_combo
+        
+        selector_layout.addStretch()
+        selector_group.setLayout(selector_layout)
+        selector_group.setMaximumHeight(80)
+        layout.addWidget(selector_group)
+        
+        # ===== Trace Replay =====
+        replay_widget = TraceReplayWidget(initial_buffer_size=1000)
+        replay_widget.trace_selected.connect(self.on_hardware_replay_trace_selected)
+        replay_widget.replay_mode_changed.connect(self.on_hardware_replay_mode_changed)
+        replay_widget.setMaximumHeight(150)
+        layout.addWidget(replay_widget)
+        self.replay_widget = replay_widget
+        
+        # ===== Trace Types =====
+        trace_types_group = QGroupBox("Trace Types")
+        trace_types_layout = QGridLayout()
+        
+        raw_traces_cb = QCheckBox("Raw")
+        raw_traces_cb.setChecked(True)
+        raw_traces_cb.toggled.connect(lambda: self.toggle_trace_type("raw"))
+        trace_types_layout.addWidget(raw_traces_cb, 0, 0)
+        self.raw_traces_cb = raw_traces_cb
+        
+        fast_trigger_cb = QCheckBox("Fast Trigger")
+        fast_trigger_cb.toggled.connect(lambda: self.toggle_trace_type("fast_trigger"))
+        trace_types_layout.addWidget(fast_trigger_cb, 0, 1)
+        self.fast_trigger_cb = fast_trigger_cb
+        
+        energy_filter_cb = QCheckBox("Energy")
+        energy_filter_cb.toggled.connect(lambda: self.toggle_trace_type("energy_filter"))
+        trace_types_layout.addWidget(energy_filter_cb, 1, 0)
+        self.energy_filter_cb = energy_filter_cb
+        
+        cfd_cb = QCheckBox("CFD")
+        cfd_cb.toggled.connect(lambda: self.toggle_trace_type("cfd"))
+        trace_types_layout.addWidget(cfd_cb, 1, 1)
+        self.cfd_cb = cfd_cb
+        
+        trace_types_group.setLayout(trace_types_layout)
+        trace_types_group.setMaximumHeight(100)
+        layout.addWidget(trace_types_group)
+        
+        # ===== Persistence Controls =====
+        persistence_group = QGroupBox("Persistence")
+        persistence_layout = QGridLayout()
+        
+        single_persistence_cb = QCheckBox("Enable")
+        single_persistence_cb.toggled.connect(self.toggle_single_persistence)
+        persistence_layout.addWidget(single_persistence_cb, 0, 0)
+        self.single_persistence_cb = single_persistence_cb
+        
+        persistence_layout.addWidget(QLabel("Count:"), 0, 1)
+        single_persistence_count_spin = QSpinBox()
+        single_persistence_count_spin.setRange(2, 10000)
+        single_persistence_count_spin.setValue(1000)
+        single_persistence_count_spin.valueChanged.connect(self.update_single_persistence_count)
+        persistence_layout.addWidget(single_persistence_count_spin, 0, 2)
+        self.single_persistence_count_spin = single_persistence_count_spin
+        
+        single_normalize_cb = QCheckBox("Normalize")
+        single_normalize_cb.toggled.connect(self.toggle_single_normalize)
+        persistence_layout.addWidget(single_normalize_cb, 1, 0)
+        self.single_normalize_cb = single_normalize_cb
+        
+        single_alpha_fade_cb = QCheckBox("Alpha Fade")
+        single_alpha_fade_cb.toggled.connect(self.toggle_single_alpha_fade)
+        persistence_layout.addWidget(single_alpha_fade_cb, 1, 1, 1, 2)
+        self.single_alpha_fade_cb = single_alpha_fade_cb
+        
+        save_btn = QPushButton("Save Buffer")
+        save_btn.clicked.connect(self.save_traces_buffer)
+        persistence_layout.addWidget(save_btn, 2, 0, 1, 2)
+        
+        clear_btn = QPushButton("Clear")
+        clear_btn.clicked.connect(self.clear_persistence_only)
+        persistence_layout.addWidget(clear_btn, 2, 2)
+        
+        persistence_group.setLayout(persistence_layout)
+        persistence_group.setMaximumHeight(120)
+        layout.addWidget(persistence_group)
+        
+        # ===== Current Parameters =====
+        params_group = QGroupBox("Current Parameters")
+        params_layout = QVBoxLayout()
+        
+        parameter_info_label = QLabel()
+        parameter_info_label.setStyleSheet("font-family: monospace; font-size: 8pt;")
+        parameter_info_label.setWordWrap(True)
+        parameter_info_label.setMinimumHeight(80)
+        self.parameter_info_label = parameter_info_label
+        self.update_parameter_info_display()
+        
+        params_layout.addWidget(parameter_info_label)
+        params_group.setLayout(params_layout)
+        params_group.setMaximumHeight(150)
+        layout.addWidget(params_group)
+        
+        layout.addStretch()
+        
+        widget.setLayout(layout)
+        self.single_channel_controls_widget = widget
+        
+        print(f"Created Single Channel controls widget with {len(widget.findChildren(QWidget))} child widgets")
+        
+        return widget
+
     def update_single_channel_validation_plot(
         self, channel, trace_data, plot_widget, curves, label
     ):
@@ -2165,21 +2220,3 @@ class TracesPlotter(QWidget):
         # Forward the request to main app
         self.request_right_panel_swap.emit(widget)
         print(f"TracesPlotter: Forwarding controls widget request: {widget}")
-    
-    def on_tab_changed(self, index):
-        # Get current tab
-        current_tab = self.tab_widget.widget(index)
-        
-        # Deactivate all tabs first
-        for i in range(self.tab_widget.count()):
-            tab = self.tab_widget.widget(i)
-            if hasattr(tab, 'on_tab_deactivated'):
-                if tab != current_tab:  # Don't deactivate the one we're activating
-                    tab.on_tab_deactivated()
-        
-        # Activate current tab
-        if hasattr(current_tab, 'on_tab_activated'):
-            current_tab.on_tab_activated()
-        
-        tab_name = self.tab_widget.tabText(index)
-        print(f"TracesPlotter: Tab changed to index {index}, name: {tab_name}")

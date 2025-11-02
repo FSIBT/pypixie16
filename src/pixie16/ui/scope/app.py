@@ -240,6 +240,9 @@ class PixieScopeApp(QMainWindow):
         window_height = min(800, int(screen.height() * 0.8))
         self.setGeometry(100, 100, window_width, window_height)
 
+        self.setGeometry(100, 100, window_width, window_height)
+        self.setMinimumSize(1000, 500)
+
         main_widget = QWidget()
         self.setCentralWidget(main_widget)
 
@@ -309,7 +312,6 @@ class PixieScopeApp(QMainWindow):
         # Set sizes
         left_widget.setMinimumWidth(400)
         right_widget.setMinimumWidth(200)
-        right_widget.setMaximumWidth(350)
         right_widget.setSizePolicy(
             QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred
         )
