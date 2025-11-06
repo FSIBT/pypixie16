@@ -444,27 +444,19 @@ def read_list_mode_fifo(
         do_read = False
         for i, _ in enumerate(modules):
             number_of_words = SDK.check_external_FIFO_status(i)
-            print(f"DEBUG: Module {i} FIFO has {number_of_words} words, threshold={threshold}")
             if number_of_words > threshold:
                 do_read = True
-                print(f"DEBUG: Module {i} exceeds threshold, will read from all modules")
                 break
 
     output = []
     if do_read:
-        print(f"DEBUG: Reading from {len(modules)} modules...")
         for i, _ in enumerate(modules):
             number_of_words = SDK.check_external_FIFO_status(i)
             if number_of_words > 0:
-                print(f"DEBUG: Reading {number_of_words} words from module {i}")
                 data = SDK.read_data_from_external_FIFO(i, number_of_words)
             else:
                 data = np.array([], dtype=np.uint32)
             output.append(data)
-    else:
-        print(f"DEBUG: No modules exceed threshold {threshold}, returning empty arrays")
-        for i, _ in enumerate(modules):
-            output.append(np.array([], dtype=np.uint32))
 
     return output
 

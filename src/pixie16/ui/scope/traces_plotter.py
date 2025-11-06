@@ -152,7 +152,7 @@ class TracesPlotter(QWidget):
 
         # Display settings (simplified for Raw Traces)
         self.max_traces_display = 10
-        self.amplitude_threshold = 0.001  # Much lower for nuclear pulses
+        self.amplitude_threshold = 0.001
         self.auto_scale = True
 
         # Real-time axis settings
@@ -245,6 +245,19 @@ class TracesPlotter(QWidget):
     def sync_parameters_to_coincidence_tab(self):
         if hasattr(self, 'coincidence_tab') and self.coincidence_tab:
             self.coincidence_tab.set_hardware_params(self.hardware_params)
+            
+    def restore_current_sidebar(self):
+        if hasattr(self, 'tab_widget'):
+            current_index = self.tab_widget.currentIndex()
+            tab_name = self.tab_widget.tabText(current_index)
+            print(f"DEBUG: Restoring sidebar for tab: {tab_name}")
+            
+            # Trigger the tab change handler to restore correct sidebar
+            self.on_tab_changed(current_index)
+        else:
+            print("DEBUG: No tab_widget found, clearing sidebar")
+            if hasattr(self, 'parent') and hasattr(self.parent(), 'swap_right_panel_controls'):
+                self.parent().swap_right_panel_controls(None)
 
     def init_ui(self):
         layout = QVBoxLayout()
@@ -543,6 +556,21 @@ class TracesPlotter(QWidget):
         
         print(f"TracesPlotter: Tab changed to index {index}, name: {tab_name}")
         
+        # Handle sidebar controls based on which tab is active
+        if hasattr(self, 'parent') and hasattr(self.parent(), 'swap_right_panel_controls'):
+            if tab_name == "Single Channel Analysis":
+                # Request hardware validation controls for single channel tab
+                print("DEBUG: Requesting single channel controls for sidebar")
+                self.handle_controls_widget_request("hardware_validation")
+            elif tab_name == "Coincidence Logic":
+                # Let coincidence tab handle its own controls
+                print("DEBUG: Letting coincidence tab manage its controls")
+                if hasattr(current_tab, 'request_controls_widget'):
+                    current_tab.request_controls_widget.emit("coincidence_logic")
+            else:
+                # Raw traces tab - no special controls needed
+                print("DEBUG: Raw traces tab - no special sidebar controls")
+        
         # Deactivate all tabs
         for i in range(self.tab_widget.count()):
             tab = self.tab_widget.widget(i)
@@ -760,8 +788,15 @@ class TracesPlotter(QWidget):
 
     # Hardware validation
     def update_selected_channel(self):
-        self.selected_channel = self.channels[self.channel_combo.currentIndex()]
-        self.channel_plot.setTitle(f"Channel {self.selected_channel} Validation")
+        if hasattr(self, 'channel_combo') and self.channel_combo.currentIndex() >= 0:
+            self.selected_channel = self.channels[self.channel_combo.currentIndex()]
+            self.channel_plot.setTitle(f"Channel {self.selected_channel} Validation")
+            
+            # Force immediate plot update for the new channel
+            self.update_hardware_validation_plots()
+            print(f"DEBUG: Selected channel changed to {self.selected_channel}")
+        else:
+            print("DEBUG: channel_combo not available or invalid index")
 
     def update_ft_backplane_delay(self, value):
         self.ft_backplane_delay_label.setText(str(value))

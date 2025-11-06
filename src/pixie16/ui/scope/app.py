@@ -811,7 +811,10 @@ class PixieScopeApp(QMainWindow):
                     pass  # Widget already deleted
 
             if self.current_mode == "listmode_traces":
-                self.swap_right_panel_controls(None)
+                if hasattr(self.spectrum_tab, 'restore_current_sidebar'):
+                    self.spectrum_tab.restore_current_sidebar()
+                else:
+                    self.swap_right_panel_controls(None)
             
             self.is_acquiring = False
 

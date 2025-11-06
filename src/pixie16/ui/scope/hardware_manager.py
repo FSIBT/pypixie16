@@ -422,6 +422,16 @@ class DynamicPixieHardwareManager:
                     logger.error("Failed to initialize PIXIE hardware")
                     return False
             
+            # Ensure trace length and other parameters are set for channel 6
+            print("DEBUG: Setting up channel 6 for traces...")
+            try:
+                # Set minimum required parameters for traces
+                px.control.set_channel_parameter("TRACE_LENGTH", 1000, 0, 6)  # 1000 samples
+                px.control.set_channel_parameter("TRIGGER_THRESHOLD", 100, 0, 6)  # Low threshold
+                print("DEBUG: Channel 6 configured for traces")
+            except Exception as e:
+                logger.warning(f"Could not configure channel 6: {e}")
+            
             # Start list mode for traces
             print("DEBUG: Starting list mode run for traces...")
             px.control.start_list_mode_run()
@@ -509,10 +519,7 @@ class DynamicPixieHardwareManager:
             return []
 
         try:
-            print(f"DEBUG: px.control.module_list = {px.control.module_list}")
-            print("DEBUG: Calling px.control.read_list_mode_fifo(check=True, threshold=1)")
-            data_list = px.control.read_list_mode_fifo(check=True, threshold=1)
-            print(f"DEBUG: px.control.read_list_mode_fifo returned {len(data_list) if data_list else 0} modules")
+            data_list = px.control.read_list_mode_fifo(check=False, threshold=1)
             if data_list:
                 for i, data in enumerate(data_list):
                     print(f"DEBUG: Module {i} returned {len(data)} words")
