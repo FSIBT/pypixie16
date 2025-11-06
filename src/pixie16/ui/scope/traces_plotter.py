@@ -839,6 +839,8 @@ class TracesPlotter(QWidget):
 
     def add_event_with_trace(self, event, trace_data):
         event_timestamp = getattr(event, "timestamp", None)
+        
+        print(f"DEBUG: add_event_with_trace called - Channel: {event.channel}, Trace length: {len(trace_data) if trace_data is not None else 'None'}, Timestamp: {event_timestamp}")
 
         # Add to raw traces display
         self.add_trace(event.channel, trace_data, event_timestamp)
@@ -849,13 +851,21 @@ class TracesPlotter(QWidget):
 
     def add_trace(self, channel, trace_data, event_timestamp=None):
         try:
+            print(f"DEBUG: add_trace called - Channel: {channel}, Trace length: {len(trace_data) if trace_data is not None else 'None'}, Timestamp: {event_timestamp}")
+            print(f"DEBUG: self.channels = {self.channels}")
+            print(f"DEBUG: self.display_channels = {self.display_channels}")
+            print(f"DEBUG: self.time_alignment_mode = {self.time_alignment_mode}")
+            print(f"DEBUG: self.amplitude_threshold = {self.amplitude_threshold}")
+            
             if channel not in self.channels:
+                print(f"DEBUG: Channel {channel} not in self.channels {self.channels}")
                 return
 
             if not isinstance(trace_data, np.ndarray):
                 trace_data = np.array(trace_data)
 
             if len(trace_data) == 0:
+                print(f"DEBUG: Empty trace data for channel {channel}")
                 return
 
             # Store timestamp for alignment
@@ -870,11 +880,15 @@ class TracesPlotter(QWidget):
                 
                 time_diff_ns = abs((event_timestamp - self.alignment_reference_timestamp) * 10.0)
                 if time_diff_ns > 500000:  # 500µs in nanoseconds
+                    print(f"DEBUG: Filtered out trace due to time alignment - time_diff={time_diff_ns:.0f}ns > 500000ns")
                     return
 
             if len(trace_data) > 10:
                 amplitude = np.max(trace_data) - np.min(trace_data)
+                print(f"DEBUG: Trace amplitude: {amplitude:.3f}, threshold: {self.amplitude_threshold}")
+                
                 if amplitude >= self.amplitude_threshold:
+                    print(f"DEBUG: STORING trace for channel {channel} - passed amplitude threshold")
                     # Store in original buffer
                     self.trace_data[channel].append(trace_data)
 
@@ -895,7 +909,10 @@ class TracesPlotter(QWidget):
                         and not self.replay_mode
                     ):
                         self.replay_widget.add_trace(trace_data, channel, amplitude)
+                else:
+                    print(f"DEBUG: REJECTED trace for channel {channel} - amplitude {amplitude:.3f} < threshold {self.amplitude_threshold}")
             else:
+                print(f"DEBUG: Short trace (len={len(trace_data)}) - storing anyway")
                 # Store in original buffer
                 self.trace_data[channel].append(trace_data)
 
@@ -923,6 +940,10 @@ class TracesPlotter(QWidget):
 
     def update_plots(self):
         try:
+            # Count total traces for debug
+            total_traces = sum(len(self.trace_data[ch]) for ch in self.channels if ch in self.trace_data)
+            print(f"DEBUG: update_plots called - total traces across all channels: {total_traces}")
+            
             self.update_raw_traces_plot()
             self.update_hardware_validation_plots()
 
@@ -1915,6 +1936,8 @@ class TracesPlotter(QWidget):
             self.channel_combo.addItem(f"Ch {ch}")
 
     def start_live_updates(self):
+        print(f"DEBUG: start_live_updates called - timer active: {self.update_timer.isActive()}")
+        
         if self.update_timer.thread() != self.thread():
             print("WARNING: Timer thread mismatch - recreating timer")
             self.update_timer = QTimer(self)
@@ -1923,7 +1946,9 @@ class TracesPlotter(QWidget):
     
         if not self.update_timer.isActive():
             self.update_timer.start(100)
-            print("Traces Plotter: Started live updates")
+            print("Traces Plotter: Started live updates - timer now active")
+        else:
+            print("DEBUG: Timer was already active")
 
     def stop_live_updates(self):
         if self.update_timer.isActive():

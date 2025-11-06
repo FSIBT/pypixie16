@@ -745,6 +745,9 @@ class PixieScopeApp(QMainWindow):
             channel = getattr(event, "channel", 0)
             trace = getattr(event, "trace", None)
             timestamp = getattr(event, "timestamp", None)  # Add this line
+            
+            print(f"DEBUG: process_traces_event - Channel: {channel}, Trace: {'present' if trace is not None else 'None'}, Length: {len(trace) if trace is not None else 'N/A'}")
+            print(f"DEBUG: self.channel_numbers = {self.channel_numbers}")
 
             if channel in self.channel_numbers and trace is not None and len(trace) > 0:
                 # For coincidence analysis, feed event + trace to plotter
