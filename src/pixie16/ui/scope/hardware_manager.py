@@ -415,8 +415,29 @@ class DynamicPixieHardwareManager:
             return True
 
         try:
+            # Ensure system is initialized first
+            if not self.state.is_initialized:
+                logger.warning("PIXIE system not initialized, initializing now...")
+                if not self.initialize_system():
+                    logger.error("Failed to initialize PIXIE hardware")
+                    return False
+            
+            # Start list mode for traces
+            print("DEBUG: Starting list mode run for traces...")
             px.control.start_list_mode_run()
-            logger.info("Traces mode started")
+            
+            # Verify it started
+            time.sleep(0.5)  # Give it time to start
+            try:
+                run_active = px.control.check_run_status()
+                print(f"DEBUG: List mode run status after start: {run_active}")
+                if not run_active:
+                    logger.error("List mode failed to start properly")
+                    return False
+            except Exception as e:
+                logger.warning(f"Could not verify list mode run status: {e}")
+            
+            logger.info("Traces mode started successfully")
             return True
         except Exception as e:
             logger.error(f"Failed to start traces mode: {e}")
@@ -481,15 +502,25 @@ class DynamicPixieHardwareManager:
         return histograms
 
     def read_list_mode_data(self) -> list[any]:
+        print(f"DEBUG: read_list_mode_data called - dummy_mode: {self.dummy_mode}, current_mode: {self.state.current_mode}")
+        
         if self.dummy_mode or self.state.current_mode not in ["list", "traces"]:
+            print(f"DEBUG: Skipping read_list_mode_data - dummy_mode={self.dummy_mode}, mode={self.state.current_mode}")
             return []
 
         try:
-            data_list = px.control.read_list_mode_fifo(check=True, threshold=8)
+            print(f"DEBUG: px.control.module_list = {px.control.module_list}")
+            print("DEBUG: Calling px.control.read_list_mode_fifo(check=True, threshold=1)")
+            data_list = px.control.read_list_mode_fifo(check=True, threshold=1)
+            print(f"DEBUG: px.control.read_list_mode_fifo returned {len(data_list) if data_list else 0} modules")
+            if data_list:
+                for i, data in enumerate(data_list):
+                    print(f"DEBUG: Module {i} returned {len(data)} words")
             return data_list if data_list else []
 
         except Exception as e:
             logger.error(f"Error reading list mode data: {e}")
+            print(f"DEBUG: Exception in read_list_mode_data: {e}")
             return []
 
     def get_hardware_timing_parameters(self, channel: int = 0) -> dict:

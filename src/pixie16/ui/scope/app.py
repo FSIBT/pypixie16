@@ -449,6 +449,11 @@ class PixieScopeApp(QMainWindow):
                 bins=2000,
             )
         elif self.current_mode == "listmode_traces":
+            # Ensure channel 6 is included for debugging
+            if 6 not in self.channel_numbers:
+                print(f"WARNING: Channel 6 not in enabled channels {self.channel_numbers}, adding it...")
+                self.channel_numbers = list(self.channel_numbers) + [6]
+                
             self.spectrum_tab = TracesPlotter(
                 channels=self.channel_numbers,
                 title="PIXIE-16 Traces",
@@ -621,10 +626,10 @@ class PixieScopeApp(QMainWindow):
             if self.dummy_mode:
                 print("No binary file loaded")
             else:
-                # Set up timer to read FIFO data every 100ms
+                # Set up timer to read FIFO data every 50ms for better responsiveness
                 self.data_timer = QTimer()
                 self.data_timer.timeout.connect(self.read_list_mode_fifo)
-                self.data_timer.start(100)
+                self.data_timer.start(50)
 
             self.data_source.start_acquisition()
 
@@ -693,6 +698,11 @@ class PixieScopeApp(QMainWindow):
                 print(
                     f"FIFO Debug: Read {total_words} words this cycle, {self._fifo_debug_counter} total"
                 )
+                print(f"FIFO Debug: data_list length = {len(data_list)}")
+                for i, data in enumerate(data_list):
+                    print(f"FIFO Debug: Module {i}: {len(data)} words")
+                print(f"FIFO Debug: Hardware state - dummy_mode: {self.pixie_hw.dummy_mode if self.pixie_hw else 'None'}")
+                print(f"FIFO Debug: Acquisition state - is_acquiring: {self.is_acquiring}, live_reader: {self.live_reader is not None}")
                 self._last_fifo_debug = current_time
 
             # Feed data to live reader

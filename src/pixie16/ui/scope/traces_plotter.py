@@ -152,7 +152,7 @@ class TracesPlotter(QWidget):
 
         # Display settings (simplified for Raw Traces)
         self.max_traces_display = 10
-        self.amplitude_threshold = 0.1
+        self.amplitude_threshold = 0.001  # Much lower for nuclear pulses
         self.auto_scale = True
 
         # Real-time axis settings
@@ -218,7 +218,7 @@ class TracesPlotter(QWidget):
         self.alignment_mode_start_time = None
 
         # Time alignment settings
-        self.time_alignment_mode = "zero"
+        self.time_alignment_mode = "zero"  # Start with zero alignment (no filtering)
         self.alignment_reference_channel = 0
         self.trace_timestamps = {ch: deque(maxlen=1000) for ch in self.channels}
 
@@ -295,7 +295,7 @@ class TracesPlotter(QWidget):
         controls_layout.addWidget(QLabel("Threshold:"), 0, 2)
         self.threshold_spin = QDoubleSpinBox()
         self.threshold_spin.setRange(0.0, 2.0)
-        self.threshold_spin.setValue(self.amplitude_threshold)
+        self.threshold_spin.setValue(0.001)
         self.threshold_spin.setSingleStep(0.01)
         self.threshold_spin.valueChanged.connect(self.update_threshold)
         controls_layout.addWidget(self.threshold_spin, 0, 3)
@@ -872,16 +872,17 @@ class TracesPlotter(QWidget):
             if event_timestamp is not None:
                 self.trace_timestamps[channel].append(event_timestamp)
 
+            # Disabled strict time filtering - let all traces through for now
             # In channel alignment mode, only keep traces within ±50µs of reference
-            if (self.time_alignment_mode == "channel_aligned" 
-                and hasattr(self, 'alignment_reference_timestamp')
-                and self.alignment_reference_timestamp is not None
-                and event_timestamp is not None):
-                
-                time_diff_ns = abs((event_timestamp - self.alignment_reference_timestamp) * 10.0)
-                if time_diff_ns > 500000:  # 500µs in nanoseconds
-                    print(f"DEBUG: Filtered out trace due to time alignment - time_diff={time_diff_ns:.0f}ns > 500000ns")
-                    return
+            # if (self.time_alignment_mode == "channel_aligned" 
+            #     and hasattr(self, 'alignment_reference_timestamp')
+            #     and self.alignment_reference_timestamp is not None
+            #     and event_timestamp is not None):
+            #     
+            #     time_diff_ns = abs((event_timestamp - self.alignment_reference_timestamp) * 10.0)
+            #     if time_diff_ns > 500000:  # 500µs in nanoseconds
+            #         print(f"DEBUG: Filtered out trace due to time alignment - time_diff={time_diff_ns:.0f}ns > 500000ns")
+            #         return
 
             if len(trace_data) > 10:
                 amplitude = np.max(trace_data) - np.min(trace_data)
@@ -963,7 +964,9 @@ class TracesPlotter(QWidget):
                     channel in self.trace_data and len(self.trace_data[channel]) > 0
                 )
 
-                if not has_data or channel not in self.display_channels:
+                if not has_data:
+                    # Always display all enabled channels
+                    # if not has_data or channel not in self.display_channels:
                     self.raw_curves[channel].setData([], [])
                     continue
 
