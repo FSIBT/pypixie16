@@ -878,10 +878,14 @@ class PixieScopeApp(QMainWindow):
                 ch for ch in selected_channels if ch in self.channel_numbers
             ]
 
+            # Update the main spectrum tab
             if hasattr(self.spectrum_tab, "set_display_channels"):
                 self.spectrum_tab.set_display_channels(valid_channels)
             elif hasattr(self.spectrum_tab, "set_channels"):
                 self.spectrum_tab.set_channels(valid_channels)
+
+            # Store selected channels for performance-sensitive operations
+            self.active_channels = valid_channels
 
             self.info_bar.setText(
                 f"Displaying {len(valid_channels)} channels: {valid_channels}"

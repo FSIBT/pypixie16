@@ -355,11 +355,21 @@ class CoincidenceLogicTab(QWidget):
         return widget
     
     def on_tab_activated(self):
+        # Resume computations when tab becomes active
+        if not self.update_timer.isActive():
+            self.update_timer.start(100)
+            print("CoincidenceLogicTab: Resumed compute-intensive timer updates")
+        
         controls = self.create_coincidence_controls_widget()
         self.request_controls_widget.emit(controls)
         print("CoincidenceLogicTab: Requested custom controls widget for right panel")
     
     def on_tab_deactivated(self):
+        # pause computations when tab is not visible to save CPU
+        if self.update_timer.isActive():
+            self.update_timer.stop()
+            print("CoincidenceLogicTab: Paused compute-intensive timer updates to save CPU")
+        
         self.request_controls_widget.emit(None)  # None = restore default
         print("CoincidenceLogicTab: Requested restore default controls")
     
@@ -608,6 +618,10 @@ class CoincidenceLogicTab(QWidget):
     
     def compute_binary_logic(self, raw_trace, channel, event_timestamp, channel_id):
         if len(raw_trace) < 20:
+            return None
+        
+        # Skip compute-heavy operations if tab is not active
+        if not self.update_timer.isActive():
             return None
         
         try:

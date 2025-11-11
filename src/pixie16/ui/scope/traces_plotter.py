@@ -556,6 +556,17 @@ class TracesPlotter(QWidget):
         
         print(f"TracesPlotter: Tab changed to index {index}, name: {tab_name}")
         
+        # Only run compute-intensive updates for active tab
+        if tab_name in ["Raw Traces", "Single Channel Analysis"]:
+            if not self.update_timer.isActive():
+                self.update_timer.start(100)
+                print(f"TracesPlotter: Resumed compute-intensive updates for {tab_name}")
+        else:
+            # Pause main traces processing when viewing coincidence logic only
+            if self.update_timer.isActive() and tab_name == "Coincidence Logic":
+                self.update_timer.stop()
+                print("TracesPlotter: Paused main traces processing - coincidence logic handles its own")
+        
         # Handle sidebar controls based on which tab is active
         if hasattr(self, 'parent') and hasattr(self.parent(), 'swap_right_panel_controls'):
             if tab_name == "Single Channel Analysis":
@@ -1942,6 +1953,11 @@ class TracesPlotter(QWidget):
 
     def set_display_channels(self, channels):
         self.display_channels = channels if channels else []
+        
+        if hasattr(self, 'coincidence_tab') and self.coincidence_tab:
+            self.coincidence_tab.set_channels(self.display_channels)
+            print(f"TracesPlotter: Updated coincidence tab channels to {self.display_channels}")
+        
         self.update_plots()
 
     def set_channels(self, channels):
