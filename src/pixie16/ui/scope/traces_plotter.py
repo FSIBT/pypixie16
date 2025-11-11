@@ -556,20 +556,17 @@ class TracesPlotter(QWidget):
         
         print(f"TracesPlotter: Tab changed to index {index}, name: {tab_name}")
         
-        # Handle sidebar controls based on which tab is active
-        if hasattr(self, 'parent') and hasattr(self.parent(), 'swap_right_panel_controls'):
-            if tab_name == "Single Channel Analysis":
-                # Request hardware validation controls for single channel tab
-                print("DEBUG: Requesting single channel controls for sidebar")
-                self.handle_controls_widget_request("hardware_validation")
-            elif tab_name == "Coincidence Logic":
-                # Let coincidence tab handle its own controls
-                print("DEBUG: Letting coincidence tab manage its controls")
-                if hasattr(current_tab, 'request_controls_widget'):
-                    current_tab.request_controls_widget.emit("coincidence_logic")
-            else:
-                # Raw traces tab - no special controls needed
-                print("DEBUG: Raw traces tab - no special sidebar controls")
+        # Only run compute-intensive updates for active tab
+        if tab_name in ["Raw Traces", "Single Channel Analysis"]:
+            if not self.update_timer.isActive():
+                self.update_timer.start(100)
+                print(f"TracesPlotter: Resumed compute-intensive updates for {tab_name}")
+        else:
+            # Pause main traces processing when viewing coincidence logic only
+            if self.update_timer.isActive() and tab_name == "Coincidence Logic":
+                self.update_timer.stop()
+                print("TracesPlotter: Paused main traces processing - coincidence logic handles its own")
+        
         
         # Deactivate all tabs
         for i in range(self.tab_widget.count()):
@@ -999,9 +996,7 @@ class TracesPlotter(QWidget):
                     channel in self.trace_data and len(self.trace_data[channel]) > 0
                 )
 
-                if not has_data:
-                    # Always display all enabled channels
-                    # if not has_data or channel not in self.display_channels:
+                if not has_data or channel not in self.display_channels:
                     self.raw_curves[channel].setData([], [])
                     continue
 
@@ -1942,6 +1937,11 @@ class TracesPlotter(QWidget):
 
     def set_display_channels(self, channels):
         self.display_channels = channels if channels else []
+        
+        if hasattr(self, 'coincidence_tab') and self.coincidence_tab:
+            self.coincidence_tab.set_channels(self.display_channels)
+            print(f"TracesPlotter: Updated coincidence tab channels to {self.display_channels}")
+        
         self.update_plots()
 
     def set_channels(self, channels):
