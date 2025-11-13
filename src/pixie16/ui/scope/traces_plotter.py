@@ -567,6 +567,17 @@ class TracesPlotter(QWidget):
                 self.update_timer.stop()
                 print("TracesPlotter: Paused main traces processing - coincidence logic handles its own")
         
+        # Handle sidebar controls based on which tab is active
+        if hasattr(self, 'parent') and hasattr(self.parent(), 'swap_right_panel_controls'):
+            if tab_name == "Single Channel Analysis":
+                # Request hardware validation controls for single channel tab
+                print("DEBUG: Requesting single channel controls for sidebar")
+                self.handle_controls_widget_request("hardware_validation")
+            elif tab_name == "Coincidence Logic":
+                # Let coincidence tab handle its own controls
+                print("DEBUG: Letting coincidence tab manage its controls")
+                if hasattr(current_tab, 'request_controls_widget'):
+                    current_tab.request_controls_widget.emit("coincidence_logic")
         
         # Deactivate all tabs
         for i in range(self.tab_widget.count()):

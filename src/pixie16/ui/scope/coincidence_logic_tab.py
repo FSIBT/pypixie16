@@ -620,7 +620,6 @@ class CoincidenceLogicTab(QWidget):
         if len(raw_trace) < 20:
             return None
         
-        # Skip compute-heavy operations if tab is not active
         if not self.update_timer.isActive():
             return None
         
