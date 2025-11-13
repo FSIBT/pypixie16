@@ -989,6 +989,7 @@ class TracesPlotter(QWidget):
                 return
 
             total_traces = 0
+            print(f"DEBUG: update_raw_traces_plot - display_channels: {self.display_channels}")
 
             # Process all channels for raw traces display (no trace limiting)
             for channel in self.channels:
@@ -1936,7 +1937,9 @@ class TracesPlotter(QWidget):
         self.update_plots()
 
     def set_display_channels(self, channels):
+        print(f"TracesPlotter: set_display_channels called with {channels}")
         self.display_channels = channels if channels else []
+        print(f"TracesPlotter: display_channels set to {self.display_channels}")
         
         if hasattr(self, 'coincidence_tab') and self.coincidence_tab:
             self.coincidence_tab.set_channels(self.display_channels)
