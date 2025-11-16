@@ -732,8 +732,15 @@ class ParameterControls(QGroupBox):
 
     def load_preset(self):
         try:
+            if hasattr(self.parent(), 'data_storage_manager'):
+                data_manager = self.parent().data_storage_manager
+                default_dir = data_manager.get_data_directory() / "sessions"
+                default_dir.mkdir(parents=True, exist_ok=True)
+            else:
+                default_dir = Path.home() / "PIXIE16_settings"
+                
             file_path, _ = QFileDialog.getOpenFileName(
-                self, "Load Parameter Preset", "", "JSON Files (*.json);;All Files (*)"
+                self, "Load Parameter Preset", str(default_dir), "JSON Files (*.json);;All Files (*)"
             )
 
             if file_path:
@@ -751,10 +758,20 @@ class ParameterControls(QGroupBox):
 
     def save_preset(self):
         try:
+            # Get unified data directory as default location
+            if hasattr(self.parent(), 'data_storage_manager'):
+                data_manager = self.parent().data_storage_manager
+            else:
+                from .data_manager import DataSettingsManager
+                data_manager = DataSettingsManager()
+            default_dir = data_manager.get_data_directory() / "sessions"
+            default_dir.mkdir(parents=True, exist_ok=True)
+            default_path = default_dir / f"pixie_preset_{int(time.time())}.json"
+            
             file_path, _ = QFileDialog.getSaveFileName(
                 self,
                 "Save Parameter Preset",
-                f"pixie_preset_{int(time.time())}.json",
+                str(default_path),
                 "JSON Files (*.json);;All Files (*)",
             )
 

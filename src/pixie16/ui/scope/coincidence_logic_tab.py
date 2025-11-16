@@ -1055,12 +1055,19 @@ class CoincidenceLogicTab(QWidget):
         }
         
         try:
-            settings_file = Path("pixie_binary_logic_settings.json")
-            with open(settings_file, "w") as f:
+            # Get unified data directory path
+            if hasattr(self.parent(), 'data_storage_manager'):
+                data_manager = self.parent().data_storage_manager
+            else:
+                from .data_manager import DataSettingsManager
+                data_manager = DataSettingsManager()
+            settings_path = data_manager.get_save_path('sessions', 'coincidence_logic_settings.json')
+            
+            with open(settings_path, "w") as f:
                 json.dump(settings, f, indent=2)
             QMessageBox.information(
                 self, "Settings Saved", 
-                f"Saved to {settings_file}"
+                f"Saved to {settings_path}"
             )
         except Exception as e:
             QMessageBox.critical(self, "Save Failed", f"Error: {e}")
@@ -1088,8 +1095,15 @@ class CoincidenceLogicTab(QWidget):
                         "time_difference_ns": time_diff,
                     })
             
-            filename = f"pixie_timing_data_{int(time.time())}.csv"
-            with open(filename, "w", newline="") as csvfile:
+            # Get unified data directory path
+            if hasattr(self.parent(), 'data_storage_manager'):
+                data_manager = self.parent().data_storage_manager
+            else:
+                from .data_manager import DataSettingsManager
+                data_manager = DataSettingsManager()
+            export_path = data_manager.get_save_path('exports', f"timing_data_{int(time.time())}.csv")
+            
+            with open(export_path, "w", newline="") as csvfile:
                 if export_data:
                     writer = csv.DictWriter(csvfile, fieldnames=export_data[0].keys())
                     writer.writeheader()
@@ -1097,7 +1111,7 @@ class CoincidenceLogicTab(QWidget):
             
             QMessageBox.information(
                 self, "Export Complete", 
-                f"Exported {len(export_data)} events to {filename}"
+                f"Exported {len(export_data)} events to {export_path}"
             )
         except Exception as e:
             QMessageBox.critical(self, "Export Failed", f"Error: {e}")

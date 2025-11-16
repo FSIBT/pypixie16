@@ -302,13 +302,11 @@ class PixieScopeApp(QMainWindow):
         self.parameter_controls.read_hw_btn.clicked.connect(self.read_parameters_from_hardware)
         default_controls_layout.addWidget(self.parameter_controls)
         
-        # Data storage controls
-        self.data_storage_panel = DataStoragePanel()
-        self.data_storage_panel.settings_changed.connect(self.on_data_settings_changed)
-        default_controls_layout.addWidget(self.data_storage_panel)
+        # Data storage manager (not in UI panel)
+        self.data_storage_manager = DataSettingsManager()
         
         # Initialize data saver
-        self.data_saver = DataSaver(self.data_storage_panel.get_settings_manager())
+        self.data_saver = DataSaver(self.data_storage_manager)
         
         default_controls_layout.addStretch()
         self.default_controls_widget.setLayout(default_controls_layout)
@@ -373,8 +371,8 @@ class PixieScopeApp(QMainWindow):
         self.clear_btn.clicked.connect(self.clear_data)
         top_layout.addWidget(self.clear_btn)
 
-        self.save_btn = QPushButton("Save")
-        self.save_btn.clicked.connect(self.save_current_data)
+        self.save_btn = QPushButton("Save Settings")
+        self.save_btn.clicked.connect(self.open_save_settings_dialog)
         top_layout.addWidget(self.save_btn)
 
         top_layout.addStretch()
@@ -972,14 +970,36 @@ class PixieScopeApp(QMainWindow):
         mode_status = "DUMMY MODE - " if self.dummy_mode else ""
         self.info_bar.setText(f"{mode_status}{message}")
 
-    def on_data_settings_changed(self):
-        """Handle changes to data storage settings"""
-        settings_manager = self.data_storage_panel.get_settings_manager()
-        data_dir = settings_manager.get_data_directory()
-        print(f"Data directory changed to: {data_dir}")
+    def open_save_settings_dialog(self):
+        """Open data storage settings dialog"""
+        from PyQt6.QtWidgets import QDialog, QVBoxLayout
         
-        # Update data saver with new settings
-        self.data_saver = DataSaver(settings_manager)
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Save Settings")
+        dialog.setModal(True)
+        dialog.resize(500, 300)
+        
+        layout = QVBoxLayout()
+        
+        # Create data storage panel for the dialog
+        storage_panel = DataStoragePanel()
+        storage_panel.get_settings_manager().data_directory = self.data_storage_manager.data_directory
+        storage_panel.get_settings_manager().auto_create_subdirs = self.data_storage_manager.auto_create_subdirs
+        storage_panel.get_settings_manager().use_timestamps = self.data_storage_manager.use_timestamps
+        storage_panel.update_directory_display()
+        storage_panel.auto_subdirs_cb.setChecked(self.data_storage_manager.auto_create_subdirs)
+        storage_panel.timestamps_cb.setChecked(self.data_storage_manager.use_timestamps)
+        
+        def on_settings_changed():
+            # Update main data storage manager
+            self.data_storage_manager = storage_panel.get_settings_manager()
+            self.data_saver = DataSaver(self.data_storage_manager)
+            
+        storage_panel.settings_changed.connect(on_settings_changed)
+        layout.addWidget(storage_panel)
+        
+        dialog.setLayout(layout)
+        dialog.exec()
 
     def save_current_data(self):
         """Save current data based on active mode"""

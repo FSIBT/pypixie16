@@ -690,11 +690,15 @@ class TracesPlotter(QWidget):
                 
     def save_traces_buffer(self):
         try:
-            timestamp = int(time.time())
-            save_dir = Path("traces_buffer")
-            save_dir.mkdir(exist_ok=True)
+            # Get unified data directory path
+            if hasattr(self.parent(), 'data_storage_manager'):
+                data_manager = self.parent().data_storage_manager
+            else:
+                from .data_manager import DataSettingsManager
+                data_manager = DataSettingsManager()
             
             selected_channel = self.channels[self.channel_combo.currentIndex()]
+            timestamp = int(time.time())
             
             # Save single channel persistence data if available
             if (selected_channel in self.single_persistence_data and 
@@ -715,8 +719,8 @@ class TracesPlotter(QWidget):
                         return
                 
                 traces_array = np.array(traces_list)
-                filename = save_dir / f"traces_ch{selected_channel}_{timestamp}.npy"
-                np.save(filename, traces_array)
+                save_path = data_manager.get_save_path('traces', f"traces_ch{selected_channel}_{timestamp}.npy")
+                np.save(save_path, traces_array)
                 
                 # Save metadata
                 metadata = {
@@ -727,16 +731,16 @@ class TracesPlotter(QWidget):
                     "hardware_params": self.hardware_params.copy()
                 }
                 
-                metadata_file = save_dir / f"traces_ch{selected_channel}_{timestamp}_metadata.json"
-                with open(metadata_file, 'w') as f:
+                metadata_path = data_manager.get_save_path('traces', f"traces_ch{selected_channel}_{timestamp}_metadata.json")
+                with open(metadata_path, 'w') as f:
                     json.dump(metadata, f, indent=2)
                 
-                file_size_mb = filename.stat().st_size / (1024 * 1024)
+                file_size_mb = save_path.stat().st_size / (1024 * 1024)
                 QMessageBox.information(
                     self, "Traces Saved", 
-                    f"Saved {trace_count} traces to {filename}\n"
+                    f"Saved {trace_count} traces to {save_path}\n"
                     f"File size: {file_size_mb:.1f} MB\n"
-                    f"Metadata: {metadata_file}"
+                    f"Metadata: {metadata_path}"
                 )
             else:
                 QMessageBox.warning(
