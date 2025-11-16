@@ -551,8 +551,8 @@ class PixieScopeApp(QMainWindow):
 
     def start_list_mode_acquisition(self) -> bool:
         try:
-            # Start hardware list mode
-            if not self.pixie_hw.start_list_mode():
+            # Start hardware traces mode
+            if not self.pixie_hw.start_traces_mode():
                 return False
 
             print("Setting up live data processing...")
@@ -701,9 +701,8 @@ class PixieScopeApp(QMainWindow):
                     
                 # If trace data is available, also feed to traces tab
                 trace = getattr(event, "trace", None)
-                timestamp = getattr(event, "timestamp", None)
                 if trace is not None and hasattr(self.spectrum_tab, "add_event_with_trace"):
-                    self.spectrum_tab.add_event_with_trace(event, trace, timestamp)
+                    self.spectrum_tab.add_event_with_trace(event, trace)
                 
                 # Fallback for older spectrum plotters
                 elif hasattr(self.spectrum_tab, "add_energy_event"):
