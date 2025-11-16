@@ -29,6 +29,9 @@ import pyqtgraph as pg
 
 import pixie16 as px
 
+# Import spectrum plotter for histogram functionality
+from .spectrum_plotter import ContinuousSpectrumPlotter
+
 from ...analyze import (
     compute_fast_trigger_validation,
     compute_energy_filter,
@@ -264,6 +267,17 @@ class TracesPlotter(QWidget):
 
         # Create tabbed interface
         self.tab_widget = QTabWidget()
+
+        # Add histogram tab for ListMode energy spectra
+        self.histogram_tab = ContinuousSpectrumPlotter(
+            app=None,
+            instrument_name="pixie16",
+            display_name="PIXIE-16 List Mode Energy Spectra",
+            channels=self.channels,
+            energy_range=(0, 80000),
+            bins=2000,
+        )
+        self.tab_widget.addTab(self.histogram_tab, "Histogram")
 
         raw_traces_tab = self.create_raw_traces_tab()
         self.tab_widget.addTab(raw_traces_tab, "Raw Traces")
@@ -599,7 +613,7 @@ class TracesPlotter(QWidget):
                 current_tab.on_tab_activated()
                 
         else:
-            # Raw Traces or other tabs - restore default controls
+            # restore default controls
             self.request_right_panel_swap.emit(None)
             print("TracesPlotter: Requested default controls")
 
@@ -1931,6 +1945,10 @@ class TracesPlotter(QWidget):
         return energy_filter
 
     def clear_data(self):
+        # Clear histogram data
+        if hasattr(self, 'histogram_tab') and hasattr(self.histogram_tab, 'clear_data'):
+            self.histogram_tab.clear_data()
+            
         for channel in self.channels:
             self.trace_data[channel].clear()
             self.last_traces[channel] = None
@@ -1952,11 +1970,22 @@ class TracesPlotter(QWidget):
         self.display_channels = channels if channels else []
         print(f"TracesPlotter: display_channels set to {self.display_channels}")
         
+        # Update histogram tab
+        if hasattr(self, 'histogram_tab'):
+            self.histogram_tab.set_display_channels(self.display_channels)
+        
         if hasattr(self, 'coincidence_tab') and self.coincidence_tab:
             self.coincidence_tab.set_channels(self.display_channels)
             print(f"TracesPlotter: Updated coincidence tab channels to {self.display_channels}")
         
         self.update_plots()
+
+    def add_event(self, event):
+        """Add energy event to histogram tab."""
+        if hasattr(self, 'histogram_tab') and hasattr(self.histogram_tab, 'add_energy_event'):
+            channel = getattr(event, 'channel', 0)
+            energy = getattr(event, 'energy', 0)
+            self.histogram_tab.add_energy_event(channel, energy)
 
     def set_channels(self, channels):
         # Clear old curves
@@ -1980,6 +2009,10 @@ class TracesPlotter(QWidget):
                 pen=pg.mkPen(color=color, width=1.5), name=f"Ch {channel}"
             )
 
+        # Update histogram tab channels
+        if hasattr(self, 'histogram_tab'):
+            self.histogram_tab.set_channels(channels)
+
         # Update coincidence tab channels
         if hasattr(self, "coincidence_tab"):
             self.coincidence_tab.set_channels(channels)
@@ -1989,6 +2022,10 @@ class TracesPlotter(QWidget):
 
     def start_live_updates(self):
         print(f"DEBUG: start_live_updates called - timer active: {self.update_timer.isActive()}")
+        
+        # Start histogram updates if histogram tab exists
+        if hasattr(self, 'histogram_tab') and hasattr(self.histogram_tab, 'start_live_updates'):
+            self.histogram_tab.start_live_updates()
         
         if self.update_timer.thread() != self.thread():
             print("WARNING: Timer thread mismatch - recreating timer")
@@ -2003,6 +2040,10 @@ class TracesPlotter(QWidget):
             print("DEBUG: Timer was already active")
 
     def stop_live_updates(self):
+        # Stop histogram updates if histogram tab exists
+        if hasattr(self, 'histogram_tab') and hasattr(self.histogram_tab, 'stop_live_updates'):
+            self.histogram_tab.stop_live_updates()
+            
         if self.update_timer.isActive():
             self.update_timer.stop()
             print("Traces Plotter: Stopped live updates")

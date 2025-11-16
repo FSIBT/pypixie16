@@ -41,7 +41,6 @@ from .binary_loader import BinaryFileLoader
 
 # Import the plotting modules
 from pixie16.ui.scope.mca_spectrum_plotter import MCASpectrumPlotter
-from pixie16.ui.scope.spectrum_plotter import ContinuousSpectrumPlotter
 from pixie16.ui.scope.traces_plotter import TracesPlotter
 from pixie16.ui.scope.channel_controls import ChannelDisplayControls
 from pixie16.ui.scope.parameter_controls import ParameterControls
@@ -347,7 +346,7 @@ class PixieScopeApp(QMainWindow):
         # Mode selection
         top_layout.addWidget(QLabel("Mode:"))
         self.mode_combo = QComboBox()
-        self.mode_combo.addItems(["MCA Mode", "ListMode Histogram", "ListMode Traces"])
+        self.mode_combo.addItems(["MCA Mode", "List Mode"])
         self.mode_combo.currentTextChanged.connect(self.on_mode_changed)
         top_layout.addWidget(self.mode_combo)
 
@@ -427,8 +426,8 @@ class PixieScopeApp(QMainWindow):
                 except:
                     pass
             
-            # Restore default controls when leaving traces mode
-            if old_mode == "listmode_traces":
+            # Restore default controls when leaving any mode that had custom panels
+            if old_mode in ["listmode_traces", "list_mode"]:
                 self.swap_right_panel_controls(None)
             
             self.left_layout.removeWidget(self.spectrum_tab)
@@ -439,16 +438,7 @@ class PixieScopeApp(QMainWindow):
             self.spectrum_tab = MCASpectrumPlotter(
                 channels=self.channel_numbers, title="PIXIE-16 MCA Spectra"
             )
-        elif self.current_mode == "listmode_histogram":
-            self.spectrum_tab = ContinuousSpectrumPlotter(
-                app=None,
-                instrument_name="pixie16",
-                display_name="PIXIE-16 List Mode Spectra",
-                channels=self.channel_numbers,
-                energy_range=(0, 80000),
-                bins=2000,
-            )
-        elif self.current_mode == "listmode_traces":
+        elif self.current_mode == "list_mode":
             # Ensure channel 6 is included for debugging
             if 6 not in self.channel_numbers:
                 print(f"WARNING: Channel 6 not in enabled channels {self.channel_numbers}, adding it...")
@@ -456,7 +446,7 @@ class PixieScopeApp(QMainWindow):
                 
             self.spectrum_tab = TracesPlotter(
                 channels=self.channel_numbers,
-                title="PIXIE-16 Traces",
+                title="PIXIE-16 List Mode",
                 hardware_manager=self.pixie_hw,
             )
             
@@ -520,10 +510,8 @@ class PixieScopeApp(QMainWindow):
                 # Regular live acquisition
                 if self.current_mode == "mca_mode":
                     success = self.start_mca_acquisition()
-                elif self.current_mode == "listmode_histogram":
+                elif self.current_mode == "list_mode":
                     success = self.start_list_mode_acquisition()
-                elif self.current_mode == "listmode_traces":
-                    success = self.start_traces_acquisition()
 
             if success:
                 self.is_acquiring = True
@@ -610,39 +598,6 @@ class PixieScopeApp(QMainWindow):
             traceback.print_exc()
             return False
 
-    def start_traces_acquisition(self) -> bool:
-        try:
-            # Start hardware traces mode
-            if not self.pixie_hw.start_traces_mode():
-                return False
-
-            # Set up live data reader for trace processing
-            self.live_reader = LiveDataReader()
-            self.data_source = LiveDataSourceInterface(self.live_reader)
-            self.live_reader.add_event_callback(self.process_traces_event)
-
-            # self.binary_loader.set_live_data_source(self.data_source)
-
-            if self.dummy_mode:
-                print("No binary file loaded")
-            else:
-                # Set up timer to read FIFO data every 50ms for better responsiveness
-                self.data_timer = QTimer()
-                self.data_timer.timeout.connect(self.read_list_mode_fifo)
-                self.data_timer.start(50)
-
-            self.data_source.start_acquisition()
-
-            if hasattr(self.spectrum_tab, "start_live_updates"):
-                self.spectrum_tab.start_live_updates()
-
-            mode_status = "DUMMY MODE - " if self.dummy_mode else ""
-            self.info_bar.setText(f"{mode_status}Traces mode: Capturing traces...")
-            return True
-
-        except Exception as e:
-            print(f"Error starting traces mode: {str(e)}")
-            return False
 
     def read_histogram_data(self):
         try:
@@ -739,8 +694,19 @@ class PixieScopeApp(QMainWindow):
             #     )
 
             if channel in self.channel_numbers:
-                # Feed data to the spectrum plotter
-                if hasattr(self.spectrum_tab, "add_energy_event"):
+                # For unified plotter, feed data to both histogram and traces
+                if hasattr(self.spectrum_tab, "add_event"):
+                    # Feed to histogram tab
+                    self.spectrum_tab.add_event(event)
+                    
+                # If trace data is available, also feed to traces tab
+                trace = getattr(event, "trace", None)
+                timestamp = getattr(event, "timestamp", None)
+                if trace is not None and hasattr(self.spectrum_tab, "add_event_with_trace"):
+                    self.spectrum_tab.add_event_with_trace(event, trace, timestamp)
+                
+                # Fallback for older spectrum plotters
+                elif hasattr(self.spectrum_tab, "add_energy_event"):
                     self.spectrum_tab.add_energy_event(channel, energy)
                 elif hasattr(self.spectrum_tab, "energy_data"):
                     if channel not in self.spectrum_tab.energy_data:
@@ -750,31 +716,6 @@ class PixieScopeApp(QMainWindow):
         except Exception as e:
             print(f"Error processing list mode event: {e}")
 
-    def process_traces_event(self, event):
-        try:
-            channel = getattr(event, "channel", 0)
-            trace = getattr(event, "trace", None)
-            timestamp = getattr(event, "timestamp", None)  # Add this line
-            
-            print(f"DEBUG: process_traces_event - Channel: {channel}, Trace: {'present' if trace is not None else 'None'}, Length: {len(trace) if trace is not None else 'N/A'}")
-            print(f"DEBUG: self.channel_numbers = {self.channel_numbers}")
-
-            if channel in self.channel_numbers and trace is not None and len(trace) > 0:
-                # For coincidence analysis, feed event + trace to plotter
-                if hasattr(self.spectrum_tab, "add_event_with_trace"):
-                    self.spectrum_tab.add_event_with_trace(event, trace)
-                # Fallback to regular trace processing with timestamp
-                elif hasattr(self.spectrum_tab, "add_trace"):
-                    self.spectrum_tab.add_trace(
-                        channel, trace, timestamp
-                    )  # Add timestamp parameter
-                elif hasattr(self.spectrum_tab, "trace_data"):
-                    if channel not in self.spectrum_tab.trace_data:
-                        self.spectrum_tab.trace_data[channel] = deque(maxlen=100)
-                    self.spectrum_tab.trace_data[channel].append(trace)
-
-        except Exception as e:
-            print(f"Error processing traces event: {e}")
 
     def stop_acquisition(self):
         if self.shutdown_in_progress:
@@ -810,7 +751,7 @@ class PixieScopeApp(QMainWindow):
                 except RuntimeError:
                     pass  # Widget already deleted
 
-            if self.current_mode == "listmode_traces":
+            if self.current_mode == "list_mode":
                 if hasattr(self.spectrum_tab, 'restore_current_sidebar'):
                     self.spectrum_tab.restore_current_sidebar()
                 else:
@@ -1040,10 +981,8 @@ class PixieScopeApp(QMainWindow):
             # Update mode-specific channel statistics
             if self.current_mode == "mca_mode":
                 self.update_mca_channel_stats()
-            elif self.current_mode == "listmode_histogram":
+            elif self.current_mode == "list_mode":
                 self.update_list_mode_channel_stats()
-            elif self.current_mode == "listmode_traces":
-                self.update_traces_channel_stats()
 
         except Exception as e:
             print(f"Error in update_status: {e}")
@@ -1094,31 +1033,6 @@ class PixieScopeApp(QMainWindow):
         except Exception as e:
             print(f"Error updating List Mode channel stats: {e}")
 
-    def update_traces_channel_stats(self):
-        try:
-            channel_stats = {}
-
-            # Get statistics from trace data in spectrum tab
-            if hasattr(self.spectrum_tab, "trace_data") and hasattr(
-                self.spectrum_tab.trace_data, "keys"
-            ):
-                for channel in self.channel_numbers:
-                    if channel in self.spectrum_tab.trace_data:
-                        trace_count = len(self.spectrum_tab.trace_data[channel])
-                        channel_stats[channel] = trace_count
-                    else:
-                        channel_stats[channel] = 0
-            else:
-                # Fallback
-                for channel in self.channel_numbers:
-                    channel_stats[channel] = 0
-
-            # Update channel controls
-            if channel_stats and hasattr(self, "channel_controls"):
-                self.channel_controls.update_channel_statistics(channel_stats)
-
-        except Exception as e:
-            print(f"Error updating Traces channel stats: {e}")
 
     def closeEvent(self, event):
         try:
