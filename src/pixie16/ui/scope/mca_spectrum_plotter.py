@@ -2,7 +2,8 @@
 MCA Spectrum Plotter for PIXIE-16
 Displays multi-channel analyzer histograms in real-time
 FEATURES:
-- Rebins data to ~2000 bins for better display performance
+- Full resolution display (32k+ bins) matching List Mode
+- Optional rebinning for performance if needed
 - Log y-axis scaling
 - Step plots for proper histogram visualization
 - Handles data[channel_row, :] format from PIXIE
@@ -39,12 +40,12 @@ class MCASpectrumPlotter(QWidget):
         self.max_bins_seen = 0
 
         # Rebinning settings
-        self.target_bins = 2048  # Target number of bins for display
+        self.target_bins = 32768  # Target number of bins for display (full resolution)
         self.rebin_factor = 1  # Will be calculated based on input data
 
         # Display settings
         self.energy_min = 0
-        self.energy_max = 2047  # In rebinned coordinates
+        self.energy_max = 32767  # In full resolution coordinates
         self.log_scale = True  # Default to log scale for MCA data
         self.auto_scale = True
 
@@ -136,7 +137,7 @@ class MCASpectrumPlotter(QWidget):
         # Target bins - compact
         row1_layout.addWidget(QLabel("Bins:"))
         self.target_bins_spin = QSpinBox()
-        self.target_bins_spin.setRange(500, 8192)
+        self.target_bins_spin.setRange(500, 65536)  # Allow up to 64k bins
         self.target_bins_spin.setValue(self.target_bins)
         self.target_bins_spin.valueChanged.connect(self.update_target_bins)
         self.target_bins_spin.setMaximumWidth(120)
@@ -154,7 +155,7 @@ class MCASpectrumPlotter(QWidget):
         row1_layout.addWidget(QLabel("Max:"))
         self.energy_max_spin = QSpinBox()
         self.energy_max_spin.setRange(1, 100000)
-        self.energy_max_spin.setValue(2047)
+        self.energy_max_spin.setValue(32767)  # Set to full resolution
         self.energy_max_spin.valueChanged.connect(self.update_energy_range)
         self.energy_max_spin.setMaximumWidth(120)
         row1_layout.addWidget(self.energy_max_spin)
