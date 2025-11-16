@@ -44,6 +44,7 @@ from pixie16.ui.scope.mca_spectrum_plotter import MCASpectrumPlotter
 from pixie16.ui.scope.traces_plotter import TracesPlotter
 from pixie16.ui.scope.channel_controls import ChannelDisplayControls
 from pixie16.ui.scope.parameter_controls import ParameterControls
+from pixie16.ui.scope.data_manager import DataStoragePanel, DataSaver
 from pixie16.ui.scope.hardware_manager import DynamicPixieHardwareManager
 from pixie16.ui.scope.parameter_validation import PixieParameterValidator
 
@@ -301,6 +302,14 @@ class PixieScopeApp(QMainWindow):
         self.parameter_controls.read_hw_btn.clicked.connect(self.read_parameters_from_hardware)
         default_controls_layout.addWidget(self.parameter_controls)
         
+        # Data storage controls
+        self.data_storage_panel = DataStoragePanel()
+        self.data_storage_panel.settings_changed.connect(self.on_data_settings_changed)
+        default_controls_layout.addWidget(self.data_storage_panel)
+        
+        # Initialize data saver
+        self.data_saver = DataSaver(self.data_storage_panel.get_settings_manager())
+        
         default_controls_layout.addStretch()
         self.default_controls_widget.setLayout(default_controls_layout)
         
@@ -363,6 +372,10 @@ class PixieScopeApp(QMainWindow):
         self.clear_btn = QPushButton("Clear")
         self.clear_btn.clicked.connect(self.clear_data)
         top_layout.addWidget(self.clear_btn)
+
+        self.save_btn = QPushButton("Save")
+        self.save_btn.clicked.connect(self.save_current_data)
+        top_layout.addWidget(self.save_btn)
 
         top_layout.addStretch()
 
@@ -958,6 +971,147 @@ class PixieScopeApp(QMainWindow):
     def update_info_bar(self, message):
         mode_status = "DUMMY MODE - " if self.dummy_mode else ""
         self.info_bar.setText(f"{mode_status}{message}")
+
+    def on_data_settings_changed(self):
+        """Handle changes to data storage settings"""
+        settings_manager = self.data_storage_panel.get_settings_manager()
+        data_dir = settings_manager.get_data_directory()
+        print(f"Data directory changed to: {data_dir}")
+        
+        # Update data saver with new settings
+        self.data_saver = DataSaver(settings_manager)
+
+    def save_current_data(self):
+        """Save current data based on active mode"""
+        try:
+            if self.current_mode == "mca_mode":
+                self.save_mca_data()
+            elif self.current_mode == "list_mode":
+                self.save_list_mode_data()
+            else:
+                QMessageBox.warning(self, "Save Warning", "No data mode selected")
+                
+        except Exception as e:
+            QMessageBox.critical(self, "Save Error", f"Error saving data: {str(e)}")
+
+    def save_mca_data(self):
+        """Save MCA histogram data"""
+        if not hasattr(self, 'spectrum_tab') or not self.spectrum_tab:
+            QMessageBox.warning(self, "No Data", "No MCA data to save")
+            return
+            
+        # Get MCA data from the spectrum tab
+        if hasattr(self.spectrum_tab, 'get_spectrum_data'):
+            mca_data = self.spectrum_tab.get_spectrum_data()
+        elif hasattr(self.spectrum_tab, 'mca_data'):
+            mca_data = self.spectrum_tab.mca_data
+        else:
+            QMessageBox.warning(self, "No Data", "Cannot access MCA data")
+            return
+            
+        # Check if there's actually data
+        if not mca_data or all(len(data) == 0 for data in mca_data.values()):
+            QMessageBox.warning(self, "No Data", "No MCA data collected yet")
+            return
+            
+        # Prepare metadata
+        metadata = {
+            'channels': self.channel_numbers,
+            'hardware_slot': self.physical_slot,
+            'dummy_mode': self.dummy_mode,
+            'acquisition_time': getattr(self, 'acquisition_start_time', 'unknown')
+        }
+        
+        # Save the data
+        success = self.data_saver.save_mca_data(mca_data, metadata, self)
+        if success:
+            print(f"MCA data saved successfully")
+
+    def save_list_mode_data(self):
+        """Save List Mode data (traces, histogram, etc.)"""
+        if not hasattr(self, 'spectrum_tab') or not self.spectrum_tab:
+            QMessageBox.warning(self, "No Data", "No List Mode data to save")
+            return
+            
+        # Get current tab in list mode
+        if hasattr(self.spectrum_tab, 'tab_widget'):
+            current_index = self.spectrum_tab.tab_widget.currentIndex()
+            tab_name = self.spectrum_tab.tab_widget.tabText(current_index)
+            
+            if tab_name == "Histogram":
+                self.save_histogram_data()
+            elif tab_name == "Raw Traces":
+                self.save_traces_data()
+            elif tab_name == "Single Channel Analysis":
+                self.save_analysis_data()
+            elif tab_name == "Coincidence Logic":
+                self.save_coincidence_data()
+        else:
+            QMessageBox.warning(self, "Save Error", "Cannot determine List Mode tab")
+
+    def save_histogram_data(self):
+        """Save histogram data from List Mode"""
+        histogram_tab = getattr(self.spectrum_tab, 'histogram_tab', None)
+        if not histogram_tab:
+            QMessageBox.warning(self, "No Data", "No histogram data available")
+            return
+            
+        if hasattr(histogram_tab, 'energy_data'):
+            energy_data = histogram_tab.energy_data
+            
+            if not energy_data or all(len(data) == 0 for data in energy_data.values()):
+                QMessageBox.warning(self, "No Data", "No histogram data collected yet")
+                return
+                
+            metadata = {
+                'data_type': 'list_mode_histogram',
+                'channels': list(energy_data.keys()),
+                'energy_range': getattr(histogram_tab, 'energy_range', (0, 80000)),
+                'bins': getattr(histogram_tab, 'bins', 2000)
+            }
+            
+            # Convert energy data to histogram format for saving
+            histogram_data = {}
+            for channel, energies in energy_data.items():
+                if energies:
+                    counts, _ = np.histogram(list(energies), 
+                                           bins=metadata['bins'], 
+                                           range=metadata['energy_range'])
+                    histogram_data[channel] = counts
+                    
+            success = self.data_saver.save_mca_data(histogram_data, metadata, self)
+            if success:
+                print("List Mode histogram data saved successfully")
+
+    def save_traces_data(self):
+        """Save raw traces data"""
+        if hasattr(self.spectrum_tab, 'trace_data'):
+            trace_data = self.spectrum_tab.trace_data
+            
+            if not trace_data or all(len(traces) == 0 for traces in trace_data.values()):
+                QMessageBox.warning(self, "No Data", "No trace data collected yet")
+                return
+                
+            metadata = {
+                'data_type': 'raw_traces',
+                'channels': list(trace_data.keys()),
+                'sampling_period_ns': getattr(self.spectrum_tab, 'sampling_period_ns', 2.0),
+                'hardware_params': getattr(self.spectrum_tab, 'hardware_params', {})
+            }
+            
+            success = self.data_saver.save_traces_data(trace_data, metadata, self)
+            if success:
+                print("Traces data saved successfully")
+        else:
+            QMessageBox.warning(self, "No Data", "No trace data available")
+
+    def save_analysis_data(self):
+        """Save single channel analysis data"""
+        QMessageBox.information(self, "Save Analysis", "Single channel analysis save not yet implemented")
+
+    def save_coincidence_data(self):
+        """Save coincidence logic data"""
+        QMessageBox.information(self, "Save Coincidence", "Coincidence data save not yet implemented")
 
     def setup_timers(self):
         self.status_timer = QTimer()
