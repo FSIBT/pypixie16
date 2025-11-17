@@ -45,6 +45,7 @@ from pixie16.ui.scope.traces_plotter import TracesPlotter
 from pixie16.ui.scope.channel_controls import ChannelDisplayControls
 from pixie16.ui.scope.parameter_controls import ParameterControls
 from pixie16.ui.scope.data_manager import DataStoragePanel, DataSaver, DataSettingsManager
+from pixie16.ui.scope.auto_save_buffer import AutoSaveBufferService
 from pixie16.ui.scope.hardware_manager import DynamicPixieHardwareManager
 from pixie16.ui.scope.parameter_validation import PixieParameterValidator
 
@@ -307,6 +308,15 @@ class PixieScopeApp(QMainWindow):
         
         # Initialize data saver
         self.data_saver = DataSaver(self.data_storage_manager)
+        
+        # Initialize auto-save buffer service
+        self.auto_save_service = AutoSaveBufferService(self.data_storage_manager, self)
+        self.auto_save_service.cache_status_changed.connect(self.on_cache_status_changed)
+        self.auto_save_service.data_auto_saved.connect(self.on_data_auto_saved)
+        
+        # Register initial data sources and start auto-save
+        self.register_data_sources()
+        self.auto_save_service.start_service()
         
         default_controls_layout.addStretch()
         self.default_controls_widget.setLayout(default_controls_layout)
@@ -975,6 +985,41 @@ class PixieScopeApp(QMainWindow):
     def update_info_bar(self, message):
         mode_status = "DUMMY MODE - " if self.dummy_mode else ""
         self.info_bar.setText(f"{mode_status}{message}")
+    
+    def on_cache_status_changed(self, message):
+        """Handle auto-save service status updates"""
+        # Update status bar with cache info
+        if hasattr(self, 'info_bar'):
+            self.update_info_bar(f"Cache: {message}")
+    
+    def on_data_auto_saved(self, data_type, count):
+        """Handle auto-save completion notification"""
+        logger.info(f"Auto-saved {count} {data_type} items to cache")
+        if hasattr(self, 'info_bar'):
+            self.update_info_bar(f"Auto-saved {count} {data_type} items")
+    
+    def register_data_sources(self):
+        """Register data sources with auto-save service"""
+        try:
+            # Register the currently active spectrum tab
+            if hasattr(self, 'spectrum_tab') and self.spectrum_tab:
+                if hasattr(self.spectrum_tab, 'mca_data'):
+                    # MCA mode
+                    self.auto_save_service.register_data_source('mca_spectrum', self.spectrum_tab)
+                elif hasattr(self.spectrum_tab, 'trace_data'):
+                    # List mode with traces
+                    self.auto_save_service.register_data_source('traces', self.spectrum_tab)
+                    
+                    # If it has a histogram tab, register that too
+                    if hasattr(self.spectrum_tab, 'histogram_tab'):
+                        self.auto_save_service.register_data_source('histogram', self.spectrum_tab.histogram_tab)
+            
+            # Register any other data sources that exist
+            # This will be expanded as more tabs/modes are implemented
+            logger.info("Data sources registered with auto-save service")
+            
+        except Exception as e:
+            logger.warning(f"Error registering data sources: {e}")
 
     def open_save_settings_dialog(self):
         """Open data storage settings dialog"""
@@ -1003,6 +1048,30 @@ class PixieScopeApp(QMainWindow):
             
         storage_panel.settings_changed.connect(on_settings_changed)
         layout.addWidget(storage_panel)
+        
+        # Add cache status info
+        from PyQt6.QtWidgets import QGroupBox, QVBoxLayout as QVBox
+        cache_group = QGroupBox("Auto-Save Cache Status")
+        cache_layout = QVBox()
+        
+        if hasattr(self, 'auto_save_service'):
+            cache_info = self.auto_save_service.get_cache_info()
+            cache_size = cache_info.get('cache_size_mb', 0)
+            max_size = cache_info.get('max_size_mb', 500)
+            usage_percent = cache_info.get('usage_percent', 0)
+            cached_files = cache_info.get('cached_files', 0)
+            
+            cache_info_label = QLabel(
+                f"Cache Usage: {cache_size:.1f}MB / {max_size}MB ({usage_percent:.1f}%)\n"
+                f"Cached Files: {cached_files}\n"
+                f"Auto-save Interval: {cache_info.get('auto_save_interval_sec', 30)}s"
+            )
+        else:
+            cache_info_label = QLabel("Auto-save service not available")
+            
+        cache_layout.addWidget(cache_info_label)
+        cache_group.setLayout(cache_layout)
+        layout.addWidget(cache_group)
         
         dialog.setLayout(layout)
         dialog.exec()
@@ -1223,6 +1292,11 @@ class PixieScopeApp(QMainWindow):
                 self.stop_acquisition()
                 time.sleep(0.5)
 
+            # Stop auto-save service
+            print("  Stopping auto-save service...")
+            if hasattr(self, "auto_save_service") and self.auto_save_service:
+                self.auto_save_service.stop_service()
+            
             # Stop all timers
             print("  Stopping timers...")
             if hasattr(self, "status_timer") and self.status_timer:

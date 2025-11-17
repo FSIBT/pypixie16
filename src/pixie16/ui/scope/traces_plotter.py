@@ -9,6 +9,7 @@ import json
 from pathlib import Path
 import csv
 
+
 from PyQt6.QtWidgets import (
     QWidget,
     QVBoxLayout,
@@ -149,8 +150,9 @@ class TracesPlotter(QWidget):
         self.display_channels = self.channels.copy()
         self.hardware_manager = hardware_manager  # Reference to hardware manager
 
-        # Trace storage
+        # Trace storage with overflow tracking
         self.trace_data = {ch: deque(maxlen=1000) for ch in self.channels}
+        self.trace_overflow_count = {ch: 0 for ch in self.channels}
         self.last_traces = {ch: None for ch in self.channels}
 
         # Display settings (simplified for Raw Traces)
@@ -223,7 +225,10 @@ class TracesPlotter(QWidget):
         # Time alignment settings
         self.time_alignment_mode = "zero"  # Start with zero alignment (no filtering)
         self.alignment_reference_channel = 0
+        
+        # Timestamp storage with overflow tracking
         self.trace_timestamps = {ch: deque(maxlen=1000) for ch in self.channels}
+        self.timestamp_overflow_count = {ch: 0 for ch in self.channels}
 
         self.single_channel_persistence = False
         self.single_persistence_count = 3
@@ -929,9 +934,13 @@ class TracesPlotter(QWidget):
                 print(f"DEBUG: Empty trace data for channel {channel}")
                 return
 
-            # Store timestamp for alignment
+            # Store timestamp for alignment with overflow tracking
             if event_timestamp is not None:
+                timestamp_buffer_was_full = len(self.trace_timestamps[channel]) == self.trace_timestamps[channel].maxlen
                 self.trace_timestamps[channel].append(event_timestamp)
+                
+                if timestamp_buffer_was_full:
+                    self.timestamp_overflow_count[channel] += 1
 
             # Disabled strict time filtering - let all traces through for now
             # In channel alignment mode, only keep traces within ±50µs of reference
@@ -951,8 +960,14 @@ class TracesPlotter(QWidget):
                 
                 if amplitude >= self.amplitude_threshold:
                     print(f"DEBUG: STORING trace for channel {channel} - passed amplitude threshold")
-                    # Store in original buffer
+                    # Store in original buffer with overflow tracking
+                    buffer_was_full = len(self.trace_data[channel]) == self.trace_data[channel].maxlen
                     self.trace_data[channel].append(trace_data)
+                    
+                    if buffer_was_full:
+                        self.trace_overflow_count[channel] += 1
+                        if self.trace_overflow_count[channel] % 100 == 1:
+                            print(f"Buffer overflow on channel {channel}: removed oldest trace (#{self.trace_overflow_count[channel]})")
 
                     # Store in single channel persistence buffer
                     if self.single_channel_persistence:
@@ -975,8 +990,14 @@ class TracesPlotter(QWidget):
                     print(f"DEBUG: REJECTED trace for channel {channel} - amplitude {amplitude:.3f} < threshold {self.amplitude_threshold}")
             else:
                 print(f"DEBUG: Short trace (len={len(trace_data)}) - storing anyway")
-                # Store in original buffer
+                # Store in original buffer with overflow tracking
+                buffer_was_full = len(self.trace_data[channel]) == self.trace_data[channel].maxlen
                 self.trace_data[channel].append(trace_data)
+                
+                if buffer_was_full:
+                    self.trace_overflow_count[channel] += 1
+                    if self.trace_overflow_count[channel] % 100 == 1:
+                        print(f"Buffer overflow on channel {channel}: removed oldest trace (#{self.trace_overflow_count[channel]})")
 
                 # Store in replay buffer
                 if (
