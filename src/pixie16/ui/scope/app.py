@@ -44,7 +44,7 @@ from pixie16.ui.scope.mca_spectrum_plotter import MCASpectrumPlotter
 from pixie16.ui.scope.traces_plotter import TracesPlotter
 from pixie16.ui.scope.channel_controls import ChannelDisplayControls
 from pixie16.ui.scope.parameter_controls import ParameterControls
-from pixie16.ui.scope.data_manager import DataStoragePanel, DataSaver
+from pixie16.ui.scope.data_manager import DataStoragePanel, DataSaver, DataSettingsManager
 from pixie16.ui.scope.hardware_manager import DynamicPixieHardwareManager
 from pixie16.ui.scope.parameter_validation import PixieParameterValidator
 
@@ -371,9 +371,15 @@ class PixieScopeApp(QMainWindow):
         self.clear_btn.clicked.connect(self.clear_data)
         top_layout.addWidget(self.clear_btn)
 
-        self.save_btn = QPushButton("Save Settings")
-        self.save_btn.clicked.connect(self.open_save_settings_dialog)
-        top_layout.addWidget(self.save_btn)
+        # Save data button
+        self.save_data_btn = QPushButton("Save Data")
+        self.save_data_btn.clicked.connect(self.save_current_data)
+        top_layout.addWidget(self.save_data_btn)
+        
+        # Save settings button  
+        self.save_settings_btn = QPushButton("Save Settings")
+        self.save_settings_btn.clicked.connect(self.open_save_settings_dialog)
+        top_layout.addWidget(self.save_settings_btn)
 
         top_layout.addStretch()
 
