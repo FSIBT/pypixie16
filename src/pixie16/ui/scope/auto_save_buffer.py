@@ -206,6 +206,10 @@ class AutoSaveBufferService(QObject):
                 for ch, count in data_source.timestamp_overflow_count.items():
                     overflow_info[f'timestamps_ch_{ch}'] = count
             
+            if hasattr(data_source, 'single_persistence_overflow_count'):
+                for ch, count in data_source.single_persistence_overflow_count.items():
+                    overflow_info[f'persistence_ch_{ch}'] = count
+            
             # Check other plotter types
             if hasattr(data_source, 'energy_overflow_count'):
                 overflow_info.update(data_source.energy_overflow_count)

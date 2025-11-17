@@ -234,7 +234,8 @@ class TracesPlotter(QWidget):
         self.single_persistence_count = 3
         self.single_persistence_normalize = False
         self.single_persistence_alpha_fade = False
-        self.single_persistence_data = {ch: deque() for ch in self.channels}
+        self.single_persistence_data = {ch: deque(maxlen=5000) for ch in self.channels}  # Limit persistence buffer
+        self.single_persistence_overflow_count = {ch: 0 for ch in self.channels}
         # Persistence histogram
         self.persistence_histogram = {ch: PersistenceHistogram() for ch in self.channels}
         self.persistence_image_item = None 
@@ -969,9 +970,15 @@ class TracesPlotter(QWidget):
                         if self.trace_overflow_count[channel] % 100 == 1:
                             print(f"Buffer overflow on channel {channel}: removed oldest trace (#{self.trace_overflow_count[channel]})")
 
-                    # Store in single channel persistence buffer
+                    # Store in single channel persistence buffer with overflow tracking
                     if self.single_channel_persistence:
+                        persistence_buffer_was_full = len(self.single_persistence_data[channel]) == self.single_persistence_data[channel].maxlen
                         self.single_persistence_data[channel].append(trace_data)
+                        
+                        if persistence_buffer_was_full:
+                            self.single_persistence_overflow_count[channel] += 1
+                            if self.single_persistence_overflow_count[channel] % 500 == 1:
+                                print(f"Persistence buffer overflow on channel {channel}: removed oldest data (#{self.single_persistence_overflow_count[channel]})")
                         # Update histogram in real-time for raw traces
                         time_axis = self.calculate_real_time_axis(len(trace_data), channel)
                         self.persistence_histogram[channel].add_trace(time_axis, trace_data)

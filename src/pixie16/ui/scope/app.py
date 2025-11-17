@@ -1020,6 +1020,52 @@ class PixieScopeApp(QMainWindow):
             
         except Exception as e:
             logger.warning(f"Error registering data sources: {e}")
+    
+    def clear_all_buffers(self):
+        """Clear all data buffers in the application"""
+        try:
+            if hasattr(self, 'spectrum_tab') and self.spectrum_tab:
+                # Clear TracesPlotter buffers
+                if hasattr(self.spectrum_tab, 'trace_data'):
+                    for ch in self.spectrum_tab.trace_data:
+                        self.spectrum_tab.trace_data[ch].clear()
+                    logger.info("Cleared trace data buffers")
+                
+                if hasattr(self.spectrum_tab, 'trace_timestamps'):
+                    for ch in self.spectrum_tab.trace_timestamps:
+                        self.spectrum_tab.trace_timestamps[ch].clear()
+                    logger.info("Cleared timestamp buffers")
+                
+                if hasattr(self.spectrum_tab, 'single_persistence_data'):
+                    for ch in self.spectrum_tab.single_persistence_data:
+                        self.spectrum_tab.single_persistence_data[ch].clear()
+                    logger.info("Cleared persistence buffers")
+                
+                # Clear MCA buffers
+                if hasattr(self.spectrum_tab, 'mca_data'):
+                    for ch in self.spectrum_tab.mca_data:
+                        self.spectrum_tab.mca_data[ch] = np.array([])
+                    logger.info("Cleared MCA data buffers")
+                
+                # Clear histogram tab buffers
+                if hasattr(self.spectrum_tab, 'histogram_tab') and hasattr(self.spectrum_tab.histogram_tab, 'energy_data'):
+                    self.spectrum_tab.histogram_tab.energy_data.clear()
+                    logger.info("Cleared histogram energy buffers")
+                
+                # Reset overflow counters
+                if hasattr(self.spectrum_tab, 'trace_overflow_count'):
+                    self.spectrum_tab.trace_overflow_count = {ch: 0 for ch in self.spectrum_tab.channels}
+                if hasattr(self.spectrum_tab, 'timestamp_overflow_count'):
+                    self.spectrum_tab.timestamp_overflow_count = {ch: 0 for ch in self.spectrum_tab.channels}
+                if hasattr(self.spectrum_tab, 'single_persistence_overflow_count'):
+                    self.spectrum_tab.single_persistence_overflow_count = {ch: 0 for ch in self.spectrum_tab.channels}
+                    
+                logger.info("Reset overflow counters")
+            
+            logger.info("All buffers cleared successfully")
+            
+        except Exception as e:
+            logger.warning(f"Error clearing buffers: {e}")
 
     def open_save_settings_dialog(self):
         """Open data storage settings dialog"""
@@ -1304,6 +1350,10 @@ class PixieScopeApp(QMainWindow):
                 self.status_timer.deleteLater()
                 self.status_timer = None
 
+            # Clear all buffers before cleanup
+            print("  Clearing data buffers...")
+            self.clear_all_buffers()
+            
             # Clean up spectrum tab
             print("  Cleaning up spectrum tab...")
             if hasattr(self, "spectrum_tab") and self.spectrum_tab:
