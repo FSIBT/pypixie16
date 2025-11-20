@@ -1247,8 +1247,38 @@ class PixieScopeApp(QMainWindow):
             QMessageBox.warning(self, "No Data", "No trace data available")
 
     def save_analysis_data(self):
-        """Save single channel analysis data"""
-        QMessageBox.information(self, "Save Analysis", "Single channel analysis save not yet implemented")
+        # Get the active tab - should be a ContinuousSpectrumPlotter
+        if hasattr(self.spectrum_tab, 'list_mode_tab') and hasattr(self.spectrum_tab.list_mode_tab, 'currentWidget'):
+            current_tab = self.spectrum_tab.list_mode_tab.currentWidget()
+            
+            # Check if it's the single channel analysis tab (ContinuousSpectrumPlotter)
+            if hasattr(current_tab, 'energy_data'):
+                energy_data = current_tab.get_spectrum_data()
+                
+                if not energy_data:
+                    QMessageBox.warning(self, "No Data", "No energy spectrum data available to save")
+                    return
+                
+                # Gather metadata about the spectrum settings
+                metadata = {
+                    'instrument': getattr(current_tab, 'instrument', 'pixie16'),
+                    'channels_analyzed': list(energy_data.keys()),
+                    'energy_range': getattr(current_tab, 'energy_range', (0, 4096)),
+                    'bins': getattr(current_tab, 'bins', 1000),
+                    'display_channels': getattr(current_tab, 'display_channels', []),
+                    'log_scale_enabled': getattr(current_tab, 'log_scale_cb', type('', (), {'isChecked': lambda: False})()).isChecked(),
+                    'auto_scale_enabled': getattr(current_tab, 'auto_scale_cb', type('', (), {'isChecked': lambda: True})()).isChecked(),
+                }
+                
+                # Save using the new energy spectrum save method
+                success = self.data_saver.save_energy_spectrum_data(energy_data, metadata, self)
+                if success:
+                    print(f"Single channel analysis data saved successfully")
+            else:
+                QMessageBox.warning(self, "Wrong Tab", 
+                                  "Please switch to the Single Channel Analysis tab to save energy spectrum data")
+        else:
+            QMessageBox.warning(self, "No Data", "Cannot find Single Channel Analysis tab")
 
     def save_coincidence_data(self):
         """Save coincidence logic data"""

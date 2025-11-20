@@ -49,6 +49,7 @@ class DataSettingsManager:
             'mca': 'mca_data',
             'listmode': 'listmode_data',
             'traces': 'traces_data', 
+            'energy_spectrum': 'single_channel_analysis',
             'sessions': 'sessions',
             'exports': 'exports',
             'binary': 'binary_replay'
@@ -258,4 +259,57 @@ class DataSaver:
         except Exception as e:
             if parent:
                 QMessageBox.critical(parent, "Save Failed", f"Error saving session:\n{str(e)}")
+            return False
+            
+    def save_energy_spectrum_data(self, energy_data: Dict, metadata: Dict, parent=None) -> bool:
+        try:
+            # Get save path - use a new subdirectory for single channel analysis
+            save_path = self.settings_manager.get_save_path('energy_spectrum')
+            json_path = save_path.with_suffix('.json')
+            npz_path = save_path.with_suffix('.npz')
+            
+            # Prepare comprehensive metadata
+            total_events = sum(len(events) if hasattr(events, '__len__') else len(list(events)) 
+                             for events in energy_data.values() if events)
+            
+            save_data = {
+                'metadata': {
+                    'timestamp': datetime.now().isoformat(),
+                    'data_type': 'energy_spectrum',
+                    'software_version': '1.0',
+                    'total_events': total_events,
+                    **metadata
+                },
+                'channel_info': {
+                    'channels': list(energy_data.keys()),
+                    'event_counts': {str(k): len(v) if hasattr(v, '__len__') else len(list(v)) 
+                                   for k, v in energy_data.items() if v}
+                }
+            }
+            
+            # Save JSON metadata
+            with open(json_path, 'w') as f:
+                json.dump(save_data, f, indent=2)
+                
+            # Save binary data - convert deques/lists to numpy arrays
+            save_arrays = {}
+            for channel, events in energy_data.items():
+                if events:
+                    # Convert deque or list to numpy array
+                    if hasattr(events, '__len__') and len(events) > 0:
+                        save_arrays[f'channel_{channel}'] = np.array(list(events))
+                    
+            if save_arrays:
+                np.savez_compressed(npz_path, **save_arrays)
+                
+            if parent:
+                QMessageBox.information(parent, "Save Successful", 
+                                      f"Energy spectrum data saved to:\n{json_path}\n\n"
+                                      f"Channels saved: {len(save_arrays)}\n"
+                                      f"Total events: {total_events}")
+            return True
+            
+        except Exception as e:
+            if parent:
+                QMessageBox.critical(parent, "Save Failed", f"Error saving energy spectrum data:\n{str(e)}")
             return False
