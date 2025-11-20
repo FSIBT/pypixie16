@@ -50,6 +50,7 @@ class DataSettingsManager:
             'listmode': 'listmode_data',
             'traces': 'traces_data', 
             'energy_spectrum': 'single_channel_analysis',
+            'coincidence': 'coincidence_data',
             'sessions': 'sessions',
             'exports': 'exports',
             'binary': 'binary_replay'
@@ -312,4 +313,105 @@ class DataSaver:
         except Exception as e:
             if parent:
                 QMessageBox.critical(parent, "Save Failed", f"Error saving energy spectrum data:\n{str(e)}")
+            return False
+            
+    def save_coincidence_data(self, coincidence_data: Dict, metadata: Dict, parent=None) -> bool:
+        try:
+            # Get save path
+            save_path = self.settings_manager.get_save_path('coincidence')
+            json_path = save_path.with_suffix('.json')
+            npz_path = save_path.with_suffix('.npz')
+            
+            # Calculate summary statistics
+            total_events_a = coincidence_data.get('total_events_a', 0)
+            total_events_b = coincidence_data.get('total_events_b', 0)
+            total_coincidences = coincidence_data.get('total_coincidences', 0)
+            
+            # Prepare comprehensive metadata
+            save_data = {
+                'metadata': {
+                    'timestamp': datetime.now().isoformat(),
+                    'data_type': 'coincidence_analysis',
+                    'software_version': '1.0',
+                    'total_events_a': total_events_a,
+                    'total_events_b': total_events_b,
+                    'total_coincidences': total_coincidences,
+                    'coincidence_rate': (total_coincidences / max(total_events_a, total_events_b, 1)) * 100,
+                    **metadata
+                },
+                'acquisition_settings': {
+                    'channel_a': coincidence_data.get('channel_a', 0),
+                    'channel_b': coincidence_data.get('channel_b', 1),
+                    'hardware_params': coincidence_data.get('hardware_params', {}),
+                    'sampling_period_ns': coincidence_data.get('sampling_period_ns', 2.0),
+                    'fpga_period_ns': coincidence_data.get('fpga_period_ns', 10.0)
+                },
+                'logic_steps': coincidence_data.get('logic_steps', []),
+                'histogram_settings': {
+                    'time_bins': coincidence_data.get('time_bins', 2000),
+                    'time_range_ns': coincidence_data.get('time_range_ns', 4000),
+                    'normalize_histograms': coincidence_data.get('normalize_histograms', False)
+                }
+            }
+            
+            # Save JSON metadata
+            with open(json_path, 'w') as f:
+                json.dump(save_data, f, indent=2)
+                
+            # Prepare binary data for saving
+            save_arrays = {}
+            
+            # Save histogram data for each channel and logic step
+            if 'histograms_a' in coincidence_data:
+                for step_name, (bin_centers, hist_data) in coincidence_data['histograms_a'].items():
+                    save_arrays[f'hist_a_{step_name}_bins'] = np.array(bin_centers)
+                    save_arrays[f'hist_a_{step_name}_counts'] = np.array(hist_data)
+                    
+            if 'histograms_b' in coincidence_data:
+                for step_name, (bin_centers, hist_data) in coincidence_data['histograms_b'].items():
+                    save_arrays[f'hist_b_{step_name}_bins'] = np.array(bin_centers)
+                    save_arrays[f'hist_b_{step_name}_counts'] = np.array(hist_data)
+            
+            # Save latest binary traces if available
+            if 'latest_binary_data' in coincidence_data:
+                latest_data = coincidence_data['latest_binary_data']
+                if 'ch_a_time_axis' in latest_data and latest_data['ch_a_time_axis'] is not None:
+                    save_arrays['ch_a_time_axis'] = np.array(latest_data['ch_a_time_axis'])
+                if 'ch_b_time_axis' in latest_data and latest_data['ch_b_time_axis'] is not None:
+                    save_arrays['ch_b_time_axis'] = np.array(latest_data['ch_b_time_axis'])
+                    
+                for channel in ['ch_a', 'ch_b']:
+                    if channel in latest_data:
+                        for step_name, binary_trace in latest_data[channel].items():
+                            if binary_trace is not None:
+                                save_arrays[f'{channel}_{step_name}_latest'] = np.array(binary_trace)
+            
+            # Save event buffer data if available
+            if 'event_buffer' in coincidence_data and coincidence_data['event_buffer']:
+                # Convert event buffer to structured array
+                events = list(coincidence_data['event_buffer'])
+                if events:
+                    save_arrays['event_buffer'] = np.array(events, dtype=object)
+                    
+            if 'coincidence_events' in coincidence_data and coincidence_data['coincidence_events']:
+                coincidences = list(coincidence_data['coincidence_events'])
+                if coincidences:
+                    save_arrays['coincidence_events'] = np.array(coincidences, dtype=object)
+            
+            # Save binary data
+            if save_arrays:
+                np.savez_compressed(npz_path, **save_arrays)
+                
+            if parent:
+                QMessageBox.information(parent, "Save Successful", 
+                                      f"Coincidence data saved to:\n{json_path}\n\n"
+                                      f"Channel A events: {total_events_a}\n"
+                                      f"Channel B events: {total_events_b}\n"
+                                      f"Coincidences: {total_coincidences}\n"
+                                      f"Arrays saved: {len(save_arrays)}")
+            return True
+            
+        except Exception as e:
+            if parent:
+                QMessageBox.critical(parent, "Save Failed", f"Error saving coincidence data:\n{str(e)}")
             return False

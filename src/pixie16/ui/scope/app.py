@@ -1372,8 +1372,92 @@ class PixieScopeApp(QMainWindow):
             QMessageBox.warning(self, "No Data", "Cannot access List Mode tabs. Make sure you're in List Mode.")
 
     def save_coincidence_data(self):
-        """Save coincidence logic data"""
-        QMessageBox.information(self, "Save Coincidence", "Coincidence data save not yet implemented")
+        if hasattr(self.spectrum_tab, 'tab_widget'):
+            current_index = self.spectrum_tab.tab_widget.currentIndex()
+            tab_name = self.spectrum_tab.tab_widget.tabText(current_index)
+            
+            if tab_name == "Coincidence Logic":
+                # Get the coincidence tab
+                coincidence_tab = getattr(self.spectrum_tab, 'coincidence_tab', None)
+                
+                if coincidence_tab and hasattr(coincidence_tab, 'binary_data'):
+                    # Collect all coincidence data
+                    coincidence_data = {}
+                    
+                    # Get latest binary data
+                    latest_data = coincidence_tab.binary_data.get_latest_data()
+                    coincidence_data['latest_binary_data'] = latest_data
+                    
+                    # Get histogram data for both channels
+                    hist_a, total_a = coincidence_tab.binary_data.get_histogram_data('A', coincidence_tab.histogram_normalize)
+                    hist_b, total_b = coincidence_tab.binary_data.get_histogram_data('B', coincidence_tab.histogram_normalize)
+                    
+                    coincidence_data['histograms_a'] = hist_a
+                    coincidence_data['histograms_b'] = hist_b
+                    coincidence_data['total_events_a'] = total_a
+                    coincidence_data['total_events_b'] = total_b
+                    
+                    # Get event buffers if available
+                    if hasattr(coincidence_tab, 'event_buffer'):
+                        coincidence_data['event_buffer'] = coincidence_tab.event_buffer
+                    if hasattr(coincidence_tab, 'coincidence_events'):
+                        coincidence_data['coincidence_events'] = coincidence_tab.coincidence_events
+                        coincidence_data['total_coincidences'] = len(coincidence_tab.coincidence_events)
+                    else:
+                        coincidence_data['total_coincidences'] = 0
+                    
+                    # Get settings and parameters
+                    coincidence_data['channel_a'] = getattr(coincidence_tab, 'channel_a', 0)
+                    coincidence_data['channel_b'] = getattr(coincidence_tab, 'channel_b', 1)
+                    coincidence_data['hardware_params'] = getattr(coincidence_tab, 'hardware_params', {})
+                    coincidence_data['sampling_period_ns'] = getattr(coincidence_tab, 'sampling_period_ns', 2.0)
+                    coincidence_data['fpga_period_ns'] = getattr(coincidence_tab, 'fpga_period_ns', 10.0)
+                    coincidence_data['logic_steps'] = getattr(coincidence_tab.binary_data, 'logic_steps', [])
+                    
+                    # Get histogram settings
+                    if hasattr(coincidence_tab.binary_data, 'ch_a_histogram'):
+                        hist_settings = coincidence_tab.binary_data.ch_a_histogram
+                        coincidence_data['time_bins'] = hist_settings.time_bins
+                        coincidence_data['time_range_ns'] = hist_settings.time_range_ns
+                    coincidence_data['normalize_histograms'] = getattr(coincidence_tab, 'histogram_normalize', False)
+                    
+                    # Check if there's any data to save
+                    has_data = (total_a > 0 or total_b > 0 or 
+                               (hasattr(coincidence_tab, 'event_buffer') and len(coincidence_tab.event_buffer) > 0))
+                    
+                    if not has_data:
+                        QMessageBox.warning(self, "No Data", 
+                            "No coincidence data available to save.\n\n"
+                            "Make sure you have:\n"
+                            "• Events processed in channels A and B\n"
+                            "• Binary logic analysis enabled\n"
+                            "• Some histogram or event data collected")
+                        return
+                    
+                    # Prepare metadata
+                    metadata = {
+                        'acquisition_mode': 'coincidence_analysis',
+                        'channels_analyzed': [coincidence_data['channel_a'], coincidence_data['channel_b']],
+                        'binary_logic_enabled': getattr(coincidence_tab, 'binary_logic_enabled', True),
+                        'coincidence_mode': getattr(coincidence_tab, 'coincidence_mode', False),
+                        'data_source': 'coincidence_logic_tab'
+                    }
+                    
+                    # Save the data
+                    success = self.data_saver.save_coincidence_data(coincidence_data, metadata, self)
+                    if success:
+                        print(f"Coincidence data saved successfully")
+                        print(f"  Channel A events: {total_a}")
+                        print(f"  Channel B events: {total_b}")
+                        print(f"  Coincidences: {coincidence_data.get('total_coincidences', 0)}")
+                else:
+                    QMessageBox.warning(self, "No Data", "Cannot access coincidence tab data")
+            else:
+                QMessageBox.warning(self, "Wrong Tab", 
+                    f"Please switch to the 'Coincidence Logic' tab to save coincidence data.\n"
+                    f"Currently on: {tab_name}")
+        else:
+            QMessageBox.warning(self, "No Data", "Cannot access List Mode tabs. Make sure you're in List Mode.")
 
     def setup_timers(self):
         self.status_timer = QTimer()
