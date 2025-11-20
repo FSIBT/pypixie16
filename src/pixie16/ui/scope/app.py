@@ -380,6 +380,12 @@ class PixieScopeApp(QMainWindow):
         self.clear_btn = QPushButton("Clear")
         self.clear_btn.clicked.connect(self.clear_data)
         top_layout.addWidget(self.clear_btn)
+        
+        # Clear cache button
+        self.clear_cache_btn = QPushButton("Clear Cache")
+        self.clear_cache_btn.clicked.connect(self.clear_cache_data)
+        self.clear_cache_btn.setToolTip("Clear auto-save cache (500MB buffer)")
+        top_layout.addWidget(self.clear_cache_btn)
 
         # Save data button
         self.save_data_btn = QPushButton("Save Data")
@@ -837,6 +843,53 @@ class PixieScopeApp(QMainWindow):
 
         except Exception as e:
             print(f"Error clearing data: {e}")
+            
+    def clear_cache_data(self):
+        try:
+            # Get cache info first
+            if hasattr(self, 'auto_save_service'):
+                cache_info = self.auto_save_service.get_cache_info()
+                cache_size_mb = cache_info.get('cache_size_mb', 0)
+                cached_files = cache_info.get('cached_files', 0)
+                
+                # Show confirmation dialog
+                reply = QMessageBox.question(
+                    self, 
+                    "Clear Cache?", 
+                    f"This will permanently delete:\n\n"
+                    f"• {cached_files} cached files\n"
+                    f"• {cache_size_mb:.1f} MB of auto-saved data\n"
+                    f"• All buffer overflow statistics\n\n"
+                    f"This cannot be undone. Continue?",
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                    QMessageBox.StandardButton.No
+                )
+                
+                if reply == QMessageBox.StandardButton.Yes:
+                    # Clear the cache
+                    cache_dir = self.auto_save_service.cache_manager.cache_dir
+                    import shutil
+                    if cache_dir.exists():
+                        shutil.rmtree(cache_dir)
+                        cache_dir.mkdir(parents=True, exist_ok=True)
+                    
+                    # Reset cache manager state
+                    self.auto_save_service.cache_manager.access_times.clear()
+                    
+                    # Update info bar
+                    mode_status = "DUMMY MODE - " if self.dummy_mode else ""
+                    self.info_bar.setText(f"{mode_status}Auto-save cache cleared ({cache_size_mb:.1f}MB freed)")
+                    
+                    print(f"Cache cleared: {cached_files} files, {cache_size_mb:.1f}MB freed")
+                else:
+                    self.info_bar.setText("Cache clear cancelled")
+            else:
+                QMessageBox.warning(self, "Cache Not Available", "Auto-save service not running")
+                
+        except Exception as e:
+            error_msg = f"Error clearing cache: {str(e)}"
+            print(error_msg)
+            QMessageBox.critical(self, "Cache Clear Failed", error_msg)
 
     def update_display_channels(self, selected_channels):
         try:
@@ -1247,38 +1300,76 @@ class PixieScopeApp(QMainWindow):
             QMessageBox.warning(self, "No Data", "No trace data available")
 
     def save_analysis_data(self):
-        # Get the active tab - should be a ContinuousSpectrumPlotter
-        if hasattr(self.spectrum_tab, 'list_mode_tab') and hasattr(self.spectrum_tab.list_mode_tab, 'currentWidget'):
-            current_tab = self.spectrum_tab.list_mode_tab.currentWidget()
+        """Save single channel analysis / energy spectrum data"""
+        # Check if we're in list mode with TracesPlotter
+        if hasattr(self.spectrum_tab, 'tab_widget'):
+            # Get current tab info
+            current_index = self.spectrum_tab.tab_widget.currentIndex()
+            tab_name = self.spectrum_tab.tab_widget.tabText(current_index)
             
-            # Check if it's the single channel analysis tab (ContinuousSpectrumPlotter)
-            if hasattr(current_tab, 'energy_data'):
-                energy_data = current_tab.get_spectrum_data()
+            if tab_name == "Single Channel Analysis":
+                # We're on the correct tab, but the single channel analysis data might be
+                # in the TracesPlotter itself (persistence data) or in the histogram tab
                 
-                if not energy_data:
-                    QMessageBox.warning(self, "No Data", "No energy spectrum data available to save")
-                    return
+                # Option 1: Try to get data from histogram tab (energy spectrum)
+                if hasattr(self.spectrum_tab, 'histogram_tab') and hasattr(self.spectrum_tab.histogram_tab, 'energy_data'):
+                    energy_data = self.spectrum_tab.histogram_tab.get_spectrum_data()
+                    
+                    if energy_data:
+                        # Get metadata from histogram tab
+                        histogram_tab = self.spectrum_tab.histogram_tab
+                        metadata = {
+                            'instrument': getattr(histogram_tab, 'instrument', 'pixie16'),
+                            'channels_analyzed': list(energy_data.keys()),
+                            'energy_range': getattr(histogram_tab, 'energy_range', (0, 80000)),
+                            'bins': getattr(histogram_tab, 'bins', 2000),
+                            'display_channels': getattr(histogram_tab, 'display_channels', []),
+                            'data_source': 'histogram_tab_energy_spectrum'
+                        }
+                        
+                        # Save using the energy spectrum save method
+                        success = self.data_saver.save_energy_spectrum_data(energy_data, metadata, self)
+                        if success:
+                            print(f"Single channel analysis (energy spectrum) data saved successfully")
+                        return
+                        
+                # Option 2: Try to get persistence data from single channel analysis
+                if hasattr(self.spectrum_tab, 'single_persistence_data'):
+                    persistence_data = {}
+                    for channel, traces in self.spectrum_tab.single_persistence_data.items():
+                        if len(traces) > 0:
+                            # Convert trace data to energy-like data for saving
+                            # This is trace amplitude data, not true energy data
+                            persistence_data[channel] = list(traces)
+                    
+                    if persistence_data:
+                        metadata = {
+                            'instrument': 'pixie16',
+                            'channels_analyzed': list(persistence_data.keys()),
+                            'data_type': 'single_channel_persistence_traces',
+                            'sampling_period_ns': getattr(self.spectrum_tab, 'sampling_period_ns', 2.0),
+                            'persistence_enabled': getattr(self.spectrum_tab, 'single_channel_persistence', False),
+                            'data_source': 'single_channel_persistence'
+                        }
+                        
+                        # Save persistence data as traces data (different from energy spectrum)
+                        success = self.data_saver.save_traces_data(persistence_data, metadata, self)
+                        if success:
+                            print(f"Single channel analysis (persistence traces) data saved successfully")
+                        return
                 
-                # Gather metadata about the spectrum settings
-                metadata = {
-                    'instrument': getattr(current_tab, 'instrument', 'pixie16'),
-                    'channels_analyzed': list(energy_data.keys()),
-                    'energy_range': getattr(current_tab, 'energy_range', (0, 4096)),
-                    'bins': getattr(current_tab, 'bins', 1000),
-                    'display_channels': getattr(current_tab, 'display_channels', []),
-                    'log_scale_enabled': getattr(current_tab, 'log_scale_cb', type('', (), {'isChecked': lambda: False})()).isChecked(),
-                    'auto_scale_enabled': getattr(current_tab, 'auto_scale_cb', type('', (), {'isChecked': lambda: True})()).isChecked(),
-                }
-                
-                # Save using the new energy spectrum save method
-                success = self.data_saver.save_energy_spectrum_data(energy_data, metadata, self)
-                if success:
-                    print(f"Single channel analysis data saved successfully")
+                # No data found
+                QMessageBox.warning(self, "No Data", 
+                    "No single channel analysis data available to save.\n\n"
+                    "Make sure you have:\n"
+                    "• Energy events in the Histogram tab, OR\n"  
+                    "• Persistence traces enabled with collected data")
             else:
                 QMessageBox.warning(self, "Wrong Tab", 
-                                  "Please switch to the Single Channel Analysis tab to save energy spectrum data")
+                    f"Please switch to the 'Single Channel Analysis' tab to save analysis data.\n"
+                    f"Currently on: {tab_name}")
         else:
-            QMessageBox.warning(self, "No Data", "Cannot find Single Channel Analysis tab")
+            QMessageBox.warning(self, "No Data", "Cannot access List Mode tabs. Make sure you're in List Mode.")
 
     def save_coincidence_data(self):
         """Save coincidence logic data"""
