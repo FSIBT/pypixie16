@@ -2052,12 +2052,15 @@ class TracesPlotter(QWidget):
         for ch in self.channels:
             self.channel_combo.addItem(f"Ch {ch}")
 
-    def start_live_updates(self):
-        print(f"DEBUG: start_live_updates called - timer active: {self.update_timer.isActive()}")
-        
-        # Start histogram updates if histogram tab exists
+    def start_live_updates(self):        
         if hasattr(self, 'histogram_tab') and hasattr(self.histogram_tab, 'start_live_updates'):
             self.histogram_tab.start_live_updates()
+            
+        # Start coincidence tab updates if coincidence tab exists
+        if hasattr(self, 'coincidence_tab') and hasattr(self.coincidence_tab, 'update_timer'):
+            if not self.coincidence_tab.update_timer.isActive():
+                self.coincidence_tab.update_timer.start(100)
+                print("Traces Plotter: Started coincidence tab updates")
         
         if self.update_timer.thread() != self.thread():
             print("WARNING: Timer thread mismatch - recreating timer")
@@ -2075,6 +2078,12 @@ class TracesPlotter(QWidget):
         # Stop histogram updates if histogram tab exists
         if hasattr(self, 'histogram_tab') and hasattr(self.histogram_tab, 'stop_live_updates'):
             self.histogram_tab.stop_live_updates()
+            
+        # Stop coincidence tab updates if coincidence tab exists
+        if hasattr(self, 'coincidence_tab') and hasattr(self.coincidence_tab, 'update_timer'):
+            if self.coincidence_tab.update_timer.isActive():
+                self.coincidence_tab.update_timer.stop()
+                print("Traces Plotter: Stopped coincidence tab updates")
             
         if self.update_timer.isActive():
             self.update_timer.stop()
