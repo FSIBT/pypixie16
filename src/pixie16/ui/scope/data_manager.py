@@ -51,6 +51,7 @@ class DataSettingsManager:
             'traces': 'traces_data', 
             'energy_spectrum': 'single_channel_analysis',
             'coincidence': 'coincidence_data',
+            'fwhm_analysis': 'fwhm_analysis',
             'sessions': 'sessions',
             'exports': 'exports',
             'binary': 'binary_replay'
@@ -414,4 +415,85 @@ class DataSaver:
         except Exception as e:
             if parent:
                 QMessageBox.critical(parent, "Save Failed", f"Error saving coincidence data:\n{str(e)}")
+            return False
+
+    def save_fwhm_analysis_data(self, fwhm_data: Dict, metadata: Dict, parent=None) -> bool:
+        """        
+        Args:
+            fwhm_data: Dictionary containing FWHM analysis results
+            metadata: Analysis metadata (instrument info, settings, etc.)
+            parent: Parent widget for error dialogs
+            
+        Returns:
+            bool: True if save successful, False otherwise
+        """
+        try:
+            # Get save path
+            save_path = self.settings_manager.get_save_path('fwhm_analysis')
+            json_path = save_path.with_suffix('.json')
+            csv_path = save_path.with_suffix('.csv')
+            
+            # Prepare data for JSON saving
+            save_data = {
+                'metadata': {
+                    'timestamp': datetime.now().isoformat(),
+                    'data_type': 'fwhm_analysis',
+                    'format_version': '1.0',
+                    **metadata
+                },
+                'analysis_parameters': fwhm_data.get('analysis_parameters', {}),
+                'roi_definitions': fwhm_data.get('rois', []),
+                'fwhm_results': fwhm_data.get('fwhm_results', [])
+            }
+            
+            # Add summary statistics
+            if save_data['fwhm_results']:
+                resolutions = [r['resolution_percent'] for r in save_data['fwhm_results'] 
+                             if r.get('resolution_percent') is not None]
+                if resolutions:
+                    save_data['summary'] = {
+                        'total_peaks': len(save_data['fwhm_results']),
+                        'avg_resolution_percent': float(np.mean(resolutions)),
+                        'best_resolution_percent': float(np.min(resolutions)),
+                        'worst_resolution_percent': float(np.max(resolutions)),
+                        'std_resolution_percent': float(np.std(resolutions))
+                    }
+            
+            # Save JSON file
+            with open(json_path, 'w') as f:
+                json.dump(save_data, f, indent=2)
+            
+            # Save CSV file for easy data analysis
+            if save_data['fwhm_results']:
+                import csv
+                with open(csv_path, 'w', newline='') as csvfile:
+                    fieldnames = [
+                        'channel', 'roi_start', 'roi_end', 'peak_channel', 'peak_counts',
+                        'fwhm_channels', 'fwhm_energy', 'resolution_percent', 
+                        'snr', 'fit_quality', 'timestamp'
+                    ]
+                    writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+                    writer.writeheader()
+                    
+                    for result in save_data['fwhm_results']:
+                        # Clean data for CSV (handle None values)
+                        csv_row = {}
+                        for field in fieldnames:
+                            value = result.get(field)
+                            csv_row[field] = value if value is not None else ''
+                        writer.writerow(csv_row)
+            
+            if parent:
+                total_peaks = len(save_data['fwhm_results'])
+                avg_res = save_data.get('summary', {}).get('avg_resolution_percent', 0)
+                QMessageBox.information(parent, "Save Successful", 
+                                      f"FWHM analysis data saved successfully!\n"
+                                      f"Files: {json_path.name}, {csv_path.name}\n"
+                                      f"Total peaks analyzed: {total_peaks}\n"
+                                      f"Average resolution: {avg_res:.2f}%")
+            return True
+            
+        except Exception as e:
+            if parent:
+                QMessageBox.critical(parent, "Save Failed", f"Error saving FWHM analysis data:\n{str(e)}")
             return False

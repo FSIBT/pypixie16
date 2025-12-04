@@ -20,7 +20,17 @@ from PyQt6.QtWidgets import (
     QCheckBox,
     QSpinBox,
     QWidget,
+    QSplitter,
+    QTabWidget,
 )
+
+# Import FWHM analysis components
+try:
+    from .fwhm_widget import FWHMAnalysisWidget
+    FWHM_AVAILABLE = True
+except ImportError as e:
+    print(f"FWHM analysis not available: {e}")
+    FWHM_AVAILABLE = False
 
 import logging
 
@@ -90,7 +100,13 @@ class ContinuousSpectrumPlotter(QWidget):
         control_group = self.create_control_group()
         main_layout.addWidget(control_group)
 
-        # Plot area
+        # Create horizontal splitter for plot and FWHM analysis
+        splitter = QSplitter(QtCore.Qt.Orientation.Horizontal)
+        
+        # Left side: Plot area
+        plot_widget = QWidget()
+        plot_layout = QVBoxLayout(plot_widget)
+        
         self.display = pg.PlotWidget()
         self.display.setBackground(bkg_color)
         self.display.setLabel("left", "Counts")
@@ -99,6 +115,9 @@ class ContinuousSpectrumPlotter(QWidget):
         self.display.showGrid(x=True, y=True)
         self.display.setMenuEnabled(enableMenu=True)
         self.display.addLegend()
+
+        # Store reference to plot widget for FWHM integration
+        self.plot_widget = self.display
 
         # Create plot items for each channel
         self.plot_items = {}
@@ -109,12 +128,26 @@ class ContinuousSpectrumPlotter(QWidget):
             self.plot_items[channel] = curve
             self.display.addItem(curve)
 
-        main_layout.addWidget(self.display)
+        plot_layout.addWidget(self.display)
 
         # Statistics display
         self.stats_widget = self.create_stats_widget()
-        main_layout.addWidget(self.stats_widget)
+        plot_layout.addWidget(self.stats_widget)
+        
+        splitter.addWidget(plot_widget)
 
+        # Right side: FWHM Analysis (if available)
+        if FWHM_AVAILABLE:
+            self.fwhm_widget = FWHMAnalysisWidget(spectrum_plotter=self)
+            self.fwhm_widget.connect_to_plotter(self)
+            splitter.addWidget(self.fwhm_widget)
+            
+            # Set initial splitter sizes (70% plot, 30% FWHM)
+            splitter.setSizes([700, 300])
+        else:
+            self.fwhm_widget = None
+            
+        main_layout.addWidget(splitter)
         self.setLayout(main_layout)
 
     def create_control_widgets(self):
@@ -341,6 +374,16 @@ class ContinuousSpectrumPlotter(QWidget):
             if len(self.energy_data[channel]) > 0:
                 data[channel] = list(self.energy_data[channel])
         return data
+        
+    def get_histogram_data(self):
+        histogram_data = {}
+        for channel in self.channels:
+            if len(self.energy_data[channel]) > 0:
+                energies = list(self.energy_data[channel])
+                # Create histogram matching current display parameters
+                hist, bin_edges = np.histogram(energies, bins=self.bins, range=self.energy_range)
+                histogram_data[channel] = hist
+        return histogram_data
 
     def set_channels(self, channels):
         # Remove old plot items
