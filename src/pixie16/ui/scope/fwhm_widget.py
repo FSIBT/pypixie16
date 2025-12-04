@@ -21,22 +21,41 @@ import pyqtgraph as pg
 from .fwhm_analyzer import FWHMAnalyzer, FWHMResult
 
 class ROISelector:    
-    def __init__(self, plot_widget):
+    def __init__(self, plot_widget, parent_widget=None):
         self.plot_widget = plot_widget
+        self.parent_widget = parent_widget  # Reference to FWHM widget for button updates
         self.roi_regions = []  # List of pyqtgraph LinearRegionItem
         self.roi_data = []     # List of (start, end, name) tuples
         self.roi_counter = 1
+        self.roi_colors = [
+            (255, 255, 0, 80),   # Yellow
+            (255, 0, 255, 80),   # Magenta  
+            (0, 255, 255, 80),   # Cyan
+            (255, 165, 0, 80),   # Orange
+            (0, 255, 0, 80),     # Green
+            (255, 0, 0, 80),     # Red
+            (128, 0, 128, 80),   # Purple
+            (0, 128, 255, 80),   # Blue
+        ]
+        
+        # Interactive ROI creation mode
+        self.interactive_mode = False
+        self.temp_roi = None
         
     def add_roi(self, start: int, end: int, name: str = None) -> int:
         if name is None:
             name = f"ROI {self.roi_counter}"
             self.roi_counter += 1
             
-        # Create visual ROI on plot
+        # Get color for this ROI (cycle through colors)
+        color_idx = len(self.roi_regions) % len(self.roi_colors)
+        roi_color = self.roi_colors[color_idx]
+        
+        # Create visual ROI on plot with unique color
         roi_region = pg.LinearRegionItem(
             values=(start, end),
-            brush=pg.mkBrush(255, 255, 0, 60),  # Semi-transparent yellow
-            pen=pg.mkPen('orange', width=2)
+            brush=pg.mkBrush(*roi_color),
+            pen=pg.mkPen(roi_color[:3], width=2)  # Same color but opaque for border
         )
         self.plot_widget.addItem(roi_region)
         
@@ -68,12 +87,84 @@ class ROISelector:
         return 0, 0
         
     def get_all_rois(self) -> List[Tuple[int, int, str]]:
-        """Get all current ROI bounds"""
         current_rois = []
         for i, (_, _, name) in enumerate(self.roi_data):
             start, end = self.get_roi_bounds(i)
             current_rois.append((start, end, name))
         return current_rois
+    
+    def start_interactive_mode(self):
+        self.interactive_mode = True
+        if hasattr(self.plot_widget, 'scene'):
+            self.plot_widget.scene().sigMouseClicked.connect(self.on_plot_click)
+            
+    def stop_interactive_mode(self):
+        self.interactive_mode = False
+        if hasattr(self.plot_widget, 'scene'):
+            try:
+                self.plot_widget.scene().sigMouseClicked.disconnect(self.on_plot_click)
+            except:
+                pass  # Already disconnected
+                
+        # Clean up temp ROI if exists
+        if self.temp_roi:
+            self.plot_widget.removeItem(self.temp_roi)
+            self.temp_roi = None
+    
+    def on_plot_click(self, event):
+        if not self.interactive_mode:
+            return
+            
+        pos = event.pos()
+        if hasattr(self.plot_widget, 'plotItem'):
+            plot_pos = self.plot_widget.plotItem.vb.mapSceneToView(pos)
+            x_pos = int(plot_pos.x())
+            
+            if self.temp_roi is None:
+                # First click - start ROI
+                self.create_temp_roi(x_pos)
+            else:
+                # Second click - finish ROI  
+                self.finish_roi(x_pos)
+                
+    def create_temp_roi(self, start_x):
+        color_idx = len(self.roi_regions) % len(self.roi_colors)
+        roi_color = self.roi_colors[color_idx]
+        
+        # Create temporary ROI (will be updated on mouse move)
+        self.temp_roi = pg.LinearRegionItem(
+            values=(start_x, start_x + 50),  # Small default width
+            brush=pg.mkBrush(*roi_color),
+            pen=pg.mkPen(roi_color[:3], width=2, style=pg.QtCore.Qt.PenStyle.DashLine)  # Dashed for temp
+        )
+        self.plot_widget.addItem(self.temp_roi)
+        self.temp_start = start_x
+        
+    def finish_roi(self, end_x):
+        if self.temp_roi:
+            # Remove temp ROI
+            self.plot_widget.removeItem(self.temp_roi)
+            
+            # Create final ROI with proper bounds
+            start = min(self.temp_start, end_x)
+            end = max(self.temp_start, end_x)
+            
+            # Ensure minimum width
+            if end - start < 10:
+                end = start + 10
+                
+            self.add_roi(start, end)
+            
+            # Clean up
+            self.temp_roi = None
+            self.stop_interactive_mode()
+            
+            # Reset button if parent widget available
+            if self.parent_widget and hasattr(self.parent_widget, 'click_roi_btn'):
+                self.parent_widget.click_roi_btn.setText("Click to Add ROI")
+                self.parent_widget.click_roi_btn.setStyleSheet("QPushButton { background-color: #4CAF50; color: white; }")
+                self.parent_widget.update_roi_status()
+                self.parent_widget.roi_changed.emit()
 
 
 class FWHMResultsTable(QTableWidget):    
@@ -184,14 +275,20 @@ class FWHMAnalysisWidget(QWidget):
         
         # ROI management buttons
         self.add_roi_btn = QPushButton("Add ROI")
+        self.add_roi_btn.setToolTip("Add ROI using values above")
         layout.addWidget(self.add_roi_btn, 1, 0)
         
+        self.click_roi_btn = QPushButton("Click to Add ROI")
+        self.click_roi_btn.setToolTip("Click twice on plot to create ROI interactively")
+        self.click_roi_btn.setStyleSheet("QPushButton { background-color: #4CAF50; color: white; }")
+        layout.addWidget(self.click_roi_btn, 1, 1)
+        
         self.clear_roi_btn = QPushButton("Clear All")
-        layout.addWidget(self.clear_roi_btn, 1, 1)
+        layout.addWidget(self.clear_roi_btn, 1, 2)
         
         # ROI list/status
         self.roi_status_label = QLabel("No ROIs defined")
-        layout.addWidget(self.roi_status_label, 1, 2, 1, 2)
+        layout.addWidget(self.roi_status_label, 2, 0, 1, 3)  # Span across all columns on row 2
         
         group.setLayout(layout)
         return group
@@ -262,6 +359,7 @@ class FWHMAnalysisWidget(QWidget):
         
     def setup_connections(self):
         self.add_roi_btn.clicked.connect(self.add_roi)
+        self.click_roi_btn.clicked.connect(self.start_interactive_roi)
         self.clear_roi_btn.clicked.connect(self.clear_all_rois)
         self.analyze_btn.clicked.connect(self.run_analysis)
         self.auto_update_check.toggled.connect(self.toggle_auto_update)
@@ -297,6 +395,28 @@ class FWHMAnalysisWidget(QWidget):
         roi_id = self.roi_selector.add_roi(start, end)
         self.update_roi_status()
         self.roi_changed.emit()
+        
+    def start_interactive_roi(self):
+        """Start interactive ROI creation mode"""
+        if not self.roi_selector:
+            QMessageBox.warning(self, "No Plot", "No spectrum plot connected")
+            return
+            
+        # Update button to show active state
+        self.click_roi_btn.setText("Click on Plot (2x)")
+        self.click_roi_btn.setStyleSheet("QPushButton { background-color: #FF5722; color: white; }")
+        
+        # Show instruction
+        QMessageBox.information(self, "Interactive ROI", 
+            "Click twice on the spectrum plot to define ROI bounds:\n"
+            "• First click: Start position\n"
+            "• Second click: End position\n\n"
+            "Click OK, then click on the plot.")
+        
+        # Start interactive mode
+        self.roi_selector.start_interactive_mode()
+        
+        # Reset button after ROI creation (will be handled by ROI selector)
         
     def clear_all_rois(self):
         if self.roi_selector:
