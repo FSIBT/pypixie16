@@ -279,6 +279,9 @@ class FWHMAnalysisWidget(QWidget):
         if hasattr(spectrum_plotter, 'plot_widget'):
             self.roi_selector = ROISelector(spectrum_plotter.plot_widget)
             
+        # Update the status to show connection
+        self.update_roi_status()
+            
     def add_roi(self):
         if not self.roi_selector:
             QMessageBox.warning(self, "No Plot", "No spectrum plot connected")

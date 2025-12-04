@@ -22,7 +22,9 @@ from PyQt6.QtWidgets import (
     QWidget,
     QSplitter,
     QTabWidget,
+    QMainWindow,
 )
+from PyQt6.QtCore import Qt
 
 # Import FWHM analysis components
 try:
@@ -97,16 +99,10 @@ class ContinuousSpectrumPlotter(QWidget):
         main_layout = QVBoxLayout()
 
         # Controls
-        control_group = self.create_control_group()
-        main_layout.addWidget(control_group)
+        self.control_group = self.create_control_group()
+        main_layout.addWidget(self.control_group)
 
-        # Create horizontal splitter for plot and FWHM analysis
-        splitter = QSplitter(QtCore.Qt.Orientation.Horizontal)
-        
-        # Left side: Plot area
-        plot_widget = QWidget()
-        plot_layout = QVBoxLayout(plot_widget)
-        
+        # Plot area (full width now)
         self.display = pg.PlotWidget()
         self.display.setBackground(bkg_color)
         self.display.setLabel("left", "Counts")
@@ -128,27 +124,74 @@ class ContinuousSpectrumPlotter(QWidget):
             self.plot_items[channel] = curve
             self.display.addItem(curve)
 
-        plot_layout.addWidget(self.display)
+        main_layout.addWidget(self.display)
 
         # Statistics display
         self.stats_widget = self.create_stats_widget()
-        plot_layout.addWidget(self.stats_widget)
+        main_layout.addWidget(self.stats_widget)
         
-        splitter.addWidget(plot_widget)
-
-        # Right side: FWHM Analysis (if available)
         if FWHM_AVAILABLE:
-            self.fwhm_widget = FWHMAnalysisWidget(spectrum_plotter=self)
-            self.fwhm_widget.connect_to_plotter(self)
-            splitter.addWidget(self.fwhm_widget)
-            
-            # Set initial splitter sizes (70% plot, 30% FWHM)
-            splitter.setSizes([700, 300])
+            self.fwhm_window = None  # Will be created on demand
+            self.setup_fwhm_menu()
         else:
-            self.fwhm_widget = None
-            
-        main_layout.addWidget(splitter)
+            self.fwhm_window = None
         self.setLayout(main_layout)
+
+    def setup_fwhm_menu(self):
+        if hasattr(self, 'control_group') and self.control_group:
+            layout = self.control_group.layout()
+            if layout:
+                self.fwhm_btn = QPushButton("FWHM")
+                self.fwhm_btn.setToolTip("Open FWHM Peak Analysis Window")
+                self.fwhm_btn.clicked.connect(self.toggle_fwhm_window)
+                self.fwhm_btn.setMaximumWidth(100)  # Keep it compact
+                layout.addWidget(self.fwhm_btn)
+        
+    def toggle_fwhm_window(self):
+        if self.fwhm_window is None:
+            self.create_fwhm_window()
+        
+        if self.fwhm_window.isVisible():
+            self.fwhm_window.hide()
+            self.fwhm_btn.setText("FWHM")
+        else:
+            self.fwhm_window.show()
+            self.fwhm_window.raise_()  # Bring to front
+            self.fwhm_window.activateWindow()
+            self.fwhm_btn.setText("Hide FWHM")
+            
+    def create_fwhm_window(self):
+        # Create floating window
+        self.fwhm_window = QMainWindow()
+        self.fwhm_window.setWindowTitle("FWHM Peak Analysis")
+        self.fwhm_window.setWindowFlags(
+            Qt.WindowType.Window | 
+            Qt.WindowType.WindowStaysOnTopHint |
+            Qt.WindowType.WindowCloseButtonHint |
+            Qt.WindowType.WindowMinimizeButtonHint |
+            Qt.WindowType.WindowMaximizeButtonHint
+        )
+        
+        # Set window size and position
+        self.fwhm_window.resize(600, 800)
+        
+        # Position window to the right of main window if possible
+        if self.parent():
+            main_pos = self.parent().pos()
+            main_size = self.parent().size()
+            self.fwhm_window.move(main_pos.x() + main_size.width() + 10, main_pos.y())
+        
+        # Create FWHM widget and set as central widget
+        self.fwhm_widget = FWHMAnalysisWidget(spectrum_plotter=self)
+        self.fwhm_widget.connect_to_plotter(self)
+        self.fwhm_window.setCentralWidget(self.fwhm_widget)
+        
+        # Handle window close event
+        self.fwhm_window.closeEvent = self.on_fwhm_window_close
+        
+    def on_fwhm_window_close(self, event):
+        self.fwhm_btn.setText("FWHM")
+        event.accept()
 
     def create_control_widgets(self):
         self.energy_min_label = QLabel("Energy Min (a.u.):")
@@ -385,6 +428,11 @@ class ContinuousSpectrumPlotter(QWidget):
                 histogram_data[channel] = hist
         return histogram_data
 
+    def cleanup(self):
+        if hasattr(self, 'fwhm_window') and self.fwhm_window:
+            self.fwhm_window.close()
+            self.fwhm_window = None
+
     def set_channels(self, channels):
         # Remove old plot items
         for channel in self.channels:
@@ -414,7 +462,6 @@ class ContinuousSpectrumPlotter(QWidget):
         self.update_stats_labels()
 
     def update_stats_labels(self):
-        """Update the statistics labels for current channels"""
         # Clear old layout
         layout = self.stats_widget.layout()
         while layout.count():
