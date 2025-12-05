@@ -30,6 +30,7 @@ dependencies = [
     "pint",
     "platformdirs",
     "PyQt6",
+    "pyqtgraph",
     "rich",
     "setuptools",
     "setuptools_scm",
