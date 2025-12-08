@@ -466,6 +466,8 @@ class DataAcquisition(QWidget):
             if extra_info:
                 self.task_table.setItem(row, self.key_to_pos["Extra Info"], item)
 
+        self.pipeline.reports = {}
+
     def format_value(self, key, value):
         """Format some table values better or replace with emoji.
 
