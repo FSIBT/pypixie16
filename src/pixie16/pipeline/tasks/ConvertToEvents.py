@@ -31,4 +31,6 @@ class ConvertToEvents(task.Task):
                 self.list_mode_readers[key] = read.ListModeDataReader(reader)
             self.list_mode_readers[key].reader.put(val)
 
-        return {mod: reader.pop_all() for mod, reader in self.list_mode_readers.items()}
+        tmp = {mod: reader.pop_all() for mod, reader in self.list_mode_readers.items()}
+
+        return tmp
