@@ -463,7 +463,8 @@ class DataAcquisition(QWidget):
                 extra_info.append(f"{key}={display_value}")
 
             item = QTableWidgetItem(" ".join(extra_info))
-            self.task_table.setItem(row, self.key_to_pos["Extra Info"], item)
+            if extra_info:
+                self.task_table.setItem(row, self.key_to_pos["Extra Info"], item)
 
     def format_value(self, key, value):
         """Format some table values better or replace with emoji.
