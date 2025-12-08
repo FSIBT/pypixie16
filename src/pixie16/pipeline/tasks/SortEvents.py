@@ -165,20 +165,17 @@ class SortEvents(task.Task):
             self.data.sort(key=lambda x: x.chunk_timestamp)
             out = self.data[: self.N_to_sort]
             self.data = self.data[self.N_to_sort :]
-            if not self.is_final:
+            if not self._is_final:
                 self.send(out)
                 self.count += 1
 
-    def do_quit(self):
+    def do_stop(self):
         """
-        Quits the task.
-
-        Notes:
-            This methods extends ``Task.do_quit``.
+        Stops the task and handle the final data
         """
 
         self.data.sort(key=lambda x: x.chunk_timestamp)
-        if not self.is_final:
+        if not self._is_final:
             self.send(self.data)
         if self.report_time_queue:
             self.report_time_queue.put(self.report_times)
