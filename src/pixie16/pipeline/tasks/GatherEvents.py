@@ -62,14 +62,14 @@ class GatherEvents(task.Task):
             self.queue = []
             self.count += 1
 
-            self.report(
-                {
-                    "gathered data": self.count,
-                    "gathered queue": len(self.queue),
-                }
-            )
-
             return out
+
+        self.report(
+            {
+                "gathered data": self.count,
+                "gathered queue": len(self.queue),
+            }
+        )
 
     def do_stop(self):
         """
