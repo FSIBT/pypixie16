@@ -111,6 +111,7 @@ class GatherData(task.Task):
 
         # handle data for saving
         data_size = self.get_size(self.data_disk)
+        data_save_size = data_size
         if data_size:
             if data_size > self.config["binary_save_size"]:
                 out = {
@@ -122,10 +123,10 @@ class GatherData(task.Task):
 
         # handle data for queue
         data_size = self.get_size(self.data_queue)
-
         if not data_size:
             return
 
+        self.send_report({"data_size": data_size, "data_save_size": data_save_size})
         if data_size > self.config.get("binary_size"):
             out = {k: self.safe_concatenate(v) for k, v in self.data_queue.items() if v}
             self.data_queue = defaultdict(list)
@@ -148,6 +149,9 @@ class GatherData(task.Task):
         if out_disk:
             if self.config["binary_save_data"]:
                 self.save_data(out_disk)
+        self.data_queue = defaultdict(list)
+        self.data_disk = defaultdict(list)
+        self.send_report({"data_size": 0, "data_save_size": 0})
 
     def safe_concatenate(self, arrays):  # Add 'self' parameter
         """Safely concatenate arrays, handling zero-dimensional arrays."""
