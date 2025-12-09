@@ -40,5 +40,8 @@ class PickSingleModule(task.Task):
         Notes:
             This method extends ``Task.do_work``.
         """
-
-        return {k: v for k, v in datum.items() if k == self.module}
+        events = []
+        for k, v in datum.items():
+            if k == self.module:
+                events = v
+        return events
