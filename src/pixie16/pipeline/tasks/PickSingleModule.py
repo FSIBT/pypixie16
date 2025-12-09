@@ -18,7 +18,7 @@ class PickSingleModule(task.Task):
             This method extends ``Task.do_init``.
         """
 
-        self.config = {"module": 2}
+        self.config = {"module": 0}
 
         # Set default values directly as attributes
         self.module = 2
