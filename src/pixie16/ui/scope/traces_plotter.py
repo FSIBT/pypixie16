@@ -174,6 +174,7 @@ class TracesPlotter(QWidget):
             "fast_trigger": False,
             "energy_filter": False,
             "cfd": False,
+            "three_sums": False,  # Add three sums plotting
         }
 
         # Channel colors
@@ -661,12 +662,14 @@ class TracesPlotter(QWidget):
             "fast_trigger": "#ff7f0e",
             "energy_filter": "#2ca02c",
             "cfd": "#d62728",
+            "three_sums": "#9467bd",  # Purple
         }
         trace_names = {
             "raw": "Raw Trace",
             "fast_trigger": "Fast Trigger",
             "energy_filter": "Energy Filter",
             "cfd": "CFD",
+            "three_sums": "Three Sums",
         }
         for trace_type in self.trace_types.keys():
             self.hw_curves[trace_type] = self.channel_plot.plot(
@@ -899,10 +902,12 @@ class TracesPlotter(QWidget):
             "fast_trigger": self.fast_trigger_cb,
             "energy_filter": self.energy_filter_cb,
             "cfd": self.cfd_cb,
+            "three_sums": self.three_sums_cb,
         }
 
         if trace_type in checkbox_map:
             self.trace_types[trace_type] = checkbox_map[trace_type].isChecked()
+            print(f"DEBUG: Three sums toggle - {trace_type}: {self.trace_types[trace_type]}")
 
     def add_event_with_trace(self, event, trace_data):
         event_timestamp = getattr(event, "timestamp", None)
@@ -1269,6 +1274,7 @@ class TracesPlotter(QWidget):
                         "fast_trigger": "#ff7f0e",  # Orange
                         "energy_filter": "#2ca02c",  # Green
                         "cfd": "#d62728",  # Red
+                        "three_sums": "#9467bd",  # Purple
                     }
                     color = trace_colors.get(trace_type, "#333333")
                     name = trace_type.replace("_", " ").title()
@@ -1288,6 +1294,14 @@ class TracesPlotter(QWidget):
                             signal_amplitude = np.max(signal) - np.min(signal)
                             scale_factor = (2 * raw_amplitude) / signal_amplitude
                             signal = (signal - np.min(signal)) * scale_factor + np.min(latest_trace)
+                    elif trace_type == "three_sums":
+                        # Scale threesums to be visible alongside raw trace
+                        raw_amplitude = np.max(latest_trace) - np.min(latest_trace)
+                        raw_baseline = np.mean(latest_trace[:100])
+                        if np.max(signal) > np.min(signal):
+                            signal_amplitude = np.max(signal) - np.min(signal)
+                            scale_factor = (raw_amplitude * 0.8) / signal_amplitude  # Scale to 80% of raw amplitude
+                            signal = (signal - np.min(signal)) * scale_factor + raw_baseline
 
                 # Plot the trace
                 plot_widget.plot(time_axis, signal, pen=pg.mkPen(color=color, width=2), name=name)
@@ -1301,6 +1315,21 @@ class TracesPlotter(QWidget):
             self._add_threshold_lines(plot_widget, latest_trace)
         except Exception as e:
             print(f"Error adding markers/lines for channel {channel}: {e}")
+        
+        # Set fixed Y-axis range to prevent auto-following behavior
+        try:
+            raw_baseline = np.mean(latest_trace[:100]) if len(latest_trace) > 100 else np.mean(latest_trace)
+            raw_amplitude = np.max(latest_trace) - np.min(latest_trace)
+            
+            # Use a generous fixed range that accommodates different signal sizes
+            y_margin = max(raw_amplitude * 0.5, 1000)  # At least 50% margin or 1000 units
+            y_min = raw_baseline - y_margin
+            y_max = raw_baseline + (3 * y_margin)  # Larger range above baseline
+            
+            plot_widget.setYRange(y_min, y_max, padding=0)
+            print(f"Fixed Y-axis range for Ch{channel}: [{y_min:.0f}, {y_max:.0f}] (baseline: {raw_baseline:.0f})")
+        except Exception as e:
+            print(f"Error setting fixed Y-axis range for channel {channel}: {e}")
 
     def _plot_persistence_traces_single_channel(self, channel, plot_widget):
         try:
@@ -1532,127 +1561,6 @@ class TracesPlotter(QWidget):
 
         except Exception as e:
             print(f"Error adding threshold lines: {e}")
-            
-    def _add_three_sums_overlay(self, plot_widget, channel, raw_trace, time_axis):
-        try:
-            # Get trigger position from stored trigger points
-            trigger_points = self.trigger_points.get(channel, {})
-            fast_triggers = trigger_points.get("fast_trigger", [])
-            
-            if not fast_triggers:
-                print("No fast trigger found for three sums calculation")
-                return
-                
-            trigger_pos = fast_triggers[0]  # Use first trigger
-            L = self.hardware_params["energy_L"]
-            G = self.hardware_params["energy_G"] 
-            
-            # Calculate three sums
-            three_sums = self.compute_three_sums(raw_trace, trigger_pos, L, G)
-            if not three_sums:
-                print("Three sums calculation failed")
-                return
-                
-            # Store results for display
-            self.three_sums_results[channel] = three_sums
-            
-            # Visualize the three regions with colored overlays
-            y_min, y_max = plot_widget.getPlotItem().getViewBox().viewRange()[1]
-            
-            # S1 - Baseline region (blue)
-            s1_start, s1_end = three_sums['S1_range']
-            if s1_start < len(time_axis) and s1_end < len(time_axis):
-                s1_region = pg.LinearRegionItem(
-                    values=(time_axis[s1_start], time_axis[s1_end]),
-                    orientation='vertical',
-                    brush=pg.mkBrush(0, 0, 255, 40),  # Semi-transparent blue
-                    pen=pg.mkPen('blue', width=1),
-                    movable=False
-                )
-                plot_widget.addItem(s1_region)
-                
-            # S2 - Peak region (green)  
-            s2_start, s2_end = three_sums['S2_range']
-            if s2_start < len(time_axis) and s2_end < len(time_axis):
-                s2_region = pg.LinearRegionItem(
-                    values=(time_axis[s2_start], time_axis[s2_end]),
-                    orientation='vertical', 
-                    brush=pg.mkBrush(0, 255, 0, 40),  # Semi-transparent green
-                    pen=pg.mkPen('green', width=2),
-                    movable=False
-                )
-                plot_widget.addItem(s2_region)
-                
-            # S3 - Tail region (red)
-            s3_start, s3_end = three_sums['S3_range'] 
-            if s3_start < len(time_axis) and s3_end < len(time_axis):
-                s3_region = pg.LinearRegionItem(
-                    values=(time_axis[s3_start], time_axis[s3_end]),
-                    orientation='vertical',
-                    brush=pg.mkBrush(255, 0, 0, 40),  # Semi-transparent red
-                    pen=pg.mkPen('red', width=1),
-                    movable=False
-                )
-                plot_widget.addItem(s3_region)
-                
-            print(f"Three sums: S1={three_sums['S1']:.0f}, S2={three_sums['S2']:.0f}, S3={three_sums['S3']:.0f}, Energy={three_sums['energy']:.0f}")
-            
-        except Exception as e:
-            print(f"Error adding three sums overlay: {e}")
-
-    def compute_three_sums(self, raw_trace, trigger_pos, L, G):
-        """
-        Calculate energy using three sums method on raw trace.
-        This is the classic PIXIE-16 energy calculation method.
-        
-        Three regions:
-        S1 = baseline sum (before trigger)  
-        S2 = peak sum (trigger + L + G region)
-        S3 = tail sum (after peak region)
-        
-        Energy = S2 - S1 - (S3-S1)*(L/(gap_time))
-        """
-        try:
-            if len(raw_trace) < trigger_pos + L + G + 50:
-                return None
-                
-            baseline_length = min(50, trigger_pos - 10)  # Use 50 samples for baseline
-            if baseline_length < 10:
-                return None
-                
-            # S1: Baseline sum (before trigger)
-            s1_start = max(0, trigger_pos - baseline_length)
-            s1_end = trigger_pos
-            S1 = np.sum(raw_trace[s1_start:s1_end])
-            
-            # S2: Peak sum (trigger + L + G samples)  
-            s2_start = trigger_pos + L
-            s2_end = trigger_pos + L + G
-            S2 = np.sum(raw_trace[s2_start:s2_end])
-            
-            # S3: Tail sum (same length as S2, after gap)
-            s3_start = s2_end + G  # Add gap
-            s3_end = s3_start + G   # Same length as S2
-            if s3_end >= len(raw_trace):
-                return None
-            S3 = np.sum(raw_trace[s3_start:s3_end])
-            
-            # Calculate energy with tail correction
-            tail_correction = (S3 - S1) * (G / G)  # Simplified for equal lengths
-            energy = S2 - S1 - tail_correction
-            
-            return {
-                'energy': energy,
-                'S1': S1, 'S2': S2, 'S3': S3,
-                'S1_range': (s1_start, s1_end),
-                'S2_range': (s2_start, s2_end), 
-                'S3_range': (s3_start, s3_end),
-                'baseline_length': baseline_length
-            }
-            
-        except Exception as e:
-            print(f"Error in three sums calculation: {e}")
-            return None
 
     def compute_hardware_traces(self, trace_type, raw_trace, channel):
         if self.hardware_manager and self.hardware_manager.dummy_mode:
@@ -1811,14 +1719,17 @@ class TracesPlotter(QWidget):
                                     fast_trigger_raw_pos
                                 ]  # Use fast trigger position
 
-                                # Peak sample should be in flat area of energy filter (L+G+P samples after trigger)
-                                # This aligns with the flat area of the energy filter response
+                                # Peak sample should be in flat area of energy filter after ramp-up
                                 L = self.hardware_params["energy_L"]
                                 G = self.hardware_params["energy_G"]
                                 P = self.hardware_params["energy_P"]
                                 
-                                # Calculate optimal peak sample position for flat area
-                                optimal_offset = (L + G + P) * samples_per_energy_cycle
+                                # Calculate optimal peak sample position for middle of flat area
+                                # Energy filter ramps for L+G cycles, then flat for P cycles
+                                # Target the middle of the flat area for best stability
+                                ramp_duration = (L + G) * samples_per_energy_cycle
+                                flat_area_mid = (P // 2) * samples_per_energy_cycle  # Middle of flat area
+                                optimal_offset = ramp_duration + flat_area_mid
                                 peak_sample_raw_pos = fast_trigger_raw_pos + optimal_offset
                                 peak_sample_points = (
                                     [peak_sample_raw_pos]
@@ -1854,6 +1765,55 @@ class TracesPlotter(QWidget):
 
                 print(f"Energy filter calculation failed for channel {channel}")
                 return np.zeros(original_length)
+
+            elif trace_type == "three_sums":
+                # Calculate the three sums (S1, S2, S3) from the energy filter algorithm
+                L = self.hardware_params["energy_L"]
+                G = self.hardware_params["energy_G"]
+                
+                slow_filter_range = 2 ** self.hardware_params["energy_R"]
+                c1 = c2 = c3 = 1.0  # Coefficients
+                
+                # Create FPGA processed trace first
+                if len(raw_trace) % slow_filter_range == 0:
+                    fpga_trace = raw_trace.reshape(-1, slow_filter_range).sum(axis=1)
+                else:
+                    # Pad to make it divisible
+                    pad_length = slow_filter_range - (len(raw_trace) % slow_filter_range)
+                    padded_trace = np.pad(raw_trace, (0, pad_length), mode='constant', constant_values=0)
+                    fpga_trace = padded_trace.reshape(-1, slow_filter_range).sum(axis=1)
+                    
+                length = len(fpga_trace)
+                
+                # Calculate S1, S2, S3 for each valid position
+                s1_values = []
+                s2_values = []
+                s3_values = []
+                positions = []
+                
+                for k in range(2 * L + G - 1, length):
+                    pos = k - 2 * L - G + 1
+                    
+                    S1 = fpga_trace[k - 2 * L - G + 1 : k - L - G + 1].sum()
+                    S2 = fpga_trace[k - L - G + 1 : k - L + 1].sum()
+                    S3 = fpga_trace[k - L + 1 : k + 1].sum()
+                    
+                    s1_values.append(S1)
+                    s2_values.append(S2)
+                    s3_values.append(S3)
+                    positions.append(pos)
+                
+                # Expand back to raw sample timing and return S3 (most relevant)
+                if positions:
+                    expanded_s3 = np.zeros(original_length)
+                    for i, pos in enumerate(positions):
+                        raw_start = pos * slow_filter_range
+                        raw_end = min((pos + 1) * slow_filter_range, original_length)
+                        if raw_start < original_length:
+                            expanded_s3[raw_start:raw_end] = s3_values[i]
+                    return expanded_s3
+                else:
+                    return np.zeros(original_length)
 
             print(f"Unknown trace type: {trace_type}")
             return np.zeros(original_length)
@@ -2328,23 +2288,14 @@ class TracesPlotter(QWidget):
         trace_types_layout.addWidget(cfd_cb, 1, 1)
         self.cfd_cb = cfd_cb
         
+        three_sums_cb = QCheckBox("Three Sums")
+        three_sums_cb.toggled.connect(lambda: self.toggle_trace_type("three_sums"))
+        trace_types_layout.addWidget(three_sums_cb, 2, 0)
+        self.three_sums_cb = three_sums_cb
+        
         trace_types_group.setLayout(trace_types_layout)
         trace_types_group.setMaximumHeight(100)
         layout.addWidget(trace_types_group)
-        
-        three_sums_group = QGroupBox("Three Sums Analysis")
-        three_sums_layout = QHBoxLayout()
-        
-        three_sums_cb = QCheckBox("Show Three Sums Regions")
-        three_sums_cb.setToolTip("Overlay S1 (blue), S2 (green), S3 (red) regions for energy calculation")
-        three_sums_cb.toggled.connect(self.toggle_three_sums)
-        three_sums_layout.addWidget(three_sums_cb)
-        self.three_sums_cb = three_sums_cb
-        
-        three_sums_layout.addStretch()
-        three_sums_group.setLayout(three_sums_layout)
-        three_sums_group.setMaximumHeight(60)
-        layout.addWidget(three_sums_group)
         
         # ===== Persistence Controls =====
         persistence_group = QGroupBox("Persistence")
@@ -2439,6 +2390,7 @@ class TracesPlotter(QWidget):
                         "fast_trigger": "#ff7f0e",  # Orange
                         "energy_filter": "#2ca02c",  # Green
                         "cfd": "#d62728",  # Red
+                        "three_sums": "#9467bd",  # Purple
                     }
                     color = trace_colors.get(trace_type, "#333333")
                     name = trace_type.replace("_", " ").title()
@@ -2469,20 +2421,18 @@ class TracesPlotter(QWidget):
             # Add trigger markers and threshold lines
             self._add_trigger_markers(plot_widget, channel, time_axis)
             self._add_threshold_lines(plot_widget, trace_data)
-            
-            # Add three sums visualization if enabled
-            if self.show_three_sums:
-                self._add_three_sums_overlay(plot_widget, channel, trace_data, time_axis)
 
             plot_widget.setTitle(f"{label} - Ch {channel} (REPLAY)")
             plot_widget.addLegend()
             
-            # Fix Y-axis scaling
+            # Fixed Y-axis scaling - no auto follow behavior
+            # Use a larger, fixed range that doesn't auto-scale with each trace
             raw_baseline = np.mean(trace_data[:100]) if len(trace_data) > 100 else np.mean(trace_data)
-            raw_amplitude = np.max(trace_data) - np.min(trace_data)
-            y_margin = raw_amplitude * 0.5  # 50% margin above/below
-            y_min = raw_baseline - raw_amplitude - y_margin
-            y_max = raw_baseline + (2 * raw_amplitude) + y_margin
+            
+            # Set fixed Y range with generous margins to accommodate different signal sizes
+            baseline_offset = 2000  # Fixed offset from baseline
+            y_min = raw_baseline - baseline_offset
+            y_max = raw_baseline + (4 * baseline_offset)  # Large range above baseline
             plot_widget.setYRange(y_min, y_max, padding=0)
             
         except Exception as e:

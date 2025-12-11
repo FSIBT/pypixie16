@@ -216,6 +216,18 @@ class CoincidenceLogicTab(QWidget):
         self.ch_a_event_count = 0
         self.ch_b_event_count = 0
         self.coincidence_count = 0
+        
+        # Validation statistics
+        self.ch_a_validation_stats = {
+            "blue_in_green_count": 0,
+            "yellow_valid_count": 0,
+            "total_events": 0
+        }
+        self.ch_b_validation_stats = {
+            "blue_in_green_count": 0,
+            "yellow_valid_count": 0,
+            "total_events": 0
+        }
         self.last_update_time = time.time()
         
         self.controls_widget = None
@@ -588,7 +600,19 @@ class CoincidenceLogicTab(QWidget):
         self.binary_data.ch_b_histogram.clear()
         self.ch_a_event_count = 0
         self.ch_b_event_count = 0
-        print("Histograms cleared")
+        
+        # Clear validation statistics
+        self.ch_a_validation_stats = {
+            "blue_in_green_count": 0,
+            "yellow_valid_count": 0,
+            "total_events": 0
+        }
+        self.ch_b_validation_stats = {
+            "blue_in_green_count": 0,
+            "yellow_valid_count": 0,
+            "total_events": 0
+        }
+        print("Histograms and validation statistics cleared")
     
     def add_event_with_trace(self, event, trace_data):
         if not hasattr(event, "timestamp") or not hasattr(event, "channel"):
@@ -725,18 +749,42 @@ class CoincidenceLogicTab(QWidget):
                     chan_validation_trig[val_start_idx:val_end_idx] = 1
             
             # STEP 5: Local Fast for Processing
-            ext_delay_ns = self.hardware_params["external_delay_len"]
+            # Adjust timing to center blue signal in middle of green (chan_validation_trig)
             local_fast_for_processing = np.zeros(trace_length, dtype=np.int8)
             
-            proc_start_time = first_trigger_time_ns + ext_delay_ns
-            proc_start_idx = np.searchsorted(time_axis, proc_start_time)
-            proc_pulse_samples = int(10 / self.sampling_period_ns)
-            proc_end_idx = min(proc_start_idx + proc_pulse_samples, trace_length)
-            if proc_start_idx < trace_length:
-                local_fast_for_processing[proc_start_idx:proc_end_idx] = 1
+            if np.any(chan_validation_trig > 0):
+                # Find the green signal boundaries
+                green_start_idx = np.where(chan_validation_trig > 0)[0][0]
+                green_end_idx = np.where(chan_validation_trig > 0)[0][-1]
+                green_duration_samples = green_end_idx - green_start_idx + 1
+                
+                # Center the blue signal in the green signal
+                blue_pulse_samples = int(10 / self.sampling_period_ns)  # 10ns pulse
+                blue_center_idx = green_start_idx + green_duration_samples // 2
+                blue_start_idx = max(0, blue_center_idx - blue_pulse_samples // 2)
+                blue_end_idx = min(trace_length, blue_start_idx + blue_pulse_samples)
+                
+                if blue_start_idx < trace_length:
+                    local_fast_for_processing[blue_start_idx:blue_end_idx] = 1
+                    
+                # Update validation statistics
+                stats_key = "ch_a_validation_stats" if channel_id == 'A' else "ch_b_validation_stats"
+                stats = getattr(self, stats_key)
+                stats["total_events"] += 1
+                
+                # Check if blue is inside green (should always be true now with centering)
+                blue_in_green = np.any(local_fast_for_processing & chan_validation_trig)
+                if blue_in_green:
+                    stats["blue_in_green_count"] += 1
             
             # STEP 6: Validated Trigger for Processing
             validated_trig_for_processing = local_fast_for_processing & chan_validation_trig
+            
+            # Update yellow validation statistics
+            stats_key = "ch_a_validation_stats" if channel_id == 'A' else "ch_b_validation_stats"
+            stats = getattr(self, stats_key)
+            if np.any(validated_trig_for_processing > 0):
+                stats["yellow_valid_count"] += 1
             
             return {
                 "local_fast_trigger": local_fast_trigger,
@@ -859,7 +907,26 @@ class CoincidenceLogicTab(QWidget):
                 f"{time.strftime('%H:%M:%S')}"
             )
             
-            self.hist_stats_label.setText(f"Events: A={total_a}, B={total_b}")
+            # Calculate validation percentages
+            ch_a_blue_pct = (
+                100 * self.ch_a_validation_stats["blue_in_green_count"] / max(1, self.ch_a_validation_stats["total_events"])
+            )
+            ch_a_yellow_pct = (
+                100 * self.ch_a_validation_stats["yellow_valid_count"] / max(1, self.ch_a_validation_stats["total_events"])
+            )
+            
+            ch_b_blue_pct = (
+                100 * self.ch_b_validation_stats["blue_in_green_count"] / max(1, self.ch_b_validation_stats["total_events"])
+            )
+            ch_b_yellow_pct = (
+                100 * self.ch_b_validation_stats["yellow_valid_count"] / max(1, self.ch_b_validation_stats["total_events"])
+            )
+            
+            self.hist_stats_label.setText(
+                f"Events: A={total_a}, B={total_b} | "
+                f"A: Blue@Green={ch_a_blue_pct:.0f}%, Yellow={ch_a_yellow_pct:.0f}% | "
+                f"B: Blue@Green={ch_b_blue_pct:.0f}%, Yellow={ch_b_yellow_pct:.0f}%"
+            )
             
             self.last_update_time = time.time()
             
