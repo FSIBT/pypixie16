@@ -9,7 +9,12 @@ import pixie16
 
 @pytest.fixture(scope="module")
 def full_list_mode_binary_file():
-    return Path(__file__).parent / "pixie16_binary_data-full.bin"
+    return (
+        Path(__file__).parent.parent.parent
+        / "files"
+        / "bin"
+        / "pixie16_binary_data-full.bin"
+    )
 
 
 @pytest.fixture(scope="module")
@@ -22,7 +27,7 @@ def split_list_mode_binary_files():
         "pixie16_binary_data-04.bin",
     ]
 
-    path = Path(__file__).parent
+    path = Path(__file__).parent.parent.parent / "files" / "bin"
     return [path / f for f in files]
 
 
@@ -36,13 +41,13 @@ def split_list_mode_binary_files_out_of_order():
         "pixie16_binary_data-04.bin",
     ]
 
-    path = Path(__file__).parent
+    path = Path(__file__).parent.parent.parent / "files" / "bin"
     return [path / f for f in files]
 
 
 @pytest.fixture(scope="module")
 def list_mode_data_events():
-    path = Path(__file__).parent
+    path = Path(__file__).parent.parent.parent / "files" / "parquet"
     events_file = path / "pixie16-events.parquet"
     data = pd.read_parquet(events_file)
     # fix some data types

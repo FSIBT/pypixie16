@@ -1,4 +1,35 @@
-"""Functions to load settings from a config file."""
+"""Configuration management for PIXIE-16 system settings.
+
+This module handles loading and managing configuration files that specify
+system paths, firmware locations, and hardware parameters. It provides
+platform-specific configuration directory handling and automatic migration
+from legacy configuration locations.
+
+Key Features
+------------
+- Cross-platform configuration directory management
+- Automatic config file migration (appdirs -> platformdirs)
+- Hardware firmware path validation
+- SDK library path configuration
+- Default settings management
+
+Configuration Structure
+-----------------------
+The config.ini file should contain:
+
+[Libraries]
+sdk = <path to Pixie16Api.dll/library>
+
+[Data]
+datadir = <data output directory>
+
+[Firmware.default]
+ComFPGAConfigFile = <communication FPGA firmware>
+SPFPGAConfigFile = <signal processing FPGA firmware>
+DSPCodeFile = <DSP code file>
+DSPVarFile = <DSP variable file>
+SettingFile = <default module settings>
+"""
 
 import configparser
 import os
@@ -8,7 +39,7 @@ from typing import Union
 
 import appdirs
 import platformdirs
-
+from dataclasses import dataclass, field
 
 # move from appdirs to platformdirs
 dirs_old = appdirs.AppDirs("PIXIE16")
@@ -32,10 +63,29 @@ config.read(inifile)
 
 
 def config_get_parameters(section: str, name: str, verbose: bool = True) -> None | Path:
-    """Get the setting out of the config dir.
+    """Retrieve a configuration parameter from the config file.
 
-    Provide better error message if init file does not exist.
+    Extracts and validates a configuration parameter from the specified
+    section. Provides detailed error messages with examples if the
+    parameter is not found.
 
+    Parameters
+    ----------
+    section : str
+        Configuration file section name (e.g., 'Libraries', 'Data').
+    name : str
+        Parameter name within the section.
+    verbose : bool, default=True
+        If True, print detailed error messages and examples.
+
+    Returns
+    -------
+    Path or None
+        Path object if parameter found and valid, None if missing.
+
+    Notes
+    -----
+    Automatically strips quotes from path strings and converts to Path objects.
     """
     try:
         path_str = config.get(section, name).replace('"', "")
@@ -72,7 +122,7 @@ def load_config(section_name: str) -> list[Path]:
     """
     section = f"Firmware.{section_name}"
     if section not in config.sections():
-        print("Error: cannot find section {section} in the config file {inifile}")
+        print(f"Error: cannot find section {section} in the config file {inifile}")
         sys.exit(1)
     # load new path to firmware
     firmware_com = config_get_parameters(section, "ComFPGAConfigFile")
@@ -118,3 +168,18 @@ def get_sdk():
         os.environ["PATH"] = str(sdk.parent) + ";" + os.environ["PATH"]
 
     return str(sdk)
+
+
+@dataclass
+class LocalSettings:
+    """
+    Keep track of local mode and settings i.e. diagnostic MCA and traces, runtime
+    """
+
+    trace_time: float = 5
+    mca_time: float = 30
+    runtime: float = 60
+    skip_mca: bool = False
+    traces: bool = False
+    modules: list[int] = field(default_factory=list)
+    channels: list = field(default_factory=list)

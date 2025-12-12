@@ -1129,7 +1129,7 @@ def write_single_channel_parameter(
     check_return_code(ret, "write_single_channel_parameter")
     if ret < 0:
         print(
-            f"   Problem in mod={module} ch={channel} name={channel_parameter_name} value={channel_parameter_data}"
+            f"   Problem in mod={module} ch={channel} name={channel_parameter_name} value={channel_parameter_data} {ret=}"
         )
 
 

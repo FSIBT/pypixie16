@@ -7,12 +7,16 @@ import pixie16
 
 @pytest.fixture
 def setting():
-    return pixie16.read.Settings.from_file(Path(__file__).parent / "settings_file.json")
+    return pixie16.read.Settings.from_file(
+        Path(__file__).parent.parent.parent / "files" / "json" / "settings_file.json"
+    )
 
 
 @pytest.fixture
 def stats():
-    return pixie16.read.Stats.from_file(Path(__file__).parent / "stats_file.json")
+    return pixie16.read.Stats.from_file(
+        Path(__file__).parent.parent.parent / "files" / "json" / "stats_file.json"
+    )
 
 
 class TestSettings:
