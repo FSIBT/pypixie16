@@ -111,6 +111,7 @@ class WindowOptimizationWorker(QThread):
         dt_ticks = timestamp1 - timestamp2
         dt_ns = dt_ticks * 10.0  # Convert to nanoseconds
         return dt_ns
+    
 
 
 class CoincidenceEvent:

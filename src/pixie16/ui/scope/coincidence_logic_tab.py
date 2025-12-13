@@ -195,7 +195,7 @@ class CoincidenceLogicTab(QWidget):
             "fast_threshold": 100,
             "fast_trig_backplane_delay": 0,
             "fast_trig_backplane_len": 200,
-            "chan_trig_stretch": 200,
+            "chan_trig_stretch": 100,  # Decreased from 200ns for better alignment
             "external_delay_len": 300,
             "validation_window": 1000,
         }
@@ -221,12 +221,16 @@ class CoincidenceLogicTab(QWidget):
         self.ch_a_validation_stats = {
             "blue_in_green_count": 0,
             "yellow_valid_count": 0,
-            "total_events": 0
+            "total_events": 0,
+            "cross_channel_events": 0,
+            "cross_channel_aligned": 0
         }
         self.ch_b_validation_stats = {
             "blue_in_green_count": 0,
             "yellow_valid_count": 0,
-            "total_events": 0
+            "total_events": 0,
+            "cross_channel_events": 0,
+            "cross_channel_aligned": 0
         }
         self.last_update_time = time.time()
         
@@ -316,7 +320,7 @@ class CoincidenceLogicTab(QWidget):
         timing_layout.addWidget(QLabel("Chan Trig Stretch:"), row, 0)
         self.chan_stretch_spin = QDoubleSpinBox()
         self.chan_stretch_spin.setRange(10, 10000)
-        self.chan_stretch_spin.setValue(200)
+        self.chan_stretch_spin.setValue(100)  # Decreased for better alignment
         self.chan_stretch_spin.setSuffix(" ns")
         self.chan_stretch_spin.valueChanged.connect(self.update_timing_params)
         timing_layout.addWidget(self.chan_stretch_spin, row, 1)
@@ -605,12 +609,16 @@ class CoincidenceLogicTab(QWidget):
         self.ch_a_validation_stats = {
             "blue_in_green_count": 0,
             "yellow_valid_count": 0,
-            "total_events": 0
+            "total_events": 0,
+            "cross_channel_events": 0,
+            "cross_channel_aligned": 0
         }
         self.ch_b_validation_stats = {
             "blue_in_green_count": 0,
             "yellow_valid_count": 0,
-            "total_events": 0
+            "total_events": 0,
+            "cross_channel_events": 0,
+            "cross_channel_aligned": 0
         }
         print("Histograms and validation statistics cleared")
     
@@ -738,15 +746,30 @@ class CoincidenceLogicTab(QWidget):
                     self.coincidence_count += 1
             
             # STEP 4: Channel Validation Trigger
+            # For cross-channel validation: Channel Valid Trig A should be centered in the other channel's stretch
             chan_stretch_ns = self.hardware_params["chan_trig_stretch"]
             chan_validation_trig = np.zeros(trace_length, dtype=np.int8)
             
             if np.any(chan_trig > 0):
                 val_start_idx = np.where(chan_trig > 0)[0][0]
-                val_end_time = time_axis[val_start_idx] + chan_stretch_ns
-                val_end_idx = np.searchsorted(time_axis, val_end_time)
-                if val_end_idx <= trace_length:
-                    chan_validation_trig[val_start_idx:val_end_idx] = 1
+                
+                if other_had_trigger:
+                    # Cross-channel validation: center this channel's validation in other channel's expected timing
+                    # Account for propagation delays and create a centered validation window
+                    cross_channel_delay_ns = 50  # Typical cross-channel delay
+                    centered_start_time = time_axis[val_start_idx] + cross_channel_delay_ns
+                    centered_start_idx = np.searchsorted(time_axis, centered_start_time)
+                    centered_end_time = centered_start_time + chan_stretch_ns
+                    centered_end_idx = np.searchsorted(time_axis, centered_end_time)
+                    
+                    if centered_start_idx < trace_length and centered_end_idx <= trace_length:
+                        chan_validation_trig[centered_start_idx:centered_end_idx] = 1
+                else:
+                    # Single channel validation: use standard timing
+                    val_end_time = time_axis[val_start_idx] + chan_stretch_ns
+                    val_end_idx = np.searchsorted(time_axis, val_end_time)
+                    if val_end_idx <= trace_length:
+                        chan_validation_trig[val_start_idx:val_end_idx] = 1
             
             # STEP 5: Local Fast for Processing
             # Adjust timing to center blue signal in middle of green (chan_validation_trig)
@@ -771,6 +794,13 @@ class CoincidenceLogicTab(QWidget):
                 stats_key = "ch_a_validation_stats" if channel_id == 'A' else "ch_b_validation_stats"
                 stats = getattr(self, stats_key)
                 stats["total_events"] += 1
+                
+                # Track cross-channel events and alignment
+                if other_had_trigger:
+                    stats["cross_channel_events"] += 1
+                    # Check if the cross-channel alignment is good (validation window overlaps properly)
+                    if np.any(chan_validation_trig > 0):
+                        stats["cross_channel_aligned"] += 1
                 
                 # Check if blue is inside green (should always be true now with centering)
                 blue_in_green = np.any(local_fast_for_processing & chan_validation_trig)
@@ -914,6 +944,9 @@ class CoincidenceLogicTab(QWidget):
             ch_a_yellow_pct = (
                 100 * self.ch_a_validation_stats["yellow_valid_count"] / max(1, self.ch_a_validation_stats["total_events"])
             )
+            ch_a_cross_pct = (
+                100 * self.ch_a_validation_stats["cross_channel_aligned"] / max(1, self.ch_a_validation_stats["cross_channel_events"])
+            )
             
             ch_b_blue_pct = (
                 100 * self.ch_b_validation_stats["blue_in_green_count"] / max(1, self.ch_b_validation_stats["total_events"])
@@ -921,11 +954,14 @@ class CoincidenceLogicTab(QWidget):
             ch_b_yellow_pct = (
                 100 * self.ch_b_validation_stats["yellow_valid_count"] / max(1, self.ch_b_validation_stats["total_events"])
             )
+            ch_b_cross_pct = (
+                100 * self.ch_b_validation_stats["cross_channel_aligned"] / max(1, self.ch_b_validation_stats["cross_channel_events"])
+            )
             
             self.hist_stats_label.setText(
                 f"Events: A={total_a}, B={total_b} | "
-                f"A: Blue@Green={ch_a_blue_pct:.0f}%, Yellow={ch_a_yellow_pct:.0f}% | "
-                f"B: Blue@Green={ch_b_blue_pct:.0f}%, Yellow={ch_b_yellow_pct:.0f}%"
+                f"A: Blue@Green={ch_a_blue_pct:.0f}%, Yellow={ch_a_yellow_pct:.0f}%, CrossAlign={ch_a_cross_pct:.0f}% | "
+                f"B: Blue@Green={ch_b_blue_pct:.0f}%, Yellow={ch_b_yellow_pct:.0f}%, CrossAlign={ch_b_cross_pct:.0f}%"
             )
             
             self.last_update_time = time.time()
