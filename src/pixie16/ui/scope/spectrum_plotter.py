@@ -121,6 +121,14 @@ class ContinuousSpectrumPlotter(QWidget):
         self.display.setLabel("bottom", "Energy", "a.u.")
         self.display.setTitle("PIXIE-16 List Mode Energy Spectra")
         self.display.showGrid(x=True, y=True)
+        
+        # Initialize with proper axis ranges - Y starts at 0
+        self.display.setXRange(*self.energy_range)
+        self.display.setYRange(0, 100)  # Start Y at 0
+        
+        # Disable auto-range by default (user can manually zoom with mouse/controls)
+        self.display.enableAutoRange('x', False)
+        self.display.enableAutoRange('y', False)
         self.display.setMenuEnabled(enableMenu=True)
         self.display.addLegend()
 
@@ -228,7 +236,7 @@ class ContinuousSpectrumPlotter(QWidget):
         self.log_scale_cb.toggled.connect(self.toggle_log_scale)
 
         self.auto_scale_cb = QCheckBox("Auto Scale")
-        self.auto_scale_cb.setChecked(True)
+        self.auto_scale_cb.setChecked(False)  # Disable auto-scale by default
         self.auto_scale_cb.toggled.connect(self.toggle_auto_scale)
 
         self.clear_btn = QPushButton("Clear Spectra")
@@ -398,9 +406,32 @@ class ContinuousSpectrumPlotter(QWidget):
                 print(f"Error updating channel {channel}: {e}")
                 self.plot_items[channel].setData([], [])
 
-        # Auto scale if enabled
+        # Set proper axis ranges
         if self.auto_scale_cb.isChecked() and total_events > 0:
-            self.display.autoRange()
+            self.display.enableAutoRange('x', True)
+            self.display.enableAutoRange('y', False)
+            if not self.log_scale_cb.isChecked():
+                # Find max Y value across all channels
+                max_counts = 0
+                for channel in self.display_channels:
+                    if channel in self.energy_data and len(self.energy_data[channel]) > 0:
+                        energies = list(self.energy_data[channel])
+                        if len(energies) > 0:
+                            counts, _ = np.histogram(energies, bins=self.bins, range=self.energy_range)
+                            max_counts = max(max_counts, np.max(counts))
+                
+                if max_counts > 0:
+                    self.display.setYRange(0, max_counts * 1.1)  # 10% margin above max
+                else:
+                    self.display.setYRange(0, 100)  # Default range
+        else:
+            self.display.enableAutoRange('x', False)
+            self.display.enableAutoRange('y', False)
+            self.display.setXRange(*self.energy_range)
+            if not self.log_scale_cb.isChecked():
+                current_range = self.display.getViewBox().viewRange()[1]
+                if current_range[0] != 0:  # Only adjust if not already at 0
+                    self.display.setYRange(0, max(current_range[1], 100))
 
     def update_energy_range(self):
         self.energy_range = (self.energy_min_spin.value(), self.energy_max_spin.value())
@@ -418,7 +449,16 @@ class ContinuousSpectrumPlotter(QWidget):
 
     def toggle_auto_scale(self, checked):
         if not checked:
+            self.display.enableAutoRange('x', False)
+            self.display.enableAutoRange('y', False)
             self.display.setXRange(*self.energy_range)
+            # Ensure Y axis starts from 0
+            if not self.log_scale_cb.isChecked():
+                current_range = self.display.getViewBox().viewRange()[1]
+                self.display.setYRange(0, max(current_range[1], 100))
+        else:
+            # Auto mode will be handled in update_display
+            pass
     
     def toggle_gaussian_fits(self, checked):
         self.show_gaussian_fits = checked
