@@ -166,6 +166,10 @@ class CoincidenceLogicTab(QWidget):
         self.channels = channels or list(range(16))
         self.hardware_manager = hardware_manager
         
+        # Channel A timing reference for alignment
+        self.reference_timestamp = None
+        self.reference_time_axis_offset = 200.0  # Default offset
+        
         if len(self.channels) < 2:
             self.channels = list(range(2))
             
@@ -659,9 +663,36 @@ class CoincidenceLogicTab(QWidget):
             raw_trace = np.asarray(raw_trace, dtype=np.uint16)
             trace_length = len(raw_trace)
             
-            trigger_position = int(trace_length * 0.3)
-            trigger_time_ns = trigger_position * self.sampling_period_ns
-            time_axis = np.arange(trace_length) * self.sampling_period_ns - trigger_time_ns
+            # Use Channel A as time reference for Channel B alignment
+            if channel_id == 'A':
+                # Channel A sets the time reference
+                FIXED_TRIGGER_POSITION = 100  # Fixed sample position for consistent time axis
+                trigger_time_ns = FIXED_TRIGGER_POSITION * self.sampling_period_ns
+                time_axis = np.arange(trace_length) * self.sampling_period_ns - trigger_time_ns
+                
+                # Store Channel A's timing as reference
+                self.reference_timestamp = event_timestamp
+                self.reference_time_axis_offset = trigger_time_ns
+            
+            elif channel_id == 'B':
+                # Channel B aligns to Channel A's time reference
+                if hasattr(self, 'reference_timestamp') and self.reference_timestamp is not None:
+                    # Calculate time difference between Channel B and Channel A
+                    time_diff_ns = (event_timestamp - self.reference_timestamp) * 10.0  # Convert to ns
+                    
+                    # Use Channel A's time reference + offset
+                    trigger_time_ns = getattr(self, 'reference_time_axis_offset', 200.0)
+                    time_axis = np.arange(trace_length) * self.sampling_period_ns - trigger_time_ns + time_diff_ns
+                else:
+                    # Fallback if no Channel A reference yet
+                    FIXED_TRIGGER_POSITION = 100
+                    trigger_time_ns = FIXED_TRIGGER_POSITION * self.sampling_period_ns
+                    time_axis = np.arange(trace_length) * self.sampling_period_ns - trigger_time_ns
+            else:
+                # Unknown channel ID fallback
+                FIXED_TRIGGER_POSITION = 100
+                trigger_time_ns = FIXED_TRIGGER_POSITION * self.sampling_period_ns
+                time_axis = np.arange(trace_length) * self.sampling_period_ns - trigger_time_ns
             
             baseline_samples = min(100, trace_length // 3)
             baseline = np.mean(raw_trace[:baseline_samples])
