@@ -3,6 +3,7 @@ appdirs
 cbitstruct
 docopt
 fast-histogram
+lmfit
 markupsafe
 matplotlib
 more_itertools
@@ -11,6 +12,7 @@ pandas
 pint
 platformdirs
 PyQt6
+scipy
 sphinx
 sphinxcontrib-napoleon
 pyqtgraph

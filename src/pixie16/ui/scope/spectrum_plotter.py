@@ -29,7 +29,7 @@ from PyQt6.QtCore import Qt
 # Import FWHM analysis components
 try:
     from .fwhm_widget import FWHMAnalysisWidget
-    from .fwhm_analyzer import FWHMAnalyzer
+    from .fwhm_analyzer import FWHMAnalyzer, EnergyCalibration
     FWHM_AVAILABLE = True
 except ImportError as e:
     print(f"FWHM analysis not available: {e}")
@@ -75,6 +75,10 @@ class ContinuousSpectrumPlotter(QWidget):
         self.show_background_subtracted = False
         self.fit_results = {}  # Store latest fit results per channel
         self.background_estimates = {}  # Store background estimates per channel
+        
+        # Energy calibration
+        self.use_energy_axis = False
+        self.energy_axis_label = "Energy (keV)"
 
         # Update timer
         self.update_timer = QtCore.QTimer()
