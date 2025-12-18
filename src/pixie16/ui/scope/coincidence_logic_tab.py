@@ -678,19 +678,9 @@ class CoincidenceLogicTab(QWidget):
                 time_axis = np.arange(trace_length) * self.sampling_period_ns - trigger_time_ns
             
             elif channel_id == 'B':
-                # Channel B aligns to Channel A's time reference
-                if hasattr(self, 'reference_timestamp') and self.reference_timestamp is not None:
-                    # Calculate time difference between Channel B and Channel A
-                    time_diff_ns = (event_timestamp - self.reference_timestamp) * 10.0  # Convert to ns
-                    
-                    # Use Channel A's time reference + offset
-                    trigger_time_ns = getattr(self, 'reference_time_axis_offset', 200.0)
-                    time_axis = np.arange(trace_length) * self.sampling_period_ns - trigger_time_ns + time_diff_ns
-                else:
-                    # Fallback if no Channel A reference yet
-                    FIXED_TRIGGER_POSITION = 100
-                    trigger_time_ns = FIXED_TRIGGER_POSITION * self.sampling_period_ns
-                    time_axis = np.arange(trace_length) * self.sampling_period_ns - trigger_time_ns
+                FIXED_TRIGGER_POSITION = 100  # Same as Channel A
+                trigger_time_ns = FIXED_TRIGGER_POSITION * self.sampling_period_ns
+                time_axis = np.arange(trace_length) * self.sampling_period_ns - trigger_time_ns
             else:
                 # Unknown channel ID fallback
                 FIXED_TRIGGER_POSITION = 100
