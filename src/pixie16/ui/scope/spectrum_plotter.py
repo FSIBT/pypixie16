@@ -124,7 +124,8 @@ class ContinuousSpectrumPlotter(QWidget):
         
         # Initialize with proper axis ranges - Y starts at 0
         self.display.setXRange(*self.energy_range)
-        self.display.setYRange(0, 100)  # Start Y at 0
+        self.display.setYRange(0, 100, padding=0)  # Start Y at 0, no padding
+        print(f"DEBUG: Initialized display with Y range (0, 100)")
         
         # Disable auto-range by default (user can manually zoom with mouse/controls)
         self.display.enableAutoRange('x', False)
@@ -288,6 +289,13 @@ class ContinuousSpectrumPlotter(QWidget):
             self.bg_subtract_cb.setToolTip("Show background-subtracted spectrum")
             self.bg_subtract_cb.toggled.connect(self.toggle_background_subtraction)
             layout.addWidget(self.bg_subtract_cb)
+            
+            # Reset Y-axis button
+            reset_y_btn = QPushButton("Y=0")
+            reset_y_btn.setMaximumWidth(40)
+            reset_y_btn.setToolTip("Force Y-axis to start at 0")
+            reset_y_btn.clicked.connect(self.reset_y_axis_to_zero)
+            layout.addWidget(reset_y_btn)
 
         layout.addStretch()
         group.setLayout(layout)
@@ -428,10 +436,12 @@ class ContinuousSpectrumPlotter(QWidget):
             self.display.enableAutoRange('x', False)
             self.display.enableAutoRange('y', False)
             self.display.setXRange(*self.energy_range)
+            
             if not self.log_scale_cb.isChecked():
                 current_range = self.display.getViewBox().viewRange()[1]
-                if current_range[0] != 0:  # Only adjust if not already at 0
-                    self.display.setYRange(0, max(current_range[1], 100))
+                y_max = max(current_range[1], 100)
+                print(f"DEBUG: Setting Y range to (0, {y_max}), current range was {current_range}")
+                self.display.setYRange(0, y_max, padding=0)  # No padding to ensure exact 0 start
 
     def update_energy_range(self):
         self.energy_range = (self.energy_min_spin.value(), self.energy_max_spin.value())
@@ -452,12 +462,13 @@ class ContinuousSpectrumPlotter(QWidget):
             self.display.enableAutoRange('x', False)
             self.display.enableAutoRange('y', False)
             self.display.setXRange(*self.energy_range)
-            # Ensure Y axis starts from 0
             if not self.log_scale_cb.isChecked():
                 current_range = self.display.getViewBox().viewRange()[1]
-                self.display.setYRange(0, max(current_range[1], 100))
+                y_max = max(current_range[1], 100)
+                print(f"DEBUG: Toggle auto_scale OFF - Setting Y range to (0, {y_max})")
+                self.display.setYRange(0, y_max, padding=0)
         else:
-            # Auto mode will be handled in update_display
+            # Auto mode handled in update_display
             pass
     
     def toggle_gaussian_fits(self, checked):
@@ -467,6 +478,21 @@ class ContinuousSpectrumPlotter(QWidget):
     def toggle_background_subtraction(self, checked):
         self.show_background_subtracted = checked
         self.update_display()
+    
+    def reset_y_axis_to_zero(self):
+        """Force Y-axis to start at 0 - call this if axis is floating"""
+        if not self.log_scale_cb.isChecked():
+            current_range = self.display.getViewBox().viewRange()[1]
+            y_max = max(current_range[1], 100)
+            print(f"DEBUG: Force reset Y axis to (0, {y_max}) from {current_range}")
+            
+            # Multiple attempts to force the range
+            self.display.enableAutoRange('y', False)
+            self.display.setYRange(0, y_max, padding=0)
+            self.display.getViewBox().setYRange(0, y_max, padding=0)
+            
+            # Force immediate update
+            self.display.getViewBox().updateViewRange()
 
     def set_display_channels(self, channels):
         print(f"List Mode Plotter: set_display_channels called with {channels}")

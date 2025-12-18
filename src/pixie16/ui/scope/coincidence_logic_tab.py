@@ -195,7 +195,7 @@ class CoincidenceLogicTab(QWidget):
             "fast_threshold": 100,
             "fast_trig_backplane_delay": 0,
             "fast_trig_backplane_len": 200,
-            "chan_trig_stretch": 100,  # Decreased from 200ns for better alignment
+            "chan_trig_stretch": 50,   # Further decreased for tighter validation window
             "external_delay_len": 300,
             "validation_window": 1000,
         }
@@ -320,7 +320,7 @@ class CoincidenceLogicTab(QWidget):
         timing_layout.addWidget(QLabel("Chan Trig Stretch:"), row, 0)
         self.chan_stretch_spin = QDoubleSpinBox()
         self.chan_stretch_spin.setRange(10, 10000)
-        self.chan_stretch_spin.setValue(100)  # Decreased for better alignment
+        self.chan_stretch_spin.setValue(50)   # Further decreased for tighter validation
         self.chan_stretch_spin.setSuffix(" ns")
         self.chan_stretch_spin.valueChanged.connect(self.update_timing_params)
         timing_layout.addWidget(self.chan_stretch_spin, row, 1)
@@ -754,16 +754,14 @@ class CoincidenceLogicTab(QWidget):
                 val_start_idx = np.where(chan_trig > 0)[0][0]
                 
                 if other_had_trigger:
-                    # Cross-channel validation: center this channel's validation in other channel's expected timing
-                    # Account for propagation delays and create a centered validation window
-                    cross_channel_delay_ns = 50  # Typical cross-channel delay
-                    centered_start_time = time_axis[val_start_idx] + cross_channel_delay_ns
-                    centered_start_idx = np.searchsorted(time_axis, centered_start_time)
-                    centered_end_time = centered_start_time + chan_stretch_ns
-                    centered_end_idx = np.searchsorted(time_axis, centered_end_time)
+                    # Cross-channel validation: align validation window to be stable
+                    # Remove random cross-channel delay that causes jittering
+                    # Use direct timing alignment based on trigger position
+                    val_end_time = time_axis[val_start_idx] + chan_stretch_ns
+                    val_end_idx = np.searchsorted(time_axis, val_end_time)
                     
-                    if centered_start_idx < trace_length and centered_end_idx <= trace_length:
-                        chan_validation_trig[centered_start_idx:centered_end_idx] = 1
+                    if val_end_idx <= trace_length:
+                        chan_validation_trig[val_start_idx:val_end_idx] = 1
                 else:
                     # Single channel validation: use standard timing
                     val_end_time = time_axis[val_start_idx] + chan_stretch_ns

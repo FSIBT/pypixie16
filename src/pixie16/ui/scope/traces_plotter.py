@@ -569,7 +569,6 @@ class TracesPlotter(QWidget):
                 print(
                     f"DEBUG: Set reference timestamp to {self.alignment_reference_timestamp} from first Ch{ref_ch} trace"
                 )
-
         return self.alignment_reference_timestamp
     
     def on_tab_changed(self, index):
@@ -1729,9 +1728,15 @@ class TracesPlotter(QWidget):
                                 # Energy filter ramps for L+G cycles, then flat for P cycles
                                 # Target the middle of the flat area for best stability
                                 ramp_duration = (L + G) * samples_per_energy_cycle
-                                flat_area_mid = (P // 2) * samples_per_energy_cycle  # Middle of flat area
-                                optimal_offset = ramp_duration + flat_area_mid
+                                flat_area_start = ramp_duration
+                                flat_area_length = P * samples_per_energy_cycle
+                                # Position peak sample in the CENTER of the flat top for stability
+                                optimal_offset = flat_area_start + (flat_area_length // 2)
                                 peak_sample_raw_pos = fast_trigger_raw_pos + optimal_offset
+                                
+                                print(f"DEBUG: Peak sample calculation - L={L}, G={G}, P={P}")
+                                print(f"DEBUG: Ramp duration={ramp_duration}, flat_start={flat_area_start}, flat_length={flat_area_length}")
+                                print(f"DEBUG: Optimal offset={optimal_offset}, peak_sample_pos={peak_sample_raw_pos}")
                                 peak_sample_points = (
                                     [peak_sample_raw_pos]
                                     if peak_sample_raw_pos < original_length
