@@ -670,9 +670,12 @@ class CoincidenceLogicTab(QWidget):
                 trigger_time_ns = FIXED_TRIGGER_POSITION * self.sampling_period_ns
                 time_axis = np.arange(trace_length) * self.sampling_period_ns - trigger_time_ns
                 
-                # Store Channel A's timing as reference
-                self.reference_timestamp = event_timestamp
-                self.reference_time_axis_offset = trigger_time_ns
+                if self.reference_timestamp is None:
+                    self.reference_timestamp = event_timestamp
+                    self.reference_time_axis_offset = trigger_time_ns
+                    print(f"DEBUG: Set FIXED reference timestamp = {self.reference_timestamp}")
+                
+                time_axis = np.arange(trace_length) * self.sampling_period_ns - trigger_time_ns
             
             elif channel_id == 'B':
                 # Channel B aligns to Channel A's time reference

@@ -435,7 +435,6 @@ class ContinuousSpectrumPlotter(QWidget):
         else:
             self.display.enableAutoRange('x', False)
             self.display.enableAutoRange('y', False)
-            self.display.setXRange(*self.energy_range)
             
             if not self.log_scale_cb.isChecked():
                 current_range = self.display.getViewBox().viewRange()[1]
@@ -445,8 +444,6 @@ class ContinuousSpectrumPlotter(QWidget):
 
     def update_energy_range(self):
         self.energy_range = (self.energy_min_spin.value(), self.energy_max_spin.value())
-        if not self.auto_scale_cb.isChecked():
-            self.display.setXRange(*self.energy_range)
 
     def update_bins(self):
         self.bins = self.bins_spin.value()
