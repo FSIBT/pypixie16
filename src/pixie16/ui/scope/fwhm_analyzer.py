@@ -15,6 +15,13 @@ except ImportError:
     print("Warning: scipy not available, using numpy fallbacks for FWHM analysis")
     SCIPY_AVAILABLE = False
 
+try:
+    import lmfit
+    LMFIT_AVAILABLE = True
+except ImportError:
+    print("Warning: lmfit not available, Gaussian fitting disabled")
+    LMFIT_AVAILABLE = False
+
 logger = logging.getLogger(__name__)
 
 
@@ -68,14 +75,30 @@ class FWHMResult:
         self.snr = None
         self.fit_quality = None
         self.timestamp = None
+        
+        # Gaussian fit results
+        self.peak_centers = []
+        self.peak_amplitudes = []
+        self.peak_sigmas = []
+        self.peak_fwhms = []
+        self.peak_areas = []
+        self.center_errors = []
+        self.amplitude_errors = []
+        self.sigma_errors = []
+        self.background_params = {}
+        self.reduced_chi2 = None
+        self.fit_success = False
 
 
 class FWHMAnalyzer:
     def __init__(self):
-        self.smoothing_sigma = 2.0  # Gaussian smoothing parameter
-        self.min_peak_height_ratio = 0.1  # Minimum peak height as fraction of max
-        self.background_window = 50  # Channels for background estimation
-        self.interpolation_factor = 10  # Sub-channel interpolation for precision
+        self.smoothing_sigma = 2.0
+        self.min_peak_height_ratio = 0.1
+        self.background_window = 50
+        self.interpolation_factor = 10
+        self.enable_gaussian_fitting = LMFIT_AVAILABLE
+        self.background_types = ["linear", "quadratic", "constant"]
+        self.default_background = "linear"
         
     def find_peaks_in_roi(self, spectrum: np.ndarray, roi_start: int, roi_end: int, 
                           min_height_ratio: float = None) -> List[int]:
@@ -222,33 +245,174 @@ class FWHMAnalyzer:
             
         return result
     
-    def analyze_roi(self, spectrum: np.ndarray, roi_start: int, roi_end: int,
-                    channel_id: int = -1, energy_calibration: callable = None) -> List[FWHMResult]:
-        results = []
+    def fit_gaussian_peaks(self, spectrum: np.ndarray, roi_start: int = None, 
+                          roi_end: int = None, background_type: str = None) -> FWHMResult:
+        if not LMFIT_AVAILABLE:
+            return self._fallback_analysis(spectrum, roi_start, roi_end)
+            
+        if roi_start is None:
+            roi_start = 0
+        if roi_end is None:
+            roi_end = len(spectrum) - 1
+        if background_type is None:
+            background_type = self.default_background
+            
+        result = FWHMResult(-1, roi_start, roi_end)
         
-        # Find peaks in ROI
+        peak_channels = self.find_peaks_in_roi(spectrum, roi_start, roi_end)
+        if not peak_channels:
+            return result
+            
+        roi_spectrum = spectrum[roi_start:roi_end + 1]
+        x_data = np.arange(roi_start, roi_end + 1)
+        
+        try:
+            model = self._create_model(background_type, len(peak_channels))
+            params = self._init_params(model, x_data, roi_spectrum, peak_channels, background_type)
+            
+            weights = np.sqrt(1.0 / np.maximum(roi_spectrum, 1.0))
+            fit_result = model.fit(roi_spectrum, params, x=x_data, weights=weights)
+            
+            result = self._extract_results(fit_result, result, len(peak_channels))
+            result.fit_success = True
+            
+        except Exception as e:
+            logger.warning(f"Gaussian fitting failed: {e}")
+            return self._fallback_analysis(spectrum, roi_start, roi_end)
+            
+        return result
+    
+    def _create_model(self, background_type: str, n_peaks: int):
+        if background_type == "constant":
+            model = lmfit.models.ConstantModel(prefix="bg_")
+        elif background_type == "quadratic": 
+            model = lmfit.models.QuadraticModel(prefix="bg_")
+        else:
+            model = lmfit.models.LinearModel(prefix="bg_")
+            
+        for i in range(n_peaks):
+            gauss = lmfit.models.GaussianModel(prefix=f"g{i+1}_")
+            model += gauss
+            
+        return model
+    
+    def _init_params(self, model, x_data, y_data, peak_channels, background_type):
+        params = model.make_params()
+        
+        if background_type == "constant":
+            params["bg_c"].set(value=np.mean(y_data[:50]))
+        elif background_type == "quadratic":
+            params["bg_a"].set(value=0)
+            params["bg_b"].set(value=0)
+            params["bg_c"].set(value=np.mean(y_data[:50]))
+        else:
+            params["bg_slope"].set(value=0)
+            params["bg_intercept"].set(value=np.mean(y_data[:50]))
+            
+        for i, peak_ch in enumerate(peak_channels):
+            peak_idx = peak_ch - x_data[0]
+            if 0 <= peak_idx < len(y_data):
+                peak_height = y_data[peak_idx]
+                sigma_guess = 5.0
+                amplitude_guess = peak_height * sigma_guess * np.sqrt(2 * np.pi)
+                
+                params[f"g{i+1}_center"].set(value=peak_ch, min=peak_ch-10, max=peak_ch+10)
+                params[f"g{i+1}_sigma"].set(value=sigma_guess, min=1.0, max=20.0)
+                params[f"g{i+1}_amplitude"].set(value=amplitude_guess, min=0)
+                
+        return params
+    
+    def _extract_results(self, fit_result, result: FWHMResult, n_peaks: int):
+        result.reduced_chi2 = fit_result.redchi
+        
+        for param_name, param in fit_result.params.items():
+            if param_name.startswith("bg_"):
+                result.background_params[param_name] = param.value
+                
+        for i in range(n_peaks):
+            prefix = f"g{i+1}_"
+            
+            center = fit_result.params[f"{prefix}center"].value
+            center_err = fit_result.params[f"{prefix}center"].stderr or 0
+            result.peak_centers.append(center)
+            result.center_errors.append(center_err)
+            
+            sigma = fit_result.params[f"{prefix}sigma"].value
+            sigma_err = fit_result.params[f"{prefix}sigma"].stderr or 0
+            fwhm = sigma * 2.355
+            result.peak_sigmas.append(sigma)
+            result.peak_fwhms.append(fwhm)
+            result.sigma_errors.append(sigma_err)
+            
+            amplitude = fit_result.params[f"{prefix}amplitude"].value
+            amplitude_err = fit_result.params[f"{prefix}amplitude"].stderr or 0
+            result.peak_amplitudes.append(amplitude)
+            result.peak_areas.append(amplitude)
+            result.amplitude_errors.append(amplitude_err)
+            
+        return result
+    
+    def _fallback_analysis(self, spectrum, roi_start, roi_end):
+        result = FWHMResult(-1, roi_start, roi_end)
         peak_channels = self.find_peaks_in_roi(spectrum, roi_start, roi_end)
         
         for peak_ch in peak_channels:
-            # Calculate FWHM for this peak
-            result = self.calculate_fwhm(spectrum, peak_ch, interpolate=True)
-            result.channel = channel_id
-            result.roi_start = roi_start  
-            result.roi_end = roi_end
+            fwhm_result = self.calculate_fwhm(spectrum, peak_ch)
+            if fwhm_result.fwhm_channels is not None:
+                result.peak_centers.append(peak_ch)
+                result.peak_fwhms.append(fwhm_result.fwhm_channels)
+                result.peak_amplitudes.append(spectrum[peak_ch])
+                
+        return result
+    
+    def analyze_roi(self, spectrum: np.ndarray, roi_start: int, roi_end: int,
+                    channel_id: int = -1, energy_calibration: callable = None, 
+                    use_gaussian_fit: bool = None) -> List[FWHMResult]:
+        
+        if use_gaussian_fit is None:
+            use_gaussian_fit = self.enable_gaussian_fitting
             
-            # Apply energy calibration if provided
-            if energy_calibration and result.fwhm_channels is not None:
+        if use_gaussian_fit and LMFIT_AVAILABLE:
+            result = self.fit_gaussian_peaks(spectrum, roi_start, roi_end)
+            result.channel = channel_id
+            
+            if energy_calibration and result.peak_centers:
                 try:
-                    peak_energy = energy_calibration(peak_ch)
-                    left_energy = energy_calibration(result.left_half_max)
-                    right_energy = energy_calibration(result.right_half_max)
-                    result.fwhm_energy = abs(right_energy - left_energy)
+                    for i, center in enumerate(result.peak_centers):
+                        energy_center = energy_calibration(center)
+                        if i < len(result.peak_fwhms):
+                            fwhm_ch = result.peak_fwhms[i] / 2.355
+                            left_ch = center - fwhm_ch
+                            right_ch = center + fwhm_ch
+                            left_energy = energy_calibration(left_ch)
+                            right_energy = energy_calibration(right_ch)
+                            result.peak_fwhms[i] = abs(right_energy - left_energy)
                 except Exception as e:
                     logger.warning(f"Energy calibration failed: {e}")
                     
-            results.append(result)
+            return [result] if result.peak_centers else []
+        else:
+            results = []
+            peak_channels = self.find_peaks_in_roi(spectrum, roi_start, roi_end)
             
-        return results
+            for peak_ch in peak_channels:
+                result = self.calculate_fwhm(spectrum, peak_ch, interpolate=True)
+                result.channel = channel_id
+                result.roi_start = roi_start  
+                result.roi_end = roi_end
+                
+                if energy_calibration and result.fwhm_channels is not None:
+                    try:
+                        peak_energy = energy_calibration(peak_ch)
+                        left_energy = energy_calibration(result.left_half_max)
+                        right_energy = energy_calibration(result.right_half_max)
+                        result.fwhm_energy = abs(right_energy - left_energy)
+                    except Exception as e:
+                        logger.warning(f"Energy calibration failed: {e}")
+                        
+                results.append(result)
+                
+            return results
 
 
 def create_test_spectrum():
@@ -270,10 +434,29 @@ if __name__ == "__main__":
     analyzer = FWHMAnalyzer()
     test_spectrum = create_test_spectrum()
     
-    results = analyzer.analyze_roi(test_spectrum, 750, 850, channel_id=0)
+    print(f"Testing FWHM analyzer with LMfit available: {LMFIT_AVAILABLE}")
     
-    for result in results:
-        print(f"Peak at channel {result.peak_channel}:")
-        print(f"  FWHM: {result.fwhm_channels:.2f} channels")
-        print(f"  Resolution: {result.resolution_percent:.2f}%")
-        print(f"  SNR: {result.snr:.1f}")
+    # Test basic FWHM analysis
+    results = analyzer.analyze_roi(test_spectrum, 750, 850, channel_id=0)
+    print(f"\nBasic FWHM analysis found {len(results)} peaks:")
+    for i, result in enumerate(results):
+        if hasattr(result, 'peak_channel') and result.peak_channel:
+            print(f"  Peak {i+1} at channel {result.peak_channel}:")
+            print(f"    FWHM: {result.fwhm_channels:.2f} channels")
+            print(f"    Resolution: {result.resolution_percent:.2f}%")
+            print(f"    SNR: {result.snr:.1f}")
+    
+    # Test Gaussian fitting if available
+    if LMFIT_AVAILABLE:
+        print("\nTesting Gaussian fitting:")
+        fit_result = analyzer.fit_gaussian_peaks(test_spectrum, 750, 850)
+        print(f"Fit success: {fit_result.fit_success}")
+        print(f"Found {len(fit_result.peak_centers)} fitted peaks:")
+        for i, (center, fwhm, amp) in enumerate(zip(
+            fit_result.peak_centers, fit_result.peak_fwhms, fit_result.peak_amplitudes
+        )):
+            print(f"  Peak {i+1}: center={center:.1f}, FWHM={fwhm:.2f}, amplitude={amp:.0f}")
+        if fit_result.reduced_chi2:
+            print(f"Reduced chi-squared: {fit_result.reduced_chi2:.3f}")
+    else:
+        print("\nLMfit not available - Gaussian fitting disabled")

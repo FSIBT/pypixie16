@@ -29,6 +29,7 @@ from PyQt6.QtCore import Qt
 # Import FWHM analysis components
 try:
     from .fwhm_widget import FWHMAnalysisWidget
+    from .fwhm_analyzer import FWHMAnalyzer
     FWHM_AVAILABLE = True
 except ImportError as e:
     print(f"FWHM analysis not available: {e}")
@@ -67,6 +68,13 @@ class ContinuousSpectrumPlotter(QWidget):
         self.energy_data = defaultdict(lambda: deque(maxlen=50000))
         self.last_update = time.time()
         self.update_rate = 0.5  # seconds
+        
+        # Gaussian fitting
+        self.fwhm_analyzer = FWHMAnalyzer() if FWHM_AVAILABLE else None
+        self.show_gaussian_fits = False
+        self.show_background_subtracted = False
+        self.fit_results = {}  # Store latest fit results per channel
+        self.background_estimates = {}  # Store background estimates per channel
 
         # Update timer
         self.update_timer = QtCore.QTimer()
@@ -256,6 +264,19 @@ class ContinuousSpectrumPlotter(QWidget):
         self.clear_btn.setMaximumWidth(60)
         layout.addWidget(self.clear_btn)
 
+        # Gaussian fit checkbox
+        if FWHM_AVAILABLE:
+            self.gaussian_fit_cb = QCheckBox("Fits")
+            self.gaussian_fit_cb.setToolTip("Show Gaussian fits")
+            self.gaussian_fit_cb.toggled.connect(self.toggle_gaussian_fits)
+            layout.addWidget(self.gaussian_fit_cb)
+            
+            # Background subtraction checkbox
+            self.bg_subtract_cb = QCheckBox("BG Sub")
+            self.bg_subtract_cb.setToolTip("Show background-subtracted spectrum")
+            self.bg_subtract_cb.toggled.connect(self.toggle_background_subtraction)
+            layout.addWidget(self.bg_subtract_cb)
+
         layout.addStretch()
         group.setLayout(layout)
         return group
@@ -351,15 +372,23 @@ class ContinuousSpectrumPlotter(QWidget):
 
                 # Calculate bin centers
                 bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2
-
-                # Apply log scale if enabled
-                if self.log_scale_cb.isChecked():
-                    plot_counts = np.where(counts > 0, counts, 0.1)
-                    plot_counts = np.log10(plot_counts)
+                
+                # Apply background subtraction if enabled
+                if self.show_background_subtracted and self.fwhm_analyzer and len(energies) > 100:
+                    plot_counts = self._apply_background_subtraction(channel, counts, bin_centers)
                 else:
                     plot_counts = counts
 
+                # Apply log scale if enabled
+                if self.log_scale_cb.isChecked():
+                    plot_counts = np.where(plot_counts > 0, plot_counts, 0.1)
+                    plot_counts = np.log10(plot_counts)
+
                 self.plot_items[channel].setData(bin_centers, plot_counts)
+                
+                # Add Gaussian fits if enabled
+                if self.show_gaussian_fits and self.fwhm_analyzer and len(energies) > 100:
+                    self._update_gaussian_fits(channel, counts, bin_centers)
 
             except Exception as e:
                 print(f"Error updating channel {channel}: {e}")
@@ -386,6 +415,14 @@ class ContinuousSpectrumPlotter(QWidget):
     def toggle_auto_scale(self, checked):
         if not checked:
             self.display.setXRange(*self.energy_range)
+    
+    def toggle_gaussian_fits(self, checked):
+        self.show_gaussian_fits = checked
+        self.update_display()
+    
+    def toggle_background_subtraction(self, checked):
+        self.show_background_subtracted = checked
+        self.update_display()
 
     def set_display_channels(self, channels):
         print(f"List Mode Plotter: set_display_channels called with {channels}")
@@ -427,11 +464,160 @@ class ContinuousSpectrumPlotter(QWidget):
                 hist, bin_edges = np.histogram(energies, bins=self.bins, range=self.energy_range)
                 histogram_data[channel] = hist
         return histogram_data
+    
+    def _update_gaussian_fits(self, channel: int, histogram: np.ndarray, bin_centers: np.ndarray):
+        try:
+            # Skip if too few counts
+            if np.sum(histogram) < 1000:
+                return
+                
+            # Perform Gaussian fitting on histogram
+            roi_start = 0
+            roi_end = len(histogram) - 1
+            
+            # Find significant peaks first to avoid fitting noise
+            peak_channels = self.fwhm_analyzer.find_peaks_in_roi(histogram, roi_start, roi_end)
+            if not peak_channels:
+                return
+                
+            # Limit to top 3 peaks for real-time performance
+            peak_channels = peak_channels[:3]
+            
+            fit_result = self.fwhm_analyzer.fit_gaussian_peaks(histogram, roi_start, roi_end)
+            
+            if fit_result.fit_success and fit_result.peak_centers:
+                self.fit_results[channel] = fit_result
+                
+                # Plot fitted Gaussians
+                self._plot_gaussian_components(channel, fit_result, bin_centers, histogram)
+                
+        except Exception as e:
+            logger.warning(f"Gaussian fitting failed for channel {channel}: {e}")
+    
+    def _apply_background_subtraction(self, channel: int, histogram: np.ndarray, 
+                                     bin_centers: np.ndarray) -> np.ndarray:
+        try:
+            # Use existing fit result if available
+            if channel in self.fit_results and self.fit_results[channel].background_params:
+                background_params = self.fit_results[channel].background_params
+                background = np.zeros_like(histogram, dtype=float)
+                
+                # Reconstruct background from fit parameters
+                for param_name, value in background_params.items():
+                    if "slope" in param_name:
+                        background += value * np.arange(len(histogram))
+                    elif "intercept" in param_name or "c" in param_name:
+                        background += value
+                
+                # Subtract background
+                bg_subtracted = histogram - background
+                return np.maximum(bg_subtracted, 0)  # Don't allow negative counts
+            else:
+                # Quick background estimation using edge averaging
+                edge_points = min(50, len(histogram) // 10)
+                left_bg = np.mean(histogram[:edge_points])
+                right_bg = np.mean(histogram[-edge_points:])
+                background = np.linspace(left_bg, right_bg, len(histogram))
+                
+                bg_subtracted = histogram - background
+                self.background_estimates[channel] = background
+                
+                return np.maximum(bg_subtracted, 0)
+                
+        except Exception as e:
+            logger.warning(f"Background subtraction failed for channel {channel}: {e}")
+            return histogram
+    
+    def _plot_gaussian_components(self, channel: int, fit_result, bin_centers: np.ndarray, 
+                                 original_histogram: np.ndarray):
+        # Remove old fit plots for this channel
+        fit_items_key = f"fit_{channel}"
+        if hasattr(self, 'fit_plot_items'):
+            if fit_items_key in self.fit_plot_items:
+                for item in self.fit_plot_items[fit_items_key]:
+                    self.display.removeItem(item)
+                del self.fit_plot_items[fit_items_key]
+        else:
+            self.fit_plot_items = {}
+            
+        # Create fit plots
+        self.fit_plot_items[fit_items_key] = []
+        
+        # Plot individual Gaussian components
+        for i, (center, sigma, amplitude) in enumerate(zip(
+            fit_result.peak_centers, fit_result.peak_sigmas, fit_result.peak_amplitudes
+        )):
+            # Generate Gaussian curve
+            x_fine = np.linspace(center - 4*sigma, center + 4*sigma, 100)
+            # Convert bin centers to channel space for fitting
+            channel_spacing = (bin_centers[-1] - bin_centers[0]) / len(bin_centers)
+            x_fine_bins = (x_fine - bin_centers[0]) / channel_spacing
+            
+            # Only plot if within our display range
+            mask = (x_fine_bins >= 0) & (x_fine_bins < len(bin_centers))
+            if np.any(mask):
+                x_plot = x_fine[mask]
+                
+                # Calculate Gaussian values
+                gaussian_vals = (amplitude / (sigma * np.sqrt(2 * np.pi)) * 
+                               np.exp(-0.5 * ((x_fine[mask] - center) / sigma) ** 2))
+                
+                # Apply log scale if enabled
+                if self.log_scale_cb.isChecked():
+                    gaussian_vals = np.log10(np.maximum(gaussian_vals, 0.1))
+                
+                # Plot Gaussian component
+                color = pg.mkColor(255, 0, 0, 150)  # Semi-transparent red
+                pen = pg.mkPen(color=color, width=1, style=pg.Qt.PenStyle.DashLine)
+                curve = pg.PlotCurveItem(pen=pen)
+                curve.setData(x_plot, gaussian_vals)
+                self.display.addItem(curve)
+                self.fit_plot_items[fit_items_key].append(curve)
+        
+        # Plot total fit
+        if len(fit_result.peak_centers) > 0:
+            # Calculate total fitted curve (background + all peaks)
+            total_fit = np.zeros_like(original_histogram, dtype=float)
+            
+            # Add background
+            for param_name, value in fit_result.background_params.items():
+                if "slope" in param_name:
+                    total_fit += value * np.arange(len(original_histogram))
+                elif "intercept" in param_name or "c" in param_name:
+                    total_fit += value
+                    
+            # Add Gaussians
+            for center, sigma, amplitude in zip(
+                fit_result.peak_centers, fit_result.peak_sigmas, fit_result.peak_amplitudes
+            ):
+                x_channels = np.arange(len(original_histogram))
+                gaussian = (amplitude / (sigma * np.sqrt(2 * np.pi)) * 
+                           np.exp(-0.5 * ((x_channels - center) / sigma) ** 2))
+                total_fit += gaussian
+            
+            # Apply log scale if enabled
+            if self.log_scale_cb.isChecked():
+                total_fit = np.log10(np.maximum(total_fit, 0.1))
+            
+            # Plot total fit
+            color = pg.mkColor(0, 255, 0, 200)  # Semi-transparent green
+            pen = pg.mkPen(color=color, width=2)
+            curve = pg.PlotCurveItem(pen=pen)
+            curve.setData(bin_centers, total_fit)
+            self.display.addItem(curve)
+            self.fit_plot_items[fit_items_key].append(curve)
 
     def cleanup(self):
         if hasattr(self, 'fwhm_window') and self.fwhm_window:
             self.fwhm_window.close()
             self.fwhm_window = None
+        
+        # Clean up fit plots
+        if hasattr(self, 'fit_plot_items'):
+            for items in self.fit_plot_items.values():
+                for item in items:
+                    self.display.removeItem(item)
+            self.fit_plot_items.clear()
 
     def set_channels(self, channels):
         # Remove old plot items
