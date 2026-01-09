@@ -23,6 +23,7 @@ from PyQt6.QtWidgets import (
     QMessageBox,
 )
 from PyQt6 import QtCore, QtGui
+from PyQt6.QtCore import Signal
 import pyqtgraph as pg
 import psutil
 
@@ -68,6 +69,10 @@ class DataAcquisition(QWidget):
     >>> daq.show()
     >>> app.exec()
     """
+
+    run_started = Signal()
+    run_finished = Signal()
+    run_update = Signal(int, int)  # current and max
 
     def __init__(self, app, init_modes):
         super().__init__()
@@ -322,10 +327,12 @@ class DataAcquisition(QWidget):
 
         # Start the pipeline
         self.pipeline.start()
+        self.run_started.emit()
         self.enable_ui_for_stopping_run()
 
     def stop_run(self):
         self.pipeline.stop()
+        self.run_finished.emit()
         self.enable_ui_for_new_run()
 
     def clear_table(self):
@@ -451,6 +458,7 @@ class DataAcquisition(QWidget):
                     if key == "runtime":
                         max_val = self.progress_bar.maximum()
                         self.progress_bar.setValue(int(val))
+                        self.run_update.emit(int(val), max_val)
                         formatted = str(datetime.timedelta(seconds=val))
                         self.run_time_progress_text.setText(formatted)
                         formatted = str(datetime.timedelta(seconds=max_val - val))
