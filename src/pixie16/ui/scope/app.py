@@ -2,6 +2,9 @@ import sys
 import time
 import signal
 import traceback
+import psutil
+import gc
+import os
 
 
 from PyQt6.QtWidgets import (
@@ -153,6 +156,17 @@ class PixieScopeApp(QMainWindow):
 
         self.setup_signal_handlers()
 
+        self.is_remote_desktop = (
+            os.environ.get('SSH_CLIENT') is not None or
+            os.environ.get('SSH_TTY') is not None or
+            os.environ.get('DISPLAY', '').startswith(':') or
+            os.environ.get('SESSIONNAME', '').lower() in ['rdp-tcp', 'console'] or
+            'nomachine' in os.environ.get('NX_CLIENT', '').lower()
+        )
+        
+        if self.is_remote_desktop:
+            print("Remote desktop detected - using performance optimized timers")
+        
         self.dummy_mode = dummy_mode
         self.physical_slot = physical_slot
 
@@ -569,10 +583,11 @@ class PixieScopeApp(QMainWindow):
             if hasattr(self.spectrum_tab, "start_live_updates"):
                 self.spectrum_tab.start_live_updates()
 
-            # Set up timer to read histogram data every 2 seconds
+            # Set up timer to read histogram data
             self.acquisition_timer = QTimer()
             self.acquisition_timer.timeout.connect(self.read_histogram_data)
-            self.acquisition_timer.start(2000)
+            interval = 5000 if self.is_remote_desktop else 2000
+            self.acquisition_timer.start(interval)
 
             mode_status = "DUMMY MODE - " if self.dummy_mode else ""
             self.info_bar.setText(f"{mode_status}MCA mode: Collecting histograms...")
@@ -605,10 +620,12 @@ class PixieScopeApp(QMainWindow):
                 print("No binary file loaded")
             else:
                 print("Starting FIFO reader for real hardware...")
-                # Set up timer to read FIFO data every 50ms
+                # Set up timer to read FIFO data
                 self.data_timer = QTimer()
                 self.data_timer.timeout.connect(self.read_list_mode_fifo)
-                self.data_timer.start(50)
+                # Use longer interval for remote desktop to reduce network load
+                interval = 200 if self.is_remote_desktop else 50
+                self.data_timer.start(interval)
                 print("✓ FIFO timer started (50ms intervals)")
 
             # Start the data source
@@ -634,6 +651,14 @@ class PixieScopeApp(QMainWindow):
 
     def read_histogram_data(self):
         try:
+            # Periodic garbage collection for memory management
+            if not hasattr(self, '_histogram_gc_counter'):
+                self._histogram_gc_counter = 0
+            self._histogram_gc_counter += 1
+            
+            if self._histogram_gc_counter % 10 == 0:  # Every 10 calls (~20-50 seconds)
+                gc.collect()
+                
             # Read histograms from hardware
             histograms = self.pixie_hw.read_histograms()
 
@@ -670,6 +695,14 @@ class PixieScopeApp(QMainWindow):
             return
 
         try:
+            # Periodic garbage collection for memory management (more frequent in list mode)
+            if not hasattr(self, '_fifo_gc_counter'):
+                self._fifo_gc_counter = 0
+            self._fifo_gc_counter += 1
+            
+            if self._fifo_gc_counter % 20 == 0:  # Every 20 calls (~1-4 seconds)
+                gc.collect()
+                
             # Read data with debugging
             data_list = self.pixie_hw.read_list_mode_data()
 
@@ -1076,6 +1109,7 @@ class PixieScopeApp(QMainWindow):
     
     def clear_all_buffers(self):
         """Clear all data buffers in the application"""
+        import gc
         try:
             if hasattr(self, 'spectrum_tab') and self.spectrum_tab:
                 # Clear TracesPlotter buffers
@@ -1094,6 +1128,13 @@ class PixieScopeApp(QMainWindow):
                         self.spectrum_tab.single_persistence_data[ch].clear()
                     logger.info("Cleared persistence buffers")
                 
+                # Clear persistence histograms (critical for memory)
+                if hasattr(self.spectrum_tab, 'persistence_histogram'):
+                    for ch in self.spectrum_tab.persistence_histogram:
+                        if hasattr(self.spectrum_tab.persistence_histogram[ch], 'reset'):
+                            self.spectrum_tab.persistence_histogram[ch].reset()
+                    logger.info("Cleared persistence histograms")
+                
                 # Clear MCA buffers
                 if hasattr(self.spectrum_tab, 'mca_data'):
                     for ch in self.spectrum_tab.mca_data:
@@ -1105,6 +1146,14 @@ class PixieScopeApp(QMainWindow):
                     self.spectrum_tab.histogram_tab.energy_data.clear()
                     logger.info("Cleared histogram energy buffers")
                 
+                # Clear coincidence tab data
+                if hasattr(self.spectrum_tab, 'coincidence_tab'):
+                    if hasattr(self.spectrum_tab.coincidence_tab, 'event_buffer'):
+                        self.spectrum_tab.coincidence_tab.event_buffer.clear()
+                    if hasattr(self.spectrum_tab.coincidence_tab, 'binary_data'):
+                        self.spectrum_tab.coincidence_tab.binary_data.clear()
+                    logger.info("Cleared coincidence data")
+                
                 # Reset overflow counters
                 if hasattr(self.spectrum_tab, 'trace_overflow_count'):
                     self.spectrum_tab.trace_overflow_count = {ch: 0 for ch in self.spectrum_tab.channels}
@@ -1115,7 +1164,17 @@ class PixieScopeApp(QMainWindow):
                     
                 logger.info("Reset overflow counters")
             
-            logger.info("All buffers cleared successfully")
+            # Clear main app MCA data
+            if hasattr(self, 'mca_data'):
+                for ch in self.mca_data:
+                    self.mca_data[ch].fill(0)
+            if hasattr(self, 'cumulative_mca_data'):
+                for ch in self.cumulative_mca_data:
+                    self.cumulative_mca_data[ch].fill(0)
+            
+            # Force garbage collection after clearing buffers
+            gc.collect()
+            logger.info("All buffers cleared and garbage collected successfully")
             
         except Exception as e:
             logger.warning(f"Error clearing buffers: {e}")
@@ -1466,6 +1525,24 @@ class PixieScopeApp(QMainWindow):
 
     def update_status(self):
         try:
+            # Check memory usage every status update
+            process = psutil.Process()
+            memory_mb = process.memory_info().rss / 1024 / 1024
+            
+            memory_threshold = 800 if self.is_remote_desktop else 1500
+            warning_threshold = 600 if self.is_remote_desktop else 1200
+            
+            if memory_mb > warning_threshold:
+                print(f"NOTICE: Memory usage {memory_mb:.1f}MB (threshold: {memory_threshold}MB)")
+                
+            if memory_mb > memory_threshold:
+                print(f"WARNING: Memory usage {memory_mb:.1f}MB - clearing buffers (remote: {self.is_remote_desktop})")
+                self.clear_all_buffers()
+                gc.collect()
+                # Update memory reading after cleanup
+                memory_mb = psutil.Process().memory_info().rss / 1024 / 1024
+                print(f"Memory after cleanup: {memory_mb:.1f}MB")
+            
             # Update live reader statistics
             if self.live_reader:
                 try:
@@ -1482,6 +1559,15 @@ class PixieScopeApp(QMainWindow):
                 self.update_mca_channel_stats()
             elif self.current_mode == "list_mode":
                 self.update_list_mode_channel_stats()
+
+            if hasattr(self, '_memory_counter'):
+                self._memory_counter += 1
+            else:
+                self._memory_counter = 0
+                
+            if self._memory_counter % 10 == 0:  # Every 10 seconds
+                mode_status = "DUMMY MODE - " if self.dummy_mode else ""
+                self.info_bar.setText(f"{mode_status}Memory: {memory_mb:.0f}MB - {self.status_label.text()}")
 
         except Exception as e:
             print(f"Error in update_status: {e}")
@@ -1571,6 +1657,38 @@ class PixieScopeApp(QMainWindow):
                 ):
                     self.spectrum_tab.update_timer.stop()
                     self.spectrum_tab.update_timer.deleteLater()
+
+                # Clear plot widgets explicitly to prevent memory leaks
+                if hasattr(self.spectrum_tab, "plot_widget"):
+                    self.spectrum_tab.plot_widget.clear()
+                    self.spectrum_tab.plot_widget.getPlotItem().clear()
+                    if hasattr(self.spectrum_tab, "curves"):
+                        for curve in self.spectrum_tab.curves.values():
+                            if curve is not None:
+                                curve.setData([], [])
+                        self.spectrum_tab.curves.clear()
+                
+                # Clear MCA data to free memory
+                if hasattr(self.spectrum_tab, "mca_data"):
+                    self.spectrum_tab.mca_data.clear()
+
+                # Clear TracesPlotter widgets if it's a TracesPlotter
+                if hasattr(self.spectrum_tab, "raw_plot_widget"):
+                    self.spectrum_tab.raw_plot_widget.clear()
+                    self.spectrum_tab.raw_plot_widget.getPlotItem().clear()
+                    if hasattr(self.spectrum_tab, "raw_curves"):
+                        for curve in self.spectrum_tab.raw_curves.values():
+                            if curve is not None:
+                                curve.setData([], [])
+                        self.spectrum_tab.raw_curves.clear()
+
+                # Clear histogram tab if it exists
+                if hasattr(self.spectrum_tab, "histogram_tab") and self.spectrum_tab.histogram_tab:
+                    if hasattr(self.spectrum_tab.histogram_tab, "plot_widget"):
+                        self.spectrum_tab.histogram_tab.plot_widget.clear()
+                        self.spectrum_tab.histogram_tab.plot_widget.getPlotItem().clear()
+                    if hasattr(self.spectrum_tab.histogram_tab, "energy_data"):
+                        self.spectrum_tab.histogram_tab.energy_data.clear()
 
                 if hasattr(self, "left_layout"):
                     self.left_layout.removeWidget(self.spectrum_tab)

@@ -1,13 +1,13 @@
 """
 Coincidence logic tab with binary waveform visualization
 """
-
 import numpy as np
 from collections import deque
 import time
 import json
 from pathlib import Path
 import csv
+import os
 
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QGroupBox,
@@ -243,8 +243,17 @@ class CoincidenceLogicTab(QWidget):
         self.init_ui()
         self.setup_plot()
         
-        self.update_timer.start(100)
-        print(f"PIXIE-16 Binary Logic initialized - Ch{self.channel_a}(A) vs Ch{self.channel_b}(B)")
+        # Use remote desktop detection for timer interval
+        is_remote_desktop = (
+            os.environ.get('SSH_CLIENT') is not None or
+            os.environ.get('SSH_TTY') is not None or
+            os.environ.get('DISPLAY', '').startswith(':') or
+            os.environ.get('SESSIONNAME', '').lower() in ['rdp-tcp', 'console'] or
+            'nomachine' in os.environ.get('NX_CLIENT', '').lower()
+        )
+        interval = 200 if is_remote_desktop else 100
+        self.update_timer.start(interval)
+        print(f"PIXIE-16 Binary Logic initialized - Ch{self.channel_a}(A) vs Ch{self.channel_b}(B), timer: {interval}ms")
     
     def init_ui(self):
         layout = QVBoxLayout()
@@ -377,8 +386,17 @@ class CoincidenceLogicTab(QWidget):
     def on_tab_activated(self):
         # Resume computations when tab becomes active
         if not self.update_timer.isActive():
-            self.update_timer.start(100)
-            print("CoincidenceLogicTab: Resumed compute-intensive timer updates")
+            # Use remote desktop detection for timer interval
+            is_remote_desktop = (
+                os.environ.get('SSH_CLIENT') is not None or
+                os.environ.get('SSH_TTY') is not None or
+                os.environ.get('DISPLAY', '').startswith(':') or
+                os.environ.get('SESSIONNAME', '').lower() in ['rdp-tcp', 'console'] or
+                'nomachine' in os.environ.get('NX_CLIENT', '').lower()
+            )
+            interval = 200 if is_remote_desktop else 100
+            self.update_timer.start(interval)
+            print(f"CoincidenceLogicTab: Resumed compute-intensive timer updates ({interval}ms)")
         
         controls = self.create_coincidence_controls_widget()
         self.request_controls_widget.emit(controls)

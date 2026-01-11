@@ -8,7 +8,8 @@ import time
 import json
 from pathlib import Path
 import csv
-
+import traceback
+import os
 
 from PyQt6.QtWidgets import (
     QWidget,
@@ -580,8 +581,16 @@ class TracesPlotter(QWidget):
         # Only run compute-intensive updates for active tab
         if tab_name in ["Raw Traces", "Single Channel Analysis"]:
             if not self.update_timer.isActive():
-                self.update_timer.start(100)
-                print(f"TracesPlotter: Resumed compute-intensive updates for {tab_name}")
+                is_remote_desktop = (
+                    os.environ.get('SSH_CLIENT') is not None or
+                    os.environ.get('SSH_TTY') is not None or
+                    os.environ.get('DISPLAY', '').startswith(':') or
+                    os.environ.get('SESSIONNAME', '').lower() in ['rdp-tcp', 'console'] or
+                    'nomachine' in os.environ.get('NX_CLIENT', '').lower()
+                )
+                interval = 200 if is_remote_desktop else 100
+                self.update_timer.start(interval)
+                print(f"TracesPlotter: Resumed compute-intensive updates for {tab_name} ({interval}ms interval)")
         else:
             # Pause main traces processing when viewing coincidence logic only
             if self.update_timer.isActive() and tab_name == "Coincidence Logic":
@@ -947,6 +956,9 @@ class TracesPlotter(QWidget):
                 
                 if timestamp_buffer_was_full:
                     self.timestamp_overflow_count[channel] += 1
+                    # Reset counter periodically to prevent memory buildup
+                    if self.timestamp_overflow_count[channel] > 100000:
+                        self.timestamp_overflow_count[channel] = 0
 
             # Disabled strict time filtering - let all traces through for now
             # In channel alignment mode, only keep traces within ±50µs of reference
@@ -972,6 +984,9 @@ class TracesPlotter(QWidget):
                     
                     if buffer_was_full:
                         self.trace_overflow_count[channel] += 1
+                        # Reset counter periodically to prevent memory buildup
+                        if self.trace_overflow_count[channel] > 100000:
+                            self.trace_overflow_count[channel] = 0
                         if self.trace_overflow_count[channel] % 100 == 1:
                             print(f"Buffer overflow on channel {channel}: removed oldest trace (#{self.trace_overflow_count[channel]})")
 
@@ -982,6 +997,9 @@ class TracesPlotter(QWidget):
                         
                         if persistence_buffer_was_full:
                             self.single_persistence_overflow_count[channel] += 1
+                            # Reset counter periodically to prevent memory buildup
+                            if self.single_persistence_overflow_count[channel] > 100000:
+                                self.single_persistence_overflow_count[channel] = 0
                             if self.single_persistence_overflow_count[channel] % 500 == 1:
                                 print(f"Persistence buffer overflow on channel {channel}: removed oldest data (#{self.single_persistence_overflow_count[channel]})")
                         # Update histogram in real-time for raw traces
@@ -1008,6 +1026,9 @@ class TracesPlotter(QWidget):
                 
                 if buffer_was_full:
                     self.trace_overflow_count[channel] += 1
+                    # Reset counter periodically to prevent memory buildup
+                    if self.trace_overflow_count[channel] > 100000:
+                        self.trace_overflow_count[channel] = 0
                     if self.trace_overflow_count[channel] % 100 == 1:
                         print(f"Buffer overflow on channel {channel}: removed oldest trace (#{self.trace_overflow_count[channel]})")
 
@@ -1215,7 +1236,6 @@ class TracesPlotter(QWidget):
 
         except Exception as e:
             print(f"CRITICAL ERROR updating {label} plot for channel {channel}: {e}")
-            import traceback
             traceback.print_exc()
             try:
                 plot_widget.clear()
@@ -1505,7 +1525,6 @@ class TracesPlotter(QWidget):
             
         except Exception as e:
             print(f"Error plotting persistence heatmap: {e}")
-            import traceback
             traceback.print_exc()
 
     def _add_threshold_lines(self, plot_widget, raw_trace):
@@ -2077,6 +2096,15 @@ class TracesPlotter(QWidget):
         for channel in self.channels:
             self.trace_data[channel].clear()
             self.last_traces[channel] = None
+            # Reset overflow counters to prevent memory leaks
+            self.trace_overflow_count[channel] = 0
+            self.timestamp_overflow_count[channel] = 0
+            self.single_persistence_overflow_count[channel] = 0
+            # Clear timestamps and persistence histogram
+            self.trace_timestamps[channel].clear()
+            self.persistence_histogram[channel].reset()
+            self.persistence_update_counter[channel] = 0
+            
         if hasattr(self, "coincidence_tab"):
             self.coincidence_tab.clear_data()
         for channel in self.channels:
