@@ -2,7 +2,6 @@ import sys
 import time
 import signal
 import traceback
-import psutil
 import gc
 import os
 
@@ -1525,10 +1524,6 @@ class PixieScopeApp(QMainWindow):
 
     def update_status(self):
         try:
-            # Check memory usage every status update
-            process = psutil.Process()
-            memory_mb = process.memory_info().rss / 1024 / 1024
-            
             memory_threshold = 800 if self.is_remote_desktop else 1500
             warning_threshold = 600 if self.is_remote_desktop else 1200
             
@@ -1536,13 +1531,9 @@ class PixieScopeApp(QMainWindow):
                 print(f"NOTICE: Memory usage {memory_mb:.1f}MB (threshold: {memory_threshold}MB)")
                 
             if memory_mb > memory_threshold:
-                print(f"WARNING: Memory usage {memory_mb:.1f}MB - clearing buffers (remote: {self.is_remote_desktop})")
                 self.clear_all_buffers()
                 gc.collect()
-                # Update memory reading after cleanup
-                memory_mb = psutil.Process().memory_info().rss / 1024 / 1024
-                print(f"Memory after cleanup: {memory_mb:.1f}MB")
-            
+                
             # Update live reader statistics
             if self.live_reader:
                 try:
