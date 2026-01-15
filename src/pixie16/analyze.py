@@ -1,5 +1,23 @@
-"""
-Functions to help analyze PIXIE-16 data
+"""Analysis functions for PIXIE-16 nuclear physics data.
+
+This module provides functions for processing and analyzing data from PIXIE-16
+digital signal processing modules, including trace analysis, filter calculations,
+and timing measurements. All functions support both single traces (1D arrays)
+and multiple traces (2D arrays) through automatic dimension handling.
+
+Key Features
+------------
+- Trace preprocessing and FPGA simulation
+- CFD (Constant Fraction Discriminator) calculations
+- Trapezoidal filter implementations
+- Trigger detection and timing analysis
+- Automatic 1D/2D array handling via decorators
+
+Typical Usage
+-------------
+>>> import pixie16.analyze as analyze
+>>> filtered_traces = analyze.calculate_filter(raw_traces, L=0.5, G=0.1)
+>>> cfd_data, timing = analyze.calculate_CFD(traces, Lf=0.02, Gf=0.02)
 """
 
 from functools import wraps
@@ -8,11 +26,32 @@ import numpy as np
 
 
 def ensure_2d_array(f):
-    """Convert 1D numpy array to 2D arrays and back.
+    """Decorator to handle 1D/2D array conversions for analysis functions.
 
-    Using this decorator ensures that the first argument is always a 2d array.
-    This way all functions below only need to handle that case.
+    This decorator ensures that the first argument is always a 2D array for processing,
+    then converts back to 1D if the input was originally 1D. This allows analysis
+    functions to work consistently with both single traces and multiple traces.
 
+    Parameters
+    ----------
+    f : callable
+        Function to wrap that expects 2D numpy arrays as first argument.
+
+    Returns
+    -------
+    callable
+        Wrapped function that handles automatic 1D/2D conversion.
+
+    Raises
+    ------
+    TypeError
+        If first argument is not a numpy array.
+
+    Examples
+    --------
+    >>> @ensure_2d_array
+    ... def process_traces(traces):
+    ...     return traces.mean(axis=1)
     """
 
     @wraps(f)
@@ -54,7 +93,7 @@ def ensure_2d_array(f):
 
 @ensure_2d_array
 def convert_trace_to_FPGA(traces: np.ndarray, filter_range: int = 0):
-    """Sum up 2**filter_range steps in trace to match FPGA clock cycle.
+    """Convert ADC traces to FPGA clock rate representation.
 
     The FPGA (100 MHz = 10 ns) always handels at least 5 data points
     (2ns) at a time. It does this by adding up 5 data points into a
@@ -66,19 +105,27 @@ def convert_trace_to_FPGA(traces: np.ndarray, filter_range: int = 0):
 
     Parameters
     ----------
-    traces
-        A 1D or 2D array of 2 ns time step data. For 1D, the number of
-        data points, M, needs to be a multiple of 5*2^filter_range. For 2D, the
-        size N,M of the array needs to confirm to N traces with a
-        length of M, where M needs to fulfill the same constraints as
-        in the 1D case.
-    filter_range
-        5*2^filter_range points will be added up
+    traces : np.ndarray
+        Trace data with 2ns time steps. Shape (N, M) for N traces of M samples.
+        M must be a multiple of 5*2^filter_range to match FPGA processing.
+    filter_range : int, default=0
+        FPGA decimation factor. 5*2^filter_range points are summed together
+        to simulate FPGA clock grouping.
 
-    Result
+    Returns
+    -------
+    np.ndarray
+        Decimated traces with shape (N, M//(5*2^filter_range)).
+
+    Raises
     ------
-        For the 1D case, return a ndarray with size M/(5*2^filter_range) and
-        for the 2D case, return a N,M/(5*2^filter_range) array
+    ValueError
+        If filter_range < 0 or trace length not divisible by group size.
+
+    Notes
+    -----
+    The FPGA processes data at 100MHz (10ns periods) by grouping ADC samples
+    taken at 500MHz (2ns periods). This function simulates that grouping.
 
     """
     N, M = traces.shape
@@ -112,28 +159,53 @@ def calculate_CFD(
     FF_delay=0,
     CFD_delay=0,
 ):
-    """Calculate the CFD trace as is done by the PIXIE
+    """Calculate Constant Fraction Discriminator (CFD) traces.
 
-    Also provide the option to change parameters used in the calculations
-    (The calculations we do here is for the 500 MHz version).
-
-    The input can be 1d or 2d in which case the output will be also 1d or 2d.
+    Implements the CFD algorithm used by PIXIE-16 modules for precise timing
+    measurements. The CFD provides sub-sample timing resolution by finding
+    zero-crossings in a processed trace signal.
 
     Parameters
     ----------
-       traces        (N, M) numpy array: N= number of traces, M=number of data points
-       t             (M, 1) numpy arrray, the time axes for the traces
-       Lf            integer: length of the integration time, microseconds
-       Gf            integer: gap between the two integration regions, microseconds
-       L, D, B, w    unchangeable parameters of FPGA!!
+    traces : np.ndarray
+        Input trace data, shape (N, M) for N traces of M samples.
+    t : np.ndarray, optional
+        Time axis for traces. If None, creates linear time axis in nanoseconds.
+    CFD_threshold : float, optional
+        CFD threshold for zero-crossing detection.
+    FF_threshold : float, optional
+        Fast filter threshold for event validation.
+    Lf : float, default=0.02
+        Fast filter integration time in microseconds.
+    Gf : float, default=0.02
+        Fast filter gap time in microseconds.
+    w : int, default=1
+        CFD weight parameter (FPGA constant).
+    B : int, default=5
+        CFD baseline parameter (FPGA constant).
+    D : int, default=5
+        CFD delay parameter (FPGA constant).
+    L : int, default=1
+        CFD length parameter (FPGA constant).
+    Nbkgd : int, default=10
+        Number of background samples for noise checking.
+    FF_delay : int, default=0
+        Fast filter delay offset.
+    CFD_delay : int, default=0
+        CFD delay offset.
 
-    Result
-    ------
-       CFD        (N, M-B-D-L+1)  numpy array
-       cfdtime    (N, 1) numpy array: the time of the zero crossing
-       FF         numpy array: fast filter used for the calculation
-       IDXerr     numpy array: index of CFD errors
+    Returns
+    -------
+    tuple[np.ndarray, list, np.ndarray, list]
+        CFD : CFD trace data, shape (N, M-B-D-L+1)
+        cfdtime : List of zero-crossing times for each trace
+        FF : Fast filter output used in calculation
+        IDXerr : List of indices with CFD errors
 
+    Notes
+    -----
+    This implementation follows the PIXIE-16 manual section 3.3.8.2 (page 47).
+    The algorithm is optimized for the 500 MHz ADC version.
     """
 
     traces = traces.astype(np.int64)
@@ -224,7 +296,31 @@ def calculate_CFD(
 
 @ensure_2d_array
 def get_fast_trigger_index(traces, threshold):
-    """Return the indices where the trace value is >= threshold."""
+    """Find trigger indices where trace crosses threshold.
+
+    Identifies the sample indices where traces transition from below to above
+    the specified threshold value, indicating trigger events.
+
+    Parameters
+    ----------
+    traces : np.ndarray
+        1D or 2D array of trace data. For 2D arrays, shape should be (N, M)
+        where N is number of traces and M is number of samples.
+    threshold : float
+        Threshold value for trigger detection.
+
+    Returns
+    -------
+    list[np.ndarray]
+        List of arrays containing trigger indices for each trace.
+        Each array contains the sample indices where threshold crossing occurs.
+
+    Examples
+    --------
+    >>> traces = np.array([[1, 2, 5, 3], [0, 1, 4, 2]])
+    >>> triggers = get_fast_trigger_index(traces, threshold=3)
+    >>> print(triggers)  # Indices where traces cross above 3
+    """
 
     trigger_pos = [
         np.argwhere((trace[:-1] < threshold) & (trace[1:] > threshold)).flatten() + 1
@@ -235,20 +331,40 @@ def get_fast_trigger_index(traces, threshold):
 
 @ensure_2d_array
 def calculate_filter(traces, L=0.02, G=0.02, filter_range=0):
-    """Calculate the fast and slow filter response from the PIXIE
+    """Calculate PIXIE-16 fast/slow filter response.
 
-    This implements the filter response as discribted on page 81 in
-    section 6.1 of the manual.
+    Implements the trapezoidal filter response as described in section 6.1
+    of the PIXIE-16 manual (page 81). This filter is used for energy
+    determination and timing analysis.
 
-    The input can be 1d or 2d in which case the output will be also 1d or 2d.
+    Parameters
+    ----------
+    traces : np.ndarray
+        Input trace data. Shape (N, M) for N traces of M samples each.
+        Trace length M must be a multiple of 5.
+    L : float, default=0.02
+        Rise time (integration length) in microseconds.
+    G : float, default=0.02
+        Gap time between integration regions in microseconds.
+    filter_range : int, default=0
+        Filter range parameter (currently unused in implementation).
 
-    input:
-       traces   (N, M) numpy array. N traces with a length of M
-       L        integer: length of the integration time, microseconds
-       G        integer: gap between the two integration regions, microseconds
+    Returns
+    -------
+    np.ndarray
+        Filtered traces with shape (N, M-2L-G+1) where timing parameters
+        are converted to FPGA clock cycles.
 
-    output:
-       result   (N, M-2L-G+1)
+    Raises
+    ------
+    AssertionError
+        If trace length is not a multiple of 5, or if L or G are not positive.
+
+    Notes
+    -----
+    - Timing conversion: microseconds → FPGA cycles (100 MHz, 10ns period)
+    - Uses 2ns sampling rate (500 MHz ADC)
+    - Filter implements trapezoidal shaping for optimal energy resolution
     """
 
     # import traces, structure into 2D array

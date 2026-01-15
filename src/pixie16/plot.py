@@ -1,3 +1,25 @@
+"""Plotting and visualization functions for PIXIE-16 data analysis.
+
+This module provides comprehensive plotting capabilities for nuclear physics
+data acquired with PIXIE-16 modules. It includes functions for creating
+histograms, trace plots, coincidence maps, and multi-page PDF reports.
+
+Key Features
+------------
+- Event filtering and random sampling
+- Multi-page PDF report generation
+- Trace and waveform plotting
+- Energy and timing histograms
+- Coincidence analysis plots
+- CFD timing visualization
+
+Typical Usage
+-------------
+>>> import pixie16.plot as plot
+>>> filtered_events = plot.filter_events(events, N=1000, randomize=True)
+>>> plot.create_title_page("Analysis Report", pdf=pdf_pages)
+"""
+
 from functools import wraps
 import random
 from typing import Union, Optional
@@ -22,7 +44,26 @@ DATA_POINTS_PER_FPGA_CYCLE = 5
 def filter_events(
     events: Iterable[Event], N: int | None = None, randomize: bool = False
 ) -> Iterable[Event]:
-    """Pick N (random) events from a list of events"""
+    """Select a subset of events for plotting or analysis.
+
+    Parameters
+    ----------
+    events : Iterable[Event]
+        Collection of PIXIE-16 events to filter.
+    N : int, optional
+        Maximum number of events to select. If None, returns all events.
+    randomize : bool, default=False
+        If True, randomly sample N events. If False, take first N events.
+
+    Returns
+    -------
+    Iterable[Event]
+        Filtered collection of events.
+
+    Warnings
+    --------
+    Issues warning if fewer events available than requested.
+    """
 
     N_events = len(events)
 
@@ -41,11 +82,10 @@ def filter_events(
 
 
 def create_title_page(title: str | list[str], pdf: PdfPages | None = None) -> None:
-    """Helper function to create a title page
+    """Create a centered title page for reports or multi-page PDFs.
 
-    The function will create a title centered in a plot.
-    If pdf is given, it will save the figure inside the pdf (to be used with PdfPages)
-    for multi page pdfs.
+    Generates a matplotlib figure with centered title text, useful for
+    creating cover pages in analysis reports or multi-page PDF documents.
 
     Parameters
     ----------

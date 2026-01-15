@@ -26,12 +26,16 @@ dependencies = [
     "matplotlib",
     "msgspec",
     "more_itertools",
+    "numba",
     "numpy",
     "pandas",
     "pint",
     "platformdirs",
+    "psutil",
+    "pyarrow",
     "PyQt6",
     "pyqtgraph",
+    "pyzmq",
     "rich",
     "scipy",
     "setuptools",
@@ -43,7 +47,6 @@ classifiers = [
     "Development Status :: 5 - Production/Stable",
     "License :: OSI Approved :: BSD License",
     "Intended Audience :: Science/Research",
-    "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
@@ -73,6 +76,7 @@ pixie16-parameter-scan = "pixie16.cli.parameter_scan:main"
 pixie16-binary-browser = "pixie16.cli.binary_browser:main"
 pixie16-coincidence = "pixie16.cli.coincidence:main"
 pixie16-scope = "pixie16.cli.scope:main"
+pixie16-daq = "pixie16.cli.pixie_daq:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
