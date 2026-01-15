@@ -1557,6 +1557,11 @@ class PixieScopeApp(QMainWindow):
 
     def update_status(self):
         try:
+            # Get current memory usage using psutil
+            import psutil
+            process = psutil.Process()
+            memory_mb = process.memory_info().rss / (1024 * 1024)  # Convert to MB
+            
             memory_threshold = 800 if self.is_remote_desktop else 1500
             warning_threshold = 600 if self.is_remote_desktop else 1200
             

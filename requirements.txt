@@ -11,6 +11,7 @@ numpy
 pandas
 pint
 platformdirs
+psutil
 PyQt6
 scipy
 sphinx
