@@ -4,7 +4,7 @@ import signal
 import traceback
 import gc
 import os
-
+import psutil
 
 from PyQt6.QtWidgets import (
     QApplication,
@@ -19,6 +19,7 @@ from PyQt6.QtWidgets import (
     QLabel,
     QComboBox,
     QSizePolicy,
+    QDialog,
 )
 from PyQt6.QtGui import QIcon
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal
@@ -1105,19 +1106,16 @@ class PixieScopeApp(QMainWindow):
         self.info_bar.setText(f"{mode_status}{message}")
     
     def on_cache_status_changed(self, message):
-        """Handle auto-save service status updates"""
         # Update status bar with cache info
         if hasattr(self, 'info_bar'):
             self.update_info_bar(f"Cache: {message}")
     
     def on_data_auto_saved(self, data_type, count):
-        """Handle auto-save completion notification"""
         logger.info(f"Auto-saved {count} {data_type} items to cache")
         if hasattr(self, 'info_bar'):
             self.update_info_bar(f"Auto-saved {count} {data_type} items")
     
     def register_data_sources(self):
-        """Register data sources with auto-save service"""
         try:
             # Register the currently active spectrum tab
             if hasattr(self, 'spectrum_tab') and self.spectrum_tab:
@@ -1211,10 +1209,7 @@ class PixieScopeApp(QMainWindow):
         except Exception as e:
             logger.warning(f"Error clearing buffers: {e}")
 
-    def open_save_settings_dialog(self):
-        """Open data storage settings dialog"""
-        from PyQt6.QtWidgets import QDialog, QVBoxLayout
-        
+    def open_save_settings_dialog(self):        
         dialog = QDialog(self)
         dialog.setWindowTitle("Save Settings")
         dialog.setModal(True)
@@ -1267,7 +1262,6 @@ class PixieScopeApp(QMainWindow):
         dialog.exec()
 
     def save_current_data(self):
-        """Save current data based on active mode"""
         try:
             if self.current_mode == "mca_mode":
                 self.save_mca_data()
@@ -1280,7 +1274,6 @@ class PixieScopeApp(QMainWindow):
             QMessageBox.critical(self, "Save Error", f"Error saving data: {str(e)}")
 
     def save_mca_data(self):
-        """Save MCA histogram data"""
         if not hasattr(self, 'spectrum_tab') or not self.spectrum_tab:
             QMessageBox.warning(self, "No Data", "No MCA data to save")
             return
@@ -1313,7 +1306,6 @@ class PixieScopeApp(QMainWindow):
             print(f"MCA data saved successfully")
 
     def save_list_mode_data(self):
-        """Save List Mode data (traces, histogram, etc.)"""
         if not hasattr(self, 'spectrum_tab') or not self.spectrum_tab:
             QMessageBox.warning(self, "No Data", "No List Mode data to save")
             return
@@ -1335,7 +1327,6 @@ class PixieScopeApp(QMainWindow):
             QMessageBox.warning(self, "Save Error", "Cannot determine List Mode tab")
 
     def save_histogram_data(self):
-        """Save histogram data from List Mode"""
         histogram_tab = getattr(self.spectrum_tab, 'histogram_tab', None)
         if not histogram_tab:
             QMessageBox.warning(self, "No Data", "No histogram data available")
@@ -1369,7 +1360,6 @@ class PixieScopeApp(QMainWindow):
                 print("List Mode histogram data saved successfully")
 
     def save_traces_data(self):
-        """Save raw traces data"""
         if hasattr(self.spectrum_tab, 'trace_data'):
             trace_data = self.spectrum_tab.trace_data
             
@@ -1391,18 +1381,14 @@ class PixieScopeApp(QMainWindow):
             QMessageBox.warning(self, "No Data", "No trace data available")
 
     def save_analysis_data(self):
-        """Save single channel analysis / energy spectrum data"""
         # Check if we're in list mode with TracesPlotter
         if hasattr(self.spectrum_tab, 'tab_widget'):
             # Get current tab info
             current_index = self.spectrum_tab.tab_widget.currentIndex()
             tab_name = self.spectrum_tab.tab_widget.tabText(current_index)
             
-            if tab_name == "Single Channel Analysis":
-                # We're on the correct tab, but the single channel analysis data might be
-                # in the TracesPlotter itself (persistence data) or in the histogram tab
-                
-                # Option 1: Try to get data from histogram tab (energy spectrum)
+            if tab_name == "Single Channel Analysis":              
+                # get data from histogram tab (energy spectrum)
                 if hasattr(self.spectrum_tab, 'histogram_tab') and hasattr(self.spectrum_tab.histogram_tab, 'energy_data'):
                     energy_data = self.spectrum_tab.histogram_tab.get_spectrum_data()
                     
@@ -1424,7 +1410,7 @@ class PixieScopeApp(QMainWindow):
                             print(f"Single channel analysis (energy spectrum) data saved successfully")
                         return
                         
-                # Option 2: Try to get persistence data from single channel analysis
+                # get persistence data from single channel analysis
                 if hasattr(self.spectrum_tab, 'single_persistence_data'):
                     persistence_data = {}
                     for channel, traces in self.spectrum_tab.single_persistence_data.items():
@@ -1558,7 +1544,6 @@ class PixieScopeApp(QMainWindow):
     def update_status(self):
         try:
             # Get current memory usage using psutil
-            import psutil
             process = psutil.Process()
             memory_mb = process.memory_info().rss / (1024 * 1024)  # Convert to MB
             

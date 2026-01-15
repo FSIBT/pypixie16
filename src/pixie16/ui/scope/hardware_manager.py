@@ -423,24 +423,24 @@ class DynamicPixieHardwareManager:
                     return False
             
             # Ensure trace length and other parameters are set for channel 6
-            print("DEBUG: Setting up channel 6 for traces...")
+#            print("DEBUG: Setting up channel 6 for traces...")
             try:
                 # Set minimum required parameters for traces
                 px.control.set_channel_parameter("TRACE_LENGTH", 1000, 0, 6)  # 1000 samples
                 px.control.set_channel_parameter("TRIGGER_THRESHOLD", 100, 0, 6)  # Low threshold
-                print("DEBUG: Channel 6 configured for traces")
+#                print("DEBUG: Channel 6 configured for traces")
             except Exception as e:
                 logger.warning(f"Could not configure channel 6: {e}")
             
             # Start list mode for traces
-            print("DEBUG: Starting list mode run for traces...")
+#            print("DEBUG: Starting list mode run for traces...")
             px.control.start_list_mode_run()
             
             # Verify it started
             time.sleep(0.5)  # Give it time to start
             try:
                 run_active = px.control.check_run_status()
-                print(f"DEBUG: List mode run status after start: {run_active}")
+#                print(f"DEBUG: List mode run status after start: {run_active}")
                 if not run_active:
                     logger.error("List mode failed to start properly")
                     return False
@@ -512,22 +512,22 @@ class DynamicPixieHardwareManager:
         return histograms
 
     def read_list_mode_data(self) -> list[any]:
-        print(f"DEBUG: read_list_mode_data called - dummy_mode: {self.dummy_mode}, current_mode: {self.state.current_mode}")
+#        print(f"DEBUG: read_list_mode_data called - dummy_mode: {self.dummy_mode}, current_mode: {self.state.current_mode}")
         
         if self.dummy_mode or self.state.current_mode not in ["list", "traces"]:
-            print(f"DEBUG: Skipping read_list_mode_data - dummy_mode={self.dummy_mode}, mode={self.state.current_mode}")
+#            print(f"DEBUG: Skipping read_list_mode_data - dummy_mode={self.dummy_mode}, mode={self.state.current_mode}")
             return []
 
         try:
             data_list = px.control.read_list_mode_fifo(check=False, threshold=1)
             if data_list:
                 for i, data in enumerate(data_list):
-                    print(f"DEBUG: Module {i} returned {len(data)} words")
+                    pass  # Module data received
             return data_list if data_list else []
 
         except Exception as e:
             logger.error(f"Error reading list mode data: {e}")
-            print(f"DEBUG: Exception in read_list_mode_data: {e}")
+#            print(f"DEBUG: Exception in read_list_mode_data: {e}")
             return []
 
     def get_hardware_timing_parameters(self, channel: int = 0) -> dict:

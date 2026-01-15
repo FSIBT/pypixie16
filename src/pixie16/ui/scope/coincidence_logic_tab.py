@@ -697,7 +697,7 @@ class CoincidenceLogicTab(QWidget):
                 if self.reference_timestamp is None:
                     self.reference_timestamp = event_timestamp
                     self.reference_time_axis_offset = trigger_time_ns
-                    print(f"DEBUG: Set FIXED reference timestamp = {self.reference_timestamp}")
+#                    print(f"DEBUG: Set FIXED reference timestamp = {self.reference_timestamp}")
                 
                 time_axis = np.arange(trace_length) * self.sampling_period_ns - trigger_time_ns
             
