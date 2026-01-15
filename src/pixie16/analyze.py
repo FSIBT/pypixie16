@@ -511,6 +511,95 @@ def compute_energy_filter(
     }
 
 
+def compute_three_sums(traces_fpga, R, L, G, baseline_index=50):
+    """
+    Compute individual S1, S2, S3 sums from trapezoidal energy filter
+    
+    This returns the raw sum values (not combined energy) for debugging
+    
+    Parameters
+    ----------
+    traces_fpga : np.ndarray
+        Traces already converted to FPGA cycles
+    R : int
+        Range parameter (slow filter range = 2**R)
+    L : int
+        Energy filter L parameter in energy steps
+    G : int
+        Energy filter G parameter in energy steps
+    baseline_index : int
+        Baseline calculation index
+        
+    Returns
+    -------
+    Dict containing S1, S2, S3 traces for each input trace
+    """
+    slow_filter_range = 2**R
+    
+    # Check trace length and padding
+    length = len(traces_fpga[0]) // slow_filter_range
+    pad_data = False
+    pad_length = 0
+    
+    if length - 2 * L - G + 1 <= 0:
+        pad_data = True
+        pad_length = 2 * (L + G)
+        length += 2 * pad_length
+    elif length - 2 * L - G + 1 <= 20:
+        pad_data = True 
+        pad_length = L + G
+        length += 2 * pad_length
+    
+    # Baseline calculation
+    baseline = [t[:baseline_index].mean() for t in traces_fpga]
+    baseline_pad = np.asarray(baseline).mean() * slow_filter_range
+    
+    three_sums_results = []
+    
+    for i, trace in enumerate(traces_fpga):
+        trace = trace.astype(np.int64)
+        
+        # Handle slow filter range grouping
+        N = (trace.shape[0] // slow_filter_range) * slow_filter_range
+        trace = trace[:N].reshape(
+            trace.shape[0] // slow_filter_range, slow_filter_range
+        )
+        trace = trace.sum(axis=1)
+        
+        if pad_data:
+            pad = np.ones(pad_length) * int(baseline_pad)
+            trace = np.concatenate([pad, trace, pad])
+        
+        # Initialize result arrays
+        result_length = length - 2 * L - G + 1
+        S1_trace = np.zeros(result_length)
+        S2_trace = np.zeros(result_length)  
+        S3_trace = np.zeros(result_length)
+        
+        # Calculate S1, S2, S3 for each position
+        for k in range(2 * L + G - 1, length):
+            pos = k - 2 * L - G + 1
+            
+            # Raw sums (not weighted)
+            S1 = trace[k - 2 * L - G + 1 : k - L - G + 1].sum()
+            S2 = trace[k - L - G + 1 : k - L + 1].sum()  
+            S3 = trace[k - L + 1 : k + 1].sum()
+            
+            S1_trace[pos] = S1
+            S2_trace[pos] = S2
+            S3_trace[pos] = S3
+        
+        three_sums_results.append({
+            "S1": S1_trace,
+            "S2": S2_trace, 
+            "S3": S3_trace,
+            "trace_index": i,
+            "original_length": len(traces_fpga[i])
+        })
+    
+    return {"three_sums_results": three_sums_results}
+
+
 def compute_energy_linearity(
     traces_fpga: np.ndarray,
     trigger_indices: list,

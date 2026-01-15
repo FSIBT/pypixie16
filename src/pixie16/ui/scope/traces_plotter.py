@@ -41,6 +41,7 @@ from ...analyze import (
     calculate_CFD,
     calculate_filter,
     get_fast_trigger_index,
+    compute_three_sums,
 )
 from .traces_replay import TraceReplayWidget, StoredTrace
 from .coincidence_logic_tab import CoincidenceLogicTab
@@ -166,6 +167,9 @@ class TracesPlotter(QWidget):
         self.use_realtime_axis = True
         self.trace_delay_ns = {}
         self.sampling_period_ns = 2.0
+        
+        # Three sums storage for debugging
+        self.three_sums_data = defaultdict(dict)
 
         # Hardware validation settings
         self.selected_channel = 0
@@ -1315,19 +1319,23 @@ class TracesPlotter(QWidget):
                             scale_factor = (2 * raw_amplitude) / signal_amplitude
                             signal = (signal - np.min(signal)) * scale_factor + np.min(latest_trace)
                     elif trace_type == "three_sums":
-                        # Scale threesums to be visible alongside raw trace
-                        raw_amplitude = np.max(latest_trace) - np.min(latest_trace)
-                        raw_baseline = np.mean(latest_trace[:100])
-                        if np.max(signal) > np.min(signal):
-                            signal_amplitude = np.max(signal) - np.min(signal)
-                            scale_factor = (raw_amplitude * 0.8) / signal_amplitude  # Scale to 80% of raw amplitude
-                            signal = (signal - np.min(signal)) * scale_factor + raw_baseline
-
-                # Plot the trace
+                        continue
+                        
+                # Plot the trace (normal traces only)
                 plot_widget.plot(time_axis, signal, pen=pg.mkPen(color=color, width=2), name=name)
 
             except Exception as e:
                 print(f"Error plotting {trace_type} for channel {channel}: {e}")
+
+        # Calculate and plot three sums separately if enabled
+        if self.trace_types.get("three_sums", False):
+            try:
+                # Calculate three sums data first if not already done
+                self._calculate_hardware_trace(latest_trace, "three_sums", channel)
+                # Then plot them
+                self._plot_three_sums_separately(plot_widget, channel, time_axis, latest_trace)
+            except Exception as e:
+                print(f"Error plotting three sums for channel {channel}: {e}")
 
         # Add trigger markers and threshold lines
         try:
@@ -1341,7 +1349,7 @@ class TracesPlotter(QWidget):
             raw_baseline = np.mean(latest_trace[:100]) if len(latest_trace) > 100 else np.mean(latest_trace)
             raw_amplitude = np.max(latest_trace) - np.min(latest_trace)
             
-            # Use a generous fixed range that accommodates different signal sizes
+            # fixed range
             y_margin = max(raw_amplitude * 0.5, 1000)  # At least 50% margin or 1000 units
             y_min = raw_baseline - y_margin
             y_max = raw_baseline + (3 * y_margin)  # Larger range above baseline
@@ -1360,7 +1368,6 @@ class TracesPlotter(QWidget):
             )
             
             if should_update_image:
-                # Get histogram data for RAW traces only
                 img_data, x_range, y_range = self.persistence_histogram[channel].get_image_data(log_scale=False)
                 
                 if img_data is not None and img_data.size > 0:
@@ -1792,52 +1799,31 @@ class TracesPlotter(QWidget):
                 return np.zeros(original_length)
 
             elif trace_type == "three_sums":
-                # Calculate the three sums (S1, S2, S3) from the energy filter algorithm
-                L = self.hardware_params["energy_L"]
-                G = self.hardware_params["energy_G"]
-                
-                slow_filter_range = 2 ** self.hardware_params["energy_R"]
-                c1 = c2 = c3 = 1.0  # Coefficients
-                
-                # Create FPGA processed trace first
-                if len(raw_trace) % slow_filter_range == 0:
-                    fpga_trace = raw_trace.reshape(-1, slow_filter_range).sum(axis=1)
-                else:
-                    # Pad to make it divisible
-                    pad_length = slow_filter_range - (len(raw_trace) % slow_filter_range)
-                    padded_trace = np.pad(raw_trace, (0, pad_length), mode='constant', constant_values=0)
-                    fpga_trace = padded_trace.reshape(-1, slow_filter_range).sum(axis=1)
+                # Use the new three sums function that returns S1, S2, S3 separately
+                try:
+                    L = self.hardware_params["energy_L"]
+                    G = self.hardware_params["energy_G"] 
+                    R = self.hardware_params["energy_R"]
                     
-                length = len(fpga_trace)
-                
-                # Calculate S1, S2, S3 for each valid position
-                s1_values = []
-                s2_values = []
-                s3_values = []
-                positions = []
-                
-                for k in range(2 * L + G - 1, length):
-                    pos = k - 2 * L - G + 1
+                    # Convert raw trace to FPGA format
+                    fpga_trace = convert_trace_to_FPGA(
+                        np.array([raw_trace]), R, baseline_index=50
+                    )
                     
-                    S1 = fpga_trace[k - 2 * L - G + 1 : k - L - G + 1].sum()
-                    S2 = fpga_trace[k - L - G + 1 : k - L + 1].sum()
-                    S3 = fpga_trace[k - L + 1 : k + 1].sum()
+                    # Calculate three sums
+                    result = compute_three_sums(fpga_trace, R, L, G, baseline_index=50)
+                    three_sums_data = result["three_sums_results"][0]
                     
-                    s1_values.append(S1)
-                    s2_values.append(S2)
-                    s3_values.append(S3)
-                    positions.append(pos)
-                
-                # Expand back to raw sample timing and return S3 (most relevant)
-                if positions:
-                    expanded_s3 = np.zeros(original_length)
-                    for i, pos in enumerate(positions):
-                        raw_start = pos * slow_filter_range
-                        raw_end = min((pos + 1) * slow_filter_range, original_length)
-                        if raw_start < original_length:
-                            expanded_s3[raw_start:raw_end] = s3_values[i]
-                    return expanded_s3
-                else:
+                    # Store all three sums for plotting 
+                    self._store_three_sums_data(channel, three_sums_data, original_length)
+                    
+                    # Return S3 as the main trace (but S1, S2 will be plotted separately)
+                    return self._resize_trace_to_match(
+                        three_sums_data["S3"], original_length, "three_sums"
+                    )
+                    
+                except Exception as e:
+                    print(f"Three sums calculation failed for channel {channel}: {e}")
                     return np.zeros(original_length)
 
             print(f"Unknown trace type: {trace_type}")
@@ -1846,6 +1832,63 @@ class TracesPlotter(QWidget):
         except Exception as e:
             print(f"Hardware computation error for {trace_type}: {e}")
             return np.zeros(original_length)
+    
+    def _store_three_sums_data(self, channel, three_sums_data, original_length):
+        try:
+            # Resize each sum to match original trace length
+            s1_resized = self._resize_trace_to_match(three_sums_data["S1"], original_length, "S1")
+            s2_resized = self._resize_trace_to_match(three_sums_data["S2"], original_length, "S2")  
+            s3_resized = self._resize_trace_to_match(three_sums_data["S3"], original_length, "S3")
+            
+            # Store for plotting
+            self.three_sums_data[channel] = {
+                "S1": s1_resized,
+                "S2": s2_resized,
+                "S3": s3_resized
+            }
+            print(f"Stored three sums for channel {channel}: S1={len(s1_resized)}, S2={len(s2_resized)}, S3={len(s3_resized)}")
+            
+        except Exception as e:
+            print(f"Error storing three sums data for channel {channel}: {e}")
+            
+    def _plot_three_sums_separately(self, plot_widget, channel, time_axis, latest_trace):
+        if channel not in self.three_sums_data or not self.three_sums_data[channel]:
+            return False
+            
+        try:
+            raw_amplitude = np.max(latest_trace) - np.min(latest_trace) if len(latest_trace) > 0 else 1000
+            raw_baseline = np.mean(latest_trace[:100]) if len(latest_trace) > 100 else np.mean(latest_trace) if len(latest_trace) > 0 else 0
+            
+            # Plot S1 (Baseline Sum) - Blue
+            s1_data = self.three_sums_data[channel]["S1"]
+            if len(s1_data) > 0 and np.max(s1_data) > np.min(s1_data):
+                s1_amplitude = np.max(s1_data) - np.min(s1_data)
+                s1_scale = (raw_amplitude * 0.3) / s1_amplitude
+                s1_scaled = (s1_data - np.min(s1_data)) * s1_scale + raw_baseline - (raw_amplitude * 0.5)
+                plot_widget.plot(time_axis, s1_scaled, pen=pg.mkPen(color="#1f77b4", width=2), name="S1 (Baseline)")
+            
+            # Plot S2 (Gap Sum) - Orange  
+            s2_data = self.three_sums_data[channel]["S2"]
+            if len(s2_data) > 0 and np.max(s2_data) > np.min(s2_data):
+                s2_amplitude = np.max(s2_data) - np.min(s2_data)
+                s2_scale = (raw_amplitude * 0.3) / s2_amplitude
+                s2_scaled = (s2_data - np.min(s2_data)) * s2_scale + raw_baseline
+                plot_widget.plot(time_axis, s2_scaled, pen=pg.mkPen(color="#ff7f0e", width=2), name="S2 (Gap)")
+            
+            # Plot S3 (Peak Sum) - Green
+            s3_data = self.three_sums_data[channel]["S3"]
+            if len(s3_data) > 0 and np.max(s3_data) > np.min(s3_data):
+                s3_amplitude = np.max(s3_data) - np.min(s3_data)
+                s3_scale = (raw_amplitude * 0.3) / s3_amplitude
+                s3_scaled = (s3_data - np.min(s3_data)) * s3_scale + raw_baseline + (raw_amplitude * 0.5)
+                plot_widget.plot(time_axis, s3_scaled, pen=pg.mkPen(color="#2ca02c", width=2), name="S3 (Peak)")
+            
+            print(f"Successfully plotted three sums for channel {channel}: S1, S2, S3")
+            return True
+            
+        except Exception as e:
+            print(f"Error plotting three sums for channel {channel}: {e}")
+            return False
 
     def _store_trigger_info(
         self,
