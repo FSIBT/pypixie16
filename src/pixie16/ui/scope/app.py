@@ -532,6 +532,15 @@ class PixieScopeApp(QMainWindow):
             print(error_msg)
 
     def start_acquisition(self):
+        # Prevent race conditions from rapid button clicking
+        if self.is_acquiring:
+            print("Start acquisition called but already acquiring - ignoring")
+            return
+        
+        # Disable both buttons immediately to prevent race conditions
+        self.start_btn.setEnabled(False)
+        self.stop_btn.setEnabled(False)
+        
         try:
             success = False
 
@@ -565,9 +574,17 @@ class PixieScopeApp(QMainWindow):
                 self.stop_btn.setEnabled(True)
                 self.status_label.setText(f"Status: Acquiring ({self.current_mode})")
             else:
+                # Failed to start - reset buttons to start state
+                self.is_acquiring = False
+                self.start_btn.setEnabled(True)
+                self.stop_btn.setEnabled(False)
                 raise RuntimeError("Failed to start acquisition")
 
         except Exception as e:
+            # Always reset button states on error
+            self.is_acquiring = False
+            self.start_btn.setEnabled(True)
+            self.stop_btn.setEnabled(False)
             error_msg = f"Failed to start acquisition: {str(e)}"
             print(error_msg)
             self.info_bar.setText(error_msg)
@@ -784,6 +801,15 @@ class PixieScopeApp(QMainWindow):
     def stop_acquisition(self):
         if self.shutdown_in_progress:
             return
+            
+        # Prevent race conditions from rapid button clicking
+        if not self.is_acquiring:
+            print("Stop acquisition called but not acquiring - ignoring")
+            return
+
+        # Disable both buttons immediately to prevent race conditions
+        self.start_btn.setEnabled(False)
+        self.stop_btn.setEnabled(False)
 
         try:
             print("Stopping acquisition...")
@@ -840,7 +866,7 @@ class PixieScopeApp(QMainWindow):
 
             self.is_acquiring = False
 
-            # Update UI
+            # Update UI - Always set correct final state
             if not self.shutdown_in_progress:
                 try:
                     self.start_btn.setEnabled(True)
@@ -855,6 +881,13 @@ class PixieScopeApp(QMainWindow):
             print("✓ Acquisition stopped successfully")
 
         except Exception as e:
+            # Always reset button states on error
+            if not self.shutdown_in_progress:
+                try:
+                    self.start_btn.setEnabled(True)
+                    self.stop_btn.setEnabled(False)
+                except RuntimeError:
+                    pass
             print(f"Error stopping acquisition: {e}")
 
     def clear_data(self):

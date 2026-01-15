@@ -384,19 +384,25 @@ class CoincidenceLogicTab(QWidget):
         return widget
     
     def on_tab_activated(self):
-        # Resume computations when tab becomes active
-        if not self.update_timer.isActive():
-            # Use remote desktop detection for timer interval
-            is_remote_desktop = (
-                os.environ.get('SSH_CLIENT') is not None or
-                os.environ.get('SSH_TTY') is not None or
-                os.environ.get('DISPLAY', '').startswith(':') or
-                os.environ.get('SESSIONNAME', '').lower() in ['rdp-tcp', 'console'] or
-                'nomachine' in os.environ.get('NX_CLIENT', '').lower()
-            )
-            interval = 200 if is_remote_desktop else 100
-            self.update_timer.start(interval)
-            print(f"CoincidenceLogicTab: Resumed compute-intensive timer updates ({interval}ms)")
+        parent_app = self.parent()
+        while parent_app and not hasattr(parent_app, 'is_acquiring'):
+            parent_app = parent_app.parent()
+            
+        if parent_app and hasattr(parent_app, 'is_acquiring') and parent_app.is_acquiring:
+            if not self.update_timer.isActive():
+                # Use remote desktop detection for timer interval
+                is_remote_desktop = (
+                    os.environ.get('SSH_CLIENT') is not None or
+                    os.environ.get('SSH_TTY') is not None or
+                    os.environ.get('DISPLAY', '').startswith(':') or
+                    os.environ.get('SESSIONNAME', '').lower() in ['rdp-tcp', 'console'] or
+                    'nomachine' in os.environ.get('NX_CLIENT', '').lower()
+                )
+                interval = 200 if is_remote_desktop else 100
+                self.update_timer.start(interval)
+                print(f"CoincidenceLogicTab: Resumed compute-intensive timer updates ({interval}ms)")
+        else:
+            print("CoincidenceLogicTab: Not starting timer - acquisition not active")
         
         controls = self.create_coincidence_controls_widget()
         self.request_controls_widget.emit(controls)
