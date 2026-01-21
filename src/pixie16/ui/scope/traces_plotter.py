@@ -1833,42 +1833,95 @@ class TracesPlotter(QWidget):
             print(f"Error storing three sums data for channel {channel}: {e}")
             
     def _plot_three_sums_separately(self, plot_widget, channel, time_axis, latest_trace):
-        if channel not in self.three_sums_data or not self.three_sums_data[channel]:
+        if channel not in self.trigger_points or 'raw' not in self.trigger_points[channel]:
             return False
             
         try:
-            raw_amplitude = np.max(latest_trace) - np.min(latest_trace) if len(latest_trace) > 0 else 1000
-            raw_baseline = np.mean(latest_trace[:100]) if len(latest_trace) > 100 else np.mean(latest_trace) if len(latest_trace) > 0 else 0
+            # Get energy filter parameters for L-G-L integration windows
+            L = self.hardware_params["energy_L"]  # Length in FPGA units
+            G = self.hardware_params["energy_G"]  # Gap in FPGA units
             
-            # Plot S1 (Baseline Sum) - Blue
-            s1_data = self.three_sums_data[channel]["S1"]
-            if len(s1_data) > 0 and np.max(s1_data) > np.min(s1_data):
-                s1_amplitude = np.max(s1_data) - np.min(s1_data)
-                s1_scale = (raw_amplitude * 0.3) / s1_amplitude
-                s1_scaled = (s1_data - np.min(s1_data)) * s1_scale + raw_baseline - (raw_amplitude * 0.5)
-                plot_widget.plot(time_axis, s1_scaled, pen=pg.mkPen(color="#1f77b4", width=2), name="S1 (Baseline)")
+            # Get trigger position for alignment (align with energy trigger if available, otherwise fast trigger)
+            trigger_indices = self.trigger_points[channel].get('energy', 
+                             self.trigger_points[channel].get('fast',
+                             self.trigger_points[channel].get('raw', [])))
             
-            # Plot S2 (Gap Sum) - Orange  
-            s2_data = self.three_sums_data[channel]["S2"]
-            if len(s2_data) > 0 and np.max(s2_data) > np.min(s2_data):
-                s2_amplitude = np.max(s2_data) - np.min(s2_data)
-                s2_scale = (raw_amplitude * 0.3) / s2_amplitude
-                s2_scaled = (s2_data - np.min(s2_data)) * s2_scale + raw_baseline
-                plot_widget.plot(time_axis, s2_scaled, pen=pg.mkPen(color="#ff7f0e", width=2), name="S2 (Gap)")
+            if not trigger_indices:
+                return False
+                
+            # Use the first trigger point for alignment
+            trigger_idx = trigger_indices[0]
             
-            # Plot S3 (Peak Sum) - Green
-            s3_data = self.three_sums_data[channel]["S3"]
-            if len(s3_data) > 0 and np.max(s3_data) > np.min(s3_data):
-                s3_amplitude = np.max(s3_data) - np.min(s3_data)
-                s3_scale = (raw_amplitude * 0.3) / s3_amplitude
-                s3_scaled = (s3_data - np.min(s3_data)) * s3_scale + raw_baseline + (raw_amplitude * 0.5)
-                plot_widget.plot(time_axis, s3_scaled, pen=pg.mkPen(color="#2ca02c", width=2), name="S3 (Peak)")
+            # Convert trigger index to time units for vertical line positioning
+            if trigger_idx >= len(time_axis):
+                return False
+                
+            trigger_time = time_axis[trigger_idx]
             
-            print(f"Successfully plotted three sums for channel {channel}: S1, S2, S3")
+            # Calculate L-G-L integration window positions in time units
+            # Assuming each FPGA unit corresponds to the time step in time_axis
+            time_step = time_axis[1] - time_axis[0] if len(time_axis) > 1 else 0.01  # microseconds per sample
+            
+            # S1: L samples before trigger (baseline)
+            s1_start_time = trigger_time - (L * time_step)
+            s1_end_time = trigger_time
+            
+            # S2: G samples after S1 (gap) 
+            s2_start_time = s1_end_time
+            s2_end_time = s2_start_time + (G * time_step)
+            
+            # S3: L samples after S2 (peak)
+            s3_start_time = s2_end_time
+            s3_end_time = s3_start_time + (L * time_step)
+            
+            # Get Y-axis range for vertical lines
+            y_min, y_max = plot_widget.viewRange()[1]
+            
+            # Plot vertical lines for integration windows
+            # S1 window (baseline) - Blue dashed lines
+            plot_widget.addItem(pg.InfiniteLine(
+                pos=s1_start_time, angle=90, 
+                pen=pg.mkPen(color="#1f77b4", style=pg.QtCore.Qt.PenStyle.DashLine, width=2),
+                label="S1 Start"
+            ))
+            plot_widget.addItem(pg.InfiniteLine(
+                pos=s1_end_time, angle=90,
+                pen=pg.mkPen(color="#1f77b4", style=pg.QtCore.Qt.PenStyle.DashLine, width=2),
+                label="S1 End"
+            ))
+            
+            # S2 window (gap) - Orange dashed lines  
+            plot_widget.addItem(pg.InfiniteLine(
+                pos=s2_start_time, angle=90,
+                pen=pg.mkPen(color="#ff7f0e", style=pg.QtCore.Qt.PenStyle.DashLine, width=2),
+                label="S2 Start"
+            ))
+            plot_widget.addItem(pg.InfiniteLine(
+                pos=s2_end_time, angle=90,
+                pen=pg.mkPen(color="#ff7f0e", style=pg.QtCore.Qt.PenStyle.DashLine, width=2),
+                label="S2 End"
+            ))
+            
+            # S3 window (peak) - Green dashed lines
+            plot_widget.addItem(pg.InfiniteLine(
+                pos=s3_start_time, angle=90,
+                pen=pg.mkPen(color="#2ca02c", style=pg.QtCore.Qt.PenStyle.DashLine, width=2),
+                label="S3 Start"
+            ))
+            plot_widget.addItem(pg.InfiniteLine(
+                pos=s3_end_time, angle=90,
+                pen=pg.mkPen(color="#2ca02c", style=pg.QtCore.Qt.PenStyle.DashLine, width=2),
+                label="S3 End"
+            ))
+            
+            print(f"Successfully plotted L-G-L integration windows for channel {channel}: "
+                  f"S1=[{s1_start_time:.3f}-{s1_end_time:.3f}]μs, "
+                  f"S2=[{s2_start_time:.3f}-{s2_end_time:.3f}]μs, "
+                  f"S3=[{s3_start_time:.3f}-{s3_end_time:.3f}]μs")
             return True
             
         except Exception as e:
-            print(f"Error plotting three sums for channel {channel}: {e}")
+            print(f"Error plotting L-G-L integration windows for channel {channel}: {e}")
             return False
 
     def _store_trigger_info(
