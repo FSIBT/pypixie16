@@ -442,13 +442,11 @@ class PixieScopeApp(QMainWindow):
                 if not self.default_controls_widget.parent():
                     self.right_layout.addWidget(self.default_controls_widget)
                 self.default_controls_widget.setVisible(True)
-                print("PixieScopeApp: Restored default controls on right panel")
             else:
                 # Hide default controls and show custom widget
                 self.default_controls_widget.setVisible(False)
                 self.right_layout.addWidget(custom_widget)
                 self.custom_controls_widget = custom_widget
-                print("PixieScopeApp: Swapped to custom controls on right panel")
             
         except Exception as e:
             print(f"Error swapping right panel controls: {e}")
@@ -730,24 +728,18 @@ class PixieScopeApp(QMainWindow):
             total_words = sum(len(data) for data in data_list)
             self._fifo_debug_counter += total_words
 
-            # Debug output every 5 seconds
-            current_time = time.time()
-            if current_time - self._last_fifo_debug > 5.0:
-                print(
-                    f"FIFO Debug: Read {total_words} words this cycle, {self._fifo_debug_counter} total"
-                )
-                print(f"FIFO Debug: data_list length = {len(data_list)}")
-                for i, data in enumerate(data_list):
-                    print(f"FIFO Debug: Module {i}: {len(data)} words")
-                print(f"FIFO Debug: Hardware state - dummy_mode: {self.pixie_hw.dummy_mode if self.pixie_hw else 'None'}")
-                print(f"FIFO Debug: Acquisition state - is_acquiring: {self.is_acquiring}, live_reader: {self.live_reader is not None}")
-                self._last_fifo_debug = current_time
+            # # Debug output every 5 seconds
+            # current_time = time.time()
+            # if current_time - self._last_fifo_debug > 5.0:
+            #     for i, data in enumerate(data_list):
+            #         print(f"FIFO Debug: Module {i}: {len(data)} words")
+            #     self._last_fifo_debug = current_time
 
             # Feed data to live reader
             for data in data_list:
                 if len(data) > 0:
                     self.live_reader.add_data(data)
-                    print(f"List Mode: Fed {len(data)} words to live reader")
+                    #print(f"List Mode: Fed {len(data)} words to live reader")
 
         except Exception as e:
             print(f"Error reading PIXIE FIFO: {e}")
@@ -757,24 +749,6 @@ class PixieScopeApp(QMainWindow):
         try:
             channel = getattr(event, "channel", 0)
             energy = getattr(event, "energy", 0)
-
-            # if not hasattr(self, "_event_debug_counter"):
-            #     self._event_debug_counter = 0
-
-            # self._event_debug_counter += 1
-            # if self._event_debug_counter % 1000 == 0:
-            #     if (
-            #         hasattr(self, "binary_loader")
-            #         and self.binary_loader.is_using_binary_data()
-            #     ):
-            #         data_source = "BINARY FILE"
-            #     elif self.dummy_mode:
-            #         data_source = "DUMMY DATA"
-            #     else:
-            #         data_source = "REAL HARDWARE"
-            #     print(
-            #         f"List Mode ({data_source}): Processed {self._event_debug_counter} events, latest: Ch{channel} E={energy}"
-            #     )
 
             if channel in self.channel_numbers:
                 # For unified plotter, feed data to both histogram and traces

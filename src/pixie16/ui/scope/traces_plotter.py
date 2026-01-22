@@ -182,6 +182,9 @@ class TracesPlotter(QWidget):
             "cfd": False,
             "three_sums": False,  # Add three sums plotting
         }
+        
+        # Per-channel polarity settings (True = normal, False = inverted)
+        self.channel_polarity = {ch: True for ch in self.channels}
 
         # Channel colors
         self.colors = [
@@ -574,9 +577,7 @@ class TracesPlotter(QWidget):
     def on_tab_changed(self, index):
         current_tab = self.tab_widget.widget(index)
         tab_name = self.tab_widget.tabText(index)
-        
-        print(f"TracesPlotter: Tab changed to index {index}, name: {tab_name}")
-        
+                
         # Only run compute-intensive updates for active tab
         if tab_name in ["Raw Traces", "Single Channel Analysis"]:
             if not self.update_timer.isActive():
@@ -829,17 +830,47 @@ class TracesPlotter(QWidget):
     def toggle_single_alpha_fade(self, enabled):
         self.single_persistence_alpha_fade = enabled
 
+    def _update_curve_names(self):
+        """Update curve names to only show displayed channels in legend"""
+        try:
+            for channel in self.channels:
+                curve = self.raw_curves[channel]
+                if channel in self.display_channels:
+                    # Set name for displayed channels
+                    curve.opts['name'] = f"Ch {channel}"
+                else:
+                    # Remove name for hidden channels
+                    curve.opts['name'] = None
+        except Exception as e:
+            print(f"Error updating curve names: {e}")
+
     # Hardware validation
     def update_selected_channel(self):
         if hasattr(self, 'channel_combo') and self.channel_combo.currentIndex() >= 0:
             self.selected_channel = self.channels[self.channel_combo.currentIndex()]
             self.channel_plot.setTitle(f"Channel {self.selected_channel} Validation")
             
+            # Update polarity combo to reflect selected channel's polarity
+            if hasattr(self, 'polarity_combo'):
+                current_polarity = self.channel_polarity.get(self.selected_channel, True)
+                self.polarity_combo.setCurrentIndex(0 if current_polarity else 1)
+            
             # Force immediate plot update for the new channel
             self.update_hardware_validation_plots()
 #            print(f"DEBUG: Selected channel changed to {self.selected_channel}")
         else:
             pass  # channel_combo not available or invalid index
+
+    def update_channel_polarity(self):
+        if hasattr(self, 'channel_combo') and hasattr(self, 'polarity_combo'):
+            selected_channel = self.channels[self.channel_combo.currentIndex()]
+            # 0 = Normal (True), 1 = Inverted (False)
+            polarity_normal = self.polarity_combo.currentIndex() == 0
+            self.channel_polarity[selected_channel] = polarity_normal
+            print(f"Channel {selected_channel} polarity set to {'normal' if polarity_normal else 'inverted'}")
+            
+            # Force immediate plot update to show polarity change
+            self.update_plots()
 
     def update_ft_backplane_delay(self, value):
         self.ft_backplane_delay_label.setText(str(value))
@@ -986,7 +1017,8 @@ class TracesPlotter(QWidget):
                         if self.trace_overflow_count[channel] > 100000:
                             self.trace_overflow_count[channel] = 0
                         if self.trace_overflow_count[channel] % 100 == 1:
-                            print(f"Buffer overflow on channel {channel}: removed oldest trace (#{self.trace_overflow_count[channel]})")
+                            #print(f"Buffer overflow on channel {channel}: removed oldest trace (#{self.trace_overflow_count[channel]})")
+                            pass
 
                     # Store in single channel persistence buffer with overflow tracking
                     if self.single_channel_persistence:
@@ -1028,7 +1060,8 @@ class TracesPlotter(QWidget):
                     if self.trace_overflow_count[channel] > 100000:
                         self.trace_overflow_count[channel] = 0
                     if self.trace_overflow_count[channel] % 100 == 1:
-                        print(f"Buffer overflow on channel {channel}: removed oldest trace (#{self.trace_overflow_count[channel]})")
+                        #print(f"Buffer overflow on channel {channel}: removed oldest trace (#{self.trace_overflow_count[channel]})")
+                        pass
 
                 # Store in replay buffer
                 if (
@@ -1072,6 +1105,9 @@ class TracesPlotter(QWidget):
             total_traces = 0
 #            print(f"DEBUG: update_raw_traces_plot - display_channels: {self.display_channels}")
 
+            # Update curve names based on display channels
+            self._update_curve_names()
+            
             # Process all channels for raw traces display (no trace limiting)
             for channel in self.channels:
                 has_data = (
@@ -1081,7 +1117,7 @@ class TracesPlotter(QWidget):
                 if not has_data or channel not in self.display_channels:
                     self.raw_curves[channel].setData([], [])
                     continue
-
+                
                 traces = list(self.trace_data[channel])
                 timestamps = (
                     list(self.trace_timestamps[channel])
@@ -1281,6 +1317,8 @@ class TracesPlotter(QWidget):
             try:
                 if trace_type == "raw":
                     signal = latest_trace
+                    if not self.channel_polarity.get(channel, True):
+                        signal = -signal
                     color = "#1f77b4"  # Blue
                     name = "Raw Trace"
                 else:
@@ -1330,20 +1368,24 @@ class TracesPlotter(QWidget):
         except Exception as e:
             print(f"Error adding markers/lines for channel {channel}: {e}")
         
-        # Set fixed Y-axis range to prevent auto-following behavior
+        # Set Y-axis range based on auto-scale setting
         try:
-            raw_baseline = np.mean(latest_trace[:100]) if len(latest_trace) > 100 else np.mean(latest_trace)
-            raw_amplitude = np.max(latest_trace) - np.min(latest_trace)
-            
-            # fixed range
-            y_margin = max(raw_amplitude * 0.5, 1000)  # At least 50% margin or 1000 units
-            y_min = raw_baseline - y_margin
-            y_max = raw_baseline + (3 * y_margin)  # Larger range above baseline
-            
-            plot_widget.setYRange(y_min, y_max, padding=0)
-            print(f"Fixed Y-axis range for Ch{channel}: [{y_min:.0f}, {y_max:.0f}] (baseline: {raw_baseline:.0f})")
+            if self.auto_scale:
+                # Use auto-range when enabled
+                plot_widget.autoRange()
+            else:
+                # Use fixed range when auto-scale is disabled
+                raw_baseline = np.mean(latest_trace[:100]) if len(latest_trace) > 100 else np.mean(latest_trace)
+                raw_amplitude = np.max(latest_trace) - np.min(latest_trace)
+                
+                # Calculate appropriate fixed range
+                y_margin = max(raw_amplitude * 0.5, 1000)  # At least 50% margin or 1000 units
+                y_min = raw_baseline - y_margin
+                y_max = raw_baseline + (3 * y_margin)  # Larger range above baseline
+                
+                plot_widget.setYRange(y_min, y_max, padding=0)
         except Exception as e:
-            print(f"Error setting fixed Y-axis range for channel {channel}: {e}")
+            print(f"Error setting Y-axis range for channel {channel}: {e}")
 
     def _plot_persistence_traces_single_channel(self, channel, plot_widget):
         try:
@@ -1461,6 +1503,9 @@ class TracesPlotter(QWidget):
                         if trace_type == "raw":
                             # Plot current raw trace as BRIGHT BLUE line on top of heatmap
                             signal = latest_trace
+                            # Apply polarity inversion if enabled for this channel
+                            if not self.channel_polarity.get(channel, True):
+                                signal = -signal
                             color = "#1f77b4"  # Blue
                             name = "Raw (Current)"
                         else:
@@ -1833,18 +1878,37 @@ class TracesPlotter(QWidget):
             print(f"Error storing three sums data for channel {channel}: {e}")
             
     def _plot_three_sums_separately(self, plot_widget, channel, time_axis, latest_trace):
-        if channel not in self.trigger_points or 'raw' not in self.trigger_points[channel]:
+        print(f"DEBUG: _plot_three_sums_separately called for channel {channel}")
+        print(f"DEBUG: Available trigger points: {self.trigger_points.get(channel, {})}")
+        
+        if channel not in self.trigger_points:
+            print(f"DEBUG: No trigger points for channel {channel}")
             return False
+            
+        # Check for trigger points - look for main_trigger (from raw traces) first
+        available_triggers = self.trigger_points[channel]
+        trigger_key = None
+        if 'main_trigger' in available_triggers:
+            trigger_key = 'main_trigger' 
+        elif 'fast' in available_triggers:
+            trigger_key = 'fast'
+        elif 'raw' in available_triggers:
+            trigger_key = 'raw'
+            
+        if trigger_key is None:
+            print(f"DEBUG: No usable trigger points for channel {channel}")
+            print(f"DEBUG: Available keys: {list(available_triggers.keys())}")
+            return False
+            
+        print(f"DEBUG: Using trigger key '{trigger_key}' for threesums")
             
         try:
             # Get energy filter parameters for L-G-L integration windows
             L = self.hardware_params["energy_L"]  # Length in FPGA units
             G = self.hardware_params["energy_G"]  # Gap in FPGA units
             
-            # Get trigger position for alignment (align with energy trigger if available, otherwise fast trigger)
-            trigger_indices = self.trigger_points[channel].get('energy', 
-                             self.trigger_points[channel].get('fast',
-                             self.trigger_points[channel].get('raw', [])))
+            # Get trigger position for alignment using the found trigger key
+            trigger_indices = self.trigger_points[channel][trigger_key]
             
             if not trigger_indices:
                 return False
@@ -1914,10 +1978,11 @@ class TracesPlotter(QWidget):
                 label="S3 End"
             ))
             
-            print(f"Successfully plotted L-G-L integration windows for channel {channel}: "
-                  f"S1=[{s1_start_time:.3f}-{s1_end_time:.3f}]μs, "
-                  f"S2=[{s2_start_time:.3f}-{s2_end_time:.3f}]μs, "
-                  f"S3=[{s3_start_time:.3f}-{s3_end_time:.3f}]μs")
+            print(f"SUCCESS: Plotted L-G-L integration windows for channel {channel}")
+            print(f"  S1=[{s1_start_time:.3f}-{s1_end_time:.3f}]μs")  
+            print(f"  S2=[{s2_start_time:.3f}-{s2_end_time:.3f}]μs")
+            print(f"  S3=[{s3_start_time:.3f}-{s3_end_time:.3f}]μs")
+            print(f"  Added {6} InfiniteLines to plot_widget")
             return True
             
         except Exception as e:
@@ -1979,6 +2044,10 @@ class TracesPlotter(QWidget):
             return processed_trace[:original_length]
 
     def _add_trigger_markers(self, plot_widget, channel, time_axis):
+        # Don't add markers for channels that are not displayed
+        if channel not in self.display_channels:
+            return
+            
         if channel not in self.trigger_points:
 #            print(f"DEBUG: No trigger points stored for channel {channel}")
             return
@@ -2010,8 +2079,8 @@ class TracesPlotter(QWidget):
         # Track which marker types we've added to legend
         added_to_legend = set()
 
-        # Add main trigger point (add to legend ONCE)
-        if "main_trigger" in trigger_info and trigger_info["main_trigger"]:
+        if ("main_trigger" in trigger_info and trigger_info["main_trigger"] 
+            and self.trace_types.get("raw", False)):
             main_trigger_points = trigger_info["main_trigger"]
             for idx, trigger_idx in enumerate(main_trigger_points):
                 if 0 <= trigger_idx < len(time_axis) and 0 <= trigger_idx < len(latest_trace):
@@ -2031,7 +2100,8 @@ class TracesPlotter(QWidget):
 
         # Add other trigger markers
         for trace_type, trigger_indices in trigger_info.items():
-            if not trigger_indices or trace_type == "main_trigger":
+            if (not trigger_indices or trace_type == "main_trigger" 
+                or not self.trace_types.get(trace_type, False)):
                 continue
 
 #            print(f"DEBUG: Adding {len(trigger_indices)} {trace_type} markers")
@@ -2100,9 +2170,10 @@ class TracesPlotter(QWidget):
                             name="CFD Crossing" if idx == 0 else None,
                         )
 
-        # Add peak sample markers
+        # Add peak sample markers - only if energy_filter trace type is enabled
         peak_info = self.peak_sample_points.get(channel, {})
-        if "energy_filter" in peak_info:
+        if ("energy_filter" in peak_info 
+            and self.trace_types.get("energy_filter", False)):
             peak_samples = peak_info["energy_filter"]
 
             for idx, peak_idx in enumerate(peak_samples):
@@ -2355,6 +2426,16 @@ class TracesPlotter(QWidget):
         selector_layout.addWidget(channel_combo)
         self.channel_combo = channel_combo
         
+        # Add polarity control for selected channel
+        selector_layout.addWidget(QLabel("Polarity:"))
+        polarity_combo = QComboBox()
+        polarity_combo.addItem("Normal")
+        polarity_combo.addItem("Inverted")
+        polarity_combo.setCurrentIndex(0)
+        polarity_combo.currentIndexChanged.connect(self.update_channel_polarity)
+        selector_layout.addWidget(polarity_combo)
+        self.polarity_combo = polarity_combo
+        
         selector_layout.addStretch()
         selector_group.setLayout(selector_layout)
         selector_group.setMaximumHeight(80)
@@ -2482,6 +2563,9 @@ class TracesPlotter(QWidget):
 
                 if trace_type == "raw":
                     signal = trace_data
+                    # Apply polarity inversion if enabled for this channel
+                    if not self.channel_polarity.get(channel, True):
+                        signal = -signal
                     color = "#1f77b4"  # Blue
                     name = "Raw Trace"
                 else:
@@ -2530,15 +2614,19 @@ class TracesPlotter(QWidget):
             plot_widget.setTitle(f"{label} - Ch {channel} (REPLAY)")
             plot_widget.addLegend()
             
-            # Fixed Y-axis scaling - no auto follow behavior
-            # Use a larger, fixed range that doesn't auto-scale with each trace
-            raw_baseline = np.mean(trace_data[:100]) if len(trace_data) > 100 else np.mean(trace_data)
-            
-            # Set fixed Y range with generous margins to accommodate different signal sizes
-            baseline_offset = 2000  # Fixed offset from baseline
-            y_min = raw_baseline - baseline_offset
-            y_max = raw_baseline + (4 * baseline_offset)  # Large range above baseline
-            plot_widget.setYRange(y_min, y_max, padding=0)
+            # Set Y-axis scaling based on auto-scale setting
+            if self.auto_scale:
+                # Use auto-range when enabled
+                plot_widget.autoRange()
+            else:
+                # Use fixed range when auto-scale is disabled
+                raw_baseline = np.mean(trace_data[:100]) if len(trace_data) > 100 else np.mean(trace_data)
+                
+                # Set fixed Y range with generous margins to accommodate different signal sizes
+                baseline_offset = 2000  # Fixed offset from baseline
+                y_min = raw_baseline - baseline_offset
+                y_max = raw_baseline + (4 * baseline_offset)  # Large range above baseline
+                plot_widget.setYRange(y_min, y_max, padding=0)
             
         except Exception as e:
             print(f"Error updating {label} replay plot: {e}")

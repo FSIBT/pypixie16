@@ -357,6 +357,9 @@ class ContinuousSpectrumPlotter(QWidget):
         self.last_update = current_time
         total_events = 0
 
+        # Rebuild legend to only show displayed channels
+        self._update_legend()
+        
         # Process ALL channels but only display selected ones
         for channel in self.channels:
             event_count = (
@@ -373,8 +376,7 @@ class ContinuousSpectrumPlotter(QWidget):
                 # Channel not selected for display - hide it
                 self.plot_items[channel].setData([], [])
                 continue
-
-            # Channel is selected for display
+            
             if event_count == 0:
                 # No data for this channel
                 self.plot_items[channel].setData([], [])
@@ -500,6 +502,24 @@ class ContinuousSpectrumPlotter(QWidget):
                 print(f"List Mode: Will show channel {channel}")
 
         self.update_display()
+
+    def _update_legend(self):
+        """Rebuild the legend to only show displayed channels"""
+        try:
+            # Remove existing legend
+            if self.display.plotItem.legend is not None:
+                self.display.plotItem.legend.scene().removeItem(self.display.plotItem.legend)
+                self.display.plotItem.legend = None
+            
+            # Create new legend and add only displayed channels
+            self.display.addLegend()
+            for channel in self.display_channels:
+                if channel in self.plot_items:
+                    curve = self.plot_items[channel]
+                    # Add to legend manually
+                    self.display.plotItem.legend.addItem(curve, f"Ch {channel}")
+        except Exception as e:
+            print(f"Error updating spectrum legend: {e}")
 
     def clear_data(self):
         for channel in self.channels:
