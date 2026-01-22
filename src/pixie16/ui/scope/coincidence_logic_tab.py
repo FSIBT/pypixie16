@@ -190,6 +190,7 @@ class CoincidenceLogicTab(QWidget):
         self.show_histograms = True
         self.histogram_normalize = False
         self.histogram_alpha = 0.3  # Transparency
+        self.auto_scale = True  # Auto-scale the plot axes
         
         # Hardware timing parameters (ns)
         # These are read from hardware or can be adjusted manually
@@ -357,6 +358,12 @@ class CoincidenceLogicTab(QWidget):
         timing_layout.addWidget(self.validation_win_spin, row, 1)
         
         row += 1
+        timing_layout.addWidget(QLabel("Apply to:"), row, 0)
+        self.apply_target_combo = QComboBox()
+        self.apply_target_combo.addItems(["Both Channels", "Channel A Only", "Channel B Only"])
+        timing_layout.addWidget(self.apply_target_combo, row, 1)
+        
+        row += 1
         apply_hw_btn = QPushButton("Apply to Hardware")
         apply_hw_btn.clicked.connect(self.apply_timing_to_hardware)
         timing_layout.addWidget(apply_hw_btn, row, 0, 1, 2)
@@ -443,6 +450,13 @@ class CoincidenceLogicTab(QWidget):
         clear_hist_btn.clicked.connect(self.clear_histograms)
         layout.addWidget(clear_hist_btn)
         
+        # Auto-scale controls
+        layout.addWidget(QLabel("Auto:"))
+        self.auto_scale_cb = QCheckBox("Scale")
+        self.auto_scale_cb.setChecked(True)
+        self.auto_scale_cb.toggled.connect(self.toggle_auto_scale)
+        layout.addWidget(self.auto_scale_cb)
+        
         self.hist_stats_label = QLabel("Events: 0")
         layout.addWidget(self.hist_stats_label)
         
@@ -485,13 +499,12 @@ class CoincidenceLogicTab(QWidget):
                     (9, "Local Fast Trig B"),
                     (8, "Local Fast Trig BP B"),
                     (7, "ChanTrig A (A AND B)"),
-                    (6, "ChanTrig B (A AND B)"),
-                    (5, "Chan Valid Trig A"),
-                    (4, "Local FT Proc A"),
-                    (3, "Valid Trig Proc A"),
-                    (2, "Chan Valid Trig B"),
-                    (1, "Local FT Proc B"),
-                    (0, "Valid Trig Proc B"),
+                    (6, "Chan Valid Trig A"),
+                    (5, "Local FT Proc A"),
+                    (3.5, "Valid Trig Proc A"),
+                    (3, "Chan Valid Trig B"),
+                    (2, "Local FT Proc B"),
+                    (1, "Valid Trig Proc B"),
                 ],
                 []
             ]
@@ -501,7 +514,13 @@ class CoincidenceLogicTab(QWidget):
             left_axis.setStyle(tickTextOffset=10)
             left_axis.setWidth(200)
             
-            self.binary_plot.setYRange(-0.5, 11.5, padding=0)
+            # Set Y-range based on auto-scale setting
+            if not self.auto_scale:
+                self.binary_plot.setYRange(-0.5, 11.5, padding=0)
+                self.binary_plot.setXRange(-1000, 1000, padding=0)
+            else:
+                self.binary_plot.enableAutoRange(axis='xy')
+                
             self.binary_plot.setLabel("left", "")
             self.binary_plot.setLabel("bottom", "Time (ns)")
             
@@ -570,8 +589,12 @@ class CoincidenceLogicTab(QWidget):
         self.channel_a = self.channels[self.ch_a_combo.currentIndex()]
         self.binary_data.clear()
         self.ch_a_event_count = 0
+        # Reset time reference when Channel A changes
+        self.reference_timestamp = None
+        self.reference_time_axis_offset = 200.0
         self.binary_plot.setTitle(f"Ch{self.channel_a} (A) vs Ch{self.channel_b} (B)")
         self.update_params_display()
+        print(f"Channel A changed to Ch{self.channel_a} - time reference reset")
     
     def update_channel_b(self):
         self.channel_b = self.channels[self.ch_b_combo.currentIndex()]
@@ -597,14 +620,29 @@ class CoincidenceLogicTab(QWidget):
             return
         
         try:
-            # Convert ns to appropriate units and emit parameter changes
+            # Convert ns to appropriate units
             bp_delay_cycles = int(self.hardware_params["fast_trig_backplane_delay"] / self.fpga_period_ns)
             bp_len_us = self.hardware_params["fast_trig_backplane_len"] / 1000.0
             chan_stretch_us = self.hardware_params["chan_trig_stretch"] / 1000.0
             ext_delay_us = self.hardware_params["external_delay_len"] / 1000.0
             
-            # Emit parameter changes for both channels
-            for channel in [self.channel_a, self.channel_b]:
+            # Determine target channels based on selection
+            apply_selection = self.apply_target_combo.currentText()
+            if apply_selection == "Both Channels":
+                target_channels = [self.channel_a, self.channel_b]
+                message_channels = f"Ch{self.channel_a} and Ch{self.channel_b}"
+            elif apply_selection == "Channel A Only":
+                target_channels = [self.channel_a]
+                message_channels = f"Ch{self.channel_a} only"
+            elif apply_selection == "Channel B Only":
+                target_channels = [self.channel_b]
+                message_channels = f"Ch{self.channel_b} only"
+            else:
+                target_channels = [self.channel_a, self.channel_b]  # fallback
+                message_channels = f"Ch{self.channel_a} and Ch{self.channel_b}"
+            
+            # Emit parameter changes for selected channels
+            for channel in target_channels:
                 self.parameter_changed.emit("FastTrigBackplaneEna", bp_delay_cycles, 0, channel)
                 self.parameter_changed.emit("FASTTRIGBACKLEN", bp_len_us, 0, channel)
                 self.parameter_changed.emit("ChanTrigStretch", chan_stretch_us, 0, channel)
@@ -612,7 +650,7 @@ class CoincidenceLogicTab(QWidget):
             
             QMessageBox.information(
                 self, "Parameters Applied",
-                f"Timing parameters applied to Ch{self.channel_a} and Ch{self.channel_b}"
+                f"Timing parameters applied to {message_channels}"
             )
             
         except Exception as e:
@@ -626,6 +664,17 @@ class CoincidenceLogicTab(QWidget):
     
     def update_histogram_alpha(self, value):
         self.histogram_alpha = value
+    
+    def toggle_auto_scale(self, enabled):
+        self.auto_scale = enabled
+        if enabled:
+            # Enable auto-range on both axes
+            self.binary_plot.enableAutoRange(axis='xy')
+        else:
+            # Disable auto-range and set fixed range
+            self.binary_plot.disableAutoRange()
+            self.binary_plot.setYRange(-0.5, 11.5, padding=0)
+            self.binary_plot.setXRange(-1000, 1000, padding=0)
     
     def clear_histograms(self):
         self.binary_data.ch_a_histogram.clear()
@@ -687,24 +736,34 @@ class CoincidenceLogicTab(QWidget):
             raw_trace = np.asarray(raw_trace, dtype=np.uint16)
             trace_length = len(raw_trace)
             
-            # Use Channel A as time reference for Channel B alignment
+            # Channel A is FIXED time reference - never moves
             if channel_id == 'A':
-                # Channel A sets the time reference
-                FIXED_TRIGGER_POSITION = 100  # Fixed sample position for consistent time axis
+                # Channel A: Absolute fixed time reference
+                FIXED_TRIGGER_POSITION = 100  # Fixed sample position
                 trigger_time_ns = FIXED_TRIGGER_POSITION * self.sampling_period_ns
                 time_axis = np.arange(trace_length) * self.sampling_period_ns - trigger_time_ns
                 
+                # Set the fixed reference once and never change it
                 if self.reference_timestamp is None:
                     self.reference_timestamp = event_timestamp
                     self.reference_time_axis_offset = trigger_time_ns
-#                    print(f"DEBUG: Set FIXED reference timestamp = {self.reference_timestamp}")
-                
-                time_axis = np.arange(trace_length) * self.sampling_period_ns - trigger_time_ns
+                    print(f"Channel A set as FIXED time reference at timestamp {self.reference_timestamp}")
             
             elif channel_id == 'B':
-                FIXED_TRIGGER_POSITION = 100  # Same as Channel A
-                trigger_time_ns = FIXED_TRIGGER_POSITION * self.sampling_period_ns
-                time_axis = np.arange(trace_length) * self.sampling_period_ns - trigger_time_ns
+                # Channel B: Align to Channel A's time reference
+                if self.reference_timestamp is not None:
+                    # Calculate time offset relative to Channel A reference
+                    timestamp_diff_ns = (event_timestamp - self.reference_timestamp) * 10.0  # 10ns per timestamp tick
+                    
+                    # Channel B uses same fixed trigger position but adjusts for timestamp difference
+                    FIXED_TRIGGER_POSITION = 100
+                    trigger_time_ns = FIXED_TRIGGER_POSITION * self.sampling_period_ns
+                    time_axis = np.arange(trace_length) * self.sampling_period_ns - trigger_time_ns + timestamp_diff_ns
+                else:
+                    # Fallback if no Channel A reference yet
+                    FIXED_TRIGGER_POSITION = 100
+                    trigger_time_ns = FIXED_TRIGGER_POSITION * self.sampling_period_ns
+                    time_axis = np.arange(trace_length) * self.sampling_period_ns - trigger_time_ns
             else:
                 # Unknown channel ID fallback
                 FIXED_TRIGGER_POSITION = 100
@@ -793,29 +852,22 @@ class CoincidenceLogicTab(QWidget):
                     chan_trig[coinc_idx:coinc_end_idx] = 1
                     self.coincidence_count += 1
             
-            # STEP 4: Channel Validation Trigger
-            # For cross-channel validation: Channel Valid Trig A should be centered in the other channel's stretch
+            # STEP 4: Channel Validation Trigger - FIXED timing, not dependent on coincidence
+            # Green validation windows should be stable and not move
             chan_stretch_ns = self.hardware_params["chan_trig_stretch"]
             chan_validation_trig = np.zeros(trace_length, dtype=np.int8)
             
-            if np.any(chan_trig > 0):
-                val_start_idx = np.where(chan_trig > 0)[0][0]
-                
-                if other_had_trigger:
-                    # Cross-channel validation: align validation window to be stable
-                    # Remove random cross-channel delay that causes jittering
-                    # Use direct timing alignment based on trigger position
-                    val_end_time = time_axis[val_start_idx] + chan_stretch_ns
-                    val_end_idx = np.searchsorted(time_axis, val_end_time)
-                    
-                    if val_end_idx <= trace_length:
-                        chan_validation_trig[val_start_idx:val_end_idx] = 1
-                else:
-                    # Single channel validation: use standard timing
-                    val_end_time = time_axis[val_start_idx] + chan_stretch_ns
-                    val_end_idx = np.searchsorted(time_axis, val_end_time)
-                    if val_end_idx <= trace_length:
-                        chan_validation_trig[val_start_idx:val_end_idx] = 1
+            # Generate validation window at FIXED timing relative to fast trigger
+            # This ensures green validation windows don't move
+            validation_delay_ns = bp_delay_ns + 110  # Fixed delay after backplane trigger
+            validation_start_time = first_trigger_time_ns + validation_delay_ns
+            validation_end_time = validation_start_time + chan_stretch_ns
+            
+            val_start_idx = np.searchsorted(time_axis, validation_start_time)
+            val_end_idx = np.searchsorted(time_axis, validation_end_time)
+            
+            if val_start_idx < trace_length and val_end_idx <= trace_length:
+                chan_validation_trig[val_start_idx:val_end_idx] = 1
             
             # STEP 5: Local Fast for Processing
             # Adjust timing to center blue signal in middle of green (chan_validation_trig)
@@ -929,13 +981,12 @@ class CoincidenceLogicTab(QWidget):
                 ("B", "local_fast_trigger"): 9,
                 ("B", "fast_trigger_bp"): 8,
                 ("A", "chan_trig"): 7,
-                ("B", "chan_trig"): 6,
-                ("A", "chan_validation_trig"): 5,
-                ("A", "local_fast_for_processing"): 4,
-                ("A", "validated_trig_for_processing"): 3,
-                ("B", "chan_validation_trig"): 2,
-                ("B", "local_fast_for_processing"): 1,
-                ("B", "validated_trig_for_processing"): 0,
+                ("A", "chan_validation_trig"): 6,
+                ("A", "local_fast_for_processing"): 5,
+                ("A", "validated_trig_for_processing"): 3.5,  # Move down to make room
+                ("B", "chan_validation_trig"): 3,
+                ("B", "local_fast_for_processing"): 2,
+                ("B", "validated_trig_for_processing"): 1,
             }
             
             # Plot histograms FIRST (behind binary traces)
@@ -959,18 +1010,19 @@ class CoincidenceLogicTab(QWidget):
             
             # Plot Channel B signals
             if has_ch_b:
-                for step in ["local_fast_trigger", "fast_trigger_bp", "chan_trig",
+                for step in ["local_fast_trigger", "fast_trigger_bp",
                             "chan_validation_trig", "local_fast_for_processing",
                             "validated_trig_for_processing"]:
                     if data['ch_b'][step] is not None:
-                        y_offset = y_offsets[("B", step)]
-                        self.plot_binary_step(
-                            data['ch_b'][step],
-                            data['ch_b_time_axis'],
-                            y_offset,
-                            colors[step],
-                            f"B: {step}"
-                        )
+                        y_offset = y_offsets.get(("B", step))
+                        if y_offset is not None:
+                            self.plot_binary_step(
+                                data['ch_b'][step],
+                                data['ch_b_time_axis'],
+                                y_offset,
+                                colors[step],
+                                f"B: {step}"
+                            )
             
             # Update status with histogram info
             hist_a, total_a = self.binary_data.get_histogram_data('A', self.histogram_normalize)
@@ -1164,13 +1216,56 @@ class CoincidenceLogicTab(QWidget):
             traceback.print_exc()
     
     def update_params_display(self):
+        # Get hardware settings for both channels if hardware manager is available
+        ch_a_settings = "No data"
+        ch_b_settings = "No data"
+        
+        if self.hardware_manager:
+            try:
+                # Channel A settings
+                params_a = self.hardware_manager.get_all_parameters(0, self.channel_a)
+                if params_a:
+                    bp_delay_a = params_a.get('FastTrigBackplaneEna', 0) * self.fpga_period_ns
+                    bp_len_a = params_a.get('FastTrigBackLen', 0) * 1000
+                    chan_stretch_a = params_a.get('ChanTrigStretch', 0) * 1000
+                    ext_delay_a = params_a.get('ExternDelayLen', 0) * 1000
+                    
+                    ch_a_settings = (
+                        f"BP Delay: {bp_delay_a:.0f}ns, "
+                        f"BP Len: {bp_len_a:.0f}ns, "
+                        f"Stretch: {chan_stretch_a:.0f}ns, "
+                        f"Ext Delay: {ext_delay_a:.0f}ns"
+                    )
+                
+                # Channel B settings
+                params_b = self.hardware_manager.get_all_parameters(0, self.channel_b)
+                if params_b:
+                    bp_delay_b = params_b.get('FastTrigBackplaneEna', 0) * self.fpga_period_ns
+                    bp_len_b = params_b.get('FastTrigBackLen', 0) * 1000
+                    chan_stretch_b = params_b.get('ChanTrigStretch', 0) * 1000
+                    ext_delay_b = params_b.get('ExternDelayLen', 0) * 1000
+                    
+                    ch_b_settings = (
+                        f"BP Delay: {bp_delay_b:.0f}ns, "
+                        f"BP Len: {bp_len_b:.0f}ns, "
+                        f"Stretch: {chan_stretch_b:.0f}ns, "
+                        f"Ext Delay: {ext_delay_b:.0f}ns"
+                    )
+            except Exception as e:
+                ch_a_settings = "Error reading"
+                ch_b_settings = "Error reading"
+        
         params_text = (
-            f"<b>Channels:</b> A=Ch{self.channel_a}, B=Ch{self.channel_b}<br>"
-            f"<b>BP Delay:</b> {self.hardware_params['fast_trig_backplane_delay']:.0f} ns<br>"
-            f"<b>BP Length:</b> {self.hardware_params['fast_trig_backplane_len']:.0f} ns<br>"
-            f"<b>Chan Stretch:</b> {self.hardware_params['chan_trig_stretch']:.0f} ns<br>"
-            f"<b>Ext Delay:</b> {self.hardware_params['external_delay_len']:.0f} ns<br>"
-            f"<b>Validation:</b> {self.hardware_params['validation_window']:.0f} ns"
+            f"<b>Channel A (Ch{self.channel_a}):</b><br>"
+            f"<small>{ch_a_settings}</small><br><br>"
+            f"<b>Channel B (Ch{self.channel_b}):</b><br>"
+            f"<small>{ch_b_settings}</small><br><br>"
+            f"<b>Software Settings:</b><br>"
+            f"<small>BP Delay: {self.hardware_params['fast_trig_backplane_delay']:.0f}ns, "
+            f"BP Len: {self.hardware_params['fast_trig_backplane_len']:.0f}ns, "
+            f"Stretch: {self.hardware_params['chan_trig_stretch']:.0f}ns, "
+            f"Ext Delay: {self.hardware_params['external_delay_len']:.0f}ns, "
+            f"Validation: {self.hardware_params['validation_window']:.0f}ns</small>"
         )
         if hasattr(self, 'params_label'):
             self.params_label.setText(params_text)
