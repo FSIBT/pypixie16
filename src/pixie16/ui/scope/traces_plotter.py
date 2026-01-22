@@ -740,13 +740,56 @@ class TracesPlotter(QWidget):
                 save_path = data_manager.get_save_path('traces', f"traces_ch{selected_channel}_{timestamp}.npy")
                 np.save(save_path, traces_array)
                 
+                # Save peak sample locations and amplitudes if available
+                peak_samples_data = {}
+                if selected_channel in self.peak_sample_points:
+                    peak_samples_data = self.peak_sample_points[selected_channel].copy()
+                    
+                    # Add amplitude data for each peak sample
+                    if selected_channel in self.trace_data and len(self.trace_data[selected_channel]) > 0:
+                        latest_trace = list(self.trace_data[selected_channel])[-1]
+                        
+                        # Calculate amplitudes at peak sample locations
+                        for trace_type, peak_indices in peak_samples_data.items():
+                            if trace_type == "energy_filter" and peak_indices:
+                                amplitudes = []
+                                energy_signal = self.compute_hardware_traces("energy_filter", latest_trace, selected_channel)
+                                if energy_signal is not None:
+                                    # Apply same scaling as used in plotting
+                                    raw_amplitude = np.max(latest_trace) - np.min(latest_trace)
+                                    if np.max(energy_signal) > np.min(energy_signal):
+                                        signal_amplitude = np.max(energy_signal) - np.min(energy_signal)
+                                        scale_factor = (2 * raw_amplitude) / signal_amplitude
+                                        energy_signal = (energy_signal - np.min(energy_signal)) * scale_factor + np.min(latest_trace)
+                                    
+                                    for peak_idx in peak_indices:
+                                        if 0 <= peak_idx < len(energy_signal):
+                                            amplitudes.append(float(energy_signal[peak_idx]))
+                                        else:
+                                            amplitudes.append(None)
+                                else:
+                                    amplitudes = [None] * len(peak_indices)
+                                
+                                # Store both locations and amplitudes
+                                peak_samples_data[trace_type] = {
+                                    "locations": peak_indices,
+                                    "amplitudes": amplitudes
+                                }
+                    
+                if peak_samples_data:
+                    peak_samples_path = data_manager.get_save_path('traces', f"peak_samples_ch{selected_channel}_{timestamp}.json")
+                    with open(peak_samples_path, 'w') as f:
+                        json.dump(peak_samples_data, f, indent=2)
+                    print(f"Saved peak sample locations and amplitudes to {peak_samples_path}")
+
                 # Save metadata
                 metadata = {
                     "channel": selected_channel,
                     "timestamp": timestamp,
                     "trace_count": trace_count,
                     "sampling_period_ns": self.sampling_period_ns,
-                    "hardware_params": self.hardware_params.copy()
+                    "hardware_params": self.hardware_params.copy(),
+                    "peak_samples_saved": bool(peak_samples_data)
                 }
                 
                 metadata_path = data_manager.get_save_path('traces', f"traces_ch{selected_channel}_{timestamp}_metadata.json")
@@ -754,12 +797,15 @@ class TracesPlotter(QWidget):
                     json.dump(metadata, f, indent=2)
                 
                 file_size_mb = save_path.stat().st_size / (1024 * 1024)
-                QMessageBox.information(
-                    self, "Traces Saved", 
+                save_message = (
                     f"Saved {trace_count} traces to {save_path}\n"
                     f"File size: {file_size_mb:.1f} MB\n"
                     f"Metadata: {metadata_path}"
                 )
+                if peak_samples_data:
+                    save_message += f"\nPeak sample locations & amplitudes: {peak_samples_path}"
+                
+                QMessageBox.information(self, "Traces Saved", save_message)
             else:
                 QMessageBox.warning(
                     self, "No Data", 
@@ -1878,11 +1924,7 @@ class TracesPlotter(QWidget):
             print(f"Error storing three sums data for channel {channel}: {e}")
             
     def _plot_three_sums_separately(self, plot_widget, channel, time_axis, latest_trace):
-        print(f"DEBUG: _plot_three_sums_separately called for channel {channel}")
-        print(f"DEBUG: Available trigger points: {self.trigger_points.get(channel, {})}")
-        
         if channel not in self.trigger_points:
-            print(f"DEBUG: No trigger points for channel {channel}")
             return False
             
         # Check for trigger points - look for main_trigger (from raw traces) first
@@ -1896,11 +1938,7 @@ class TracesPlotter(QWidget):
             trigger_key = 'raw'
             
         if trigger_key is None:
-            print(f"DEBUG: No usable trigger points for channel {channel}")
-            print(f"DEBUG: Available keys: {list(available_triggers.keys())}")
             return False
-            
-        print(f"DEBUG: Using trigger key '{trigger_key}' for threesums")
             
         try:
             # Get energy filter parameters for L-G-L integration windows
@@ -1978,11 +2016,7 @@ class TracesPlotter(QWidget):
                 label="S3 End"
             ))
             
-            print(f"SUCCESS: Plotted L-G-L integration windows for channel {channel}")
-            print(f"  S1=[{s1_start_time:.3f}-{s1_end_time:.3f}]μs")  
-            print(f"  S2=[{s2_start_time:.3f}-{s2_end_time:.3f}]μs")
-            print(f"  S3=[{s3_start_time:.3f}-{s3_end_time:.3f}]μs")
-            print(f"  Added {6} InfiniteLines to plot_widget")
+            # Successfully plotted L-G-L integration windows
             return True
             
         except Exception as e:
