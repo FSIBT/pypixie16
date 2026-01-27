@@ -79,6 +79,11 @@ class ContinuousSpectrumPlotter(QWidget):
         # Energy calibration
         self.use_energy_axis = False
         self.energy_axis_label = "Energy (keV)"
+        
+        # Rebinning functionality
+        self.enable_rebinning = False
+        self.target_bins = 2000  # Target number of bins for display when rebinning enabled
+        self.show_rebin_info = False
 
         # Update timer
         self.update_timer = QtCore.QTimer()
@@ -289,12 +294,26 @@ class ContinuousSpectrumPlotter(QWidget):
             self.bg_subtract_cb.toggled.connect(self.toggle_background_subtraction)
             layout.addWidget(self.bg_subtract_cb)
             
-            # Reset Y-axis button
-            reset_y_btn = QPushButton("Y=0")
-            reset_y_btn.setMaximumWidth(40)
-            reset_y_btn.setToolTip("Force Y-axis to start at 0")
-            reset_y_btn.clicked.connect(self.reset_y_axis_to_zero)
-            layout.addWidget(reset_y_btn)
+        # Rebinning controls
+        self.rebin_cb = QCheckBox("Rebin")
+        self.rebin_cb.setToolTip("Enable rebinning to reduce number of bins")
+        self.rebin_cb.toggled.connect(self.toggle_rebinning)
+        layout.addWidget(self.rebin_cb)
+        
+        self.target_bins_spin = QSpinBox()
+        self.target_bins_spin.setRange(100, 10000)
+        self.target_bins_spin.setValue(self.target_bins)
+        self.target_bins_spin.setSuffix(" bins")
+        self.target_bins_spin.setToolTip("Target number of bins when rebinning")
+        self.target_bins_spin.valueChanged.connect(self.update_target_bins)
+        layout.addWidget(self.target_bins_spin)
+            
+        # Reset Y-axis button
+        reset_y_btn = QPushButton("Y=0")
+        reset_y_btn.setMaximumWidth(40)
+        reset_y_btn.setToolTip("Force Y-axis to start at 0")
+        reset_y_btn.clicked.connect(self.reset_y_axis_to_zero)
+        layout.addWidget(reset_y_btn)
 
         layout.addStretch()
         group.setLayout(layout)
@@ -391,14 +410,19 @@ class ContinuousSpectrumPlotter(QWidget):
                     energies, bins=self.bins, range=self.energy_range
                 )
 
-                # Calculate bin centers
-                bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2
+                # Apply rebinning if enabled
+                if self.enable_rebinning:
+                    plot_counts, rebinned_x, rebin_factor = self.rebin_data(counts, self.target_bins)
+                    bin_centers = rebinned_x
+                else:
+                    plot_counts = counts
+                    bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2
                 
                 # Apply background subtraction if enabled
                 if self.show_background_subtracted and self.fwhm_analyzer and len(energies) > 100:
-                    plot_counts = self._apply_background_subtraction(channel, counts, bin_centers)
+                    plot_counts = self._apply_background_subtraction(channel, plot_counts, bin_centers)
                 else:
-                    plot_counts = counts
+                    plot_counts = plot_counts
 
                 # Apply log scale if enabled
                 if self.log_scale_cb.isChecked():
@@ -474,9 +498,49 @@ class ContinuousSpectrumPlotter(QWidget):
     def toggle_background_subtraction(self, checked):
         self.show_background_subtracted = checked
         self.update_display()
+        
+    def toggle_rebinning(self, checked):
+        self.enable_rebinning = checked
+        print(f"Rebinning {'enabled' if checked else 'disabled'}")
+        self.update_display()
+        
+    def update_target_bins(self, target_bins):
+        self.target_bins = target_bins
+        print(f"Target bins for rebinning set to {target_bins}")
+        if self.enable_rebinning:
+            self.update_display()
+            
+    def rebin_data(self, data, target_bins=None):
+        if target_bins is None:
+            target_bins = self.target_bins
+            
+        original_bins = len(data)
+        if original_bins <= target_bins:
+            # No rebinning needed
+            return data, np.arange(len(data)), 1
+            
+        # Calculate rebin factor
+        rebin_factor = original_bins // target_bins
+        if original_bins % target_bins != 0:
+            rebin_factor += 1
+            
+        # Trim data to be evenly divisible
+        trimmed_length = (original_bins // rebin_factor) * rebin_factor
+        trimmed_data = data[:trimmed_length]
+        
+        # Reshape and sum
+        reshaped = trimmed_data.reshape(-1, rebin_factor)
+        rebinned_data = np.sum(reshaped, axis=1)
+        
+        # Generate x-axis (bin centers)
+        rebinned_x = np.arange(len(rebinned_data)) * rebin_factor + rebin_factor // 2
+        
+        if self.show_rebin_info:
+            print(f"Rebinning: {original_bins} -> {len(rebinned_data)} bins (factor: {rebin_factor})")
+            
+        return rebinned_data, rebinned_x, rebin_factor
     
     def reset_y_axis_to_zero(self):
-        """Force Y-axis to start at 0 - call this if axis is floating"""
         if not self.log_scale_cb.isChecked():
             current_range = self.display.getViewBox().viewRange()[1]
             y_max = max(current_range[1], 100)
