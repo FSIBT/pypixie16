@@ -877,9 +877,24 @@ class TracesPlotter(QWidget):
     def toggle_single_alpha_fade(self, enabled):
         self.single_persistence_alpha_fade = enabled
         
+    def calculate_trace_baseline(self, trace):
+        if len(trace) < 20:
+            return np.mean(trace)
+        
+        # Use first 20% of trace, but at least 20 samples and at most 1/3 of trace
+        baseline_samples = max(20, int(len(trace) * 0.2))
+        baseline_samples = min(baseline_samples, len(trace) // 3)
+        
+        return np.mean(trace[:baseline_samples])
+    
+    def normalize_trace_to_zero_baseline(self, trace, trace_type="raw"):
+        if len(trace) == 0:
+            return trace
+            
+        baseline = self.calculate_trace_baseline(trace)
+        return trace - baseline
 
     def _update_curve_names(self):
-        """Update curve names to only show displayed channels in legend"""
         try:
             for channel in self.channels:
                 curve = self.raw_curves[channel]
@@ -1053,18 +1068,6 @@ class TracesPlotter(QWidget):
                     # Reset counter periodically to prevent memory buildup
                     if self.timestamp_overflow_count[channel] > 100000:
                         self.timestamp_overflow_count[channel] = 0
-
-            # Disabled strict time filtering - let all traces through for now
-            # In channel alignment mode, only keep traces within ±50µs of reference
-            # if (self.time_alignment_mode == "channel_aligned" 
-            #     and hasattr(self, 'alignment_reference_timestamp')
-            #     and self.alignment_reference_timestamp is not None
-            #     and event_timestamp is not None):
-            #     
-            #     time_diff_ns = abs((event_timestamp - self.alignment_reference_timestamp) * 10.0)
-            #     if time_diff_ns > 500000:  # 500µs in nanoseconds
-            #         print(f"DEBUG: Filtered out trace due to time alignment - time_diff={time_diff_ns:.0f}ns > 500000ns")
-            #         return
 
             if len(trace_data) > 10:
                 amplitude = np.max(trace_data) - np.min(trace_data)
