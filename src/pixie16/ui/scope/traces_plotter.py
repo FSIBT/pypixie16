@@ -1706,6 +1706,10 @@ class TracesPlotter(QWidget):
                 labelOpts={'position':0.95, 'color': 'darkgreen'}
             )
             plot_widget.addItem(leading_edge_line)
+            
+            # Add leading edge threshold indicator on fast trigger trace (if enabled)
+            if self.trace_types.get("fast_trigger", False):
+                self._add_threshold_on_fast_trigger(plot_widget, raw_trace)
 
             # Fast trigger threshold (orange dashed line)
             fast_threshold = self.hardware_params["fast_threshold"]
@@ -1731,6 +1735,55 @@ class TracesPlotter(QWidget):
 
         except Exception as e:
             print(f"Error adding threshold lines: {e}")
+
+    def _add_threshold_on_fast_trigger(self, plot_widget, raw_trace):
+        try:
+            # Get the fast trigger trace
+            fast_trigger_signal = self.compute_hardware_traces("fast_trigger", raw_trace, self.selected_channel)
+            if fast_trigger_signal is None or len(fast_trigger_signal) == 0:
+                return
+                
+            # Apply same scaling as used in plotting
+            raw_amplitude = np.max(raw_trace) - np.min(raw_trace)
+            if np.max(fast_trigger_signal) > 0:
+                scale_factor = raw_amplitude / (3 * np.max(fast_trigger_signal))
+                fast_trigger_signal = fast_trigger_signal * scale_factor
+            
+            # Calculate leading edge threshold
+            baseline_samples = max(20, int(len(raw_trace) * 0.2))
+            baseline_samples = min(baseline_samples, len(raw_trace) // 3)
+            baseline = np.mean(raw_trace[:baseline_samples])
+            baseline_noise = np.std(raw_trace[:baseline_samples])
+            leading_edge_threshold = baseline + (3.0 * baseline_noise)
+            
+            # Find where fast trigger crosses the leading edge threshold
+            time_axis = self.calculate_time_axis(len(fast_trigger_signal))
+            threshold_crossings = []
+            
+            for i in range(1, len(fast_trigger_signal)):
+                if (fast_trigger_signal[i-1] < leading_edge_threshold and 
+                    fast_trigger_signal[i] >= leading_edge_threshold):
+                    # Linear interpolation for more precise crossing point
+                    ratio = (leading_edge_threshold - fast_trigger_signal[i-1]) / (fast_trigger_signal[i] - fast_trigger_signal[i-1])
+                    crossing_time = time_axis[i-1] + ratio * (time_axis[i] - time_axis[i-1])
+                    crossing_amplitude = leading_edge_threshold
+                    threshold_crossings.append((crossing_time, crossing_amplitude))
+            
+            # Plot threshold crossing points on fast trigger
+            for i, (crossing_time, crossing_amplitude) in enumerate(threshold_crossings[:5]):  # Limit to 5 for performance
+                plot_widget.plot(
+                    [crossing_time],
+                    [crossing_amplitude], 
+                    pen=None,
+                    symbol="star",
+                    symbolBrush="yellow",
+                    symbolPen=pg.mkPen(color="darkgreen", width=2),
+                    symbolSize=12,
+                    name="Threshold Crossing" if i == 0 else None,
+                )
+                
+        except Exception as e:
+            print(f"Error adding threshold on fast trigger: {e}")
 
     def compute_hardware_traces(self, trace_type, raw_trace, channel):
         if self.hardware_manager and self.hardware_manager.dummy_mode:
@@ -2243,7 +2296,7 @@ class TracesPlotter(QWidget):
                             [trigger_time],
                             [trigger_amplitude],
                             pen=None,
-                            symbol="o",
+                            symbol="t1",  # Triangle symbol for fast trigger
                             symbolBrush="red",
                             symbolPen=pg.mkPen(color="black", width=2),
                             symbolSize=10,
