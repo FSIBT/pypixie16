@@ -1425,6 +1425,10 @@ class TracesPlotter(QWidget):
                         signal = -signal
                     color = "#1f77b4"  # Blue
                     name = "Raw Trace"
+                elif trace_type == "three_sums":
+                    corrected_time_axis = self.apply_time_correction(time_axis, trace_type)
+                    self._plot_three_sums_separately(plot_widget, channel, corrected_time_axis, latest_trace)
+                    continue
                 else:
                     signal = self.compute_hardware_traces(trace_type, latest_trace, channel)
                     if signal is None or len(signal) == 0:
@@ -1434,7 +1438,6 @@ class TracesPlotter(QWidget):
                         "fast_trigger": "#ff7f0e",  # Orange
                         "energy_filter": "#2ca02c",  # Green
                         "cfd": "#d62728",  # Red
-                        "three_sums": "#9467bd",  # Purple
                     }
                     color = trace_colors.get(trace_type, "#333333")
                     name = trace_type.replace("_", " ").title()
@@ -1461,11 +1464,6 @@ class TracesPlotter(QWidget):
                             signal_amplitude = np.max(signal) - np.min(signal)
                             scale_factor = (2 * raw_amplitude) / signal_amplitude
                             signal = (signal - np.min(signal)) * scale_factor
-                    elif trace_type == "three_sums":
-                        # Apply offset correction to time axis for consistent alignment
-                        corrected_time_axis = self.apply_time_correction(time_axis, trace_type)
-                        self._plot_three_sums_separately(plot_widget, channel, corrected_time_axis, latest_trace)
-                        continue
                         
                 # Apply baseline normalization to align all traces to zero baseline
                 if trace_type != "three_sums":  # All trace types except three_sums should be zero-aligned
@@ -1491,6 +1489,7 @@ class TracesPlotter(QWidget):
         try:
             if self.auto_scale:
                 # Use auto-range with some padding
+                plot_widget.enableAutoRange(axis='y')
                 plot_widget.autoRange(padding=0.02)  # 2% padding
             else:
                 # Calculate smart fixed range based on enabled trace types
@@ -1513,19 +1512,21 @@ class TracesPlotter(QWidget):
                             
                         # Apply same scaling as in plot
                         if trace_type == "fast_trigger":
-                            raw_amplitude = np.max(latest_trace) - np.min(latest_trace)
+                            fast_threshold = self.hardware_params.get("fast_threshold", 1000)
                             if np.max(signal) > 0:
-                                scale_factor = raw_amplitude / (3 * np.max(signal))
+                                max_signal = np.max(signal)
+                                scale_factor = fast_threshold / max_signal
                                 signal = signal * scale_factor
-                        elif trace_type == "cfd":
-                            baseline = np.mean(latest_trace[:100])
-                            signal = signal + baseline
                         elif trace_type == "energy_filter":
                             raw_amplitude = np.max(latest_trace) - np.min(latest_trace)
                             if np.max(signal) > np.min(signal):
                                 signal_amplitude = np.max(signal) - np.min(signal)
                                 scale_factor = (2 * raw_amplitude) / signal_amplitude
-                                signal = (signal - np.min(signal)) * scale_factor + np.min(latest_trace)
+                                signal = (signal - np.min(signal)) * scale_factor
+                    
+                    # Apply baseline normalization to match actual plot - this is the key fix
+                    if trace_type != "three_sums":
+                        signal = self.normalize_trace_to_zero_baseline(signal, trace_type)
                     
                     y_min_candidates.append(np.min(signal))
                     y_max_candidates.append(np.max(signal))
@@ -1541,10 +1542,12 @@ class TracesPlotter(QWidget):
                     y_min = overall_min - margin
                     y_max = overall_max + margin
                     
+                    plot_widget.disableAutoRange(axis='y')
                     plot_widget.setYRange(y_min, y_max, padding=0)
                 else:
-                    # Fallback to auto-range if no valid traces
-                    plot_widget.autoRange(padding=0.02)
+                    # No valid traces - use a default fixed range
+                    plot_widget.disableAutoRange(axis='y')
+                    plot_widget.setYRange(-1000, 5000, padding=0)
                     
         except Exception as e:
             print(f"Error setting Y-axis range for channel {channel}: {e}")
@@ -2709,8 +2712,13 @@ class TracesPlotter(QWidget):
         
         single_alpha_fade_cb = QCheckBox("Alpha Fade")
         single_alpha_fade_cb.toggled.connect(self.toggle_single_alpha_fade)
-        persistence_layout.addWidget(single_alpha_fade_cb, 1, 1, 1, 2)
+        persistence_layout.addWidget(single_alpha_fade_cb, 1, 1)
         self.single_alpha_fade_cb = single_alpha_fade_cb
+        
+        auto_scale_cb = QCheckBox("Auto Scale")
+        auto_scale_cb.setChecked(self.auto_scale)
+        auto_scale_cb.toggled.connect(self.toggle_auto_scale)
+        persistence_layout.addWidget(auto_scale_cb, 1, 2)
         
         save_btn = QPushButton("Save Buffer")
         save_btn.clicked.connect(self.save_traces_buffer)
@@ -2869,17 +2877,17 @@ class TracesPlotter(QWidget):
                     y_min = overall_min - margin
                     y_max = overall_max + margin
                     
+                    plot_widget.disableAutoRange(axis='y')
                     plot_widget.setYRange(y_min, y_max, padding=0)
                 else:
-                    # Fallback to auto-range if no valid traces
-                    plot_widget.autoRange(padding=0.02)
+                    # No valid traces - use a default fixed range
+                    plot_widget.disableAutoRange(axis='y')
+                    plot_widget.setYRange(-1000, 5000, padding=0)
             
         except Exception as e:
             print(f"Error updating {label} replay plot: {e}")
     
     def enable_enhanced_coincidence_analysis(self, reference_channel=9):
-        print("Enabling enhanced coincidence analysis for 500MHz PIXIE-16:")
-        
         if not hasattr(self, 'coincidence_tab'):
             print("No coincidence tab available")
             return
