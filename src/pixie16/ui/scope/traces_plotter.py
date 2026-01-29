@@ -1462,7 +1462,6 @@ class TracesPlotter(QWidget):
                             scale_factor = (2 * raw_amplitude) / signal_amplitude
                             signal = (signal - np.min(signal)) * scale_factor
                     elif trace_type == "three_sums":
-                        signal = self.compute_hardware_traces(trace_type, latest_trace, channel)
                         # Apply offset correction to time axis for consistent alignment
                         corrected_time_axis = self.apply_time_correction(time_axis, trace_type)
                         self._plot_three_sums_separately(plot_widget, channel, corrected_time_axis, latest_trace)
@@ -2262,10 +2261,12 @@ class TracesPlotter(QWidget):
         if ("main_trigger" in trigger_info and trigger_info["main_trigger"] 
             and self.trace_types.get("raw", False)):
             main_trigger_points = trigger_info["main_trigger"]
+            # Use corrected time axis for raw trace alignment
+            raw_corrected_time_axis = self.apply_time_correction(time_axis, "raw")
             for idx, trigger_idx in enumerate(main_trigger_points):
-                if 0 <= trigger_idx < len(time_axis) and 0 <= trigger_idx < len(latest_trace):
-                    trigger_time = time_axis[trigger_idx]
-                    trigger_amplitude = latest_trace[trigger_idx]
+                if 0 <= trigger_idx < len(raw_corrected_time_axis) and 0 <= trigger_idx < len(latest_trace):
+                    trigger_time = raw_corrected_time_axis[trigger_idx]
+                    trigger_amplitude = self.normalize_trace_to_zero_baseline(latest_trace, "raw")[trigger_idx]
                     # add name to first instance
                     plot_widget.plot(
                         [trigger_time],
@@ -2317,10 +2318,10 @@ class TracesPlotter(QWidget):
                 if trace_type == "raw":
                     signal_data = self.normalize_trace_to_zero_baseline(signal_data, trace_type)
 
-            # Plot markers
+            corrected_time_axis = self.apply_time_correction(time_axis, trace_type)
             for idx, trigger_idx in enumerate(trigger_indices):
-                if 0 <= trigger_idx < len(time_axis) and 0 <= trigger_idx < len(signal_data):
-                    trigger_time = time_axis[trigger_idx]
+                if 0 <= trigger_idx < len(corrected_time_axis) and 0 <= trigger_idx < len(signal_data):
+                    trigger_time = corrected_time_axis[trigger_idx]
                     trigger_amplitude = signal_data[trigger_idx]
 
                     if trace_type == "fast_trigger":
@@ -2373,7 +2374,8 @@ class TracesPlotter(QWidget):
 
             for idx, peak_idx in enumerate(peak_samples):
                 if 0 <= peak_idx < len(time_axis) and 0 <= peak_idx < len(latest_trace):
-                    peak_time = time_axis[peak_idx]
+                    corrected_time_axis = self.apply_time_correction(time_axis, "energy_filter")
+                    peak_time = corrected_time_axis[peak_idx] if peak_idx < len(corrected_time_axis) else time_axis[peak_idx]
 
                     energy_signal = self.compute_hardware_traces("energy_filter", latest_trace, channel)
                     if energy_signal is not None and len(energy_signal) > peak_idx:
