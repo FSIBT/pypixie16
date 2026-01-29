@@ -69,21 +69,14 @@ class ContinuousSpectrumPlotter(QWidget):
         self.last_update = time.time()
         self.update_rate = 0.5  # seconds
         
-        # Gaussian fitting
+        # Background subtraction
         self.fwhm_analyzer = FWHMAnalyzer() if FWHM_AVAILABLE else None
-        self.show_gaussian_fits = False
         self.show_background_subtracted = False
-        self.fit_results = {}  # Store latest fit results per channel
         self.background_estimates = {}  # Store background estimates per channel
         
         # Energy calibration
         self.use_energy_axis = False
         self.energy_axis_label = "Energy (keV)"
-        
-        # Rebinning functionality
-        self.enable_rebinning = False
-        self.target_bins = 2000  # Target number of bins for display when rebinning enabled
-        self.show_rebin_info = False
 
         # Update timer
         self.update_timer = QtCore.QTimer()
@@ -281,39 +274,12 @@ class ContinuousSpectrumPlotter(QWidget):
         self.clear_btn.setMaximumWidth(60)
         layout.addWidget(self.clear_btn)
 
-        # Gaussian fit checkbox
+        # Background subtraction checkbox (only if FWHM available)
         if FWHM_AVAILABLE:
-            self.gaussian_fit_cb = QCheckBox("Fits")
-            self.gaussian_fit_cb.setToolTip("Show Gaussian fits")
-            self.gaussian_fit_cb.toggled.connect(self.toggle_gaussian_fits)
-            layout.addWidget(self.gaussian_fit_cb)
-            
-            # Background subtraction checkbox
             self.bg_subtract_cb = QCheckBox("BG Sub")
             self.bg_subtract_cb.setToolTip("Show background-subtracted spectrum")
             self.bg_subtract_cb.toggled.connect(self.toggle_background_subtraction)
             layout.addWidget(self.bg_subtract_cb)
-            
-        # Rebinning controls
-        self.rebin_cb = QCheckBox("Rebin")
-        self.rebin_cb.setToolTip("Enable rebinning to reduce number of bins")
-        self.rebin_cb.toggled.connect(self.toggle_rebinning)
-        layout.addWidget(self.rebin_cb)
-        
-        self.target_bins_spin = QSpinBox()
-        self.target_bins_spin.setRange(100, 10000)
-        self.target_bins_spin.setValue(self.target_bins)
-        self.target_bins_spin.setSuffix(" bins")
-        self.target_bins_spin.setToolTip("Target number of bins when rebinning")
-        self.target_bins_spin.valueChanged.connect(self.update_target_bins)
-        layout.addWidget(self.target_bins_spin)
-            
-        # Reset Y-axis button
-        reset_y_btn = QPushButton("Y=0")
-        reset_y_btn.setMaximumWidth(40)
-        reset_y_btn.setToolTip("Force Y-axis to start at 0")
-        reset_y_btn.clicked.connect(self.reset_y_axis_to_zero)
-        layout.addWidget(reset_y_btn)
 
         layout.addStretch()
         group.setLayout(layout)
@@ -410,19 +376,12 @@ class ContinuousSpectrumPlotter(QWidget):
                     energies, bins=self.bins, range=self.energy_range
                 )
 
-                # Apply rebinning if enabled
-                if self.enable_rebinning:
-                    plot_counts, rebinned_x, rebin_factor = self.rebin_data(counts, self.target_bins)
-                    bin_centers = rebinned_x
-                else:
-                    plot_counts = counts
-                    bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2
+                plot_counts = counts
+                bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2
                 
                 # Apply background subtraction if enabled
                 if self.show_background_subtracted and self.fwhm_analyzer and len(energies) > 100:
                     plot_counts = self._apply_background_subtraction(channel, plot_counts, bin_centers)
-                else:
-                    plot_counts = plot_counts
 
                 # Apply log scale if enabled
                 if self.log_scale_cb.isChecked():
@@ -430,10 +389,6 @@ class ContinuousSpectrumPlotter(QWidget):
                     plot_counts = np.log10(plot_counts)
 
                 self.plot_items[channel].setData(bin_centers, plot_counts)
-                
-                # Add Gaussian fits if enabled
-                if self.show_gaussian_fits and self.fwhm_analyzer and len(energies) > 100:
-                    self._update_gaussian_fits(channel, counts, bin_centers)
 
             except Exception as e:
                 print(f"Error updating channel {channel}: {e}")
@@ -491,67 +446,28 @@ class ContinuousSpectrumPlotter(QWidget):
             # Auto mode handled in update_display
             pass
     
-    def toggle_gaussian_fits(self, checked):
-        self.show_gaussian_fits = checked
-        self.update_display()
-    
     def toggle_background_subtraction(self, checked):
         self.show_background_subtracted = checked
         self.update_display()
         
-    def toggle_rebinning(self, checked):
-        self.enable_rebinning = checked
-        print(f"Rebinning {'enabled' if checked else 'disabled'}")
-        self.update_display()
-        
-    def update_target_bins(self, target_bins):
-        self.target_bins = target_bins
-        print(f"Target bins for rebinning set to {target_bins}")
-        if self.enable_rebinning:
-            self.update_display()
+    def _apply_background_subtraction(self, channel: int, histogram: np.ndarray, 
+                                     bin_centers: np.ndarray) -> np.ndarray:
+        try:
+            # Quick background estimation using edge averaging
+            edge_points = min(50, len(histogram) // 10)
+            left_bg = np.mean(histogram[:edge_points])
+            right_bg = np.mean(histogram[-edge_points:])
+            background = np.linspace(left_bg, right_bg, len(histogram))
             
-    def rebin_data(self, data, target_bins=None):
-        if target_bins is None:
-            target_bins = self.target_bins
+            bg_subtracted = histogram - background
+            self.background_estimates[channel] = background
             
-        original_bins = len(data)
-        if original_bins <= target_bins:
-            # No rebinning needed
-            return data, np.arange(len(data)), 1
+            return np.maximum(bg_subtracted, 0)
+                
+        except Exception as e:
+            logger.warning(f"Background subtraction failed for channel {channel}: {e}")
+            return histogram
             
-        # Calculate rebin factor
-        rebin_factor = original_bins // target_bins
-        if original_bins % target_bins != 0:
-            rebin_factor += 1
-            
-        # Trim data to be evenly divisible
-        trimmed_length = (original_bins // rebin_factor) * rebin_factor
-        trimmed_data = data[:trimmed_length]
-        
-        # Reshape and sum
-        reshaped = trimmed_data.reshape(-1, rebin_factor)
-        rebinned_data = np.sum(reshaped, axis=1)
-        
-        # Generate x-axis (bin centers)
-        rebinned_x = np.arange(len(rebinned_data)) * rebin_factor + rebin_factor // 2
-        
-        if self.show_rebin_info:
-            print(f"Rebinning: {original_bins} -> {len(rebinned_data)} bins (factor: {rebin_factor})")
-            
-        return rebinned_data, rebinned_x, rebin_factor
-    
-    def reset_y_axis_to_zero(self):
-        if not self.log_scale_cb.isChecked():
-            current_range = self.display.getViewBox().viewRange()[1]
-            y_max = max(current_range[1], 100)
-            
-            # Multiple attempts to force the range
-            self.display.enableAutoRange('y', False)
-            self.display.setYRange(0, y_max, padding=0)
-            self.display.getViewBox().setYRange(0, y_max, padding=0)
-            
-            # Force immediate update
-            self.display.getViewBox().updateViewRange()
 
     def set_display_channels(self, channels):
         print(f"List Mode Plotter: set_display_channels called with {channels}")
@@ -568,7 +484,6 @@ class ContinuousSpectrumPlotter(QWidget):
         self.update_display()
 
     def _update_legend(self):
-        """Rebuild the legend to only show displayed channels"""
         try:
             # Remove existing legend
             if self.display.plotItem.legend is not None:
@@ -641,39 +556,6 @@ class ContinuousSpectrumPlotter(QWidget):
         except Exception as e:
             logger.warning(f"Gaussian fitting failed for channel {channel}: {e}")
     
-    def _apply_background_subtraction(self, channel: int, histogram: np.ndarray, 
-                                     bin_centers: np.ndarray) -> np.ndarray:
-        try:
-            # Use existing fit result if available
-            if channel in self.fit_results and self.fit_results[channel].background_params:
-                background_params = self.fit_results[channel].background_params
-                background = np.zeros_like(histogram, dtype=float)
-                
-                # Reconstruct background from fit parameters
-                for param_name, value in background_params.items():
-                    if "slope" in param_name:
-                        background += value * np.arange(len(histogram))
-                    elif "intercept" in param_name or "c" in param_name:
-                        background += value
-                
-                # Subtract background
-                bg_subtracted = histogram - background
-                return np.maximum(bg_subtracted, 0)  # Don't allow negative counts
-            else:
-                # Quick background estimation using edge averaging
-                edge_points = min(50, len(histogram) // 10)
-                left_bg = np.mean(histogram[:edge_points])
-                right_bg = np.mean(histogram[-edge_points:])
-                background = np.linspace(left_bg, right_bg, len(histogram))
-                
-                bg_subtracted = histogram - background
-                self.background_estimates[channel] = background
-                
-                return np.maximum(bg_subtracted, 0)
-                
-        except Exception as e:
-            logger.warning(f"Background subtraction failed for channel {channel}: {e}")
-            return histogram
     
     def _plot_gaussian_components(self, channel: int, fit_result, bin_centers: np.ndarray, 
                                  original_histogram: np.ndarray):
