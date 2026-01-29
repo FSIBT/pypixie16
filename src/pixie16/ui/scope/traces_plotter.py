@@ -378,9 +378,14 @@ class TracesPlotter(QWidget):
         self.simple_coincidence_cb.toggled.connect(self.toggle_simple_coincidence)
         controls_layout.addWidget(self.simple_coincidence_cb, 2, 1)
 
+        # Add polarity button
+        self.polarity_btn = QPushButton("Polarity")
+        self.polarity_btn.clicked.connect(self.show_polarity_dialog)
+        controls_layout.addWidget(self.polarity_btn, 2, 3)
+
         self.clear_btn = QPushButton("Clear")
         self.clear_btn.clicked.connect(self.clear_data)
-        controls_layout.addWidget(self.clear_btn, 2, 2)
+        controls_layout.addWidget(self.clear_btn, 2, 4)
 
         controls_group.setLayout(controls_layout)
         layout.addWidget(controls_group)
@@ -984,6 +989,59 @@ class TracesPlotter(QWidget):
             
             # Force immediate plot update to show polarity change
             self.update_plots()
+
+    def show_polarity_dialog(self):
+        from PyQt6.QtWidgets import QDialog, QVBoxLayout, QCheckBox, QDialogButtonBox, QLabel
+        
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Channel Polarity Settings")
+        dialog.setFixedSize(300, 400)
+        
+        layout = QVBoxLayout()
+        layout.addWidget(QLabel("Select channels to invert:"))
+        
+        # Create checkboxes for each channel
+        channel_checkboxes = {}
+        for channel in self.channels:
+            cb = QCheckBox(f"Channel {channel}")
+            # Set current polarity state (inverted = checked)
+            cb.setChecked(not self.channel_polarity.get(channel, True))
+            channel_checkboxes[channel] = cb
+            layout.addWidget(cb)
+        
+        # Add buttons
+        button_box = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
+        button_box.accepted.connect(dialog.accept)
+        button_box.rejected.connect(dialog.reject)
+        layout.addWidget(button_box)
+        
+        dialog.setLayout(layout)
+        
+        # Show dialog and process result
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            # Update polarity settings based on checkboxes
+            inverted_channels = []
+            for channel, checkbox in channel_checkboxes.items():
+                # Checkbox checked = inverted (False), unchecked = normal (True)
+                is_inverted = checkbox.isChecked()
+                self.channel_polarity[channel] = not is_inverted
+                if is_inverted:
+                    inverted_channels.append(channel)
+            
+            # Update polarity combo in single channel tab if it exists
+            if hasattr(self, 'polarity_combo') and hasattr(self, 'channel_combo'):
+                selected_channel = self.channels[self.channel_combo.currentIndex()]
+                current_polarity = self.channel_polarity.get(selected_channel, True)
+                self.polarity_combo.setCurrentIndex(0 if current_polarity else 1)
+            
+            # Force plot update
+            self.update_plots()
+            
+            # Save settings if save method exists
+            if hasattr(self.parent(), 'save_settings'):
+                self.parent().save_settings()
 
     def update_ft_backplane_delay(self, value):
         self.ft_backplane_delay_label.setText(str(value))
