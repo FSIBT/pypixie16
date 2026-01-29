@@ -1744,8 +1744,8 @@ class TracesPlotter(QWidget):
             baseline = np.mean(raw_trace[:baseline_samples])
             baseline_noise = np.std(raw_trace[:baseline_samples])
 
-            # Leading edge threshold line (green dotted line) - matches main trigger calculation
-            leading_edge_threshold = baseline + (3.0 * baseline_noise)
+            # Leading edge threshold line (green dotted line)
+            leading_edge_threshold = 3.0 * baseline_noise  # No baseline offset since traces are zero-normalized
             leading_edge_line = pg.InfiniteLine(
                 pos=leading_edge_threshold,
                 angle=0,
@@ -1762,7 +1762,7 @@ class TracesPlotter(QWidget):
             # Fast trigger threshold (orange dashed line)
             fast_threshold = self.hardware_params["fast_threshold"]
             fast_threshold_line = pg.InfiniteLine(
-                pos=baseline + fast_threshold,
+                pos=fast_threshold,  # No baseline offset since traces are zero-normalized
                 angle=0,
                 pen=pg.mkPen(color="orange", style=pg.QtCore.Qt.PenStyle.DashLine, width=2),
                 label="Fast Threshold",
@@ -1770,10 +1770,10 @@ class TracesPlotter(QWidget):
             )
             plot_widget.addItem(fast_threshold_line)
 
-            # CFD threshold
+            # CFD threshold - adjusted for zero-normalized traces
             cfd_threshold = self.hardware_params["cfd_threshold"]
             cfd_threshold_line = pg.InfiniteLine(
-                pos=baseline + cfd_threshold,
+                pos=cfd_threshold,  # No baseline offset since traces are zero-normalized
                 angle=0,
                 pen=pg.mkPen(color="red", style=pg.QtCore.Qt.PenStyle.DashDotLine, width=2),
                 label="CFD Threshold",
