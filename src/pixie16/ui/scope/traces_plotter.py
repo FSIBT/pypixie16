@@ -1485,70 +1485,9 @@ class TracesPlotter(QWidget):
         except Exception as e:
             print(f"Error adding markers/lines for channel {channel}: {e}")
         
-        # Set Y-axis range based on auto-scale setting  
+        # Use auto-range with padding
         try:
-            if self.auto_scale:
-                # Use auto-range with some padding
-                plot_widget.enableAutoRange(axis='y')
-                plot_widget.autoRange(padding=0.02)  # 2% padding
-            else:
-                # Calculate smart fixed range based on enabled trace types
-                y_min_candidates = []
-                y_max_candidates = []
-                
-                # Collect Y-range from all enabled traces
-                for trace_type, enabled in self.trace_types.items():
-                    if not enabled:
-                        continue
-                        
-                    if trace_type == "raw":
-                        signal = latest_trace
-                        if not self.channel_polarity.get(channel, True):
-                            signal = -signal
-                    else:
-                        signal = self.compute_hardware_traces(trace_type, latest_trace, channel)
-                        if signal is None or len(signal) == 0:
-                            continue
-                            
-                        # Apply same scaling as in plot
-                        if trace_type == "fast_trigger":
-                            fast_threshold = self.hardware_params.get("fast_threshold", 1000)
-                            if np.max(signal) > 0:
-                                max_signal = np.max(signal)
-                                scale_factor = fast_threshold / max_signal
-                                signal = signal * scale_factor
-                        elif trace_type == "energy_filter":
-                            raw_amplitude = np.max(latest_trace) - np.min(latest_trace)
-                            if np.max(signal) > np.min(signal):
-                                signal_amplitude = np.max(signal) - np.min(signal)
-                                scale_factor = (2 * raw_amplitude) / signal_amplitude
-                                signal = (signal - np.min(signal)) * scale_factor
-                    
-                    # Apply baseline normalization to match actual plot - this is the key fix
-                    if trace_type != "three_sums":
-                        signal = self.normalize_trace_to_zero_baseline(signal, trace_type)
-                    
-                    y_min_candidates.append(np.min(signal))
-                    y_max_candidates.append(np.max(signal))
-                
-                if y_min_candidates and y_max_candidates:
-                    # Calculate range based on all enabled traces
-                    overall_min = min(y_min_candidates)
-                    overall_max = max(y_max_candidates)
-                    range_span = overall_max - overall_min
-                    
-                    # Add adaptive margins (10% or at least 500 units)
-                    margin = max(range_span * 0.1, 500)
-                    y_min = overall_min - margin
-                    y_max = overall_max + margin
-                    
-                    plot_widget.disableAutoRange(axis='y')
-                    plot_widget.setYRange(y_min, y_max, padding=0)
-                else:
-                    # No valid traces - use a default fixed range
-                    plot_widget.disableAutoRange(axis='y')
-                    plot_widget.setYRange(-1000, 5000, padding=0)
-                    
+            plot_widget.autoRange(padding=0.02)  # 2% padding
         except Exception as e:
             print(f"Error setting Y-axis range for channel {channel}: {e}")
 
@@ -2715,10 +2654,6 @@ class TracesPlotter(QWidget):
         persistence_layout.addWidget(single_alpha_fade_cb, 1, 1)
         self.single_alpha_fade_cb = single_alpha_fade_cb
         
-        auto_scale_cb = QCheckBox("Auto Scale")
-        auto_scale_cb.setChecked(self.auto_scale)
-        auto_scale_cb.toggled.connect(self.toggle_auto_scale)
-        persistence_layout.addWidget(auto_scale_cb, 1, 2)
         
         save_btn = QPushButton("Save Buffer")
         save_btn.clicked.connect(self.save_traces_buffer)
@@ -2824,65 +2759,8 @@ class TracesPlotter(QWidget):
             plot_widget.setTitle(f"{label} - Ch {channel} (REPLAY)")
             plot_widget.addLegend()
             
-            # Set Y-axis scaling based on auto-scale setting
-            if self.auto_scale:
-                # Use auto-range with some padding  
-                plot_widget.autoRange(padding=0.02)  # 2% padding
-            else:
-                # Calculate smart fixed range based on enabled trace types
-                y_min_candidates = []
-                y_max_candidates = []
-                
-                # Collect Y-range from all enabled traces
-                for trace_type, enabled in self.trace_types.items():
-                    if not enabled:
-                        continue
-                        
-                    if trace_type == "raw":
-                        signal = trace_data
-                        if not self.channel_polarity.get(channel, True):
-                            signal = -signal
-                    else:
-                        signal = self.compute_hardware_traces(trace_type, trace_data, channel)
-                        if signal is None or len(signal) == 0:
-                            continue
-                            
-                        # Apply same scaling as in plot
-                        if trace_type == "fast_trigger":
-                            raw_amplitude = np.max(trace_data) - np.min(trace_data)
-                            if np.max(signal) > 0:
-                                scale_factor = raw_amplitude / (3 * np.max(signal))
-                                signal = signal * scale_factor
-                        elif trace_type == "cfd":
-                            baseline = np.mean(trace_data[:100])
-                            signal = signal + baseline
-                        elif trace_type == "energy_filter":
-                            raw_amplitude = np.max(trace_data) - np.min(trace_data)
-                            if np.max(signal) > np.min(signal):
-                                signal_amplitude = np.max(signal) - np.min(signal)
-                                scale_factor = (2 * raw_amplitude) / signal_amplitude
-                                signal = (signal - np.min(signal)) * scale_factor + np.min(trace_data)
-                    
-                    y_min_candidates.append(np.min(signal))
-                    y_max_candidates.append(np.max(signal))
-                
-                if y_min_candidates and y_max_candidates:
-                    # Calculate range based on all enabled traces
-                    overall_min = min(y_min_candidates)
-                    overall_max = max(y_max_candidates)
-                    range_span = overall_max - overall_min
-                    
-                    # Add adaptive margins (10% or at least 500 units)
-                    margin = max(range_span * 0.1, 500)
-                    y_min = overall_min - margin
-                    y_max = overall_max + margin
-                    
-                    plot_widget.disableAutoRange(axis='y')
-                    plot_widget.setYRange(y_min, y_max, padding=0)
-                else:
-                    # No valid traces - use a default fixed range
-                    plot_widget.disableAutoRange(axis='y')
-                    plot_widget.setYRange(-1000, 5000, padding=0)
+            # Use auto-range with padding
+            plot_widget.autoRange(padding=0.02)  # 2% padding
             
         except Exception as e:
             print(f"Error updating {label} replay plot: {e}")
