@@ -898,77 +898,34 @@ class TracesPlotter(QWidget):
         baseline = self.calculate_trace_baseline(trace)
         return trace - baseline
     
-    def calculate_trace_offset(self, trace_type, L=None, G=None):
-        if not self.enable_offset_correction:
-            return 0
-            
-        # Use provided L and G or get from hardware params
-        if L is None:
-            if trace_type == "fast_trigger":
-                L = self.hardware_params.get("fast_L", 2)
-            elif trace_type == "energy_filter":
-                L = self.hardware_params.get("energy_L", 10)
-            else:
-                L = 0
-                
-        if G is None:
-            if trace_type == "fast_trigger":
-                G = self.hardware_params.get("fast_G", 2)
-            elif trace_type == "energy_filter":
-                G = self.hardware_params.get("energy_G", 5)
-            else:
-                G = 0
-        
-        # Cache key for this L/G combination
-        cache_key = f"{trace_type}_{L}_{G}"
-        if cache_key in self.offset_corrections:
-            return self.offset_corrections[cache_key]
-            
-        # Calculate offset based on filter characteristics
-        # For digital filters, the group delay is approximately (L + G) / 2
-        # Fast trigger typically has less delay than energy filter
-        if trace_type == "fast_trigger":
-            # Fast filter processing delay includes both L and G components
-            # The center of the fast filter response occurs at L + G/2 samples
-            # Account for FPGA to raw sample conversion (5x oversampling)
-            fpga_offset = L + (G // 2)
-            offset_samples = fpga_offset * 5  # Convert FPGA units to raw samples
-        elif trace_type == "energy_filter":
-            # Energy filter has more complex delay pattern
-            # The energy filter is aligned with the fast trigger, so use consistent timing
-            # Energy filter processing has additional delay from its own L+G parameters
-            energy_fpga_delay = L + (G // 2)
-            # Convert to raw samples and account for energy filter oversampling
-            energy_R = self.hardware_params.get("energy_R", 3)
-            samples_per_energy_cycle = (2 ** energy_R) * 5
-            offset_samples = energy_fpga_delay * samples_per_energy_cycle
-        elif trace_type == "cfd":
-            # CFD has minimal additional delay beyond the base signal
-            offset_samples = 1
-        else:
-            # Raw trace has no processing delay
-            offset_samples = 0
-            
-        # Convert to time units (assuming 1 FPGA cycle = 1 time unit)
-        # This can be adjusted based on actual sampling rates
-        self.offset_corrections[cache_key] = offset_samples
-        return offset_samples
-    
-    def apply_offset_correction(self, time_axis, trace_type, L=None, G=None):
-        if not self.enable_offset_correction or time_axis is None:
+    def apply_time_correction(self, time_axis, trace_type, L=None, G=None):
+        if not self.enable_offset_correction or time_axis is None or len(time_axis) <= 1:
             return time_axis
-            
-        offset_samples = self.calculate_trace_offset(trace_type, L, G)
+        
+        # Get L/G parameters with defaults
+        if L is None:
+            L = self.hardware_params.get(f"{trace_type.split('_')[0]}_L", 0)
+        if G is None:
+            G = self.hardware_params.get(f"{trace_type.split('_')[0]}_G", 0)
+        
+        # Check cache
+        cache_key = f"{trace_type}_{L}_{G}"
+        if cache_key not in self.offset_corrections:
+            # Calculate offset based on trace type
+            offset_map = {
+                "fast_trigger": (L + G // 2) * 5,  # FPGA to raw sample conversion
+                "energy_filter": (L + G // 2) * (2 ** self.hardware_params.get("energy_R", 3)) * 5,
+                "cfd": 1
+            }
+            self.offset_corrections[cache_key] = offset_map.get(trace_type, 0)
+        
+        offset_samples = self.offset_corrections[cache_key]
         if offset_samples == 0:
             return time_axis
             
-        # Calculate time step
-        if len(time_axis) > 1:
-            time_step = time_axis[1] - time_axis[0]
-            offset_time = offset_samples * time_step
-            return time_axis - offset_time
-        else:
-            return time_axis
+        # Apply time correction
+        time_step = time_axis[1] - time_axis[0]
+        return time_axis - (offset_samples * time_step)
 
     def _update_curve_names(self):
         try:
@@ -1484,18 +1441,15 @@ class TracesPlotter(QWidget):
 
                     # Apply amplitude scaling for visibility
                     if trace_type == "fast_trigger":
-                        # Scale fast trigger to be relative to the fast threshold
-                        baseline = np.mean(latest_trace[:100]) if len(latest_trace) > 100 else np.mean(latest_trace)
+                        # Scale fast trigger amplitude to be visible alongside raw trace
+                        # Don't add baseline here - will be normalized to zero baseline later
                         fast_threshold = self.hardware_params.get("fast_threshold", 1000)
                         
                         if np.max(signal) > 0:
-                            # Scale so that the threshold level in the fast trigger matches the fast threshold line
-                            # This makes the fast trigger signal properly aligned with its threshold
+                            # Scale so the fast trigger amplitude is proportional to threshold
                             max_signal = np.max(signal)
                             scale_factor = fast_threshold / max_signal
-                            signal = signal * scale_factor + baseline
-                        else:
-                            signal = signal + baseline
+                            signal = signal * scale_factor
                     elif trace_type == "cfd":
                         # CFD should oscillate around zero, don't add baseline offset
                         pass
@@ -1509,17 +1463,17 @@ class TracesPlotter(QWidget):
                             signal = (signal - np.min(signal)) * scale_factor
                     elif trace_type == "three_sums":
                         signal = self.compute_hardware_traces(trace_type, latest_trace, channel)
-                        self._plot_three_sums_separately(plot_widget, channel, time_axis, latest_trace)
+                        # Apply offset correction to time axis for consistent alignment
+                        corrected_time_axis = self.apply_time_correction(time_axis, trace_type)
+                        self._plot_three_sums_separately(plot_widget, channel, corrected_time_axis, latest_trace)
                         continue
                         
                 # Apply baseline normalization to align all traces to zero baseline
-                if trace_type == "raw" or trace_type == "energy_filter":
-                    # These traces should be normalized to zero baseline
+                if trace_type != "three_sums":  # All trace types except three_sums should be zero-aligned
                     signal = self.normalize_trace_to_zero_baseline(signal, trace_type)
-                # Fast trigger and CFD are already processed and don't need baseline normalization
                 
                 # Apply offset correction to time axis
-                corrected_time_axis = self.apply_offset_correction(time_axis, trace_type)
+                corrected_time_axis = self.apply_time_correction(time_axis, trace_type)
                 
                 # Plot the trace (normal traces only)
                 plot_widget.plot(corrected_time_axis, signal, pen=pg.mkPen(color=color, width=2), name=name)
@@ -2164,13 +2118,14 @@ class TracesPlotter(QWidget):
         }
           
     def _plot_three_sums_separately(self, plot_widget, channel, time_axis, latest_trace):
-        # Find valid trigger point - required for scientifically correct L-G-L positioning
         trigger_time = None
         if channel in self.trigger_points:
+            # Check main_trigger first (leading edge), then fast_trigger for consistency with markers
             for trigger_key in ['main_trigger', 'fast_trigger', 'raw']:
                 triggers = self.trigger_points[channel].get(trigger_key, [])
                 if triggers and 0 <= triggers[0] < len(time_axis):
                     trigger_time = time_axis[triggers[0]]
+                    print(f"L-G-L using {trigger_key} trigger at sample {triggers[0]} for channel {channel}")
                     break
         
         if trigger_time is None:
