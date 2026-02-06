@@ -466,6 +466,31 @@ def events_from_files_generator(files):
         return
 
 
+def timestamps_and_sizes_from_files_generator(files):
+    """Yields (timestamp, event_length_words) for each event in binary files."""
+    try:
+        with FileReader(files) as r:
+            while not r.done:
+                event_header = HEADER_FORMATS.unpack(r.read(4).byteswap().tobytes())
+                header_length = event_header["Header Length"]
+                extra_header_length = header_length - 4
+                event_length = event_header["Event Length"]
+
+                if extra_header_length > 0:
+                    r.read(extra_header_length, 4)
+
+                trace_length = event_length - header_length
+                if trace_length:
+                    r.read(trace_length, header_length)
+
+                timestamp = (
+                    event_header["EVTTIME_LO"] + event_header["EVTTIME_HI"] * 2**32
+                ) * 10
+                yield timestamp, event_length
+    except (EmptyError, LeftoverBytesError):
+        return
+
+
 def to_tuple(obj):
     if isinstance(obj, str | Path):
         obj = [obj]
