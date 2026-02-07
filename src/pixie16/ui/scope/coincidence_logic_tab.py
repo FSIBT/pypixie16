@@ -752,8 +752,14 @@ class CoincidenceLogicTab(QWidget):
             elif channel_id == 'B':
                 # Channel B: Align to Channel A's time reference
                 if self.reference_timestamp is not None:
-                    # Calculate time offset relative to Channel A reference
-                    timestamp_diff_ns = (event_timestamp - self.reference_timestamp) * 10.0  # 10ns per timestamp tick
+                    # Calculate time offset relative to Channel A reference (in ticks)
+                    timestamp_diff_ticks = event_timestamp - self.reference_timestamp
+                    timestamp_diff_ns = timestamp_diff_ticks * 10.0  # 10ns per timestamp tick
+                    
+                    # Limit the time offset to prevent excessive separation
+                    # Keep timestamp differences within a reasonable plotting range (±10µs)
+                    MAX_OFFSET_NS = 10000  # 10 microseconds
+                    timestamp_diff_ns = np.clip(timestamp_diff_ns, -MAX_OFFSET_NS, MAX_OFFSET_NS)
                     
                     # Channel B uses same fixed trigger position but adjusts for timestamp difference
                     FIXED_TRIGGER_POSITION = 100

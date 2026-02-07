@@ -1471,6 +1471,11 @@ class TracesPlotter(QWidget):
             print(f"Error calculating main trigger for channel {channel}: {e}")
             self._store_trigger_info(channel, [], "main_trigger")
 
+        # Apply polarity inversion to the source trace before any processing
+        working_trace = latest_trace
+        if not self.channel_polarity.get(channel, True):
+            working_trace = -working_trace
+
         # Plot enabled traces with proper scaling
         for trace_type, enabled in self.trace_types.items():
             if not enabled:
@@ -1478,17 +1483,15 @@ class TracesPlotter(QWidget):
 
             try:
                 if trace_type == "raw":
-                    signal = latest_trace
-                    if not self.channel_polarity.get(channel, True):
-                        signal = -signal
+                    signal = working_trace
                     color = "#1f77b4"  # Blue
                     name = "Raw Trace"
                 elif trace_type == "three_sums":
                     corrected_time_axis = self.apply_time_correction(time_axis, trace_type)
-                    self._plot_three_sums_separately(plot_widget, channel, corrected_time_axis, latest_trace)
+                    self._plot_three_sums_separately(plot_widget, channel, corrected_time_axis, working_trace)
                     continue
                 else:
-                    signal = self.compute_hardware_traces(trace_type, latest_trace, channel)
+                    signal = self.compute_hardware_traces(trace_type, working_trace, channel)
                     if signal is None or len(signal) == 0:
                         continue
 
@@ -1606,8 +1609,13 @@ class TracesPlotter(QWidget):
                 for trace_idx, past_trace in enumerate(past_traces_to_plot):
                     if len(past_trace) == 0:
                         continue
+                    
+                    # Apply polarity inversion to past trace
+                    past_trace_inverted = past_trace
+                    if not self.channel_polarity.get(channel, True):
+                        past_trace_inverted = -past_trace
                         
-                    time_axis = self.calculate_real_time_axis(len(past_trace), channel)
+                    time_axis = self.calculate_real_time_axis(len(past_trace_inverted), channel)
                     
                     # Calculate alpha based on age if alpha fade is enabled
                     if self.single_persistence_alpha_fade:
@@ -1621,25 +1629,25 @@ class TracesPlotter(QWidget):
                             continue
                         
                         try:
-                            signal = self.compute_hardware_traces(trace_type, past_trace, channel)
+                            signal = self.compute_hardware_traces(trace_type, past_trace_inverted, channel)
                             if signal is None or len(signal) == 0:
                                 continue
                             
                             # Apply scaling
                             if trace_type == "fast_trigger":
-                                raw_amplitude = np.max(past_trace) - np.min(past_trace)
+                                raw_amplitude = np.max(past_trace_inverted) - np.min(past_trace_inverted)
                                 if np.max(signal) > 0:
                                     scale_factor = raw_amplitude / (3 * np.max(signal))
                                     signal = signal * scale_factor
                             elif trace_type == "cfd":
-                                baseline = np.mean(past_trace[:100])
+                                baseline = np.mean(past_trace_inverted[:100])
                                 signal = signal + baseline
                             elif trace_type == "energy_filter":
-                                raw_amplitude = np.max(past_trace) - np.min(past_trace)
+                                raw_amplitude = np.max(past_trace_inverted) - np.min(past_trace_inverted)
                                 if np.max(signal) > np.min(signal):
                                     signal_amplitude = np.max(signal) - np.min(signal)
                                     scale_factor = (2 * raw_amplitude) / signal_amplitude
-                                    signal = (signal - np.min(signal)) * scale_factor + np.min(past_trace)
+                                    signal = (signal - np.min(signal)) * scale_factor + np.min(past_trace_inverted)
                             
                             gray_color = pg.mkColor("#909090")  # Light gray
                             gray_color.setAlpha(alpha)
@@ -2437,6 +2445,97 @@ class TracesPlotter(QWidget):
         energy_filter = np.convolve(trace, kernel, mode="same")
         return energy_filter
 
+    def verify_energy_calculation(self, channel, trace, pixie_reported_energy=None):
+        try:
+            if trace is None or len(trace) == 0:
+                return {"error": "No trace data available"}
+                
+            # Get current hardware parameters
+            L = self.hardware_params["energy_L"]
+            G = self.hardware_params["energy_G"]
+            R = self.hardware_params["energy_R"]
+            P = self.hardware_params["energy_P"]
+            
+            # Convert to FPGA format
+            fpga_trace = convert_trace_to_FPGA(np.array([trace]), R)
+            
+            # Get fast trigger position first 
+            fast_result = compute_fast_trigger_validation(
+                fpga_trace, 
+                self.hardware_params["fast_L"],
+                self.hardware_params["fast_G"],
+                self.hardware_params["fast_threshold"],
+                baseline_index=50
+            )
+            
+            if not fast_result["validation_passed"] or not fast_result["trigger_indices"]:
+                return {"error": "No valid trigger found"}
+                
+            trigger_index = fast_result["trigger_indices"][0]
+            
+            # Calculate energy using three sums approach
+            three_sums_result = compute_three_sums(fpga_trace, R, L, G, baseline_index=50)
+            three_sums_data = three_sums_result["three_sums_results"][0]
+            
+            # Calculate energy at peak sample position
+            slow_filter_range = 2**R
+            samples_per_energy_cycle = slow_filter_range * 5  # Convert to raw sample timing
+            
+            # Calculate peak sample position
+            ramp_duration = (L + G) * samples_per_energy_cycle
+            flat_area_start = ramp_duration  
+            flat_area_length = P * samples_per_energy_cycle
+            peak_sample_offset = flat_area_start + (flat_area_length // 2)
+            
+            # Calculate raw sample position
+            fast_trigger_raw_pos = trigger_index * samples_per_energy_cycle
+            peak_sample_raw_pos = fast_trigger_raw_pos + peak_sample_offset
+            
+            # Get energy value from three sums
+            S1 = three_sums_data["S1"]
+            S2 = three_sums_data["S2"] 
+            S3 = three_sums_data["S3"]
+            
+            # Calculate energy index in energy filter coordinates
+            energy_index = int(peak_sample_raw_pos // samples_per_energy_cycle)
+            
+            calculated_energy = None
+            if 0 <= energy_index < len(S1):
+                # Energy = S1 + S3 - 2*S2 (trapezoidal filter formula)
+                calculated_energy = S1[energy_index] + S3[energy_index] - 2*S2[energy_index]
+            
+            # Also calculate using the hardware energy filter function
+            energy_result = compute_energy_filter(
+                fpga_trace,
+                R=R, L=L, G=G, P=P,
+                decay_ns=self.hardware_params["decay_ns"],
+                trigger_indices=[trigger_index],
+                baseline_index=50
+            )
+            
+            hardware_calculated_energy = None
+            if energy_result["energy_values"]:
+                hardware_calculated_energy = energy_result["energy_values"][0]
+            
+            return {
+                "channel": channel,
+                "calculated_energy_manual": calculated_energy,
+                "calculated_energy_hardware_function": hardware_calculated_energy, 
+                "pixie_reported_energy": pixie_reported_energy,
+                "peak_sample_position": peak_sample_raw_pos,
+                "trigger_position": fast_trigger_raw_pos,
+                "energy_index": energy_index,
+                "parameters": {"L": L, "G": G, "R": R, "P": P},
+                "three_sums_at_peak": {
+                    "S1": S1[energy_index] if 0 <= energy_index < len(S1) else None,
+                    "S2": S2[energy_index] if 0 <= energy_index < len(S2) else None, 
+                    "S3": S3[energy_index] if 0 <= energy_index < len(S3) else None,
+                } if 0 <= energy_index < len(S1) else None
+            }
+            
+        except Exception as e:
+            return {"error": f"Energy verification failed: {str(e)}"}
+
     def clear_data(self):
         # Clear histogram data
         if hasattr(self, 'histogram_tab') and hasattr(self.histogram_tab, 'clear_data'):
@@ -2483,10 +2582,20 @@ class TracesPlotter(QWidget):
         self.update_plots()
 
     def add_event(self, event):
-        if hasattr(self, 'histogram_tab') and hasattr(self.histogram_tab, 'add_energy_event'):
+        if hasattr(self, 'histogram_tab'):
             channel = getattr(event, 'channel', 0)
             energy = getattr(event, 'energy', 0)
-            self.histogram_tab.add_energy_event(channel, energy)
+            
+            # For calculated energy mode, also send trace data if available
+            if hasattr(self.histogram_tab, 'use_calculated_energy') and self.histogram_tab.use_calculated_energy:
+                trace = getattr(event, 'trace', None)
+                if trace is not None and hasattr(self.histogram_tab, 'add_trace_for_energy_calculation'):
+                    self.histogram_tab.add_trace_for_energy_calculation(channel, trace, self.hardware_params)
+                    return  # Skip the regular energy event since we calculated it ourselves
+            
+            # Standard pixie-reported energy mode
+            if hasattr(self.histogram_tab, 'add_energy_event'):
+                self.histogram_tab.add_energy_event(channel, energy)
 
     def set_channels(self, channels):
         # Clear old curves

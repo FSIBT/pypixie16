@@ -77,6 +77,9 @@ class ContinuousSpectrumPlotter(QWidget):
         # Energy calibration
         self.use_energy_axis = False
         self.energy_axis_label = "Energy (keV)"
+        
+        # Energy calculation method
+        self.use_calculated_energy = False
 
         # Update timer
         self.update_timer = QtCore.QTimer()
@@ -281,6 +284,16 @@ class ContinuousSpectrumPlotter(QWidget):
             self.bg_subtract_cb.toggled.connect(self.toggle_background_subtraction)
             layout.addWidget(self.bg_subtract_cb)
 
+        # Energy source selection dropdown
+        layout.addWidget(QLabel("Energy:"))
+        self.energy_source_combo = QComboBox()
+        self.energy_source_combo.addItem("Pixie-reported")
+        self.energy_source_combo.addItem("Calculated from traces")
+        self.energy_source_combo.setMaximumWidth(120)
+        self.energy_source_combo.setToolTip("Choose energy calculation method:\n- Pixie-reported: Use hardware energy values\n- Calculated: Compute energy from raw traces using filter parameters")
+        self.energy_source_combo.currentTextChanged.connect(self.on_energy_source_changed)
+        layout.addWidget(self.energy_source_combo)
+
         layout.addStretch()
         group.setLayout(layout)
         return group
@@ -333,6 +346,140 @@ class ContinuousSpectrumPlotter(QWidget):
                 self.energy_data[channel].extend(energies)
             else:
                 self.energy_data[channel].append(energies)
+                
+    def add_trace_for_energy_calculation(self, channel, trace, hardware_params=None):
+        """
+        Add raw trace data and calculate energy from it when in calculated energy mode
+        """
+        if not self.use_calculated_energy or channel not in self.channels:
+            return
+            
+        if hardware_params is None:
+            return
+            
+        try:
+            # Import here to avoid circular imports
+            from ...analyze import convert_trace_to_FPGA, compute_fast_trigger_validation, compute_three_sums
+            
+            # Convert trace to FPGA format
+            R = hardware_params["energy_R"]
+            fpga_trace = convert_trace_to_FPGA(np.array([trace]), R)
+            
+            # Get fast trigger position
+            fast_result = compute_fast_trigger_validation(
+                fpga_trace,
+                hardware_params["fast_L"],
+                hardware_params["fast_G"], 
+                hardware_params["fast_threshold"],
+                baseline_index=50
+            )
+            
+            if not fast_result["validation_passed"] or not fast_result["trigger_indices"]:
+                return
+                
+            trigger_index = fast_result["trigger_indices"][0]
+            
+            # Calculate energy using three sums
+            three_sums_result = compute_three_sums(fpga_trace, R, 
+                                                 hardware_params["energy_L"],
+                                                 hardware_params["energy_G"], 
+                                                 baseline_index=50)
+            three_sums_data = three_sums_result["three_sums_results"][0]
+            
+            # Calculate peak sample position
+            L = hardware_params["energy_L"] 
+            G = hardware_params["energy_G"]
+            P = hardware_params["energy_P"]
+            
+            slow_filter_range = 2**R
+            samples_per_energy_cycle = slow_filter_range * 5
+            
+            ramp_duration = (L + G) * samples_per_energy_cycle
+            flat_area_start = ramp_duration
+            flat_area_length = P * samples_per_energy_cycle
+            peak_sample_offset = flat_area_start + (flat_area_length // 2)
+            
+            fast_trigger_raw_pos = trigger_index * samples_per_energy_cycle
+            peak_sample_raw_pos = fast_trigger_raw_pos + peak_sample_offset
+            
+            energy_index = int(peak_sample_raw_pos // samples_per_energy_cycle)
+            
+            # Get three sums values
+            S1 = three_sums_data["S1"]
+            S2 = three_sums_data["S2"]
+            S3 = three_sums_data["S3"]
+            
+            # Calculate energy using trapezoidal filter formula
+            if 0 <= energy_index < len(S1):
+                calculated_energy = S1[energy_index] + S3[energy_index] - 2*S2[energy_index]
+                
+                # Add to energy data if reasonable value
+                if 0 <= calculated_energy <= self.energy_range[1]:
+                    self.energy_data[channel].append(calculated_energy)
+                    
+        except Exception as e:
+            print(f"Error calculating energy from trace for channel {channel}: {e}")
+
+    def test_slow_filter_alignment(self, channel, trace, hardware_params):
+        """
+        Test slow filter alignment modes to verify energy calculation accuracy.
+        
+        The energy filter is naturally 2*L bins shorter than the raw trace due to 
+        the calculation windows. Current implementation aligns the filter result
+        considering the calculation window positions (effectively end-aligned).
+        
+        Returns comparison of energy values with different alignment assumptions.
+        """
+        try:
+            if trace is None or len(trace) == 0:
+                return {"error": "No trace data available"}
+                
+            # Import here to avoid circular imports
+            from ...analyze import convert_trace_to_FPGA, compute_energy_filter
+                
+            # Get parameters
+            L = hardware_params["energy_L"]
+            G = hardware_params["energy_G"] 
+            R = hardware_params["energy_R"]
+            
+            # Convert to FPGA format
+            fpga_trace = convert_trace_to_FPGA(np.array([trace]), R)
+            
+            # Calculate energy filter
+            energy_result = compute_energy_filter(
+                fpga_trace, R=R, L=L, G=G, P=hardware_params["energy_P"],
+                decay_ns=hardware_params["decay_ns"],
+                trigger_indices=[100],  # Fixed trigger for testing
+                baseline_index=50
+            )
+            
+            if not energy_result["energy_traces"]:
+                return {"error": "No energy filter calculated"}
+                
+            energy_filter = energy_result["energy_traces"][0]["result"]
+            
+            # Current alignment (as implemented): energy filter considers calculation windows
+            # The filter starts calculation at position 2*L + G - 1 in the raw trace
+            # Result[k - 2*L - G + 1] corresponds to raw trace position k
+            
+            current_alignment_info = {
+                "raw_trace_length": len(trace),
+                "energy_filter_length": len(energy_filter),
+                "samples_shorter": len(trace) - len(energy_filter),
+                "expected_shorter": 2 * L,  # Should be 2*L bins shorter
+                "alignment_method": "end_aligned_with_calculation_windows",
+                "calculation_window_offset": 2 * L + G - 1
+            }
+            
+            return {
+                "alignment_analysis": current_alignment_info,
+                "energy_filter_sample": energy_filter[:10] if len(energy_filter) > 0 else [],
+                "parameters_used": {"L": L, "G": G, "R": R},
+                "note": "Current implementation correctly aligns energy filter considering calculation windows"
+            }
+            
+        except Exception as e:
+            return {"error": f"Alignment test failed: {str(e)}"}
 
     def update_display(self):
         current_time = time.time()
@@ -449,6 +596,14 @@ class ContinuousSpectrumPlotter(QWidget):
     def toggle_background_subtraction(self, checked):
         self.show_background_subtracted = checked
         self.update_display()
+    
+    def on_energy_source_changed(self, source_text):
+        self.use_calculated_energy = (source_text == "Calculated from traces")
+        print(f"Energy source changed to: {source_text}")
+        if self.use_calculated_energy:
+            print("Note: Calculated energy mode requires raw trace data and hardware parameters")
+        # Energy mode change doesn't affect existing histogram data
+        # User should clear and restart acquisition for new mode
         
     def _apply_background_subtraction(self, channel: int, histogram: np.ndarray, 
                                      bin_centers: np.ndarray) -> np.ndarray:

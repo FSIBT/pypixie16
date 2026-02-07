@@ -342,6 +342,21 @@ class ParameterControls(QGroupBox):
         layout.addWidget(self.emin_spin, row, 1)
         row += 1
 
+        # Energy Filter Taps (for debugging and live calibration)
+        layout.addWidget(QLabel("Energy L:"), row, 0)
+        self.energy_L_spin = ValidatedSpinBox("ENERGY_L", self.validator)
+        self.energy_L_spin.setValue(40)
+        self.parameter_widgets["ENERGY_L"] = self.energy_L_spin
+        layout.addWidget(self.energy_L_spin, row, 1)
+        row += 1
+        
+        layout.addWidget(QLabel("Energy G:"), row, 0)
+        self.energy_G_spin = ValidatedSpinBox("ENERGY_G", self.validator)
+        self.energy_G_spin.setValue(10)
+        self.parameter_widgets["ENERGY_G"] = self.energy_G_spin
+        layout.addWidget(self.energy_G_spin, row, 1)
+        row += 1
+
         tab.setLayout(layout)
         return tab
 
@@ -384,6 +399,14 @@ class ParameterControls(QGroupBox):
         self.baseline_avg_spin.setValue(4)
         self.parameter_widgets["BASELINE_AVERAGE"] = self.baseline_avg_spin
         layout.addWidget(self.baseline_avg_spin, row, 1)
+        row += 1
+
+        # Baseline Cut (BLCUT)
+        layout.addWidget(QLabel("Baseline Cut:"), row, 0)
+        self.blcut_spin = ValidatedSpinBox("BLCUT", self.validator)
+        self.blcut_spin.setValue(200)
+        self.parameter_widgets["BLCUT"] = self.blcut_spin
+        layout.addWidget(self.blcut_spin, row, 1)
         row += 1
 
         tab.setLayout(layout)

@@ -152,6 +152,34 @@ class PixieParameterValidator:
                 description="Baseline averaging length (log2)",
                 dsp_variable="LOG2BWEIGHT",
             ),
+            "BLCUT": ParameterSpec(
+                name="BLCUT",
+                data_type=int,
+                min_value=0,
+                max_value=65535,  # 16-bit max
+                unit="ADC units",
+                description="Baseline cut threshold for clipping detection",
+                dsp_variable="BLCUT",
+            ),
+            # Digital filter tap values for energy filter debugging
+            "ENERGY_L": ParameterSpec(
+                name="ENERGY_L",
+                data_type=int,
+                min_value=2,
+                max_value=127,
+                unit="taps",
+                description="Energy filter rise time in filter taps (L)",
+                dsp_variable="SLOWLENGTH",
+            ),
+            "ENERGY_G": ParameterSpec(
+                name="ENERGY_G",
+                data_type=int,
+                min_value=3,
+                max_value=127,
+                unit="taps",
+                description="Energy filter gap time in filter taps (G)",
+                dsp_variable="SLOWGAP",
+            ),
             # Energy Discrimination
             "EMIN": ParameterSpec(
                 name="EMIN",
