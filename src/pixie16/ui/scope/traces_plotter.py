@@ -2586,16 +2586,17 @@ class TracesPlotter(QWidget):
             channel = getattr(event, 'channel', 0)
             energy = getattr(event, 'energy', 0)
             
-            # For calculated energy mode, also send trace data if available
+            # Energy histogram handling - either calculated or Pixie-reported
             if hasattr(self.histogram_tab, 'use_calculated_energy') and self.histogram_tab.use_calculated_energy:
+                # Calculated energy mode: compute energy from trace data
                 trace = getattr(event, 'trace', None)
                 if trace is not None and hasattr(self.histogram_tab, 'add_trace_for_energy_calculation'):
                     self.histogram_tab.add_trace_for_energy_calculation(channel, trace, self.hardware_params)
-                    return  # Skip the regular energy event since we calculated it ourselves
-            
-            # Standard pixie-reported energy mode
-            if hasattr(self.histogram_tab, 'add_energy_event'):
-                self.histogram_tab.add_energy_event(channel, energy)
+                # Skip Pixie-reported energy for histogram, but continue for trace display
+            else:
+                # Standard pixie-reported energy mode
+                if hasattr(self.histogram_tab, 'add_energy_event'):
+                    self.histogram_tab.add_energy_event(channel, energy)
 
     def set_channels(self, channels):
         # Clear old curves
