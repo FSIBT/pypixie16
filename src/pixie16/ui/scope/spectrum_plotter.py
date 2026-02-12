@@ -23,6 +23,7 @@ from PyQt6.QtWidgets import (
     QSplitter,
     QTabWidget,
     QMainWindow,
+    QComboBox,
 )
 from PyQt6.QtCore import Qt
 
