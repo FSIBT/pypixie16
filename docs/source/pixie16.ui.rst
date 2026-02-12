@@ -9,6 +9,7 @@ Subpackages
 
    pixie16.ui.binary_browser
    pixie16.ui.coincidence
+   pixie16.ui.scope
 
 Submodules
 ----------
