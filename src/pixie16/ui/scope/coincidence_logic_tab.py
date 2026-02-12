@@ -183,6 +183,9 @@ class CoincidenceLogicTab(QWidget):
         self.channel_a = self.channels[0]
         self.channel_b = self.channels[1] if len(self.channels) > 1 else self.channels[0]
         
+        # Display mode for time alignment visualization
+        self.display_mode = "trigger_aligned"  # Default mode
+        
         # Always enabled
         self.binary_logic_enabled = True
         
@@ -299,10 +302,15 @@ class CoincidenceLogicTab(QWidget):
         self.ch_b_combo.currentIndexChanged.connect(self.update_channel_b)
         channel_layout.addWidget(self.ch_b_combo, 1, 1)
         
-        channel_layout.addWidget(QLabel("Time Ref:"), 2, 0)
-        self.time_ref_combo = QComboBox()
-        self.time_ref_combo.addItems(["Channel A", "Channel B", "Coincidence Trigger"])
-        channel_layout.addWidget(self.time_ref_combo, 2, 1)
+        channel_layout.addWidget(QLabel("Display Mode:"), 2, 0)
+        self.display_mode_combo = QComboBox()
+        self.display_mode_combo.addItems([
+            "Trigger-Aligned (Stack on Triggers)",
+            "Reference Channel (Ch A Fixed)",  
+            "Coincidence-Centered (Align Coincidences)"
+        ])
+        self.display_mode_combo.currentTextChanged.connect(self.update_display_mode)
+        channel_layout.addWidget(self.display_mode_combo, 2, 1)
         
         channel_group.setLayout(channel_layout)
         channel_group.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
@@ -603,6 +611,20 @@ class CoincidenceLogicTab(QWidget):
         self.binary_plot.setTitle(f"Ch{self.channel_a} (A) vs Ch{self.channel_b} (B)")
         self.update_params_display()
     
+    def update_display_mode(self):
+        mode_text = self.display_mode_combo.currentText()
+        if "Trigger-Aligned" in mode_text:
+            self.display_mode = "trigger_aligned"
+        elif "Reference Channel" in mode_text:
+            self.display_mode = "reference_channel"
+        elif "Coincidence-Centered" in mode_text:
+            self.display_mode = "coincidence_centered"
+        
+        # Reset time reference when mode changes
+        self.reference_timestamp = None
+        self.binary_data.clear()
+        print(f"Display mode changed to: {self.display_mode}")
+    
     def update_timing_params(self):
         """Update internal parameters from spinboxes"""
         self.hardware_params.update({
@@ -736,44 +758,51 @@ class CoincidenceLogicTab(QWidget):
             raw_trace = np.asarray(raw_trace, dtype=np.uint16)
             trace_length = len(raw_trace)
             
-            # Channel A is FIXED time reference - never moves
-            if channel_id == 'A':
-                # Channel A: Absolute fixed time reference
-                FIXED_TRIGGER_POSITION = 100  # Fixed sample position
-                trigger_time_ns = FIXED_TRIGGER_POSITION * self.sampling_period_ns
+            # Time axis calculation based on selected display mode
+            FIXED_TRIGGER_POSITION = 100  # Sample position where trigger occurs
+            trigger_time_ns = FIXED_TRIGGER_POSITION * self.sampling_period_ns
+            
+            if self.display_mode == "trigger_aligned":
+                # MODE 1: Trigger-Aligned (Stack on Triggers)
+                # Both channels align their trigger points to t=0
                 time_axis = np.arange(trace_length) * self.sampling_period_ns - trigger_time_ns
                 
-                # Set the fixed reference once and never change it
-                if self.reference_timestamp is None:
-                    self.reference_timestamp = event_timestamp
-                    self.reference_time_axis_offset = trigger_time_ns
-                    print(f"Channel A set as FIXED time reference at timestamp {self.reference_timestamp}")
-            
-            elif channel_id == 'B':
-                # Channel B: Align to Channel A's time reference
-                if self.reference_timestamp is not None:
-                    # Calculate time offset relative to Channel A reference (in ticks)
-                    timestamp_diff_ticks = event_timestamp - self.reference_timestamp
-                    timestamp_diff_ns = timestamp_diff_ticks * 10.0  # 10ns per timestamp tick
-                    
-                    # Limit the time offset to prevent excessive separation
-                    # Keep timestamp differences within a reasonable plotting range (±10µs)
-                    MAX_OFFSET_NS = 10000  # 10 microseconds
-                    timestamp_diff_ns = np.clip(timestamp_diff_ns, -MAX_OFFSET_NS, MAX_OFFSET_NS)
-                    
-                    # Channel B uses same fixed trigger position but adjusts for timestamp difference
-                    FIXED_TRIGGER_POSITION = 100
-                    trigger_time_ns = FIXED_TRIGGER_POSITION * self.sampling_period_ns
-                    time_axis = np.arange(trace_length) * self.sampling_period_ns - trigger_time_ns + timestamp_diff_ns
-                else:
-                    # Fallback if no Channel A reference yet
-                    FIXED_TRIGGER_POSITION = 100
-                    trigger_time_ns = FIXED_TRIGGER_POSITION * self.sampling_period_ns
+            elif self.display_mode == "reference_channel":
+                # MODE 2: Reference Channel (Ch A Fixed)
+                if channel_id == 'A':
+                    # Channel A: Always at fixed position (t=0 reference)
                     time_axis = np.arange(trace_length) * self.sampling_period_ns - trigger_time_ns
+                    # Set reference timestamp
+                    if self.reference_timestamp is None:
+                        self.reference_timestamp = event_timestamp
+                        print(f"Ch{self.channel_a} set as reference at timestamp {self.reference_timestamp}")
+                        
+                elif channel_id == 'B':
+                    # Channel B: Show timing offset relative to Channel A
+                    if self.reference_timestamp is not None:
+                        timestamp_diff_ticks = event_timestamp - self.reference_timestamp
+                        timestamp_diff_ns = timestamp_diff_ticks * 10.0
+                        # Keep differences within ±2µs for better visualization
+                        timestamp_diff_ns = np.clip(timestamp_diff_ns, -2000, 2000)
+                        time_axis = np.arange(trace_length) * self.sampling_period_ns - trigger_time_ns + timestamp_diff_ns
+                    else:
+                        time_axis = np.arange(trace_length) * self.sampling_period_ns - trigger_time_ns
+                        
+            elif self.display_mode == "coincidence_centered":
+                # MODE 3: Coincidence-Centered (Align Coincidences)
+                other_channel = self.channel_b if channel_id == 'A' else self.channel_a
+                is_coincident = self._check_other_channel_trigger(other_channel, event_timestamp, window_ns=500)
+                
+                if is_coincident:
+                    # For coincident events, both channels center at t=0
+                    time_axis = np.arange(trace_length) * self.sampling_period_ns - trigger_time_ns
+                else:
+                    # Non-coincident events: spread them out vertically for clarity
+                    offset = 500 if channel_id == 'B' else -500  # 500ns separation
+                    time_axis = np.arange(trace_length) * self.sampling_period_ns - trigger_time_ns + offset
+                    
             else:
-                # Unknown channel ID fallback
-                FIXED_TRIGGER_POSITION = 100
-                trigger_time_ns = FIXED_TRIGGER_POSITION * self.sampling_period_ns
+                # Fallback - trigger aligned
                 time_axis = np.arange(trace_length) * self.sampling_period_ns - trigger_time_ns
             
             baseline_samples = min(100, trace_length // 3)
