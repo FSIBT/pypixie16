@@ -26,6 +26,7 @@ except ModuleNotFoundError:
     import bitstruct
 
 import msgspec
+import math
 
 # from rich import print
 
@@ -489,6 +490,33 @@ def timestamps_and_sizes_from_files_generator(files):
                 yield timestamp, event_length
     except (EmptyError, LeftoverBytesError):
         return
+
+
+def data_rate_from_file(files):
+    """
+    Calculate the data rate in MB/s from a list of binary files.
+    Returns a dictionary with the data rate for each second in the data set.
+    """
+    timestamps = []
+    bits = []
+
+    for timestamp, word in timestamps_and_sizes_from_files_generator(files):
+        timestamps.append(timestamp)
+        bits.append(word * 32)  # word size is 32 bits
+
+    if not timestamps:
+        return 0
+
+    data = {}
+    for t, b in zip(timestamps, bits):
+        sec = math.floor(t * 1e-9)
+        if sec not in data:
+            data[sec] = 0
+        data[sec] += b
+
+    # Convert to MB/s
+    data_rate = {sec: b / (8 * 1024 * 1024) for sec, b in data.items()}
+    return data_rate
 
 
 def to_tuple(obj):
