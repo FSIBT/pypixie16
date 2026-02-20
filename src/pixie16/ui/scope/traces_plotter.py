@@ -24,9 +24,10 @@ from PyQt6.QtWidgets import (
     QPushButton,
     QComboBox,
     QTabWidget,
-    QSizePolicy
+    QSizePolicy,
+    QScrollArea
 )
-from PyQt6.QtCore import QTimer, QThread, pyqtSignal
+from PyQt6.QtCore import QTimer, QThread, pyqtSignal, Qt
 import pyqtgraph as pg
 
 import pixie16 as px
@@ -2369,8 +2370,15 @@ class TracesPlotter(QWidget):
         trace_types_layout.addWidget(energy_filter_group, 2, 0, 1, 2)  # Span both columns
         
         trace_types_group.setLayout(trace_types_layout)
-        trace_types_group.setMaximumHeight(200)  # Further increased for L-G-L controls visibility
-        layout.addWidget(trace_types_group)
+        
+        # Wrap trace types in scroll area for better visibility  
+        scroll_area = QScrollArea()
+        scroll_area.setWidget(trace_types_group)
+        scroll_area.setWidgetResizable(True)
+        scroll_area.setMaximumHeight(200)
+        scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        layout.addWidget(scroll_area)
         
         # ===== Persistence Controls =====
         persistence_group = QGroupBox("Persistence")
@@ -2441,47 +2449,59 @@ class TracesPlotter(QWidget):
         """Create real-time L/G energy filter controls for calibration."""
         
         group = QGroupBox("Energy Filter (L-G-L) - Live Calibration")
-        layout = QHBoxLayout()
+        
+        # Use vertical layout to fit more information
+        main_layout = QVBoxLayout()
+        
+        # Add explanatory text
+        info_label = QLabel("Trapezoidal Filter: L samples (leading) + G samples (gap) + L samples (trailing)")
+        info_label.setStyleSheet("font-size: 10px; color: gray; font-style: italic;")
+        main_layout.addWidget(info_label)
+        
+        # Controls layout
+        controls_layout = QHBoxLayout()
         
         # Energy L control with more prominent styling
-        l_label = QLabel("L:")
+        l_label = QLabel("L (both edges):")
         l_label.setStyleSheet("font-weight: bold; color: blue;")
-        layout.addWidget(l_label)
+        controls_layout.addWidget(l_label)
         
         self.energy_L_spin = QSpinBox()
         self.energy_L_spin.setRange(1, 200)
         self.energy_L_spin.setValue(self.hardware_params.get("energy_L", 10))
         self.energy_L_spin.valueChanged.connect(self.on_energy_L_changed)
         self.energy_L_spin.setMinimumWidth(60)  # Make sure it's visible
-        self.energy_L_spin.setToolTip("Energy filter L parameter - adjusts leading edge length")
-        layout.addWidget(self.energy_L_spin)
+        self.energy_L_spin.setToolTip("Length of both leading and trailing edges in L-G-L trapezoidal filter")
+        controls_layout.addWidget(self.energy_L_spin)
         
         # Add some spacing
-        layout.addWidget(QLabel("  "))
+        controls_layout.addWidget(QLabel("  "))
         
         # Energy G control with more prominent styling  
-        g_label = QLabel("G:")
+        g_label = QLabel("G (gap):")
         g_label.setStyleSheet("font-weight: bold; color: green;")
-        layout.addWidget(g_label)
+        controls_layout.addWidget(g_label)
         
         self.energy_G_spin = QSpinBox()
         self.energy_G_spin.setRange(1, 100)
         self.energy_G_spin.setValue(self.hardware_params.get("energy_G", 5))
         self.energy_G_spin.valueChanged.connect(self.on_energy_G_changed)
         self.energy_G_spin.setMinimumWidth(60)  # Make sure it's visible
-        self.energy_G_spin.setToolTip("Energy filter G parameter - adjusts gap length")
-        layout.addWidget(self.energy_G_spin)
+        self.energy_G_spin.setToolTip("Length of flat top (gap) in L-G-L trapezoidal filter")
+        controls_layout.addWidget(self.energy_G_spin)
         
         # Add stretch to prevent compression
-        layout.addStretch()
+        controls_layout.addStretch()
+        
+        main_layout.addLayout(controls_layout)
         
         # Auto-enable energy filter when controls are visible
         if hasattr(self, 'energy_filter_cb'):
             self.energy_filter_cb.setChecked(True)
             self.toggle_trace_type("energy_filter")
         
-        group.setLayout(layout)
-        group.setMinimumHeight(60)  # Ensure minimum height for visibility
+        group.setLayout(main_layout)
+        group.setMinimumHeight(80)  # Increased for vertical layout
         return group
     
     def on_energy_L_changed(self, value):
