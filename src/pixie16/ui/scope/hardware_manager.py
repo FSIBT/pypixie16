@@ -282,7 +282,7 @@ class DynamicPixieHardwareManager:
                 polarity = special_params["Polarity"]
                 try:
                     # Read current ChanCSRa value
-                    current_csra = px.control.set_channel_parameter("ChanCSRa", module, channel)
+                    current_csra = px.control.get_channel_parameter("ChanCSRa", module, channel)
                     if polarity == "negative":
                         # Set bit 0 for negative polarity
                         new_csra = current_csra | 1
