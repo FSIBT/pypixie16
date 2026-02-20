@@ -22,6 +22,7 @@ dependencies = [
     "bitstruct",
     "docopt",
     "fast-histogram",
+    "importlib-resources",
     "lmfit",
     "matplotlib",
     "msgspec",

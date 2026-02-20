@@ -6,12 +6,19 @@ import time
 import threading
 import logging
 from dataclasses import dataclass
+from pathlib import Path
+import json
 import numpy as np
 
 try:
     import pixie16 as px
 except ImportError:
     px = None
+
+try:
+    from importlib_resources import files
+except ImportError:
+    files = None
 
 logger = logging.getLogger(__name__)
 
@@ -266,11 +273,31 @@ class DynamicPixieHardwareManager:
                 else:
                     standard_params[name] = value
 
+            # Apply standard parameters first
             for name, value in standard_params.items():
                 px.control.set_channel_parameter(name, value, module, channel)
 
-            if special_params:
-                settings = {"channels": [(module, channel)], **special_params}
+            # Handle polarity specially - needs bit manipulation of ChanCSRa
+            if "Polarity" in special_params:
+                polarity = special_params["Polarity"]
+                try:
+                    # Read current ChanCSRa value
+                    current_csra = px.control.set_channel_parameter("ChanCSRa", module, channel)
+                    if polarity == "negative":
+                        # Set bit 0 for negative polarity
+                        new_csra = current_csra | 1
+                    else:
+                        # Clear bit 0 for positive polarity
+                        new_csra = current_csra & ~1
+                    px.control.set_channel_parameter("ChanCSRa", new_csra, module, channel)
+                    logger.info(f"Set polarity to {polarity} on M{module}:Ch{channel}")
+                except Exception as e:
+                    logger.error(f"Failed to set polarity: {e}")
+
+            # Handle other special parameters
+            other_special = {k: v for k, v in special_params.items() if k != "Polarity"}
+            if other_special:
+                settings = {"channels": [(module, channel)], **other_special}
                 px.control.change_setting_from_dict(settings, call_pixie=True)
 
             return True
@@ -422,25 +449,20 @@ class DynamicPixieHardwareManager:
                     logger.error("Failed to initialize PIXIE hardware")
                     return False
             
-            # Ensure trace length and other parameters are set for channel 6
-#            print("DEBUG: Setting up channel 6 for traces...")
             try:
                 # Set minimum required parameters for traces
                 px.control.set_channel_parameter("TRACE_LENGTH", 1000, 0, 6)  # 1000 samples
                 px.control.set_channel_parameter("TRIGGER_THRESHOLD", 100, 0, 6)  # Low threshold
-#                print("DEBUG: Channel 6 configured for traces")
             except Exception as e:
                 logger.warning(f"Could not configure channel 6: {e}")
             
             # Start list mode for traces
-#            print("DEBUG: Starting list mode run for traces...")
             px.control.start_list_mode_run()
             
             # Verify it started
             time.sleep(0.5)  # Give it time to start
             try:
                 run_active = px.control.check_run_status()
-#                print(f"DEBUG: List mode run status after start: {run_active}")
                 if not run_active:
                     logger.error("List mode failed to start properly")
                     return False
@@ -511,11 +533,8 @@ class DynamicPixieHardwareManager:
 
         return histograms
 
-    def read_list_mode_data(self) -> list[any]:
-#        print(f"DEBUG: read_list_mode_data called - dummy_mode: {self.dummy_mode}, current_mode: {self.state.current_mode}")
-        
+    def read_list_mode_data(self) -> list[any]:        
         if self.dummy_mode or self.state.current_mode not in ["list", "traces"]:
-#            print(f"DEBUG: Skipping read_list_mode_data - dummy_mode={self.dummy_mode}, mode={self.state.current_mode}")
             return []
 
         try:
@@ -527,7 +546,6 @@ class DynamicPixieHardwareManager:
 
         except Exception as e:
             logger.error(f"Error reading list mode data: {e}")
-#            print(f"DEBUG: Exception in read_list_mode_data: {e}")
             return []
 
     def get_hardware_timing_parameters(self, channel: int = 0) -> dict:
@@ -632,6 +650,99 @@ class DynamicPixieHardwareManager:
     def stop_acquisition(self):
         with self.mode_transition_lock:
             self._stop_current_mode()
+
+    def read_from_dictionary(self, settings_dict: dict) -> bool:
+        try:
+            if not settings_dict or len(settings_dict) == 0:
+                logger.warning("Empty settings dictionary provided")
+                return False
+                
+            # Extract first module settings (typical case)
+            module_data = settings_dict[0] if isinstance(settings_dict, list) else settings_dict
+            
+            if "channel" not in module_data or "input" not in module_data["channel"]:
+                logger.error("Invalid settings dictionary structure")
+                return False
+                
+            channel_inputs = module_data["channel"]["input"]
+            
+            # Map from pixie parameter names to our internal names
+            param_mapping = {
+                "FastThresh": "TRIGGER_THRESHOLD",
+                "SlowLength": "ENERGY_RISETIME", 
+                "SlowGap": "ENERGY_FLATTOP",
+                "FastLength": "TRIGGER_RISETIME",
+                "FastGap": "TRIGGER_FLATTOP",
+                "PreampTau": "TAU",
+                "TraceLength": "TRACE_LENGTH",
+                "TriggerDelay": "TRACE_DELAY",
+                "OffsetDAC": "VOFFSET",
+                "BaselinePercent": "BASELINE_PERCENT",
+                "ChanTrigStretch": "ChanTrigStretch",
+                "ExternDelayLen": "ExternDelayLen",
+                "FastTrigBackLen": "FastTrigBackLen",
+                "MultiplicityMaskL": "MultiplicityMaskL", 
+                "MultiplicityMaskH": "MultiplicityMaskH",
+                "BLcut": "BLCUT",
+                "ChanCSRa": "CHAN_CSRA",
+            }
+            
+            # Handle polarity from ChanCSRa bit field
+            if "ChanCSRa" in channel_inputs:
+                csra_values = channel_inputs["ChanCSRa"] 
+                for channel in range(16):
+                    if isinstance(csra_values, list) and len(csra_values) > channel:
+                        csra = csra_values[channel]
+                        # Bit 0 of ChanCSRa controls polarity (0=positive, 1=negative)
+                        polarity_bit = csra & 1
+                        polarity_text = "negative" if polarity_bit else "positive"
+                        self.state.current_parameters[0][channel]["Polarity"] = polarity_text
+            
+            # Initialize parameters for module 0
+            if 0 not in self.state.current_parameters:
+                self.state.current_parameters[0] = {}
+                
+            for channel in range(16):
+                if channel not in self.state.current_parameters[0]:
+                    self.state.current_parameters[0][channel] = {}
+                    
+                # Load parameters from dictionary
+                for pixie_param, internal_param in param_mapping.items():
+                    if pixie_param in channel_inputs:
+                        param_values = channel_inputs[pixie_param]
+                        if isinstance(param_values, list) and len(param_values) > channel:
+                            value = param_values[channel]
+                            
+                            # Convert special float format for TAU
+                            if pixie_param == "PreampTau" and isinstance(value, int):
+                                # Convert IEEE 754 int representation to float
+                                import struct
+                                value = struct.unpack('f', struct.pack('I', value))[0]
+                            
+                            self.state.current_parameters[0][channel][internal_param] = value
+                            
+            logger.info("Parameters loaded from dictionary successfully")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Failed to load from dictionary: {e}")
+            return False
+    
+    def load_default_settings(self) -> bool:
+        try:
+            if files is None:
+                logger.warning("Cannot load default settings - importlib_resources not available")
+                return False
+                
+            data_path = files("pixie16") / "data"
+            with data_path.joinpath("default.json").open("r") as f:
+                default_data = json.load(f)
+                
+            return self.read_from_dictionary(default_data)
+            
+        except Exception as e:
+            logger.error(f"Failed to load default settings: {e}")
+            return False
 
     def cleanup(self):
         try:
