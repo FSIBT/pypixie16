@@ -1478,8 +1478,58 @@ class TracesPlotter(QWidget):
             try:
                 if trace_type == "raw":
                     signal = working_trace
-                    color = "#1f77b4"  # Blue
-                    name = "Raw Trace"
+                elif trace_type == "fast_trigger":
+                    # Compute actual fast trigger using hardware parameters
+                    traces_fpga = convert_trace_to_FPGA(latest_trace[np.newaxis, :])
+                    
+                    fast_result = compute_fast_trigger_validation(
+                        traces_fpga,
+                        L=self.hardware_params["fast_L"],
+                        G=self.hardware_params["fast_G"],
+                        threshold=self.hardware_params["fast_threshold"],
+                    )
+                    
+                    if fast_result["validation_passed"] and fast_result["fast_triggers"] is not None:
+                        # Extract the fast trigger trace (first trace if multiple)
+                        signal = fast_result["fast_triggers"][0]
+                        # Resize to match original trace length if needed
+                        if len(signal) != target_length:
+                            signal = self._resize_trace_to_match(signal, target_length, "fast_trigger")
+                    else:
+                        continue  # Skip if computation failed
+                elif trace_type == "cfd":
+                    # Compute CFD using hardware parameters
+                    # First compute fast trigger for CFD input
+                    traces_fpga = convert_trace_to_FPGA(latest_trace[np.newaxis, :])
+                    
+                    fast_result = compute_fast_trigger_validation(
+                        traces_fpga,
+                        L=self.hardware_params["fast_L"],
+                        G=self.hardware_params["fast_G"],
+                        threshold=self.hardware_params["fast_threshold"],
+                    )
+                    
+                    if fast_result["validation_passed"] and fast_result["fast_triggers"] is not None:
+                        # Use fast trigger as input to CFD
+                        fast_trace = fast_result["fast_triggers"][0]
+                        
+                        # Calculate CFD with hardware parameters
+                        cfd_result, cfdtime, fast_filter, cfd_errors = calculate_CFD(
+                            fast_trace[np.newaxis, :],  # CFD expects 2D array
+                            CFD_threshold=self.hardware_params.get("CFD_threshold", 50),
+                            w=self.hardware_params.get("CFD_delay", 5),
+                            FF_threshold=self.hardware_params.get("FF_threshold", 100)
+                        )
+                        
+                        if cfd_result is not None and len(cfd_result) > 0:
+                            signal = cfd_result[0]  # Extract first trace
+                            # Resize to match original trace length if needed
+                            if len(signal) != target_length:
+                                signal = self._resize_trace_to_match(signal, target_length, "cfd")
+                        else:
+                            continue  # Skip if CFD computation failed
+                    else:
+                        continue  # Skip if fast trigger computation failed
                 elif trace_type == "energy_filter":
                     # Energy filter - use hardware algorithm
                     traces_fpga = convert_trace_to_FPGA(latest_trace[np.newaxis, :])
@@ -1600,14 +1650,12 @@ class TracesPlotter(QWidget):
                             )
 
                             # Resize to match original length
-                            energy_resized = self._resize_trace_to_match(
+                            signal = self._resize_trace_to_match(
                                 energy_aligned, target_length, "energy_filter"
                             )
-
-                            return energy_resized
-
-                    print(f"Energy filter calculation failed for channel {channel}")
-                    return np.zeros(target_length)
+                        else:
+                            print(f"Energy filter calculation failed for channel {channel}")
+                            continue  # Skip this trace type
                 else:
                     # For other trace types, skip if we don't have real hardware data
                     # Only raw traces come from hardware, other types need actual hardware traces
@@ -1891,23 +1939,99 @@ class TracesPlotter(QWidget):
             labelOpts={'position': 0.95, 'color': 'red'}
         ))
 
-
-    def compute_trapezoidal_filter(self, trace, rise_time_us, flat_top_us):
-        if len(trace) < 20:
-            return np.zeros_like(trace)
-
-        # Convert microseconds to samples (assuming 2ns sampling)
-        rise_samples = int(rise_time_us * 1000 / 2)  # μs to ns, then to samples
-        flat_samples = int(flat_top_us * 1000 / 2)
-
-        # Ensure minimum sizes
-        rise_samples = max(rise_samples, 5)
-        flat_samples = max(flat_samples, 2)
-
-        # Create trapezoidal kernel
-        kernel = [-1] * rise_samples + [0] * flat_samples + [1] * rise_samples
-        energy_filter = np.convolve(trace, kernel, mode="same")
-        return energy_filter
+    def compute_hardware_traces(self, trace_type, latest_trace, channel):
+        if trace_type == "raw":
+            return latest_trace
+        elif trace_type == "fast_trigger":
+            # Compute actual fast trigger using real hardware parameters
+            traces_fpga = convert_trace_to_FPGA(latest_trace[np.newaxis, :])
+            
+            fast_result = compute_fast_trigger_validation(
+                traces_fpga,
+                L=self.hardware_params["fast_L"],       # Real hardware parameter
+                G=self.hardware_params["fast_G"],       # Real hardware parameter  
+                threshold=self.hardware_params["fast_threshold"], # Real hardware parameter
+            )
+            
+            if fast_result["validation_passed"] and fast_result["fast_triggers"] is not None:
+                signal = fast_result["fast_triggers"][0]
+                # Resize to match original trace length if needed
+                target_length = len(latest_trace)
+                if len(signal) != target_length:
+                    signal = self._resize_trace_to_match(signal, target_length, "fast_trigger")
+                return signal
+            else:
+                return None
+        elif trace_type == "cfd":
+            # Compute CFD using real hardware parameters
+            traces_fpga = convert_trace_to_FPGA(latest_trace[np.newaxis, :])
+            
+            fast_result = compute_fast_trigger_validation(
+                traces_fpga,
+                L=self.hardware_params["fast_L"],       # Real hardware parameter
+                G=self.hardware_params["fast_G"],       # Real hardware parameter
+                threshold=self.hardware_params["fast_threshold"], # Real hardware parameter
+            )
+            
+            if fast_result["validation_passed"] and fast_result["fast_triggers"] is not None:
+                fast_trace = fast_result["fast_triggers"][0]
+                
+                # Calculate CFD with real hardware parameters
+                cfd_result, cfdtime, fast_filter, cfd_errors = calculate_CFD(
+                    fast_trace[np.newaxis, :],
+                    CFD_threshold=self.hardware_params.get("CFD_threshold", 50),  # Real hardware parameter
+                    w=self.hardware_params.get("CFD_delay", 5),                   # Real hardware parameter  
+                    FF_threshold=self.hardware_params.get("FF_threshold", 100)    # Real hardware parameter
+                )
+                
+                if cfd_result is not None and len(cfd_result) > 0:
+                    signal = cfd_result[0]
+                    # Resize to match original trace length if needed
+                    target_length = len(latest_trace)
+                    if len(signal) != target_length:
+                        signal = self._resize_trace_to_match(signal, target_length, "cfd")
+                    return signal
+                else:
+                    return None
+            else:
+                return None
+        elif trace_type == "energy_filter":
+            # Compute energy filter using real hardware parameters
+            traces_fpga = convert_trace_to_FPGA(latest_trace[np.newaxis, :])
+            
+            fast_result = compute_fast_trigger_validation(
+                traces_fpga,
+                L=self.hardware_params["fast_L"],       # Real hardware parameter
+                G=self.hardware_params["fast_G"],       # Real hardware parameter
+                threshold=self.hardware_params["fast_threshold"], # Real hardware parameter
+            )
+            
+            if fast_result["validation_passed"]:
+                energy_result = compute_energy_filter(
+                    traces_fpga,
+                    R=self.hardware_params["energy_R"],     # Real hardware parameter
+                    L=self.hardware_params["energy_L"],     # Real hardware parameter (L-G-L controls!)
+                    G=self.hardware_params["energy_G"],     # Real hardware parameter (L-G-L controls!)
+                    P=self.hardware_params["energy_P"],     # Real hardware parameter
+                    decay_ns=self.hardware_params["decay_ns"], # Real hardware parameter
+                    trigger_indices=fast_result["trigger_indices"],
+                    baseline_index=fast_result["baseline_stats"]["baseline_index"],
+                )
+                
+                if energy_result.get("energy_results"):
+                    energy_expanded = energy_result["energy_results"][0]
+                    
+                    # Resize to match original length
+                    target_length = len(latest_trace)
+                    signal = self._resize_trace_to_match(energy_expanded, target_length, "energy_filter")
+                    return signal
+                else:
+                    return None
+            else:
+                return None
+        else:
+            # Unknown trace type - no real algorithm available
+            return None
 
     def verify_energy_calculation(self, channel, trace, pixie_reported_energy=None):
         try:
@@ -2245,7 +2369,7 @@ class TracesPlotter(QWidget):
         trace_types_layout.addWidget(energy_filter_group, 2, 0, 1, 2)  # Span both columns
         
         trace_types_group.setLayout(trace_types_layout)
-        trace_types_group.setMaximumHeight(150)  # Increased for L-G-L controls
+        trace_types_group.setMaximumHeight(200)  # Further increased for L-G-L controls visibility
         layout.addWidget(trace_types_group)
         
         # ===== Persistence Controls =====
@@ -2316,24 +2440,40 @@ class TracesPlotter(QWidget):
     def create_energy_filter_controls(self):
         """Create real-time L/G energy filter controls for calibration."""
         
-        group = QGroupBox("Energy Filter (L-G-L)")
+        group = QGroupBox("Energy Filter (L-G-L) - Live Calibration")
         layout = QHBoxLayout()
         
-        # Energy L control
-        layout.addWidget(QLabel("L:"))
+        # Energy L control with more prominent styling
+        l_label = QLabel("L:")
+        l_label.setStyleSheet("font-weight: bold; color: blue;")
+        layout.addWidget(l_label)
+        
         self.energy_L_spin = QSpinBox()
         self.energy_L_spin.setRange(1, 200)
         self.energy_L_spin.setValue(self.hardware_params.get("energy_L", 10))
         self.energy_L_spin.valueChanged.connect(self.on_energy_L_changed)
+        self.energy_L_spin.setMinimumWidth(60)  # Make sure it's visible
+        self.energy_L_spin.setToolTip("Energy filter L parameter - adjusts leading edge length")
         layout.addWidget(self.energy_L_spin)
         
-        # Energy G control  
-        layout.addWidget(QLabel("G:"))
+        # Add some spacing
+        layout.addWidget(QLabel("  "))
+        
+        # Energy G control with more prominent styling  
+        g_label = QLabel("G:")
+        g_label.setStyleSheet("font-weight: bold; color: green;")
+        layout.addWidget(g_label)
+        
         self.energy_G_spin = QSpinBox()
         self.energy_G_spin.setRange(1, 100)
         self.energy_G_spin.setValue(self.hardware_params.get("energy_G", 5))
         self.energy_G_spin.valueChanged.connect(self.on_energy_G_changed)
+        self.energy_G_spin.setMinimumWidth(60)  # Make sure it's visible
+        self.energy_G_spin.setToolTip("Energy filter G parameter - adjusts gap length")
         layout.addWidget(self.energy_G_spin)
+        
+        # Add stretch to prevent compression
+        layout.addStretch()
         
         # Auto-enable energy filter when controls are visible
         if hasattr(self, 'energy_filter_cb'):
@@ -2341,6 +2481,7 @@ class TracesPlotter(QWidget):
             self.toggle_trace_type("energy_filter")
         
         group.setLayout(layout)
+        group.setMinimumHeight(60)  # Ensure minimum height for visibility
         return group
     
     def on_energy_L_changed(self, value):
