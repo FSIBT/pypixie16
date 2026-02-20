@@ -156,7 +156,18 @@ class DynamicPixieHardwareManager:
 
                 for param in param_names:
                     try:
-                        value = px.control.set_channel_parameter(param, 0, channel)
+                        raw_value = px.SDK.read_single_channel_parameter(param, 0, channel, convert_bit_pattern=False)
+                        # Convert numpy types to Python types for compatibility with control.py  
+                        if hasattr(raw_value, 'dtype'):  # numpy array/scalar
+                            if np.issubdtype(raw_value.dtype, np.floating):
+                                value = float(raw_value.item())
+                            elif np.issubdtype(raw_value.dtype, np.integer):
+                                value = int(raw_value.item())
+                            else:
+                                value = raw_value.item()
+                        else:
+                            value = raw_value
+                        logger.debug(f"Parameter {param} Ch{channel}: {raw_value} ({type(raw_value)}) -> {value} ({type(value)})")
                         channel_params[param] = value
                     except Exception as e:
                         logger.warning(f"Could not read {param} for Ch{channel}: {e}")
@@ -282,7 +293,8 @@ class DynamicPixieHardwareManager:
                 polarity = special_params["Polarity"]
                 try:
                     # Read current ChanCSRa value
-                    current_csra = px.control.get_channel_parameter("ChanCSRa", module, channel)
+                    raw_csra = px.SDK.read_single_channel_parameter("ChanCSRa", module, channel, convert_bit_pattern=False)
+                    current_csra = int(raw_csra)  # Convert to Python int for bit operations
                     if polarity == "negative":
                         # Set bit 0 for negative polarity
                         new_csra = current_csra | 1
@@ -364,11 +376,12 @@ class DynamicPixieHardwareManager:
         if mode in self.mode_parameter_templates:
             base_settings.update(self.mode_parameter_templates[mode])
 
+        # Include current channel parameters for mode settings
         current_params = self._get_current_channel_parameters()
         base_settings.update(current_params)
 
         return base_settings
-
+    
     def _get_current_channel_parameters(self) -> dict[str, any]:
         params = {}
 
@@ -378,7 +391,7 @@ class DynamicPixieHardwareManager:
             for param_name, value in channel_0_params.items():
                 if param_name in [
                     "TRIGGER_THRESHOLD",
-                    "TRIGGER_RISETIME",
+                    "TRIGGER_RISETIME", 
                     "TRIGGER_FLATTOP",
                     "ENERGY_RISETIME",
                     "ENERGY_FLATTOP",
@@ -389,17 +402,26 @@ class DynamicPixieHardwareManager:
 
         return params
 
+
     def _apply_mode_settings(self, settings: dict[str, any]) -> bool:
         if self.dummy_mode:
             logger.info(f"DUMMY MODE: Applying settings: {settings}")
             return True
 
         try:
+            # Debug: log the settings and their types
+            logger.info(f"Applying mode settings: {settings}")
+            for key, value in settings.items():
+                if key != "channels":
+                    logger.info(f"  {key}: {value} (type: {type(value)})")
+                    
             px.control.change_setting_from_dict(settings, call_pixie=True)
             logger.debug("Mode settings applied successfully")
             return True
         except Exception as e:
             logger.error(f"Failed to apply mode settings: {e}")
+            import traceback
+            logger.error(f"Full traceback: {traceback.format_exc()}")
             return False
 
     def _start_histogram_mode(self) -> bool:
@@ -599,7 +621,17 @@ class DynamicPixieHardwareManager:
             return self.get_parameter(param_name, module, channel)
 
         try:
-            return px.control.set_channel_parameter(param_name, module, channel)
+            raw_value = px.SDK.read_single_channel_parameter(param_name, module, channel, convert_bit_pattern=False)
+            # Convert numpy types to Python types for compatibility
+            if hasattr(raw_value, 'dtype'):  # numpy array/scalar
+                if np.issubdtype(raw_value.dtype, np.floating):
+                    return float(raw_value.item())
+                elif np.issubdtype(raw_value.dtype, np.integer):
+                    return int(raw_value.item())
+                else:
+                    return raw_value.item()
+            else:
+                return raw_value
         except Exception as e:
             logger.error(f"Failed to read {param_name} from hardware: {e}")
             return self.get_parameter(param_name, module, channel)
