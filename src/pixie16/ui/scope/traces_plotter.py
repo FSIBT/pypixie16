@@ -527,7 +527,7 @@ class TracesPlotter(QWidget):
             self.raw_plot_widget.setTitle(
                 f"PIXIE-16 Raw Traces - Aligned to Ch{self.alignment_reference_channel}"
             )
-#            print(f"DEBUG: Changed alignment reference to Ch{self.alignment_reference_channel}, reset reference timestamp")
+
 
     def calculate_aligned_time_axis(self, trace_length, event_timestamp=None):
         if (
@@ -611,11 +611,11 @@ class TracesPlotter(QWidget):
         if hasattr(self, 'parent') and hasattr(self.parent(), 'swap_right_panel_controls'):
             if tab_name == "Single Channel Analysis":
                 # Request hardware validation controls for single channel tab
-#                print("DEBUG: Requesting single channel controls for sidebar")
+
                 self.handle_controls_widget_request("hardware_validation")
             elif tab_name == "Coincidence Logic":
                 # Let coincidence tab handle its own controls
-#                print("DEBUG: Letting coincidence tab manage its controls")
+
                 if hasattr(current_tab, 'request_controls_widget'):
                     current_tab.request_controls_widget.emit("coincidence_logic")
         
@@ -975,7 +975,7 @@ class TracesPlotter(QWidget):
             
             # Force immediate plot update for the new channel
             self.update_hardware_validation_plots()
-#            print(f"DEBUG: Selected channel changed to {self.selected_channel}")
+
         else:
             pass  # channel_combo not available or invalid index
 
@@ -1121,7 +1121,7 @@ class TracesPlotter(QWidget):
     def add_event_with_trace(self, event, trace_data):
         event_timestamp = getattr(event, "timestamp", None)
         
-#        print(f"DEBUG: add_event_with_trace called - Channel: {event.channel}, Trace length: {len(trace_data) if trace_data is not None else 'None'}, Timestamp: {event_timestamp}")
+
 
         # Add to raw traces display
         self.add_trace(event.channel, trace_data, event_timestamp)
@@ -1132,21 +1132,21 @@ class TracesPlotter(QWidget):
 
     def add_trace(self, channel, trace_data, event_timestamp=None):
         try:
-#            print(f"DEBUG: add_trace called - Channel: {channel}, Trace length: {len(trace_data) if trace_data is not None else 'None'}, Timestamp: {event_timestamp}")
-#            print(f"DEBUG: self.channels = {self.channels}")
-#            print(f"DEBUG: self.display_channels = {self.display_channels}")
-#            print(f"DEBUG: self.time_alignment_mode = {self.time_alignment_mode}")
-#            print(f"DEBUG: self.amplitude_threshold = {self.amplitude_threshold}")
+
+
+
+
+
             
             if channel not in self.channels:
-#                print(f"DEBUG: Channel {channel} not in self.channels {self.channels}")
+
                 return
 
             if not isinstance(trace_data, np.ndarray):
                 trace_data = np.array(trace_data)
 
             if len(trace_data) == 0:
-#                print(f"DEBUG: Empty trace data for channel {channel}")
+
                 return
 
             # Store timestamp for alignment with overflow tracking
@@ -1162,10 +1162,10 @@ class TracesPlotter(QWidget):
 
             if len(trace_data) > 10:
                 amplitude = np.max(trace_data) - np.min(trace_data)
-#                print(f"DEBUG: Trace amplitude: {amplitude:.3f}, threshold: {self.amplitude_threshold}")
+
                 
                 if amplitude >= self.amplitude_threshold:
-#                    print(f"DEBUG: STORING trace for channel {channel} - passed amplitude threshold")
+
                     # Store in original buffer with overflow tracking
                     buffer_was_full = len(self.trace_data[channel]) == self.trace_data[channel].maxlen
                     self.trace_data[channel].append(trace_data)
@@ -1208,7 +1208,7 @@ class TracesPlotter(QWidget):
                 else:
                     pass  # REJECTED trace - amplitude below threshold
             else:
-#                print(f"DEBUG: Short trace (len={len(trace_data)}) - storing anyway")
+
                 # Store in original buffer with overflow tracking
                 buffer_was_full = len(self.trace_data[channel]) == self.trace_data[channel].maxlen
                 self.trace_data[channel].append(trace_data)
@@ -1248,7 +1248,7 @@ class TracesPlotter(QWidget):
         try:
             # Count total traces for debug
             total_traces = sum(len(self.trace_data[ch]) for ch in self.channels if ch in self.trace_data)
-#            print(f"DEBUG: update_plots called - total traces across all channels: {total_traces}")
+
             
             self.update_raw_traces_plot()
             self.update_hardware_validation_plots()
@@ -1262,7 +1262,7 @@ class TracesPlotter(QWidget):
                 return
 
             total_traces = 0
-#            print(f"DEBUG: update_raw_traces_plot - display_channels: {self.display_channels}")
+
 
             # Update legend to only show displayed channels
             self._update_legend()
@@ -2038,16 +2038,15 @@ class TracesPlotter(QWidget):
                                 optimal_offset = flat_area_start + (flat_area_length // 2)
                                 peak_sample_raw_pos = fast_trigger_raw_pos + optimal_offset
                                 
-#                                print(f"DEBUG: Peak sample calculation - L={L}, G={G}, P={P}")
-#                                print(f"DEBUG: Ramp duration={ramp_duration}, flat_start={flat_area_start}, flat_length={flat_area_length}")
-#                                print(f"DEBUG: Optimal offset={optimal_offset}, peak_sample_pos={peak_sample_raw_pos}")
+
+
+
                                 peak_sample_points = (
                                     [peak_sample_raw_pos]
                                     if peak_sample_raw_pos < original_length
                                     else []
                                 )
                                 
-                                print(f"Peak sample: trigger={fast_trigger_raw_pos}, offset={optimal_offset}, final={peak_sample_raw_pos}")
 
                             else:
                                 energy_aligned = energy_expanded
@@ -2132,11 +2131,10 @@ class TracesPlotter(QWidget):
                 triggers = self.trigger_points[channel].get(trigger_key, [])
                 if triggers and 0 <= triggers[0] < len(time_axis):
                     trigger_time = time_axis[triggers[0]]
-                    print(f"L-G-L using {trigger_key} trigger at sample {triggers[0]} for channel {channel}")
                     break
         
         if trigger_time is None:
-            print(f"No valid trigger found for L-G-L windows on channel {channel}")
+            # No valid trigger found for L-G-L windows
             return False
             
         # Calculate L-G-L window positions relative to trigger
@@ -2236,25 +2234,25 @@ class TracesPlotter(QWidget):
             return
             
         if channel not in self.trigger_points:
-#            print(f"DEBUG: No trigger points stored for channel {channel}")
+
             return
 
         trigger_info = self.trigger_points[channel]
-#        print(f"DEBUG: Trigger info for channel {channel}: {trigger_info}")
+
 
         # Get the latest trace to read signal values
         if channel not in self.trace_data or len(self.trace_data[channel]) == 0:
-#            print(f"DEBUG: No trace data for channel {channel}")
+
             return
 
         traces_list = list(self.trace_data[channel])
         if not traces_list:
-#            print(f"DEBUG: Empty trace list for channel {channel}")
+
             return
 
         latest_trace = traces_list[-1]
         if latest_trace is None or len(latest_trace) == 0:
-#            print(f"DEBUG: Invalid latest trace for channel {channel}")
+
             return
 
         if len(time_axis) != len(latest_trace):
@@ -2293,7 +2291,7 @@ class TracesPlotter(QWidget):
                 or not self.trace_types.get(trace_type, False)):
                 continue
 
-#            print(f"DEBUG: Adding {len(trigger_indices)} {trace_type} markers")
+
 
             # Get the signal data for this trace type
             if trace_type == "raw":

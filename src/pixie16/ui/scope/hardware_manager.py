@@ -409,11 +409,11 @@ class DynamicPixieHardwareManager:
             return True
 
         try:
-            # Debug: log the settings and their types
-            logger.info(f"Applying mode settings: {settings}")
+            # Debug: log the settings and their types  
+            logger.debug(f"Applying mode settings: {settings}")
             for key, value in settings.items():
                 if key != "channels":
-                    logger.info(f"  {key}: {value} (type: {type(value)})")
+                    logger.debug(f"  {key}: {value} (type: {type(value)})")
                     
             px.control.change_setting_from_dict(settings, call_pixie=True)
             logger.debug("Mode settings applied successfully")
