@@ -1609,10 +1609,9 @@ class TracesPlotter(QWidget):
                     print(f"Energy filter calculation failed for channel {channel}")
                     return np.zeros(target_length)
                 else:
-                    # For other trace types, use fallback simulation
-                    signal = self.fallback_simulation(trace_type, working_trace)
-                    if signal is None or len(signal) == 0:
-                        continue
+                    # For other trace types, skip if we don't have real hardware data
+                    # Only raw traces come from hardware, other types need actual hardware traces
+                    continue
 
                 # Apply baseline normalization to align all traces to zero baseline
                 signal = self.normalize_trace_to_zero_baseline(signal, trace_type)
@@ -1632,8 +1631,9 @@ class TracesPlotter(QWidget):
                 print(f"Hardware computation error for {trace_type}: {e}")
                 continue
 
-        # Add trigger markers
+        # Add trigger markers and threshold lines
         self._add_trigger_markers(plot_widget, channel, time_axis)
+        self._add_threshold_lines(plot_widget, latest_trace)
 
     def _store_trigger_info(
         self,
@@ -1873,20 +1873,24 @@ class TracesPlotter(QWidget):
                         name="Peak Sample" if idx == 0 else None,
                     )
 
-    def fallback_simulation(self, trace_type, trace):
-        if trace_type == "fast_trigger":
-            fast_filter = np.convolve(trace, [-1] * 5 + [1] * 5, mode="same")
-            return np.maximum(fast_filter, 0)
-        elif trace_type == "cfd":
-            if len(trace) < 10:
-                return np.zeros_like(trace)
-            delay = 5
-            delayed_trace = np.pad(trace[:-delay], (delay, 0), mode="constant")
-            return trace - 0.5 * delayed_trace
-        elif trace_type == "energy_filter":
-            kernel = [-1] * 10 + [0] * 5 + [1] * 10
-            return np.convolve(trace, kernel, mode="same")
-        return trace
+    def _add_threshold_lines(self, plot_widget, trace_data):
+        """Add amplitude threshold line to the plot."""
+        if self.amplitude_threshold <= 0:
+            return
+            
+        # Calculate baseline for threshold reference
+        baseline = self.calculate_trace_baseline(trace_data)
+        threshold_line = baseline + self.amplitude_threshold
+        
+        # Add horizontal threshold line
+        plot_widget.addItem(pg.InfiniteLine(
+            pos=threshold_line,
+            angle=0,  # Horizontal line
+            pen=pg.mkPen(color='red', style=pg.QtCore.Qt.PenStyle.DashLine, width=2),
+            label=f'Threshold: {self.amplitude_threshold:.3f}',
+            labelOpts={'position': 0.95, 'color': 'red'}
+        ))
+
 
     def compute_trapezoidal_filter(self, trace, rise_time_us, flat_top_us):
         if len(trace) < 20:
@@ -2241,7 +2245,7 @@ class TracesPlotter(QWidget):
         trace_types_layout.addWidget(energy_filter_group, 2, 0, 1, 2)  # Span both columns
         
         trace_types_group.setLayout(trace_types_layout)
-        trace_types_group.setMaximumHeight(100)
+        trace_types_group.setMaximumHeight(150)  # Increased for L-G-L controls
         layout.addWidget(trace_types_group)
         
         # ===== Persistence Controls =====
