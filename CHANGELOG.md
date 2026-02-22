@@ -30,6 +30,7 @@ and this project tries to adhere to [Semantic Versioning](https://semver.org/spe
   words
 - Comparing settings did not print second value
 - Fix progress bar display when taking MCA data with `take_MCA_spectra`
+- switch from docopt to docopt-ng
 
 ## [3.1.0] 2025-02-15
 
