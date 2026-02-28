@@ -130,6 +130,14 @@ class ParameterControls(QGroupBox):
             }
         """)
 
+        # Create scroll area for parameter content
+        self.param_scroll_area = QScrollArea()
+        self.param_scroll_area.setWidgetResizable(True)
+        self.param_scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self.param_scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self.param_scroll_area.setMaximumHeight(400)  # Limit height to prevent panel from becoming too tall
+        
+        # Create widget to hold scrollable content
         self.param_content_widget = QWidget()
         content_layout = QVBoxLayout()
         content_layout.setContentsMargins(5, 5, 5, 5)
@@ -152,10 +160,13 @@ class ParameterControls(QGroupBox):
         content_layout.addWidget(button_group)
 
         self.param_content_widget.setLayout(content_layout)
-        self.param_content_widget.setVisible(False)
+        
+        # Set the scrollable widget
+        self.param_scroll_area.setWidget(self.param_content_widget)
+        self.param_scroll_area.setVisible(False)
 
         main_container_layout.addWidget(self.param_header_btn)
-        main_container_layout.addWidget(self.param_content_widget)
+        main_container_layout.addWidget(self.param_scroll_area)
         main_container.setLayout(main_container_layout)
         main_container.setSizePolicy(
             QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum
@@ -164,7 +175,7 @@ class ParameterControls(QGroupBox):
         return main_container
 
     def toggle_parameter_section(self, checked):
-        self.param_content_widget.setVisible(checked)
+        self.param_scroll_area.setVisible(checked)
         if checked:
             self.param_header_btn.setText("▼ Parameter Controls")
         else:
@@ -775,8 +786,22 @@ class ParameterControls(QGroupBox):
                 with open(file_path) as f:
                     preset = json.load(f)
 
+                # Load settings to GUI first
                 self.set_all_parameters(preset)
-                self.status_message.emit(f"Loaded preset from {Path(file_path).name}")
+                
+                # Apply to hardware using parent's hardware manager (if available)
+                if hasattr(self.parent(), 'pixie_hw') and self.parent().pixie_hw:
+                    try:
+                        success = self.parent().pixie_hw.read_from_dictionary(preset)
+                        if success:
+                            self.status_message.emit(f"Loaded preset from {Path(file_path).name} and applied to hardware")
+                        else:
+                            self.status_message.emit(f"Loaded preset from {Path(file_path).name} to GUI only (hardware apply failed)")
+                    except Exception as hw_error:
+                        logger.warning(f"Failed to apply preset to hardware: {hw_error}")
+                        self.status_message.emit(f"Loaded preset from {Path(file_path).name} to GUI only (hardware error)")
+                else:
+                    self.status_message.emit(f"Loaded preset from {Path(file_path).name} to GUI only (no hardware access)")
 
         except Exception as e:
             error_msg = f"Error loading preset: {e}"

@@ -770,22 +770,27 @@ class CoincidenceLogicTab(QWidget):
             elif self.display_mode == "reference_channel":
                 # MODE 2: Reference Channel (Ch A Fixed)
                 if channel_id == 'A':
-                    # Channel A: Always at fixed position (t=0 reference)
-                    time_axis = np.arange(trace_length) * self.sampling_period_ns - trigger_time_ns
-                    # Set reference timestamp
+                    # Channel A: Always at fixed position (t=0 reference) - NO DRIFT
+                    # Set reference timestamp once and pin Channel A time axis to fixed position
                     if self.reference_timestamp is None:
                         self.reference_timestamp = event_timestamp
                         print(f"Ch{self.channel_a} set as reference at timestamp {self.reference_timestamp}")
+                    
+                    # Channel A always uses the same fixed time axis (pinned to T=0)
+                    time_axis = np.arange(trace_length) * self.sampling_period_ns - trigger_time_ns
                         
                 elif channel_id == 'B':
-                    # Channel B: Show timing offset relative to Channel A
+                    # Channel B: Show timing offset relative to Channel A reference
                     if self.reference_timestamp is not None:
+                        # Calculate offset from Channel A reference timestamp
                         timestamp_diff_ticks = event_timestamp - self.reference_timestamp
                         timestamp_diff_ns = timestamp_diff_ticks * 10.0
                         # Keep differences within ±2µs for better visualization
                         timestamp_diff_ns = np.clip(timestamp_diff_ns, -2000, 2000)
+                        # Apply the timing offset to show relative timing
                         time_axis = np.arange(trace_length) * self.sampling_period_ns - trigger_time_ns + timestamp_diff_ns
                     else:
+                        # No reference yet, use default alignment until Channel A sets reference
                         time_axis = np.arange(trace_length) * self.sampling_period_ns - trigger_time_ns
                         
             elif self.display_mode == "coincidence_centered":

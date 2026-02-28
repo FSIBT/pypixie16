@@ -1665,8 +1665,28 @@ class TracesPlotter(QWidget):
                 # Apply baseline normalization to align all traces to zero baseline
                 signal = self.normalize_trace_to_zero_baseline(signal, trace_type)
                 
-                # Apply offset correction to time axis
-                corrected_time_axis = self.apply_time_correction(time_axis, trace_type)
+                if trace_type == "fast_trigger":
+                    fpga_sampling_period = 10.0  # ns per FPGA cycle
+                    raw_sampling_period = 2.0   # ns per raw sample
+                    pretrigger_offset_ns = 200.0  # ns
+                    
+                    # Create time axes for interpolation with offset compensation
+                    fast_time_points = np.arange(len(signal)) * fpga_sampling_period + pretrigger_offset_ns
+                    target_time_points = np.arange(target_length) * raw_sampling_period
+                    
+                    # Interpolate fast trigger to match raw trace timing
+                    from scipy import interpolate
+                    interp_func = interpolate.interp1d(
+                        fast_time_points, signal, 
+                        kind='linear', bounds_error=False, fill_value=0
+                    )
+                    signal = interp_func(target_time_points)
+                    
+                    # Use standard time axis correction
+                    corrected_time_axis = self.apply_time_correction(time_axis, trace_type)
+                else:
+                    # Apply offset correction to time axis for other trace types
+                    corrected_time_axis = self.apply_time_correction(time_axis, trace_type)
                 
                 # Color coding for different trace types
                 trace_colors = {"raw": "#1f77b4", "fast_trigger": "#ff7f0e", "energy_filter": "#2ca02c", "cfd": "#d62728"}
@@ -1922,8 +1942,84 @@ class TracesPlotter(QWidget):
                         name="Peak Sample" if idx == 0 else None,
                     )
 
+        # Add trapezoidal integration window lines (L-G-L regions)
+        self._add_trapezoidal_window_lines(plot_widget, channel, time_axis, latest_trace)
+
+    def _add_trapezoidal_window_lines(self, plot_widget, channel, time_axis, latest_trace):
+        """Add vertical lines indicating the trapezoidal integration windows (L-G-L regions)."""
+        # Only show lines if energy filter is enabled
+        if not self.trace_types.get("energy_filter", False):
+            return
+            
+        # Get trigger information
+        trigger_info = self.trigger_points.get(channel, {})
+        if "energy_filter" not in trigger_info or not trigger_info["energy_filter"]:
+            return
+            
+        # Get energy filter parameters
+        L = self.hardware_params["energy_L"]
+        G = self.hardware_params["energy_G"]
+        energy_R = self.hardware_params["energy_R"]
+        
+        # Calculate samples per energy cycle (energy filter decimation)
+        samples_per_energy_cycle = 2 ** energy_R
+        
+        # Get the energy trigger position (where the trapezoidal filter starts)
+        energy_trigger_indices = trigger_info["energy_filter"]
+        if not energy_trigger_indices:
+            return
+            
+        # Use the first trigger point
+        energy_trigger_idx = energy_trigger_indices[0]
+        
+        # Apply time correction for energy filter
+        corrected_time_axis = self.apply_time_correction(time_axis, "energy_filter")
+        
+        # Calculate the time positions for L-G-L regions
+        if energy_trigger_idx < len(corrected_time_axis):
+            trigger_time = corrected_time_axis[energy_trigger_idx]
+            
+            # Convert L and G from energy cycles to raw samples
+            L_samples = L * samples_per_energy_cycle
+            G_samples = G * samples_per_energy_cycle
+            
+            # Calculate time step
+            time_step = corrected_time_axis[1] - corrected_time_axis[0] if len(corrected_time_axis) > 1 else 2.0
+            
+            # Calculate the boundary times
+            leading_end_time = trigger_time + (L_samples * time_step)
+            gap_end_time = leading_end_time + (G_samples * time_step)
+            trailing_end_time = gap_end_time + (L_samples * time_step)
+            
+            # Add vertical lines for the boundaries
+            # Leading edge end (start of gap)
+            plot_widget.addItem(pg.InfiniteLine(
+                pos=leading_end_time,
+                angle=90,  # Vertical line
+                pen=pg.mkPen(color='darkblue', style=pg.QtCore.Qt.PenStyle.DashLine, width=1.5),
+                label='L',
+                labelOpts={'position': 0.95, 'color': 'darkblue', 'anchor': (0, 1)}
+            ))
+            
+            # Gap end (start of trailing edge)
+            plot_widget.addItem(pg.InfiniteLine(
+                pos=gap_end_time,
+                angle=90,  # Vertical line
+                pen=pg.mkPen(color='darkgreen', style=pg.QtCore.Qt.PenStyle.DashLine, width=1.5),
+                label='G',
+                labelOpts={'position': 0.95, 'color': 'darkgreen', 'anchor': (0, 1)}
+            ))
+            
+            # Trailing edge end
+            plot_widget.addItem(pg.InfiniteLine(
+                pos=trailing_end_time,
+                angle=90,  # Vertical line
+                pen=pg.mkPen(color='darkblue', style=pg.QtCore.Qt.PenStyle.DashLine, width=1.5),
+                label='L',
+                labelOpts={'position': 0.95, 'color': 'darkblue', 'anchor': (0, 1)}
+            ))
+
     def _add_threshold_lines(self, plot_widget, trace_data):
-        """Add amplitude threshold line to the plot."""
         if self.amplitude_threshold <= 0:
             return
             
