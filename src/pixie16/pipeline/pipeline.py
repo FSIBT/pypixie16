@@ -287,15 +287,15 @@ class Pipeline:
 
         self.update_active_tasks_status(Message.CONFIGURE(config))
 
-    def poll(self) -> None:
+    def poll(self) -> bool:
         """
-        Does listening.
+        Does listening. Returns True if a message was received, False otherwise.
         """
 
         try:
             name, msg = self.socket_router.recv_multipart(flags=zmq.NOBLOCK)
         except zmq.Again:
-            return
+            return False
 
         name = name.decode()
         msg = pickle.loads(msg)
@@ -308,3 +308,5 @@ class Pipeline:
             self.handle_print(name, *msg())
         else:  # pragma: no cover
             assert False
+
+        return True
