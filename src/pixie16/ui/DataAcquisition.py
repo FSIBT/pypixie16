@@ -111,12 +111,12 @@ class DataAcquisition(QWidget):
             self.on_mode_change(self.settings_modes.currentIndex())
 
     def parse_runtime(self, time_string: str) -> int:
-        """Parse strings like 1h, 1h5m, 25s into seconds as integer."""
+        """Parse strings like 1h, 1h5m, 25s, or 5.5 into seconds as integer."""
         if not time_string:
             return 0
         try:
-            # already in seconds
-            return int(time_string)
+            # handle both "5" and "5.5" correctly as seconds
+            return int(float(time_string))
         except ValueError:
             try:
                 s = dateutil.parser.parse(time_string) - dateutil.parser.parse("0s")
