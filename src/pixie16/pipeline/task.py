@@ -22,6 +22,7 @@ Task Lifecycle
 """
 
 import io
+import os
 import abc
 import sys
 import time
@@ -670,6 +671,14 @@ class Task(multiprocessing.Process):
         "send a heart beat every second"
         now = time.time()
         if now - self._heart_beat_timestamp > 0.5:  # TODO: slow down later
+            parent = multiprocessing.parent_process()
+            if parent is not None and not parent.is_alive():
+                print(
+                    f"Task {self.name} shutting down: parent process died.",
+                    file=sys.stderr,
+                )
+                sys.exit(0)
+
             if self._ps_data is None:
                 self._ps_data = psutil.Process(self.pid)
 

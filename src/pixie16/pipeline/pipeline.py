@@ -108,6 +108,7 @@ class Pipeline:
         task = Task.class_registry[name](**self.task_kwargs)
         self.tasks_all[name] = task
         task.address_router = self.address_router
+        task.daemon = True
         task.start()
 
     def handle_report(self, name: str, report: dict[str, typing.Any]) -> None:
