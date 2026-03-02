@@ -147,6 +147,7 @@ class Task(multiprocessing.Process):
         self.address_router = None
 
         self._heart_beat_timestamp = 0
+        self._ps_data = None
 
     def do_init(self) -> None:
         """
@@ -631,14 +632,15 @@ class Task(multiprocessing.Process):
         "send a heart beat every second"
         now = time.time()
         if now - self._heart_beat_timestamp > 0.5:  # TODO: slow down later
-            ps_data = psutil.Process(self.pid)
+            if self._ps_data is None:
+                self._ps_data = psutil.Process(self.pid)
 
             self.send_report(
                 {
                     "name": self.name,
                     "status": self.status,
-                    "cpu": ps_data.cpu_percent(),
-                    "memory": ps_data.memory_info().vms / 1e6,
+                    "cpu": self._ps_data.cpu_percent(),
+                    "memory": self._ps_data.memory_info().vms / 1e6,
                     "queue": len(self._queue),
                     "activity": now,
                 }
