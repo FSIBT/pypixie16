@@ -80,6 +80,7 @@ class DataAcquisition(QWidget):
         self.app = app
         self.taskid_to_row = {}
         self.pipeline = pipeline.Pipeline()
+        self.app.aboutToQuit.connect(self.pipeline.quit)
         self.local_settings = LocalSettings()
         if init_modes:
             self.modes = ["DummyData"]
