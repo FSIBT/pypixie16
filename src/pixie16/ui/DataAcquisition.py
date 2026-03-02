@@ -487,8 +487,11 @@ class DataAcquisition(QWidget):
 
         if key == "memory":
             if isinstance(value, float | int):
-                mb = float(value) / (1024**2)
-                return f"{mb:.1f} MB"
+                for unit in ["B", "kB", "MB", "GB", "TB"]:
+                    if value < 1024.0:
+                        return f"{value:.1f} {unit}"
+                    value /= 1024.0
+                return f"{value:.1f} PB"
 
         if key == "cpu percent":
             if isinstance(value, float | int):
