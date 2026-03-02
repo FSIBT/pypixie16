@@ -54,7 +54,7 @@ classifiers = [
 
 [project.optional-dependencies]
 fast = ["cbitstruct"]
-test = ["pytest", "pytest-cov"]
+test = ["pytest", "pytest-cov", "pytest-benchmark"]
 docs = [
     "alabaster",
     "markupsafe",

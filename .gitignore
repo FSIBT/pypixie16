@@ -128,3 +128,6 @@ __pycache__/
 *.tmp
 *.temp
 *.log
+
+# pytest-benchmark saved results
+.benchmarks/
