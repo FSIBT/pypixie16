@@ -68,18 +68,14 @@ class LoadFiles(task.Task):
         """
 
         events = []
+        eof = False  # End-of-File
 
         for _ in range(self.batch_size):
             try:
                 events.append(self.reader.pop())
-            except read.EmptyError:
-                self.stop()
+            except (read.EmptyError, read.LeftoverBytesError, StopIteration):
+                eof = True
                 break
-            except read.LeftoverBytesError:
-                self.stop()
-                break
-            except StopIteration:
-                self.stop()
 
         self.count += len(events)
         self.report(
@@ -92,6 +88,22 @@ class LoadFiles(task.Task):
         if events:
             return events
 
+        if eof:
+            if self.byte_stream is not None:
+                self.byte_stream.close_files()
+            self.send_finished()
+
+    def do_stop(self):
+        """
+        Stops the task.
+
+        Note:
+            This method extends ``Task.do_stop``.
+        """
+
+        if self.byte_stream:
+            self.byte_stream.close_files()
+
     def do_quit(self):
         """
         Quits the task.
@@ -100,4 +112,5 @@ class LoadFiles(task.Task):
             This method extends ``Task.do_quit``.
         """
 
-        self.byte_stream.close_files()
+        if self.byte_stream is not None:
+            self.byte_stream.close_files()
