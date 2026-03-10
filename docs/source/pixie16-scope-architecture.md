@@ -2,22 +2,22 @@
 
 ## System Overview
 
-The PIXIE-16 Scope is designed as a modular, real-time data acquisition system with a clear separation between hardware management, data processing, and user interface components.
-
-## Architecture Diagram
-
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                    PixieScopeApp (QMainWindow)                  │
-│  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐  │
-│  │  Parameter      │  │   Channel       │  │  Data Manager   │  │
-│  │  Controls       │  │   Controls      │  │                 │  │
-│  └─────────────────┘  └─────────────────┘  └─────────────────┘  │
-│  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐  │
-│  │ MCA Spectrum    │  │ Traces Plotter  │  │ List Mode       │  │
-│  │ Plotter         │  │                 │  │ Analysis        │  │
-│  └─────────────────┘  └─────────────────┘  └─────────────────┘  │
-└─────────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────┐
+│                     PixieScopeApp (QMainWindow)                      │
+│  ┌──────────────┐ ┌──────────────┐ ┌─────────────┐ ┌─────────────┐  │
+│  │  Parameter   │ │   Channel    │ │    Data     │ │  AutoSave   │  │
+│  │  Controls    │ │   Controls   │ │   Manager   │ │   Buffer    │  │
+│  └──────────────┘ └──────────────┘ └─────────────┘ └─────────────┘  │
+│  ┌──────────────┐ ┌──────────────┐ ┌─────────────┐ ┌─────────────┐  │
+│  │ MCA Spectrum │ │   Traces     │ │ Coincidence │ │    FWHM     │  │
+│  │ Plotter      │ │   Plotter    │ │ Logic Tab   │ │   Widget    │  │
+│  └──────────────┘ └──────────────┘ └─────────────┘ └─────────────┘  │
+│  ┌──────────────┐ ┌──────────────┐ ┌─────────────┐                  │
+│  │  Spectrum    │ │  Persistence │ │   Trace     │                  │
+│  │  Plotter     │ │  Histogram   │ │   Replay    │                  │
+│  └──────────────┘ └──────────────┘ └─────────────┘                  │
+└──────────────────────────────────────────────────────────────────────┘
                               │
                     ┌─────────▼─────────┐
                     │ Hardware Manager  │
@@ -30,9 +30,7 @@ The PIXIE-16 Scope is designed as a modular, real-time data acquisition system w
                     └───────────────────┘
 ```
 
-## Component Interactions
-
-### Data Flow
+## Data Flow
 
 1. **Hardware → Application**
    ```
@@ -44,212 +42,102 @@ The PIXIE-16 Scope is designed as a modular, real-time data acquisition system w
    UI Widget → ParameterValidator → ParameterChangeManager → HardwareManager → PIXIE-16
    ```
 
-3. **Real-time Display**
+3. **Traces Mode Pipeline**
    ```
-   Hardware Data → Data Processing → Plot Widgets → Qt Graphics System
+   Raw ADC Traces → Trace Type Selection → Filter Computation → Plot Display
+                          ↓                       ↓
+                   fast_trigger/CFD     Energy Filter (L-G-L trapezoidal)
+                                                  ↓
+                                        Threesums Calibration
+   ```
+
+4. **Coincidence Logic Pipeline**
+   ```
+   Binary Waveforms → 6-stage Logic Histogram → Visualization
+   (local_fast_trigger → fast_trigger_bp → chan_trig → ...)
    ```
 
 ## Core Subsystems
 
-### 1. Hardware Management Layer
+### Hardware Management (`hardware_manager.py`)
 
-#### DynamicPixieHardwareManager
-- **Purpose**: Abstraction layer for PIXIE-16 hardware communication
-- **Key Features**:
-  - Thread-safe parameter updates
-  - Mode-specific configuration templates
-  - Parameter caching for performance
-  - Dummy mode simulation
-  - State tracking and recovery
+**DynamicPixieHardwareManager** — abstraction over PIXIE-16 hardware.
 
-#### HardwareState (dataclass)
-```python
-@dataclass
-class HardwareState:
-    is_initialized: bool = False
-    is_running: bool = False
-    current_mode: str | None = None
-    enabled_channels: list[int] = None
-    current_parameters: dict[str, dict[str, any]] = None
-```
+- Parameter caching with `threading.Lock` to avoid I/O bottlenecks
+- Mode-specific configuration templates (histogram/list/traces)
+- `read_from_dictionary()` — load settings from dict/JSON with DSP variable mapping (e.g. `FastThresh` → `TRIGGER_THRESHOLD`, `ChanCSRa` polarity bit extraction)
+- `load_default_settings()` — load packaged `default.json` via `importlib_resources`
+- Dummy mode for hardware-free development
 
-### 2. Parameter Management Layer
+### Parameter Validation (`parameter_validation.py`)
 
-#### PixieParameterValidator
-- **Purpose**: Validate parameters before hardware updates
-- **Features**:
-  - Module-specific constraints (100MHz/250MHz/500MHz)
-  - Parameter specification definitions
-  - Range checking and type validation
-  - Unit conversion and normalization
+**PixieParameterValidator** — module-aware (100/250/500 MHz) validation with range checking and unit normalization.
 
-#### ParameterChangeManager
-- **Purpose**: Manage parameter update workflow
-- **Features**:
-  - Debounced updates (300ms delay)
-  - Batch parameter updates
-  - Change callbacks and notifications
-  - Threading coordination
+**ParameterChangeManager** — debounced (300ms) batch updates with change callbacks.
 
-### 3. User Interface Layer
+### Trace Types & Energy Filter (`traces_plotter.py`)
 
-#### Main Application (PixieScopeApp)
-- **Layout**: QSplitter-based with resizable panels
-- **Coordination**: Signal/slot communication between components
-- **Features**:
-  - Mode switching (MCA/List/Traces)
-  - Real-time status updates
-  - Error handling and user feedback
-  - Resource management and cleanup
+Trace types are toggleable per-channel: `raw`, `fast_trigger`, `energy_filter`, `CFD`. Each has a color mapping and hardware computation path.
 
-#### UI Component Communication
-```python
-# Signal connections example
-parameter_controls.parameter_changed.connect(hardware_manager.update_parameter)
-channel_controls.channels_changed.connect(plotters.update_displayed_channels)
-hardware_manager.data_ready.connect(plotters.update_data)
-```
+**Energy filter** computes trapezoidal filter traces using `compute_energy_filter(traces_fpga, R, L, G, ...)` from hardware parameters. LGL vertical lines visualize the trapezoidal filter tap regions (L-G-L) directly on the plot. Trigger point detection and peak sample marking are overlaid.
 
-### 4. Visualization Layer
+### Coincidence Logic (`coincidence_logic_tab.py`)
 
-#### Plotting Architecture
-All plotting components inherit from QWidget and use PyQtGraph for performance:
+**BinaryHistogramData** — manages 2000-bin histograms for 6 logic pipeline stages. Thread-safe with mutex locking.
 
-- **MCASpectrumPlotter**: Histogram display with log scaling
-- **TracesPlotter**: Waveform display with analysis overlays
-- **SpectrumPlotter**: Continuous spectrum accumulation
+**CoincidenceLogicTab** — visualizes the full trigger/validation pipeline with color-coded traces and real-time histogram accumulation.
 
-#### Common Plotting Features
-- Real-time data updates via QTimer
-- Configurable update intervals
-- Memory-efficient data handling
-- Export capabilities (PNG, CSV)
+### FWHM Analysis (`fwhm_analyzer.py`, `fwhm_widget.py`)
 
-## Data Processing Pipeline
+**FWHMAnalyzer** — peak detection with Gaussian fitting (lmfit with scipy/numpy fallback). Background subtraction, multi-peak decomposition, overlapping peak filtering. Results include statistical significance (sigma), detection limits (Currie's approximation), and energy-domain calibration.
 
-### MCA Mode Data Flow
-```
-Hardware Histograms → Rebinning (optional) → Log Scaling → Plot Display
-                                ↓
-                        Statistics Calculation → UI Status Updates
-```
+**FWHMAnalysisWidget** — interactive ROI selection (8 cycling colors), results table (peak, FWHM channels/keV, resolution %, SNR, quality), auto-update timer, export via DataSaver.
 
-### Traces Mode Data Flow  
-```
-Raw ADC Traces → Digital Filter Processing → Trigger Analysis → Plot Display
-                            ↓                      ↓
-                    Energy Calculation    Time Alignment
-                            ↓                      ↓
-                    Validation Overlay    Coincidence Detection
-```
+### Persistence Histogram (`persistence_histogram.py`)
 
-### List Mode Data Flow
-```
-Event Stream → Energy Calculation → Histogram Binning → Spectrum Display
-                     ↓                      ↓
-              Coincidence Analysis    Statistics Updates
-```
+2D histogram accumulator (time × amplitude) using `fast_histogram`. Dynamically expands ranges, log-scale output for pyqtgraph display. Visualizes hundreds of overlaid traces.
 
-## Thread Safety
+### Trace Replay (`traces_replay.py`)
 
-### Threading Model
-- **Main Thread**: UI updates and user interactions
-- **Hardware Thread**: Data acquisition and parameter updates  
-- **Worker Threads**: Data processing and analysis
+**TraceReplayBuffer** — circular deque (default 1000) with index navigation.
 
-### Synchronization Mechanisms
-- `threading.Lock()` for parameter updates
-- Qt signals/slots for thread communication
-- Atomic operations for state changes
-- Queue-based data passing
+**TraceReplayWidget** — record/replay toggle, navigation slider, pickle save/load with JSON metadata. Emits `trace_selected` signal.
 
-## Configuration System
+### Auto-Save Buffer (`auto_save_buffer.py`)
 
-### Module Type Configuration
-Parameters are automatically adjusted based on module type:
-- **100MHz**: 10ns timing resolution, specific range limits
-- **250MHz**: 8ns timing resolution, adjusted constraints
-- **500MHz**: 10ns timing resolution, extended ranges
+**AutoSaveBufferService** — background QObject that auto-saves traces/MCA/energy data to timestamped NPZ+JSON files. Detects buffer overflow and warns about data loss.
 
-### Parameter Specifications
-Each parameter includes:
-```python
-ParameterSpec(
-    name="TRIGGER_THRESHOLD",
-    data_type=int,
-    min_value=1,
-    max_value=65535,
-    unit="ADC units", 
-    description="Threshold for event detection",
-    dsp_variable="FASTTHRESH"
-)
-```
+**BufferCacheManager** — LRU cache with configurable limits (50MB–5GB), auto-cleanup of old files.
 
-## Memory Management
+## Threading Model
 
-### Data Retention Strategies
-- **Circular Buffers**: For trace data to prevent memory growth
-- **Configurable Limits**: User-defined data retention periods
-- **Auto-cleanup**: Automatic garbage collection triggers
-- **Memory Monitoring**: Real-time memory usage tracking
+- **Main thread**: UI updates, signal/slot dispatch
+- **Hardware thread**: acquisition, parameter writes
+- **Worker threads**: data processing, auto-save
+- Synchronization: `threading.Lock` for parameters, Qt signals for cross-thread communication
 
-### Performance Optimizations
-- **Remote Desktop Detection**: Reduced update rates for RDP
-- **Data Throttling**: Configurable update intervals
-- **Selective Updates**: Only update changed parameters
-- **Lazy Loading**: Load data on demand
+## Configuration
 
-## Error Handling Strategy
+Module types (100/250/500 MHz) determine timing resolution and parameter ranges. Parameters are defined as `ParameterSpec` with name, type, range, unit, and DSP variable mapping.
 
-### Hardware Error Recovery
-1. **Detection**: Monitor hardware communication errors
-2. **Logging**: Comprehensive error logging with context
-3. **Recovery**: Attempt automatic reconnection
-4. **Fallback**: Switch to dummy mode if hardware fails
-5. **User Notification**: Clear error messages and options
-
-### UI Error Handling
-- **Exception Hooks**: Global exception handling for UI crashes
-- **State Recovery**: Restore UI state after errors
-- **Resource Cleanup**: Proper cleanup on shutdown/errors
-- **User Feedback**: Informative error dialogs
+Settings can be loaded from:
+- Hardware (live read with caching)
+- JSON dictionary (`read_from_dictionary`)
+- Packaged defaults (`load_default_settings`)
 
 ## Extension Points
 
-### Adding New Acquisition Modes
-1. Define mode template in `DynamicPixieHardwareManager.mode_parameter_templates`
-2. Create specialized plotter widget
-3. Add mode selection in main UI
-4. Implement data processing pipeline
-
-### Custom Parameter Types
-1. Add parameter specification in `PixieParameterValidator._initialize_parameter_specs()`
-2. Create custom UI widget in `parameter_controls.py`
+### Adding New Parameters
+1. Add spec in `parameter_validation.py`
+2. Add UI widget in `parameter_controls.py`
 3. Add hardware mapping in `hardware_manager.py`
-4. Update validation tests
 
-### New Visualization Components
-1. Inherit from QWidget
-2. Implement data update methods
-3. Connect to data signals from hardware manager
-4. Add to main application layout
+### Adding Acquisition Modes
+1. Define mode template in `hardware_manager.py`
+2. Create plotter widget
+3. Wire into `PixieScopeApp` mode selection
 
-## Development Workflows
-
-### Testing Strategy
-- **Unit Tests**: Individual component testing
-- **Integration Tests**: Hardware interaction testing
-- **UI Tests**: Widget interaction testing
-- **Performance Tests**: Memory and timing validation
-
-### Code Organization Principles
-- **Single Responsibility**: Each module has a clear purpose
-- **Interface Segregation**: Clean APIs between components
-- **Dependency Injection**: Hardware manager passed to components
-- **Event-Driven**: Qt signals for component communication
-
-### Debugging Tools
-- **Logging**: Comprehensive logging throughout the application
-- **Dummy Mode**: Test UI without hardware dependencies
-- **Parameter Validation**: Immediate feedback for invalid inputs
-- **State Inspection**: Hardware state monitoring and display
+### Adding Trace Types
+1. Add entry to trace types dictionary in `traces_plotter.py`
+2. Implement computation in `compute_hardware_traces()`
+3. Add color mapping
