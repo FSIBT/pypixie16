@@ -23,6 +23,7 @@ from PyQt6.QtWidgets import (
     QSplitter,
     QTabWidget,
     QMainWindow,
+    QComboBox,
 )
 from PyQt6.QtCore import Qt
 
@@ -375,6 +376,17 @@ class ContinuousSpectrumPlotter(QWidget):
             )
             
             if not fast_result["validation_passed"] or not fast_result["trigger_indices"]:
+                print("[orange3]WARNING[/] No trigger found, using the first 20% of the trace to estimate baseline")
+                # Use fallback: estimate baseline from first part of trace
+                baseline_samples = max(1, len(trace) // 5)  # First 20%
+                baseline = float(np.mean(trace[:baseline_samples]))
+                # Use a simple energy calculation as fallback
+                energy_region = trace[baseline_samples:]
+                if len(energy_region) > 0:
+                    energy_sum = float(np.sum(energy_region))
+                    calculated_energy = energy_sum - baseline * len(energy_region)
+                    if 0 <= calculated_energy <= self.energy_range[1]:
+                        self.energy_data[channel].append(float(calculated_energy))
                 return
                 
             trigger_index = fast_result["trigger_indices"][0]
@@ -411,7 +423,11 @@ class ContinuousSpectrumPlotter(QWidget):
             
             # Calculate energy using trapezoidal filter formula
             if 0 <= energy_index < len(S1):
-                calculated_energy = S1[energy_index] + S3[energy_index] - 2*S2[energy_index]
+                # Ensure we get scalar values, not arrays
+                s1_val = np.asscalar(S1[energy_index]) if hasattr(np, 'asscalar') else float(S1[energy_index])
+                s2_val = np.asscalar(S2[energy_index]) if hasattr(np, 'asscalar') else float(S2[energy_index])  
+                s3_val = np.asscalar(S3[energy_index]) if hasattr(np, 'asscalar') else float(S3[energy_index])
+                calculated_energy = s1_val + s3_val - 2*s2_val
                 
                 # Add to energy data if reasonable value
                 if 0 <= calculated_energy <= self.energy_range[1]:

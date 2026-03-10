@@ -1524,8 +1524,9 @@ class PixieScopeApp(QMainWindow):
             memory_threshold = 800 if self.is_remote_desktop else 1500
             warning_threshold = 600 if self.is_remote_desktop else 1200
             
-            if memory_mb > warning_threshold:
-                print(f"NOTICE: Memory usage {memory_mb:.1f}MB (threshold: {memory_threshold}MB)")
+            # Only warn occasionally to avoid spam
+            if memory_mb > warning_threshold and int(memory_mb) % 50 == 0:  # Every 50MB increment
+                print(f"NOTICE: Memory usage {memory_mb:.1f}MB (warning: {warning_threshold}MB, cleanup: {memory_threshold}MB)")
                 
             if memory_mb > memory_threshold:
                 self.clear_all_buffers()

@@ -17,15 +17,32 @@ from PyQt6.QtCore import QSettings, QStandardPaths, pyqtSignal
 
 
 class DataSettingsManager:    
-    def __init__(self):
-        self.settings = QSettings("BerkeleyLab", "PIXIE16Scope")
-        self.load_settings()
+    def __init__(self, settings_dict=None):
+        self.settings = QSettings("PIXIE16", "Scope")
+        if settings_dict:
+            self.load_from_dictionary(settings_dict)
+        else:
+            self.load_settings()
         
     def load_settings(self):
         self.data_directory = Path(self.settings.value("data_directory", self.get_default_dir()))
         self.auto_create_subdirs = self.settings.value("auto_create_subdirs", True, type=bool)
         self.use_timestamps = self.settings.value("use_timestamps", True, type=bool)
         self.compress_files = self.settings.value("compress_files", False, type=bool)
+        
+    def load_from_dictionary(self, settings_dict):
+        self.data_directory = Path(settings_dict.get("data_directory", self.get_default_dir()))
+        self.auto_create_subdirs = settings_dict.get("auto_create_subdirs", True)
+        self.use_timestamps = settings_dict.get("use_timestamps", True)
+        self.compress_files = settings_dict.get("compress_files", False)
+        
+    def to_dictionary(self):
+        return {
+            "data_directory": str(self.data_directory),
+            "auto_create_subdirs": self.auto_create_subdirs,
+            "use_timestamps": self.use_timestamps,
+            "compress_files": self.compress_files
+        }
         
     def save_settings(self):
         self.settings.setValue("data_directory", str(self.data_directory))
