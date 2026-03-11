@@ -613,10 +613,19 @@ class TracesPlotter(QWidget):
         # Handle based on which tab was selected
         if tab_name == "Single Channel Analysis":
             # Show single channel controls
-            controls = self.create_single_channel_controls_widget()
-            self.request_right_panel_swap.emit(controls)
-            print(f"TracesPlotter: Emitted right panel swap with widget: {controls}")
-            
+            try:
+                controls = self.create_single_channel_controls_widget()
+                if controls is not None:
+                    controls.setVisible(True)
+                    self.request_right_panel_swap.emit(controls)
+                    print(f"TracesPlotter: Emitted right panel swap with widget: {controls}")
+                else:
+                    print("TracesPlotter: ERROR - create_single_channel_controls_widget returned None")
+            except Exception as e:
+                import traceback
+                print(f"TracesPlotter: ERROR creating single channel controls: {e}")
+                traceback.print_exc()
+
         elif tab_name == "Coincidence Logic":
             # Coincidence tab handles its own activation
             if hasattr(current_tab, 'on_tab_activated'):
@@ -1479,10 +1488,8 @@ class TracesPlotter(QWidget):
                     
                     if fast_result["validation_passed"] and fast_result["fast_triggers"] is not None:
                         # Extract the fast trigger trace (first trace if multiple)
+                        # Don't resize here - interpolation below handles FPGA->raw timing
                         signal = fast_result["fast_triggers"][0]
-                        # Resize to match original trace length if needed
-                        if len(signal) != target_length:
-                            signal = self._resize_trace_to_match(signal, target_length, "fast_trigger")
                     else:
                         continue  # Skip if computation failed
                 elif trace_type == "cfd":
@@ -2039,11 +2046,16 @@ class TracesPlotter(QWidget):
             
             if fast_result["validation_passed"] and fast_result["fast_triggers"] is not None:
                 signal = fast_result["fast_triggers"][0]
-                # Resize to match original trace length if needed
+                # Interpolate from FPGA timing (10ns) to raw timing (2ns)
                 target_length = len(latest_trace)
-                if len(signal) != target_length:
-                    signal = self._resize_trace_to_match(signal, target_length, "fast_trigger")
-                return signal
+                fpga_time = np.arange(len(signal)) * 10.0  # FPGA at 10ns/point
+                raw_time = np.arange(target_length) * 2.0  # Raw at 2ns/point
+                from scipy import interpolate
+                interp_func = interpolate.interp1d(
+                    fpga_time, signal,
+                    kind='linear', bounds_error=False, fill_value=0
+                )
+                return interp_func(raw_time)
             else:
                 return None
         elif trace_type == "cfd":
@@ -2379,9 +2391,7 @@ class TracesPlotter(QWidget):
             self.hardware_status_label.setText("Hardware Status: Live mode resumed")
 
     def create_single_channel_controls_widget(self):
-        if self.single_channel_controls_widget is not None:
-            return self.single_channel_controls_widget
-        
+        # Always recreate to avoid stale cached widget after reparenting
         widget = QWidget()
         layout = QVBoxLayout()
         layout.setContentsMargins(5, 5, 5, 5)

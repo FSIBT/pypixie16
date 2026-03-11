@@ -320,6 +320,8 @@ class PixieScopeApp(QMainWindow):
         self.parameter_controls.apply_all_requested.connect(self.handle_apply_all_parameters)
         self.parameter_controls.status_message.connect(self.update_info_bar)
         self.parameter_controls.read_hw_btn.clicked.connect(self.read_parameters_from_hardware)
+        self.parameter_controls.load_default_btn.clicked.connect(self.load_default_settings)
+        self.parameter_controls.load_dict_btn.clicked.connect(self.load_settings_from_file)
         default_controls_layout.addWidget(self.parameter_controls)
         
         # Data storage manager (not in UI panel)
@@ -451,7 +453,9 @@ class PixieScopeApp(QMainWindow):
                 # Hide default controls and show custom widget
                 self.default_controls_widget.setVisible(False)
                 self.right_layout.addWidget(custom_widget)
+                custom_widget.setVisible(True)
                 self.custom_controls_widget = custom_widget
+                print(f"swap_right_panel_controls: Added custom widget, visible={custom_widget.isVisible()}, parent={custom_widget.parent()}")
             
         except Exception as e:
             print(f"Error swapping right panel controls: {e}")
@@ -1079,6 +1083,50 @@ class PixieScopeApp(QMainWindow):
             error_msg = f"Error reading parameters from hardware: {e}"
             self.update_info_bar(error_msg)
             logger.error(error_msg)
+
+    def load_default_settings(self):
+        try:
+            success = self.pixie_hw.load_default_settings()
+            if success:
+                # Refresh UI with loaded params
+                module = self.parameter_controls.module_spin.value()
+                channel = self.parameter_controls.channel_spin.value()
+                current_params = self.pixie_hw.hw_manager.get_all_parameters(module, channel)
+                if current_params:
+                    self.parameter_controls.set_all_parameters(current_params)
+                self.update_info_bar("Loaded default settings successfully")
+            else:
+                self.update_info_bar("Failed to load default settings")
+        except Exception as e:
+            self.update_info_bar(f"Error loading defaults: {e}")
+            logger.error(f"Error loading default settings: {e}")
+
+    def load_settings_from_file(self):
+        try:
+            from PyQt6.QtWidgets import QFileDialog
+            file_path, _ = QFileDialog.getOpenFileName(
+                self, "Load Settings File", "", "JSON Files (*.json);;All Files (*)"
+            )
+            if not file_path:
+                return
+
+            import json
+            with open(file_path, "r") as f:
+                settings_dict = json.load(f)
+
+            success = self.pixie_hw.read_from_dictionary(settings_dict)
+            if success:
+                module = self.parameter_controls.module_spin.value()
+                channel = self.parameter_controls.channel_spin.value()
+                current_params = self.pixie_hw.hw_manager.get_all_parameters(module, channel)
+                if current_params:
+                    self.parameter_controls.set_all_parameters(current_params)
+                self.update_info_bar(f"Loaded settings from {file_path}")
+            else:
+                self.update_info_bar("Failed to load settings from file")
+        except Exception as e:
+            self.update_info_bar(f"Error loading settings: {e}")
+            logger.error(f"Error loading settings from file: {e}")
 
     def update_info_bar(self, message):
         mode_status = "DUMMY MODE - " if self.dummy_mode else ""

@@ -598,6 +598,14 @@ class ParameterControls(QGroupBox):
         self.save_preset_btn.setToolTip("Save current parameter values to file")
         layout.addWidget(self.save_preset_btn)
 
+        self.load_default_btn = QPushButton("Load Defaults")
+        self.load_default_btn.setToolTip("Load default parameter values from built-in defaults")
+        layout.addWidget(self.load_default_btn)
+
+        self.load_dict_btn = QPushButton("Load from File")
+        self.load_dict_btn.setToolTip("Load parameter values from a JSON settings file")
+        layout.addWidget(self.load_dict_btn)
+
         layout.addStretch()
         group.setLayout(layout)
         return group
