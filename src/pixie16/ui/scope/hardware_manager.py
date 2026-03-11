@@ -473,13 +473,15 @@ class DynamicPixieHardwareManager:
                     logger.error("Failed to initialize PIXIE hardware")
                     return False
             
-            try:
-                # Set minimum required parameters for traces on all enabled channels
-                for ch in self.state.enabled_channels:
-                    px.control.set_channel_parameter("TRACE_LENGTH", 1000, 0, ch)
-                    px.control.set_channel_parameter("TRIGGER_THRESHOLD", 100, 0, ch)
-            except Exception as e:
-                logger.warning(f"Could not configure trace parameters: {e}")
+            # Note: trace parameters should already be set from settings file or UI.
+            # Only set defaults if no parameters are cached for any channel.
+            if not self.state.current_parameters.get(0, {}):
+                try:
+                    logger.info("No cached parameters - setting trace defaults for channel 0")
+                    px.control.set_channel_parameter("TRACE_LENGTH", 1000, 0, 0)
+                    px.control.set_channel_parameter("TRIGGER_THRESHOLD", 100, 0, 0)
+                except Exception as e:
+                    logger.warning(f"Could not configure trace parameters: {e}")
             
             # Start list mode for traces
             px.control.start_list_mode_run()
