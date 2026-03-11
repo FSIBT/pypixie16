@@ -591,7 +591,6 @@ class TracesPlotter(QWidget):
                 is_remote_desktop = (
                     os.environ.get('SSH_CLIENT') is not None or
                     os.environ.get('SSH_TTY') is not None or
-                    os.environ.get('DISPLAY', '').startswith(':') or
                     os.environ.get('SESSIONNAME', '').lower() in ['rdp-tcp', 'console'] or
                     'nomachine' in os.environ.get('NX_CLIENT', '').lower()
                 )
@@ -603,18 +602,6 @@ class TracesPlotter(QWidget):
             if self.update_timer.isActive() and tab_name == "Coincidence Logic":
                 self.update_timer.stop()
                 print("TracesPlotter: Paused main traces processing - coincidence logic handles its own")
-        
-        # Handle sidebar controls based on which tab is active
-        if hasattr(self, 'parent') and hasattr(self.parent(), 'swap_right_panel_controls'):
-            if tab_name == "Single Channel Analysis":
-                # Request hardware validation controls for single channel tab
-
-                self.handle_controls_widget_request("hardware_validation")
-            elif tab_name == "Coincidence Logic":
-                # Let coincidence tab handle its own controls
-
-                if hasattr(current_tab, 'request_controls_widget'):
-                    current_tab.request_controls_widget.emit("coincidence_logic")
         
         # Deactivate all tabs
         for i in range(self.tab_widget.count()):

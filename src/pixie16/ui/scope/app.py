@@ -141,6 +141,12 @@ class PixieHardwareManager:
     def is_parameter_cached(self, param_name: str, module: int = 0, channel: int = 0) -> bool:
         return self.hw_manager.is_parameter_cached(param_name, module, channel)
 
+    def read_from_dictionary(self, settings_dict: dict) -> bool:
+        return self.hw_manager.read_from_dictionary(settings_dict)
+
+    def load_default_settings(self) -> bool:
+        return self.hw_manager.load_default_settings()
+
     def get_state(self):
         return self.hw_manager.get_state()
 
@@ -159,7 +165,6 @@ class PixieScopeApp(QMainWindow):
         self.is_remote_desktop = (
             os.environ.get('SSH_CLIENT') is not None or
             os.environ.get('SSH_TTY') is not None or
-            os.environ.get('DISPLAY', '').startswith(':') or
             os.environ.get('SESSIONNAME', '').lower() in ['rdp-tcp', 'console'] or
             'nomachine' in os.environ.get('NX_CLIENT', '').lower()
         )
