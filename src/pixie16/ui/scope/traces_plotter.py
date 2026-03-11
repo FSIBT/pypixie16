@@ -899,19 +899,22 @@ class TracesPlotter(QWidget):
             return time_axis
         
         # Get L/G parameters with defaults
+        # CFD is derived from fast trigger, so use fast trigger L/G
+        param_prefix = "fast" if trace_type == "cfd" else trace_type.split('_')[0]
         if L is None:
-            L = self.hardware_params.get(f"{trace_type.split('_')[0]}_L", 0)
+            L = self.hardware_params.get(f"{param_prefix}_L", 0)
         if G is None:
-            G = self.hardware_params.get(f"{trace_type.split('_')[0]}_G", 0)
+            G = self.hardware_params.get(f"{param_prefix}_G", 0)
         
         # Check cache
         cache_key = f"{trace_type}_{L}_{G}"
         if cache_key not in self.offset_corrections:
             # Calculate offset based on trace type
+            cfd_w = self.hardware_params.get("CFD_delay", 5)
             offset_map = {
                 "fast_trigger": (L + G // 2) * 5,  # FPGA to raw sample conversion
                 "energy_filter": (L + G // 2) * (2 ** self.hardware_params.get("energy_R", 3)) * 5,
-                "cfd": 1
+                "cfd": (L + G // 2 + cfd_w) * 5,  # Fast trigger delay + CFD delay
             }
             self.offset_corrections[cache_key] = offset_map.get(trace_type, 0)
         
@@ -1476,16 +1479,16 @@ class TracesPlotter(QWidget):
                 if trace_type == "raw":
                     signal = working_trace
                 elif trace_type == "fast_trigger":
-                    # Compute actual fast trigger using hardware parameters
-                    traces_fpga = convert_trace_to_FPGA(latest_trace[np.newaxis, :])
-                    
+                    # Compute actual fast trigger using polarity-corrected trace
+                    traces_fpga = convert_trace_to_FPGA(working_trace[np.newaxis, :])
+
                     fast_result = compute_fast_trigger_validation(
                         traces_fpga,
                         L=self.hardware_params["fast_L"],
                         G=self.hardware_params["fast_G"],
                         threshold=self.hardware_params["fast_threshold"],
                     )
-                    
+
                     if fast_result["validation_passed"] and fast_result["fast_triggers"] is not None:
                         # Extract the fast trigger trace (first trace if multiple)
                         # Don't resize here - interpolation below handles FPGA->raw timing
@@ -1493,9 +1496,8 @@ class TracesPlotter(QWidget):
                     else:
                         continue  # Skip if computation failed
                 elif trace_type == "cfd":
-                    # Compute CFD using hardware parameters
-                    # First compute fast trigger for CFD input
-                    traces_fpga = convert_trace_to_FPGA(latest_trace[np.newaxis, :])
+                    # Compute CFD using polarity-corrected trace
+                    traces_fpga = convert_trace_to_FPGA(working_trace[np.newaxis, :])
                     
                     fast_result = compute_fast_trigger_validation(
                         traces_fpga,
@@ -1526,8 +1528,8 @@ class TracesPlotter(QWidget):
                     else:
                         continue  # Skip if fast trigger computation failed
                 elif trace_type == "energy_filter":
-                    # Energy filter - use hardware algorithm
-                    traces_fpga = convert_trace_to_FPGA(latest_trace[np.newaxis, :])
+                    # Energy filter - use polarity-corrected trace
+                    traces_fpga = convert_trace_to_FPGA(working_trace[np.newaxis, :])
 
                     fast_result = compute_fast_trigger_validation(
                         traces_fpga,
@@ -2031,11 +2033,15 @@ class TracesPlotter(QWidget):
         ))
 
     def compute_hardware_traces(self, trace_type, latest_trace, channel):
+        # Apply polarity correction for negative pulses
+        working_trace = latest_trace
+        if not self.channel_polarity.get(channel, True):
+            working_trace = -latest_trace
+
         if trace_type == "raw":
-            return latest_trace
+            return working_trace
         elif trace_type == "fast_trigger":
-            # Compute actual fast trigger using real hardware parameters
-            traces_fpga = convert_trace_to_FPGA(latest_trace[np.newaxis, :])
+            traces_fpga = convert_trace_to_FPGA(working_trace[np.newaxis, :])
             
             fast_result = compute_fast_trigger_validation(
                 traces_fpga,
@@ -2059,8 +2065,7 @@ class TracesPlotter(QWidget):
             else:
                 return None
         elif trace_type == "cfd":
-            # Compute CFD using real hardware parameters
-            traces_fpga = convert_trace_to_FPGA(latest_trace[np.newaxis, :])
+            traces_fpga = convert_trace_to_FPGA(working_trace[np.newaxis, :])
             
             fast_result = compute_fast_trigger_validation(
                 traces_fpga,
@@ -2092,8 +2097,7 @@ class TracesPlotter(QWidget):
             else:
                 return None
         elif trace_type == "energy_filter":
-            # Compute energy filter using real hardware parameters
-            traces_fpga = convert_trace_to_FPGA(latest_trace[np.newaxis, :])
+            traces_fpga = convert_trace_to_FPGA(working_trace[np.newaxis, :])
             
             fast_result = compute_fast_trigger_validation(
                 traces_fpga,
@@ -2133,15 +2137,20 @@ class TracesPlotter(QWidget):
         try:
             if trace is None or len(trace) == 0:
                 return {"error": "No trace data available"}
-                
+
+            # Apply polarity correction
+            working_trace = trace
+            if not self.channel_polarity.get(channel, True):
+                working_trace = -trace
+
             # Get current hardware parameters
             L = self.hardware_params["energy_L"]
             G = self.hardware_params["energy_G"]
             R = self.hardware_params["energy_R"]
             P = self.hardware_params["energy_P"]
-            
+
             # Convert to FPGA format
-            fpga_trace = convert_trace_to_FPGA(np.array([trace]), R)
+            fpga_trace = convert_trace_to_FPGA(np.array([working_trace]), R)
             
             # Get fast trigger position first 
             fast_result = compute_fast_trigger_validation(
