@@ -179,7 +179,10 @@ class TracesPlotter(QWidget):
             "energy_filter": False,
             "cfd": False,
         }
-        
+
+        # LGL region overlay toggle
+        self.show_lgl_regions = False
+
         # Per-channel polarity settings (True = normal, False = inverted)
         self.channel_polarity = {ch: True for ch in self.channels}
 
@@ -374,6 +377,11 @@ class TracesPlotter(QWidget):
         self.simple_coincidence_cb = QCheckBox("Coincidence Mode")
         self.simple_coincidence_cb.toggled.connect(self.toggle_simple_coincidence)
         controls_layout.addWidget(self.simple_coincidence_cb, 2, 1)
+
+        self.show_lgl_cb = QCheckBox("Show LGL")
+        self.show_lgl_cb.setToolTip("Show L-G-L trapezoidal filter integration regions")
+        self.show_lgl_cb.toggled.connect(self.toggle_lgl_regions)
+        controls_layout.addWidget(self.show_lgl_cb, 2, 2)
 
         # Add polarity button
         self.polarity_btn = QPushButton("Polarity")
@@ -591,10 +599,11 @@ class TracesPlotter(QWidget):
                 is_remote_desktop = (
                     os.environ.get('SSH_CLIENT') is not None or
                     os.environ.get('SSH_TTY') is not None or
+                    os.environ.get('NXSESSIONID') is not None or
                     os.environ.get('SESSIONNAME', '').lower() in ['rdp-tcp', 'console'] or
                     'nomachine' in os.environ.get('NX_CLIENT', '').lower()
                 )
-                interval = 200 if is_remote_desktop else 100
+                interval = 500 if is_remote_desktop else 100
                 self.update_timer.start(interval)
                 print(f"TracesPlotter: Resumed compute-intensive updates for {tab_name} ({interval}ms interval)")
         else:
@@ -837,6 +846,9 @@ class TracesPlotter(QWidget):
             self.parameter_info_label.setText(params_text)
 
             self.sync_parameters_to_coincidence_tab()
+
+    def toggle_lgl_regions(self, enabled):
+        self.show_lgl_regions = enabled
 
     def toggle_simple_coincidence(self, enabled):
         if hasattr(self, "coincidence_tab") and self.coincidence_tab:
@@ -1696,6 +1708,28 @@ class TracesPlotter(QWidget):
                 print(f"Hardware computation error for {trace_type}: {e}")
                 continue
 
+        # Compute energy trigger position for LGL regions if needed
+        if self.show_lgl_regions and "energy_filter" not in self.trigger_points.get(channel, {}):
+            try:
+                traces_fpga = convert_trace_to_FPGA(working_trace[np.newaxis, :])
+                fast_result = compute_fast_trigger_validation(
+                    traces_fpga,
+                    L=self.hardware_params["fast_L"],
+                    G=self.hardware_params["fast_G"],
+                    threshold=self.hardware_params["fast_threshold"],
+                )
+                if fast_result["validation_passed"]:
+                    fast_trigger_indices = fast_result["trigger_indices"]
+                    if len(fast_trigger_indices) > 0 and len(fast_trigger_indices[0]) > 0:
+                        fpga_idx = fast_trigger_indices[0][0]
+                        fast_L = self.hardware_params["fast_L"]
+                        fast_G = self.hardware_params["fast_G"]
+                        fpga_delay = fast_L + (fast_G // 2)
+                        fast_trigger_raw_pos = (fpga_idx + fpga_delay) * 5
+                        self._store_trigger_info(channel, [fast_trigger_raw_pos], "energy_filter")
+            except Exception:
+                pass
+
         # Add trigger markers and threshold lines
         self._add_trigger_markers(plot_widget, channel, time_axis)
         self._add_threshold_lines(plot_widget, latest_trace)
@@ -1942,77 +1976,84 @@ class TracesPlotter(QWidget):
         self._add_trapezoidal_window_lines(plot_widget, channel, time_axis, latest_trace)
 
     def _add_trapezoidal_window_lines(self, plot_widget, channel, time_axis, latest_trace):
-        """Add vertical lines indicating the trapezoidal integration windows (L-G-L regions)."""
-        # Only show lines if energy filter is enabled
-        if not self.trace_types.get("energy_filter", False):
+        """Add shaded regions indicating the trapezoidal integration windows (L-G-L regions)."""
+        if not self.show_lgl_regions:
             return
-            
+
         # Get trigger information
         trigger_info = self.trigger_points.get(channel, {})
         if "energy_filter" not in trigger_info or not trigger_info["energy_filter"]:
             return
-            
+
         # Get energy filter parameters
         L = self.hardware_params["energy_L"]
         G = self.hardware_params["energy_G"]
         energy_R = self.hardware_params["energy_R"]
-        
-        # Calculate samples per energy cycle (energy filter decimation)
+
         samples_per_energy_cycle = 2 ** energy_R
-        
-        # Get the energy trigger position (where the trapezoidal filter starts)
+
         energy_trigger_indices = trigger_info["energy_filter"]
         if not energy_trigger_indices:
             return
-            
-        # Use the first trigger point
+
         energy_trigger_idx = energy_trigger_indices[0]
-        
-        # Apply time correction for energy filter
+
         corrected_time_axis = self.apply_time_correction(time_axis, "energy_filter")
-        
-        # Calculate the time positions for L-G-L regions
-        if energy_trigger_idx < len(corrected_time_axis):
-            trigger_time = corrected_time_axis[energy_trigger_idx]
-            
-            # Convert L and G from energy cycles to raw samples
-            L_samples = L * samples_per_energy_cycle
-            G_samples = G * samples_per_energy_cycle
-            
-            # Calculate time step
-            time_step = corrected_time_axis[1] - corrected_time_axis[0] if len(corrected_time_axis) > 1 else 2.0
-            
-            # Calculate the boundary times
-            leading_end_time = trigger_time + (L_samples * time_step)
-            gap_end_time = leading_end_time + (G_samples * time_step)
-            trailing_end_time = gap_end_time + (L_samples * time_step)
-            
-            # Add vertical lines for the boundaries
-            # Leading edge end (start of gap)
+
+        if energy_trigger_idx >= len(corrected_time_axis):
+            return
+
+        trigger_time = corrected_time_axis[energy_trigger_idx]
+
+        L_samples = L * samples_per_energy_cycle
+        G_samples = G * samples_per_energy_cycle
+
+        time_step = corrected_time_axis[1] - corrected_time_axis[0] if len(corrected_time_axis) > 1 else 2.0
+
+        # L-G-L boundary times
+        l1_start = trigger_time
+        l1_end = trigger_time + (L_samples * time_step)
+        g_end = l1_end + (G_samples * time_step)
+        l2_end = g_end + (L_samples * time_step)
+
+        # Leading L region (blue shaded)
+        l1_region = pg.LinearRegionItem(
+            values=[l1_start, l1_end],
+            orientation='vertical',
+            brush=pg.mkBrush(30, 30, 180, 40),
+            pen=pg.mkPen(color='darkblue', style=pg.QtCore.Qt.PenStyle.DashLine, width=1.5),
+            movable=False,
+        )
+        plot_widget.addItem(l1_region)
+
+        # Gap G region (green shaded)
+        g_region = pg.LinearRegionItem(
+            values=[l1_end, g_end],
+            orientation='vertical',
+            brush=pg.mkBrush(30, 160, 30, 40),
+            pen=pg.mkPen(color='darkgreen', style=pg.QtCore.Qt.PenStyle.DashLine, width=1.5),
+            movable=False,
+        )
+        plot_widget.addItem(g_region)
+
+        # Trailing L region (blue shaded)
+        l2_region = pg.LinearRegionItem(
+            values=[g_end, l2_end],
+            orientation='vertical',
+            brush=pg.mkBrush(30, 30, 180, 40),
+            pen=pg.mkPen(color='darkblue', style=pg.QtCore.Qt.PenStyle.DashLine, width=1.5),
+            movable=False,
+        )
+        plot_widget.addItem(l2_region)
+
+        # Add labels at region centers
+        for label_text, pos in [('L', (l1_start + l1_end) / 2), ('G', (l1_end + g_end) / 2), ('L', (g_end + l2_end) / 2)]:
+            color = 'darkblue' if label_text == 'L' else 'darkgreen'
             plot_widget.addItem(pg.InfiniteLine(
-                pos=leading_end_time,
-                angle=90,  # Vertical line
-                pen=pg.mkPen(color='darkblue', style=pg.QtCore.Qt.PenStyle.DashLine, width=1.5),
-                label='L',
-                labelOpts={'position': 0.95, 'color': 'darkblue', 'anchor': (0, 1)}
-            ))
-            
-            # Gap end (start of trailing edge)
-            plot_widget.addItem(pg.InfiniteLine(
-                pos=gap_end_time,
-                angle=90,  # Vertical line
-                pen=pg.mkPen(color='darkgreen', style=pg.QtCore.Qt.PenStyle.DashLine, width=1.5),
-                label='G',
-                labelOpts={'position': 0.95, 'color': 'darkgreen', 'anchor': (0, 1)}
-            ))
-            
-            # Trailing edge end
-            plot_widget.addItem(pg.InfiniteLine(
-                pos=trailing_end_time,
-                angle=90,  # Vertical line
-                pen=pg.mkPen(color='darkblue', style=pg.QtCore.Qt.PenStyle.DashLine, width=1.5),
-                label='L',
-                labelOpts={'position': 0.95, 'color': 'darkblue', 'anchor': (0, 1)}
+                pos=pos, angle=90,
+                pen=pg.mkPen(color=color, width=0),  # invisible line, just for label
+                label=label_text,
+                labelOpts={'position': 0.95, 'color': color, 'anchor': (0.5, 1)}
             ))
 
     def _add_threshold_lines(self, plot_widget, trace_data):
@@ -2321,7 +2362,10 @@ class TracesPlotter(QWidget):
         # Start coincidence tab updates if coincidence tab exists
         if hasattr(self, 'coincidence_tab') and hasattr(self.coincidence_tab, 'update_timer'):
             if not self.coincidence_tab.update_timer.isActive():
-                self.coincidence_tab.update_timer.start(100)
+                # Respect the interval the coincidence tab chose at init
+                self.coincidence_tab.update_timer.start(
+                    self.coincidence_tab.update_timer.interval() or 500
+                )
                 print("Traces Plotter: Started coincidence tab updates")
         
         if self.update_timer.thread() != self.thread():

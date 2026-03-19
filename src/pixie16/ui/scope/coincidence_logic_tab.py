@@ -224,6 +224,9 @@ class CoincidenceLogicTab(QWidget):
         self.ch_a_event_count = 0
         self.ch_b_event_count = 0
         self.coincidence_count = 0
+
+        # Track timestamps of events that had a real trigger (above threshold)
+        self.triggered_timestamps = deque(maxlen=500)
         
         # Validation statistics
         self.ch_a_validation_stats = {
@@ -251,11 +254,11 @@ class CoincidenceLogicTab(QWidget):
         is_remote_desktop = (
             os.environ.get('SSH_CLIENT') is not None or
             os.environ.get('SSH_TTY') is not None or
-            os.environ.get('DISPLAY', '').startswith(':') or
+            os.environ.get('NXSESSIONID') is not None or
             os.environ.get('SESSIONNAME', '').lower() in ['rdp-tcp', 'console'] or
             'nomachine' in os.environ.get('NX_CLIENT', '').lower()
         )
-        interval = 200 if is_remote_desktop else 100
+        interval = 500 if is_remote_desktop else 100
         self.update_timer.start(interval)
         print(f"PIXIE-16 Binary Logic initialized - Ch{self.channel_a}(A) vs Ch{self.channel_b}(B), timer: {interval}ms")
     
@@ -702,6 +705,7 @@ class CoincidenceLogicTab(QWidget):
         self.binary_data.ch_b_histogram.clear()
         self.ch_a_event_count = 0
         self.ch_b_event_count = 0
+        self.triggered_timestamps.clear()
         
         # Clear validation statistics
         self.ch_a_validation_stats = {
@@ -723,26 +727,28 @@ class CoincidenceLogicTab(QWidget):
     def add_event_with_trace(self, event, trace_data):
         if not hasattr(event, "timestamp") or not hasattr(event, "channel"):
             return
-        
+
         try:
             self.event_buffer.append((event, trace_data))
-            
+
             if event.channel == self.channel_a:
-                self.ch_a_event_count += 1
                 binary_results = self.compute_binary_logic(
                     trace_data, event.channel, event.timestamp, 'A'
                 )
                 if binary_results:
+                    self.ch_a_event_count += 1
+                    self.triggered_timestamps.append((event.channel, event.timestamp))
                     self.binary_data.add_channel_data('A', binary_results)
-            
+
             if event.channel == self.channel_b:
-                self.ch_b_event_count += 1
                 binary_results = self.compute_binary_logic(
                     trace_data, event.channel, event.timestamp, 'B'
                 )
                 if binary_results:
+                    self.ch_b_event_count += 1
+                    self.triggered_timestamps.append((event.channel, event.timestamp))
                     self.binary_data.add_channel_data('B', binary_results)
-                
+
         except Exception as e:
             print(f"ERROR in add_event_with_trace: {e}")
     
@@ -850,17 +856,9 @@ class CoincidenceLogicTab(QWidget):
                 first_trigger_time_ns = None
             
             if first_trigger_time_ns is None:
-                return {
-                    "local_fast_trigger": local_fast_trigger,
-                    "fast_trigger_bp": np.zeros(trace_length, dtype=np.int8),
-                    "chan_trig": np.zeros(trace_length, dtype=np.int8),
-                    "chan_validation_trig": np.zeros(trace_length, dtype=np.int8),
-                    "local_fast_for_processing": np.zeros(trace_length, dtype=np.int8),
-                    "validated_trig_for_processing": np.zeros(trace_length, dtype=np.int8),
-                    "time_axis": time_axis,
-                    "timestamp": event_timestamp,
-                    "channel": channel,
-                }
+                # No real trigger found - skip this event entirely so channels
+                # with no signal/input don't accumulate empty data
+                return None
             
             # STEP 2: Fast Trigger Backplane
             bp_delay_ns = self.hardware_params["fast_trig_backplane_delay"]
@@ -971,25 +969,23 @@ class CoincidenceLogicTab(QWidget):
     
     def _check_other_channel_trigger(self, other_channel, event_timestamp, window_ns=500):
         window_ticks = window_ns / 10.0
-        
-        for buffered_event, _ in list(self.event_buffer)[-200:]:
-            if not hasattr(buffered_event, 'channel') or not hasattr(buffered_event, 'timestamp'):
-                continue
-            
-            if buffered_event.channel == other_channel:
-                time_diff_ticks = abs(buffered_event.timestamp - event_timestamp)
+
+        # Only match against events that had a real trigger (above threshold)
+        for ch, ts in reversed(self.triggered_timestamps):
+            if ch == other_channel:
+                time_diff_ticks = abs(ts - event_timestamp)
                 if time_diff_ticks <= window_ticks:
                     return True
-        
+
         return False
     
     def update_visualization(self):
         try:
             data = self.binary_data.get_latest_data()
-            
+
             has_ch_a = data['ch_a']['local_fast_trigger'] is not None
             has_ch_b = data['ch_b']['local_fast_trigger'] is not None
-            
+
             if not has_ch_a and not has_ch_b:
                 elapsed = time.time() - self.last_update_time
                 if elapsed > 2.0:
@@ -998,10 +994,15 @@ class CoincidenceLogicTab(QWidget):
                     )
                     self.last_update_time = time.time()
                 return
-            
-            # Clear and redraw
-            self.clear_plot_safely()
-            self.setup_plot()
+
+            # Only remove data items, keep reference lines and axis setup
+            for item in self.plot_items + self.histogram_items:
+                try:
+                    self.binary_plot.removeItem(item)
+                except Exception:
+                    pass
+            self.plot_items.clear()
+            self.histogram_items.clear()
             
             # Colors for signals
             colors = {
@@ -1165,34 +1166,39 @@ class CoincidenceLogicTab(QWidget):
         try:
             if not isinstance(binary_data, np.ndarray) or len(binary_data) == 0:
                 return
-            
+
             if time_axis is None or len(time_axis) != len(binary_data):
                 return
-            
-            # Create step plot
-            step_x, step_y = [], []
-            
-            for j in range(len(binary_data)):
-                if j == 0:
-                    step_x.extend([time_axis[j], time_axis[j]])
-                    step_y.extend([y_offset, y_offset + float(binary_data[j])])
-                else:
-                    step_x.append(time_axis[j])
-                    step_y.append(y_offset + float(binary_data[j-1]))
-                    step_x.append(time_axis[j])
-                    step_y.append(y_offset + float(binary_data[j]))
-            
-            if len(step_x) > 0:
-                step_x.append(time_axis[-1])
-                step_y.append(step_y[-1])
-                
-                plot_item = self.binary_plot.plot(
-                    step_x, step_y,
-                    pen=pg.mkPen(color=color, width=2.5),
-                    name=name
-                )
-                self.plot_items.append(plot_item)
-                
+
+            n = len(binary_data)
+            # Build step plot using numpy: each sample gets two x,y points
+            # (previous value at new x, then new value at new x)
+            step_x = np.empty(2 * n + 1)
+            step_y = np.empty(2 * n + 1)
+
+            step_x[0] = time_axis[0]
+            step_y[0] = y_offset + binary_data[0]
+
+            step_x[1::2] = time_axis
+            step_x[2::2] = time_axis[1:]
+
+            shifted = np.empty(n)
+            shifted[0] = binary_data[0]
+            shifted[1:] = binary_data[:-1]
+
+            step_y[1::2] = y_offset + shifted
+            step_y[2::2] = y_offset + binary_data[1:]
+
+            step_x[-1] = time_axis[-1]
+            step_y[-1] = step_y[-2]
+
+            plot_item = self.binary_plot.plot(
+                step_x, step_y,
+                pen=pg.mkPen(color=color, width=2.5),
+                name=name
+            )
+            self.plot_items.append(plot_item)
+
         except Exception as e:
             print(f"ERROR plotting {name}: {e}")
     
@@ -1317,10 +1323,11 @@ class CoincidenceLogicTab(QWidget):
             self.ch_a_event_count = 0
             self.ch_b_event_count = 0
             self.coincidence_count = 0
-            
+            self.triggered_timestamps.clear()
+
             self.clear_plot_safely()
             self.setup_plot()
-                
+
             self.status_label.setText("Data cleared")
             
         except Exception as e:
@@ -1447,9 +1454,10 @@ class CoincidenceLogicTab(QWidget):
             self.binary_data.clear()
             self.event_buffer.clear()
             self.coincidence_events.clear()
-            
+            self.triggered_timestamps.clear()
+
             self.clear_plot_safely()
-            
+
             print(f"Closed - A:{self.ch_a_event_count} B:{self.ch_b_event_count} Coinc:{self.coincidence_count}")
             
         except Exception as e:
