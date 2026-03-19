@@ -1703,28 +1703,6 @@ class TracesPlotter(QWidget):
                 print(f"Hardware computation error for {trace_type}: {e}")
                 continue
 
-        # Compute energy trigger position for LGL regions if needed
-        if self.show_lgl_regions and "energy_filter" not in self.trigger_points.get(channel, {}):
-            try:
-                traces_fpga = convert_trace_to_FPGA(working_trace[np.newaxis, :])
-                fast_result = compute_fast_trigger_validation(
-                    traces_fpga,
-                    L=self.hardware_params["fast_L"],
-                    G=self.hardware_params["fast_G"],
-                    threshold=self.hardware_params["fast_threshold"],
-                )
-                if fast_result["validation_passed"]:
-                    fast_trigger_indices = fast_result["trigger_indices"]
-                    if len(fast_trigger_indices) > 0 and len(fast_trigger_indices[0]) > 0:
-                        fpga_idx = fast_trigger_indices[0][0]
-                        fast_L = self.hardware_params["fast_L"]
-                        fast_G = self.hardware_params["fast_G"]
-                        fpga_delay = fast_L + (fast_G // 2)
-                        fast_trigger_raw_pos = (fpga_idx + fpga_delay) * 5
-                        self._store_trigger_info(channel, [fast_trigger_raw_pos], "energy_filter")
-            except Exception:
-                pass
-
         # Add trigger markers and threshold lines
         self._add_trigger_markers(plot_widget, channel, time_axis)
         self._add_threshold_lines(plot_widget, latest_trace)
@@ -1975,37 +1953,49 @@ class TracesPlotter(QWidget):
         if not self.show_lgl_regions:
             return
 
-        # Get trigger information
-        trigger_info = self.trigger_points.get(channel, {})
-        if "energy_filter" not in trigger_info or not trigger_info["energy_filter"]:
+        if latest_trace is None or len(latest_trace) < 20:
             return
+
+        # Compute trigger position directly from this trace
+        try:
+            working_trace = latest_trace
+            if not self.channel_polarity.get(channel, True):
+                working_trace = -working_trace
+            traces_fpga = convert_trace_to_FPGA(working_trace[np.newaxis, :])
+            fast_result = compute_fast_trigger_validation(
+                traces_fpga,
+                L=self.hardware_params["fast_L"],
+                G=self.hardware_params["fast_G"],
+                threshold=self.hardware_params["fast_threshold"],
+            )
+            if not fast_result["validation_passed"]:
+                return
+            fast_trigger_indices = fast_result["trigger_indices"]
+            if len(fast_trigger_indices) == 0 or len(fast_trigger_indices[0]) == 0:
+                return
+            fpga_idx = fast_trigger_indices[0][0]
+            fast_L = self.hardware_params["fast_L"]
+            fast_G = self.hardware_params["fast_G"]
+            trigger_idx = (fpga_idx + fast_L + fast_G // 2) * 5
+        except Exception:
+            return
+
+        if trigger_idx >= len(time_axis):
+            return
+
+        trigger_time = time_axis[trigger_idx]
+        time_step = time_axis[1] - time_axis[0] if len(time_axis) > 1 else 2.0
 
         # Get energy filter parameters
         L = self.hardware_params["energy_L"]
         G = self.hardware_params["energy_G"]
         energy_R = self.hardware_params["energy_R"]
-
         samples_per_energy_cycle = 2 ** energy_R
-
-        energy_trigger_indices = trigger_info["energy_filter"]
-        if not energy_trigger_indices:
-            return
-
-        energy_trigger_idx = energy_trigger_indices[0]
-
-        corrected_time_axis = self.apply_time_correction(time_axis, "energy_filter")
-
-        if energy_trigger_idx >= len(corrected_time_axis):
-            return
-
-        trigger_time = corrected_time_axis[energy_trigger_idx]
 
         L_samples = L * samples_per_energy_cycle
         G_samples = G * samples_per_energy_cycle
 
-        time_step = corrected_time_axis[1] - corrected_time_axis[0] if len(corrected_time_axis) > 1 else 2.0
-
-        # L-G-L boundary times
+        # L-G-L boundary times relative to trigger on the raw time axis
         l1_start = trigger_time
         l1_end = trigger_time + (L_samples * time_step)
         g_end = l1_end + (G_samples * time_step)
