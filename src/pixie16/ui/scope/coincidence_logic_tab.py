@@ -995,14 +995,9 @@ class CoincidenceLogicTab(QWidget):
                     self.last_update_time = time.time()
                 return
 
-            # Only remove data items, keep reference lines and axis setup
-            for item in self.plot_items + self.histogram_items:
-                try:
-                    self.binary_plot.removeItem(item)
-                except Exception:
-                    pass
-            self.plot_items.clear()
-            self.histogram_items.clear()
+            # Clear and redraw
+            self.clear_plot_safely()
+            self.setup_plot()
             
             # Colors for signals
             colors = {
@@ -1167,30 +1162,24 @@ class CoincidenceLogicTab(QWidget):
             if not isinstance(binary_data, np.ndarray) or len(binary_data) == 0:
                 return
 
-            if time_axis is None or len(time_axis) != len(binary_data):
+            if time_axis is None:
                 return
 
-            n = len(binary_data)
-            # Build step plot using numpy: each sample gets two x,y points
-            # (previous value at new x, then new value at new x)
-            step_x = np.empty(2 * n + 1)
-            step_y = np.empty(2 * n + 1)
+            # Ensure matching lengths
+            n = min(len(binary_data), len(time_axis))
+            binary_data = binary_data[:n]
+            time_axis = time_axis[:n]
 
-            step_x[0] = time_axis[0]
-            step_y[0] = y_offset + binary_data[0]
-
-            step_x[1::2] = time_axis
-            step_x[2::2] = time_axis[1:]
-
-            shifted = np.empty(n)
-            shifted[0] = binary_data[0]
-            shifted[1:] = binary_data[:-1]
-
-            step_y[1::2] = y_offset + shifted
-            step_y[2::2] = y_offset + binary_data[1:]
-
-            step_x[-1] = time_axis[-1]
-            step_y[-1] = step_y[-2]
+            # Build step plot: for each sample i, draw horizontal at previous
+            # value then vertical to new value
+            # Result: pairs (t[i], prev_val), (t[i], val) for each sample
+            step_x = np.repeat(time_axis, 2)
+            vals = binary_data.astype(np.float64)
+            step_y = np.empty(2 * n)
+            step_y[0] = y_offset + vals[0]
+            step_y[1] = y_offset + vals[0]
+            step_y[2::2] = y_offset + vals[:-1]  # prev value at new x
+            step_y[3::2] = y_offset + vals[1:]   # new value at new x
 
             plot_item = self.binary_plot.plot(
                 step_x, step_y,

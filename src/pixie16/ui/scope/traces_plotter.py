@@ -378,11 +378,6 @@ class TracesPlotter(QWidget):
         self.simple_coincidence_cb.toggled.connect(self.toggle_simple_coincidence)
         controls_layout.addWidget(self.simple_coincidence_cb, 2, 1)
 
-        self.show_lgl_cb = QCheckBox("Show LGL")
-        self.show_lgl_cb.setToolTip("Show L-G-L trapezoidal filter integration regions")
-        self.show_lgl_cb.toggled.connect(self.toggle_lgl_regions)
-        controls_layout.addWidget(self.show_lgl_cb, 2, 2)
-
         # Add polarity button
         self.polarity_btn = QPushButton("Polarity")
         self.polarity_btn.clicked.connect(self.show_polarity_dialog)
@@ -2019,7 +2014,6 @@ class TracesPlotter(QWidget):
         # Leading L region (blue shaded)
         l1_region = pg.LinearRegionItem(
             values=[l1_start, l1_end],
-            orientation='vertical',
             brush=pg.mkBrush(30, 30, 180, 40),
             pen=pg.mkPen(color='darkblue', style=pg.QtCore.Qt.PenStyle.DashLine, width=1.5),
             movable=False,
@@ -2029,7 +2023,6 @@ class TracesPlotter(QWidget):
         # Gap G region (green shaded)
         g_region = pg.LinearRegionItem(
             values=[l1_end, g_end],
-            orientation='vertical',
             brush=pg.mkBrush(30, 160, 30, 40),
             pen=pg.mkPen(color='darkgreen', style=pg.QtCore.Qt.PenStyle.DashLine, width=1.5),
             movable=False,
@@ -2039,7 +2032,6 @@ class TracesPlotter(QWidget):
         # Trailing L region (blue shaded)
         l2_region = pg.LinearRegionItem(
             values=[g_end, l2_end],
-            orientation='vertical',
             brush=pg.mkBrush(30, 30, 180, 40),
             pen=pg.mkPen(color='darkblue', style=pg.QtCore.Qt.PenStyle.DashLine, width=1.5),
             movable=False,
@@ -2510,11 +2502,35 @@ class TracesPlotter(QWidget):
         cfd_cb.toggled.connect(lambda: self.toggle_trace_type("cfd"))
         trace_types_layout.addWidget(cfd_cb, 1, 1)
         self.cfd_cb = cfd_cb
-        
-        # Energy Filter Calibration Controls
-        energy_filter_group = self.create_energy_filter_controls()
-        trace_types_layout.addWidget(energy_filter_group, 2, 0, 1, 2)  # Span both columns
-        
+
+        lgl_cb = QCheckBox("LGL Regions")
+        lgl_cb.setToolTip("Show L-G-L trapezoidal filter integration regions on trace")
+        lgl_cb.toggled.connect(self.toggle_lgl_regions)
+        trace_types_layout.addWidget(lgl_cb, 2, 0)
+        self.show_lgl_cb = lgl_cb
+
+        # Inline L/G spinboxes
+        lg_layout = QHBoxLayout()
+        l_label = QLabel("L:")
+        l_label.setStyleSheet("font-weight: bold; color: blue;")
+        lg_layout.addWidget(l_label)
+        self.energy_L_spin = QSpinBox()
+        self.energy_L_spin.setRange(1, 200)
+        self.energy_L_spin.setValue(self.hardware_params.get("energy_L", 10))
+        self.energy_L_spin.valueChanged.connect(self.on_energy_L_changed)
+        self.energy_L_spin.setMinimumWidth(50)
+        lg_layout.addWidget(self.energy_L_spin)
+        g_label = QLabel("G:")
+        g_label.setStyleSheet("font-weight: bold; color: green;")
+        lg_layout.addWidget(g_label)
+        self.energy_G_spin = QSpinBox()
+        self.energy_G_spin.setRange(1, 100)
+        self.energy_G_spin.setValue(self.hardware_params.get("energy_G", 5))
+        self.energy_G_spin.valueChanged.connect(self.on_energy_G_changed)
+        self.energy_G_spin.setMinimumWidth(50)
+        lg_layout.addWidget(self.energy_G_spin)
+        trace_types_layout.addLayout(lg_layout, 2, 1)
+
         trace_types_group.setLayout(trace_types_layout)
         
         # Wrap trace types in scroll area for better visibility  
@@ -2591,65 +2607,6 @@ class TracesPlotter(QWidget):
         
         return widget
 
-    def create_energy_filter_controls(self):
-        """Create real-time L/G energy filter controls for calibration."""
-        
-        group = QGroupBox("Energy Filter (L-G-L) - Live Calibration")
-        
-        # Use vertical layout to fit more information
-        main_layout = QVBoxLayout()
-        
-        # Add explanatory text
-        info_label = QLabel("Trapezoidal Filter: L samples (leading) + G samples (gap) + L samples (trailing)")
-        info_label.setStyleSheet("font-size: 10px; color: gray; font-style: italic;")
-        main_layout.addWidget(info_label)
-        
-        # Controls layout
-        controls_layout = QHBoxLayout()
-        
-        # Energy L control with more prominent styling
-        l_label = QLabel("L (both edges):")
-        l_label.setStyleSheet("font-weight: bold; color: blue;")
-        controls_layout.addWidget(l_label)
-        
-        self.energy_L_spin = QSpinBox()
-        self.energy_L_spin.setRange(1, 200)
-        self.energy_L_spin.setValue(self.hardware_params.get("energy_L", 10))
-        self.energy_L_spin.valueChanged.connect(self.on_energy_L_changed)
-        self.energy_L_spin.setMinimumWidth(60)  # Make sure it's visible
-        self.energy_L_spin.setToolTip("Length of both leading and trailing edges in L-G-L trapezoidal filter")
-        controls_layout.addWidget(self.energy_L_spin)
-        
-        # Add some spacing
-        controls_layout.addWidget(QLabel("  "))
-        
-        # Energy G control with more prominent styling  
-        g_label = QLabel("G (gap):")
-        g_label.setStyleSheet("font-weight: bold; color: green;")
-        controls_layout.addWidget(g_label)
-        
-        self.energy_G_spin = QSpinBox()
-        self.energy_G_spin.setRange(1, 100)
-        self.energy_G_spin.setValue(self.hardware_params.get("energy_G", 5))
-        self.energy_G_spin.valueChanged.connect(self.on_energy_G_changed)
-        self.energy_G_spin.setMinimumWidth(60)  # Make sure it's visible
-        self.energy_G_spin.setToolTip("Length of flat top (gap) in L-G-L trapezoidal filter")
-        controls_layout.addWidget(self.energy_G_spin)
-        
-        # Add stretch to prevent compression
-        controls_layout.addStretch()
-        
-        main_layout.addLayout(controls_layout)
-        
-        # Auto-enable energy filter when controls are visible
-        if hasattr(self, 'energy_filter_cb'):
-            self.energy_filter_cb.setChecked(True)
-            self.toggle_trace_type("energy_filter")
-        
-        group.setLayout(main_layout)
-        group.setMinimumHeight(80)  # Increased for vertical layout
-        return group
-    
     def on_energy_L_changed(self, value):
         """Handle real-time L parameter changes."""
         self.hardware_params["energy_L"] = value
