@@ -2033,11 +2033,16 @@ class TracesPlotter(QWidget):
             if len(fast_trigger_indices) == 0 or len(fast_trigger_indices[0]) == 0:
                 return
 
-            # Fast trigger position in raw samples (same formula as energy filter alignment)
-            fpga_idx = fast_trigger_indices[0][0]
+            # Fast trigger position in raw samples
+            # Use the trigger closest to the trace center (where hardware places the actual pulse)
             fast_L = self.hardware_params["fast_L"]
             fast_G = self.hardware_params["fast_G"]
             fpga_delay = fast_L + (fast_G // 2)
+
+            all_triggers = fast_trigger_indices[0]
+            trace_center_fpga = len(latest_trace) // (2 * 5)  # center of trace in FPGA samples
+            fpga_idx = min(all_triggers, key=lambda t: abs(t - trace_center_fpga))
+
             trigger_raw_idx = (fpga_idx + fpga_delay) * 5
         except Exception:
             return
