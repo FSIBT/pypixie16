@@ -170,7 +170,9 @@ class DynamicPixieHardwareManager:
                         logger.debug(f"Parameter {param} Ch{channel}: {raw_value} ({type(raw_value)}) -> {value} ({type(value)})")
                         channel_params[param] = value
                     except Exception as e:
+                        import traceback
                         logger.warning(f"Could not read {param} for Ch{channel}: {e}")
+                        logger.debug(f"Full traceback for {param} Ch{channel}:\n{traceback.format_exc()}")
 
                 self.state.current_parameters[0][channel] = channel_params
 
@@ -261,11 +263,23 @@ class DynamicPixieHardwareManager:
             )
             return True
 
+    # Parameters that must be set at module level, not channel level
+    MODULE_PARAMETERS = {
+        "MODULE_CSRA", "MODULE_CSRB", "MODULE_FORMAT", "MAX_EVENTS",
+        "SYNCH_WAIT", "IN_SYNCH", "SLOW_FILTER_RANGE", "FAST_FILTER_RANGE",
+        "FastTrigBackplaneEna", "CrateID", "SlotID", "ModID",
+        "TrigConfig0", "TrigConfig1", "TrigConfig2", "TrigConfig3",
+        "HOST_RT_PRESET",
+    }
+
     def _apply_parameter_to_hardware(
         self, param_name: str, value: any, module: int, channel: int
     ) -> bool:
         try:
-            px.control.set_channel_parameter(param_name, value, module, channel)
+            if param_name in self.MODULE_PARAMETERS:
+                px.control.set_module_parameter(param_name, value, module)
+            else:
+                px.control.set_channel_parameter(param_name, value, module, channel)
             return True
         except Exception as e:
             logger.error(f"Hardware update failed for {param_name}: {e}")
@@ -293,7 +307,7 @@ class DynamicPixieHardwareManager:
                 polarity = special_params["Polarity"]
                 try:
                     # Read current ChanCSRa value
-                    raw_csra = px.SDK.read_single_channel_parameter("ChanCSRa", module, channel, convert_bit_pattern=False)
+                    raw_csra = px.SDK.read_single_channel_parameter("CHANNEL_CSRA", module, channel, convert_bit_pattern=False)
                     current_csra = int(raw_csra)  # Convert to Python int for bit operations
                     if polarity == "negative":
                         # Set bit 0 for negative polarity
@@ -301,7 +315,7 @@ class DynamicPixieHardwareManager:
                     else:
                         # Clear bit 0 for positive polarity
                         new_csra = current_csra & ~1
-                    px.control.set_channel_parameter("ChanCSRa", new_csra, module, channel)
+                    px.control.set_channel_parameter("CHANNEL_CSRA", new_csra, module, channel)
                     logger.info(f"Set polarity to {polarity} on M{module}:Ch{channel}")
                 except Exception as e:
                     logger.error(f"Failed to set polarity: {e}")
@@ -471,12 +485,15 @@ class DynamicPixieHardwareManager:
                     logger.error("Failed to initialize PIXIE hardware")
                     return False
             
-            try:
-                # Set minimum required parameters for traces
-                px.control.set_channel_parameter("TRACE_LENGTH", 1000, 0, 6)  # 1000 samples
-                px.control.set_channel_parameter("TRIGGER_THRESHOLD", 100, 0, 6)  # Low threshold
-            except Exception as e:
-                logger.warning(f"Could not configure channel 6: {e}")
+            # Note: trace parameters should already be set from settings file or UI.
+            # Only set defaults if no parameters are cached for any channel.
+            if not self.state.current_parameters.get(0, {}):
+                try:
+                    logger.info("No cached parameters - setting trace defaults for channel 0")
+                    px.control.set_channel_parameter("TRACE_LENGTH", 1000, 0, 0)
+                    px.control.set_channel_parameter("TRIGGER_THRESHOLD", 100, 0, 0)
+                except Exception as e:
+                    logger.warning(f"Could not configure trace parameters: {e}")
             
             # Start list mode for traces
             px.control.start_list_mode_run()
@@ -718,7 +735,7 @@ class DynamicPixieHardwareManager:
                 "BLcut": "BLCUT",
                 "ChanCSRa": "CHAN_CSRA",
             }
-            
+
             # Handle polarity from ChanCSRa bit field
             if "ChanCSRa" in channel_inputs:
                 csra_values = channel_inputs["ChanCSRa"] 

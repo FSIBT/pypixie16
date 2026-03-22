@@ -288,8 +288,8 @@ def calculate_CFD(
         cfdtimeIDX.append(i)
     cfdtime = np.array(cfdtime)
 
-    print("Calculated CFD errors = ", CFDerror)
-    print("Events with noise above fast filter threshold = ", low)
+    # print("Calculated CFD errors = ", CFDerror)
+    # print("Events with noise above fast filter threshold = ", low)
 
     return CFD, cfdtime, fast_filter, IDXerr
 
