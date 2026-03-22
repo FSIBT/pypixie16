@@ -2047,16 +2047,19 @@ class TracesPlotter(QWidget):
         L = self.hardware_params["energy_L"]
         G = self.hardware_params["energy_G"]
         energy_R = self.hardware_params["energy_R"]
-        samples_per_energy_cycle = 2 ** energy_R
 
-        L_samples = L * samples_per_energy_cycle
-        G_samples = G * samples_per_energy_cycle
+        # Each energy filter cycle = 2^R FPGA cycles, each FPGA cycle = 5 raw samples = 10ns
+        fpga_per_energy = 2 ** energy_R
+        ns_per_energy_cycle = fpga_per_energy * 10.0  # 10ns per FPGA cycle
+
+        L_ns = L * ns_per_energy_cycle
+        G_ns = G * ns_per_energy_cycle
 
         # L-G-L boundary times relative to trigger on the raw time axis
         l1_start = trigger_time
-        l1_end = trigger_time + (L_samples * time_step)
-        g_end = l1_end + (G_samples * time_step)
-        l2_end = g_end + (L_samples * time_step)
+        l1_end = trigger_time + L_ns
+        g_end = l1_end + G_ns
+        l2_end = g_end + L_ns
 
         # Leading L region (blue shaded)
         l1_region = pg.LinearRegionItem(
