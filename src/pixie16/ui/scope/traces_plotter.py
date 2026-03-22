@@ -2050,27 +2050,39 @@ class TracesPlotter(QWidget):
         if trigger_raw_idx >= len(time_axis):
             return
 
-        trigger_time = time_axis[trigger_raw_idx]
-
         # Get energy filter parameters
         L = self.hardware_params["energy_L"]
         G = self.hardware_params["energy_G"]
+        P = self.hardware_params.get("energy_P", 1)
 
-        # Each energy filter cycle = 2^R FPGA cycles, each FPGA cycle = 5 raw samples
-        samples_per_energy_cycle = (2 ** energy_R) * 5
-        L_raw = L * samples_per_energy_cycle  # L window in raw samples
-        G_raw = G * samples_per_energy_cycle  # G gap in raw samples
+        # Match compute_energy_filter exactly:
+        # trigger_pos = fpga_idx // slow_filter_range - 2*L - G + P
+        # readout k = trigger_pos + 2*L + G - 1 = fpga_idx // sfr + P - 1
+        # S3 ends at k, spans L steps. S2 spans G steps before S3. S1 spans L before S2.
+        slow_filter_range = 2 ** energy_R
 
-        # Convert to ns using the actual time axis step
+        # Readout position k in energy steps (from start of trace)
+        # fpga_delay accounts for the fast trigger's L + G//2 pipeline delay
+        k = (fpga_idx + fpga_delay) // slow_filter_range + P - 1
+
+        # Convert energy step positions to ns on the raw time axis
+        # Energy step 0 corresponds to raw sample 0 (time_axis[0])
+        # Each energy step = slow_filter_range * 5 raw samples
+        raw_samples_per_step = slow_filter_range * 5
         time_step = time_axis[1] - time_axis[0] if len(time_axis) > 1 else 2.0
-        L_ns = L_raw * time_step
-        G_ns = G_raw * time_step
 
-        # L-G-L boundary times: first L ends at trigger, G gap, then second L
-        l1_start = trigger_time - L_ns
-        l1_end = trigger_time
-        g_end = l1_end + G_ns
-        l2_end = g_end + L_ns
+        def energy_step_to_ns(step):
+            raw_idx = step * raw_samples_per_step
+            return time_axis[0] + raw_idx * time_step
+
+        # S1 (baseline L): [k-2L-G+1, k-L-G]
+        l1_start = energy_step_to_ns(k - 2 * L - G + 1)
+        l1_end = energy_step_to_ns(k - L - G + 1)
+        # S2 (gap G): [k-L-G+1, k-L]
+        g_end = energy_step_to_ns(k - L + 1)
+        # S3 (signal L): [k-L+1, k]
+        l2_end = energy_step_to_ns(k + 1)
+
 
         # Leading L region (blue shaded)
         l1_region = pg.LinearRegionItem(
