@@ -25,7 +25,8 @@ from PyQt6.QtWidgets import (
     QComboBox,
     QTabWidget,
     QSizePolicy,
-    QScrollArea
+    QScrollArea,
+    QMessageBox,
 )
 from PyQt6.QtCore import QTimer, QThread, pyqtSignal, Qt
 import pyqtgraph as pg
@@ -729,7 +730,6 @@ class TracesPlotter(QWidget):
                 
                 # Warn user about large datasets
                 if trace_count > 5000:
-                    from PyQt6.QtWidgets import QMessageBox
                     reply = QMessageBox.question(
                         self, "Large Dataset Warning", 
                         f"You are about to save {trace_count} traces. This may take a while and create a large file. Continue?",
@@ -1449,32 +1449,58 @@ class TracesPlotter(QWidget):
     def _plot_persistence_traces_single_channel(self, channel, plot_widget):
         """Render persistence histogram as a 2D heatmap image on the plot."""
         hist = self.persistence_histogram[channel]
+
+        # Only update the image every N traces to avoid hammering the display
+        if (self.persistence_update_counter[channel] % self.persistence_update_interval != 0
+                and self.persistence_image_item is not None):
+            return
+
         img_data, x_range, y_range = hist.get_image_data(log_scale=True)
 
         if img_data is None:
             return
 
-        # Create or update the image item
+        # Create or reuse the image item
         if self.persistence_image_item is None:
             self.persistence_image_item = pg.ImageItem()
-            self.persistence_image_item.setLookupTable(pg.colormap.get('viridis').getLookupTable())
+            # Black-background colormap: empty bins = black, traces = green/yellow/white
+            colors = [
+                (0, 0, 0),        # 0 = black (no traces)
+                (0, 40, 0),       # dim green
+                (0, 150, 0),      # green
+                (0, 255, 100),    # bright green
+                (255, 255, 0),    # yellow
+                (255, 255, 255),  # white (most traces)
+            ]
+            cmap = pg.ColorMap(pos=np.linspace(0.0, 1.0, len(colors)), color=colors)
+            self.persistence_image_item.setLookupTable(cmap.getLookupTable(nPts=256))
             plot_widget.addItem(self.persistence_image_item)
 
-        self.persistence_image_item.setImage(img_data, autoLevels=True)
+        # Set dark background for the plot to match
+        plot_widget.setBackground('k')
 
-        # Position the image to match the trace axes
-        x_scale = (x_range[1] - x_range[0]) / img_data.shape[1] if img_data.shape[1] > 1 else 1.0
-        y_scale = (y_range[1] - y_range[0]) / img_data.shape[0] if img_data.shape[0] > 1 else 1.0
+        # pyqtgraph ImageItem: columns=X, rows=Y, so transpose the histogram
+        # img_data from PersistenceHistogram is (y_bins, x_bins) — need (x_bins, y_bins)
+        self.persistence_image_item.setImage(img_data.T, autoLevels=True)
+
+        # Scale and position to match the trace coordinate system
+        x_span = x_range[1] - x_range[0]
+        y_span = y_range[1] - y_range[0]
+        cols = img_data.shape[1]  # x_bins
+        rows = img_data.shape[0]  # y_bins
+        x_scale = x_span / cols if cols > 1 else 1.0
+        y_scale = y_span / rows if rows > 1 else 1.0
+
+        self.persistence_image_item.resetTransform()
         self.persistence_image_item.setPos(x_range[0], y_range[0])
         self.persistence_image_item.setTransform(pg.QtGui.QTransform().scale(x_scale, y_scale))
 
-        # Also overlay the most recent traces on top
-        recent_traces = list(self.single_persistence_data[channel])[-self.single_persistence_count:]
-        for i, trace in enumerate(recent_traces):
-            time_axis = self.calculate_real_time_axis(len(trace), channel)
-            alpha = 255 if not self.single_persistence_alpha_fade else int(80 + 175 * (i / max(len(recent_traces) - 1, 1)))
-            color = (255, 255, 255, alpha)
-            plot_widget.plot(time_axis, trace, pen=pg.mkPen(color=color, width=1))
+        # Overlay the latest trace in white so the current signal is visible
+        latest_traces = list(self.trace_data[channel])
+        if latest_traces:
+            latest = latest_traces[-1]
+            time_axis = self.calculate_real_time_axis(len(latest), channel)
+            plot_widget.plot(time_axis, latest, pen=pg.mkPen(color=(255, 255, 255, 200), width=1.5))
 
     def _plot_single_trace(self, channel, plot_widget):
         traces_list = list(self.trace_data[channel])
