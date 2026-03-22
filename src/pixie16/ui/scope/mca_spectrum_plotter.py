@@ -386,6 +386,9 @@ class MCASpectrumPlotter(QWidget):
             print(f"Plot Update: All channels: {self.channels}")
             print(f"Plot Update: Display channels: {self.display_channels}")
 
+            # Rebuild legend to only show displayed channels
+            self._update_legend()
+
             # Process ALL channels but only show selected ones
             for channel in self.channels:
                 if channel in self.mca_data and channel in self.curves:
@@ -516,6 +519,24 @@ class MCASpectrumPlotter(QWidget):
 
         # Update the plots immediately to show/hide channels
         self.update_plots()
+
+    def _update_legend(self):
+        """Rebuild the legend to only show displayed channels"""
+        try:
+            # Remove existing legend
+            if self.plot_widget.plotItem.legend is not None:
+                self.plot_widget.plotItem.legend.scene().removeItem(self.plot_widget.plotItem.legend)
+                self.plot_widget.plotItem.legend = None
+            
+            # Create new legend and add only displayed channels
+            self.plot_widget.addLegend()
+            for channel in self.display_channels:
+                if channel in self.curves:
+                    curve = self.curves[channel]
+                    # Add to legend manually
+                    self.plot_widget.plotItem.legend.addItem(curve, f"Ch {channel}")
+        except Exception as e:
+            print(f"Error updating MCA legend: {e}")
 
     def get_channel_info(self):
         """Get current channel state for debugging"""
