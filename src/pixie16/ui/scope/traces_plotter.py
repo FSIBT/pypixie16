@@ -1446,6 +1446,36 @@ class TracesPlotter(QWidget):
             else:
                 self.persistence_stats_label.setText("Persistence: Disabled")
                 
+    def _plot_persistence_traces_single_channel(self, channel, plot_widget):
+        """Render persistence histogram as a 2D heatmap image on the plot."""
+        hist = self.persistence_histogram[channel]
+        img_data, x_range, y_range = hist.get_image_data(log_scale=True)
+
+        if img_data is None:
+            return
+
+        # Create or update the image item
+        if self.persistence_image_item is None:
+            self.persistence_image_item = pg.ImageItem()
+            self.persistence_image_item.setLookupTable(pg.colormap.get('viridis').getLookupTable())
+            plot_widget.addItem(self.persistence_image_item)
+
+        self.persistence_image_item.setImage(img_data, autoLevels=True)
+
+        # Position the image to match the trace axes
+        x_scale = (x_range[1] - x_range[0]) / img_data.shape[1] if img_data.shape[1] > 1 else 1.0
+        y_scale = (y_range[1] - y_range[0]) / img_data.shape[0] if img_data.shape[0] > 1 else 1.0
+        self.persistence_image_item.setPos(x_range[0], y_range[0])
+        self.persistence_image_item.setTransform(pg.QtGui.QTransform().scale(x_scale, y_scale))
+
+        # Also overlay the most recent traces on top
+        recent_traces = list(self.single_persistence_data[channel])[-self.single_persistence_count:]
+        for i, trace in enumerate(recent_traces):
+            time_axis = self.calculate_real_time_axis(len(trace), channel)
+            alpha = 255 if not self.single_persistence_alpha_fade else int(80 + 175 * (i / max(len(recent_traces) - 1, 1)))
+            color = (255, 255, 255, alpha)
+            plot_widget.plot(time_axis, trace, pen=pg.mkPen(color=color, width=1))
+
     def _plot_single_trace(self, channel, plot_widget):
         traces_list = list(self.trace_data[channel])
         if not traces_list:
