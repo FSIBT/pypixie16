@@ -597,14 +597,20 @@ class CoincidenceLogicTab(QWidget):
         # Reset time reference when Channel A changes
         self.reference_timestamp = None
         self.reference_time_axis_offset = 200.0
+        # Clear the plot immediately so stale data from previous channel doesn't linger
+        self.clear_plot_safely()
+        self.setup_plot()
         self.binary_plot.setTitle(f"Ch{self.channel_a} (A) vs Ch{self.channel_b} (B)")
         self.update_params_display()
         print(f"Channel A changed to Ch{self.channel_a} - time reference reset")
-    
+
     def update_channel_b(self):
         self.channel_b = self.channels[self.ch_b_combo.currentIndex()]
         self.binary_data.clear()
         self.ch_b_event_count = 0
+        # Clear the plot immediately so stale data from previous channel doesn't linger
+        self.clear_plot_safely()
+        self.setup_plot()
         self.binary_plot.setTitle(f"Ch{self.channel_a} (A) vs Ch{self.channel_b} (B)")
         self.update_params_display()
     
@@ -982,10 +988,13 @@ class CoincidenceLogicTab(QWidget):
             has_ch_b = data['ch_b']['local_fast_trigger'] is not None
 
             if not has_ch_a and not has_ch_b:
+                # No data for either channel - clear the plot, don't show stale data
+                self.clear_plot_safely()
+                self.setup_plot()
                 elapsed = time.time() - self.last_update_time
                 if elapsed > 2.0:
                     self.status_label.setText(
-                        f"Waiting... A:{self.ch_a_event_count} B:{self.ch_b_event_count}"
+                        f"No data - Ch{self.channel_a}(A) Ch{self.channel_b}(B)"
                     )
                     self.last_update_time = time.time()
                 return
