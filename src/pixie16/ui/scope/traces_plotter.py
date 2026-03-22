@@ -2018,6 +2018,8 @@ class TracesPlotter(QWidget):
             working_trace = latest_trace
             if not self.channel_polarity.get(channel, True):
                 working_trace = -working_trace
+
+            energy_R = self.hardware_params["energy_R"]
             traces_fpga = convert_trace_to_FPGA(working_trace[np.newaxis, :])
             fast_result = compute_fast_trigger_validation(
                 traces_fpga,
@@ -2030,34 +2032,38 @@ class TracesPlotter(QWidget):
             fast_trigger_indices = fast_result["trigger_indices"]
             if len(fast_trigger_indices) == 0 or len(fast_trigger_indices[0]) == 0:
                 return
+
+            # Fast trigger position in raw samples (same formula as energy filter alignment)
             fpga_idx = fast_trigger_indices[0][0]
             fast_L = self.hardware_params["fast_L"]
             fast_G = self.hardware_params["fast_G"]
-            trigger_idx = (fpga_idx + fast_L + fast_G // 2) * 5
+            fpga_delay = fast_L + (fast_G // 2)
+            trigger_raw_idx = (fpga_idx + fpga_delay) * 5
         except Exception:
             return
 
-        if trigger_idx >= len(time_axis):
+        if trigger_raw_idx >= len(time_axis):
             return
 
-        trigger_time = time_axis[trigger_idx]
-        time_step = time_axis[1] - time_axis[0] if len(time_axis) > 1 else 2.0
+        trigger_time = time_axis[trigger_raw_idx]
 
         # Get energy filter parameters
         L = self.hardware_params["energy_L"]
         G = self.hardware_params["energy_G"]
-        energy_R = self.hardware_params["energy_R"]
 
-        # Each energy filter cycle = 2^R FPGA cycles, each FPGA cycle = 5 raw samples = 10ns
-        fpga_per_energy = 2 ** energy_R
-        ns_per_energy_cycle = fpga_per_energy * 10.0  # 10ns per FPGA cycle
+        # Each energy filter cycle = 2^R FPGA cycles, each FPGA cycle = 5 raw samples
+        samples_per_energy_cycle = (2 ** energy_R) * 5
+        L_raw = L * samples_per_energy_cycle  # L window in raw samples
+        G_raw = G * samples_per_energy_cycle  # G gap in raw samples
 
-        L_ns = L * ns_per_energy_cycle
-        G_ns = G * ns_per_energy_cycle
+        # Convert to ns using the actual time axis step
+        time_step = time_axis[1] - time_axis[0] if len(time_axis) > 1 else 2.0
+        L_ns = L_raw * time_step
+        G_ns = G_raw * time_step
 
-        # L-G-L boundary times relative to trigger on the raw time axis
-        l1_start = trigger_time
-        l1_end = trigger_time + L_ns
+        # L-G-L boundary times: first L ends at trigger, G gap, then second L
+        l1_start = trigger_time - L_ns
+        l1_end = trigger_time
         g_end = l1_end + G_ns
         l2_end = g_end + L_ns
 
