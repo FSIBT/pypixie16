@@ -21,54 +21,68 @@ from ...analyze import calculate_filter
 
 
 class BinaryHistogramData:
-    def __init__(self, time_bins=2000, time_range_ns=4000):
+    def __init__(self, time_bins=500, time_range_ns=10000):
         self.time_bins = time_bins
         self.time_range_ns = time_range_ns
-        self.bin_edges = np.linspace(-time_range_ns/2, time_range_ns/2, time_bins+1)
-        
+        # Dynamic range: will be set from first trace's time axis
+        self.bin_edges = None
+        self.range_set = False
+
         # Histogram for each logic step
-        self.histograms = {
-            "local_fast_trigger": np.zeros(time_bins),
-            "fast_trigger_bp": np.zeros(time_bins),
-            "chan_trig": np.zeros(time_bins),
-            "chan_validation_trig": np.zeros(time_bins),
-            "local_fast_for_processing": np.zeros(time_bins),
-            "validated_trig_for_processing": np.zeros(time_bins),
-        }
-        
+        self.logic_steps = [
+            "local_fast_trigger", "fast_trigger_bp", "chan_trig",
+            "chan_validation_trig", "local_fast_for_processing",
+            "validated_trig_for_processing",
+        ]
+        self.histograms = {s: np.zeros(time_bins) for s in self.logic_steps}
+
         self.total_events = 0
-    
+
+    def _ensure_bins(self, time_axis):
+        """Set bin edges from the first time axis we see."""
+        if not self.range_set:
+            t_min = time_axis[0]
+            t_max = time_axis[-1]
+            self.bin_edges = np.linspace(t_min, t_max, self.time_bins + 1)
+            self.range_set = True
+
     def add_binary_trace(self, time_axis, binary_data, step_name):
         if step_name not in self.histograms:
             return
-        
+
+        self._ensure_bins(time_axis)
+
         # Find where signal is HIGH (value = 1)
         high_indices = np.where(binary_data > 0)[0]
-        
+
         if len(high_indices) > 0:
             high_times = time_axis[high_indices]
             hist, _ = np.histogram(high_times, bins=self.bin_edges)
             self.histograms[step_name] += hist
-            
+
         self.total_events += 1
-    
+
     def get_histogram(self, step_name, normalize=False):
         if step_name not in self.histograms:
             return None, None
-        
+        if self.bin_edges is None:
+            return None, None
+
         hist = self.histograms[step_name].copy()
-        
+
         if normalize and self.total_events > 0:
             hist = hist / self.total_events
-        
+
         # Return histogram and bin centers
         bin_centers = (self.bin_edges[:-1] + self.bin_edges[1:]) / 2
         return bin_centers, hist
-    
+
     def clear(self):
         for key in self.histograms:
             self.histograms[key].fill(0)
         self.total_events = 0
+        self.bin_edges = None
+        self.range_set = False
 
 
 class DualChannelBinaryData:    
@@ -625,9 +639,12 @@ class CoincidenceLogicTab(QWidget):
         elif "Coincidence-Centered" in mode_text:
             self.display_mode = "coincidence_centered"
         
-        # Reset time reference when mode changes, but keep accumulated histogram data
+        # Reset time reference when mode changes
         self.reference_timestamp = None
         self.ch_a_timestamps.clear()
+        # Reset histogram bins since time axis range changes with display mode
+        self.binary_data.ch_a_histogram.clear()
+        self.binary_data.ch_b_histogram.clear()
         print(f"Display mode changed to: {self.display_mode}")
     
     def update_timing_params(self):
@@ -793,6 +810,8 @@ class CoincidenceLogicTab(QWidget):
                         nearest_ch_a_ts = ch_a_ts[nearest_idx]
                         # Signed offset: positive = B is later, negative = B is earlier
                         timestamp_diff_ns = event_timestamp - nearest_ch_a_ts
+                        if self.ch_b_event_count % 50 == 0:
+                            print(f"REF_MODE: ChB ts={event_timestamp:.0f}, nearest ChA={nearest_ch_a_ts:.0f}, diff={timestamp_diff_ns:.1f}ns")
                         time_axis = np.arange(trace_length) * self.sampling_period_ns - trigger_time_ns + timestamp_diff_ns
                     else:
                         # No Channel A data yet
@@ -1132,24 +1151,23 @@ class CoincidenceLogicTab(QWidget):
                     if y_offset is None:
                         continue
                     
-                    # Normalize histogram to 0-0.8 range
+                    # Normalize histogram to fit within 0.8 of the step height
                     max_val = np.max(hist_data)
                     if max_val > 0:
-                        normalized_hist = (hist_data / max_val) * 0.5  # limit height
+                        normalized_hist = (hist_data / max_val) * 0.8
                     else:
                         normalized_hist = hist_data
-                    
+
                     # filled area plot
                     y_bottom = np.full_like(bin_centers, y_offset)
                     y_top = y_bottom + normalized_hist
-                    
-                    gray_color = "#808080"  # Medium gray
-                    
-                    # Create filled curve with gray and transparency
+
+                    alpha = int(self.histogram_alpha * 255)
+                    # Use RGBA tuple for reliable alpha
                     fill_item = pg.FillBetweenItem(
                         pg.PlotDataItem(bin_centers, y_bottom),
                         pg.PlotDataItem(bin_centers, y_top),
-                        brush=pg.mkBrush(color=gray_color, alpha=int(self.histogram_alpha * 255))
+                        brush=pg.mkBrush(128, 128, 128, alpha)
                     )
                     
                     self.binary_plot.addItem(fill_item)
