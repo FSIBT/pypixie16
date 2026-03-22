@@ -22,6 +22,7 @@ Task Lifecycle
 """
 
 import io
+import os
 import abc
 import sys
 import time
@@ -147,6 +148,9 @@ class Task(multiprocessing.Process):
         self.address_router = None
 
         self._heart_beat_timestamp = 0
+        self._ps_data = None
+        self._pending_report = {}
+        self._last_report_flush_time = 0
 
     def do_init(self) -> None:
         """
@@ -318,6 +322,8 @@ class Task(multiprocessing.Process):
         else:
             self.send_report({"task finished": True})
 
+        self.flush_report()
+
     def send_data(self, data: typing.Any) -> None:
         """
         Sends ``Message.DATA``.
@@ -330,17 +336,48 @@ class Task(multiprocessing.Process):
             msg = Message.DATA(data)
             self._socket_push.send_pyobj(msg)
 
-    def send_report(self, report: dict) -> None:
+    def flush_report(self) -> None:
+        """Flushes any pending reports to the pipeline."""
+        if self._pending_report and self._socket_dealer:
+            msg = pickle.dumps(
+                Message.REPORT(self._pending_report), protocol=pickle.HIGHEST_PROTOCOL
+            )
+            self._socket_dealer.send(msg)
+            self._pending_report = {}
+            self._last_report_flush_time = time.time()
+
+    def send_report(self, report: dict, force: bool = False) -> None:
         """
         Sends ``Message.REPORT``.
 
         Parameters:
             report: Report to send.
+            force: Force immediate dispatch bypassing rate limiter.
         """
+        if not report:
+            return
 
-        if report:
-            msg = pickle.dumps(Message.REPORT(report), protocol=pickle.HIGHEST_PROTOCOL)
-            self._socket_dealer.send(msg)
+        self._pending_report.update(report)
+
+        # Critical lifecycle keys must be dispatched immediately
+        critical_keys = {
+            "status",
+            "task finished",
+            "address_push",
+            "address_pull",
+            "is_start",
+            "is_final",
+            "meta-start-time",
+            "meta-end-time",
+        }
+
+        if force or any(k in report for k in critical_keys):
+            self.flush_report()
+            return
+
+        now = time.time()
+        if now - self._last_report_flush_time >= 0.5:
+            self.flush_report()
 
     def _send_print(self, string: str) -> None:
         """
@@ -439,6 +476,9 @@ class Task(multiprocessing.Process):
 
         self.status = Status.DYING
         self.report({"status": self.status})
+
+        # Flush any remaining metadata/metrics before pulling the plug
+        self.flush_report()
 
         if self._socket_pull:
             self._socket_pull.setsockopt(zmq.LINGER, 0)
@@ -631,14 +671,23 @@ class Task(multiprocessing.Process):
         "send a heart beat every second"
         now = time.time()
         if now - self._heart_beat_timestamp > 0.5:  # TODO: slow down later
-            ps_data = psutil.Process(self.pid)
+            parent = multiprocessing.parent_process()
+            if parent is not None and not parent.is_alive():
+                print(
+                    f"Task {self.name} shutting down: parent process died.",
+                    file=sys.stderr,
+                )
+                sys.exit(0)
+
+            if self._ps_data is None:
+                self._ps_data = psutil.Process(self.pid)
 
             self.send_report(
                 {
                     "name": self.name,
                     "status": self.status,
-                    "cpu": ps_data.cpu_percent(),
-                    "memory": ps_data.memory_info().vms / 1e6,
+                    "cpu": self._ps_data.cpu_percent(),
+                    "memory": self._ps_data.memory_info().rss,
                     "queue": len(self._queue),
                     "activity": now,
                 }

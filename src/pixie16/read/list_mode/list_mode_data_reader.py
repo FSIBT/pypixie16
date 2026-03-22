@@ -26,6 +26,7 @@ except ModuleNotFoundError:
     import bitstruct
 
 import msgspec
+import math
 
 # from rich import print
 
@@ -464,6 +465,58 @@ def events_from_files_generator(files):
                 yield from reader.iterevents()
     except (EmptyError, LeftoverBytesError):
         return
+
+
+def timestamps_and_sizes_from_files_generator(files):
+    """Yields (timestamp, event_length_words) for each event in binary files."""
+    try:
+        with FileReader(files) as r:
+            while not r.done:
+                event_header = HEADER_FORMATS.unpack(r.read(4).byteswap().tobytes())
+                header_length = event_header["Header Length"]
+                extra_header_length = header_length - 4
+                event_length = event_header["Event Length"]
+
+                if extra_header_length > 0:
+                    r.read(extra_header_length, 4)
+
+                trace_length = event_length - header_length
+                if trace_length:
+                    r.read(trace_length, header_length)
+
+                timestamp = (
+                    event_header["EVTTIME_LO"] + event_header["EVTTIME_HI"] * 2**32
+                ) * 10
+                yield timestamp, event_length
+    except (EmptyError, LeftoverBytesError):
+        return
+
+
+def data_rate_from_file(files):
+    """
+    Calculate the data rate in MB/s from a list of binary files.
+    Returns a dictionary with the data rate for each second in the data set.
+    """
+    timestamps = []
+    bits = []
+
+    for timestamp, word in timestamps_and_sizes_from_files_generator(files):
+        timestamps.append(timestamp)
+        bits.append(word * 32)  # word size is 32 bits
+
+    if not timestamps:
+        return 0
+
+    data = {}
+    for t, b in zip(timestamps, bits):
+        sec = math.floor(t * 1e-9)
+        if sec not in data:
+            data[sec] = 0
+        data[sec] += b
+
+    # Convert to MB/s
+    data_rate = {sec: b / (8 * 1024 * 1024) for sec, b in data.items()}
+    return data_rate
 
 
 def to_tuple(obj):

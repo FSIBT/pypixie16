@@ -80,6 +80,7 @@ class DataAcquisition(QWidget):
         self.app = app
         self.taskid_to_row = {}
         self.pipeline = pipeline.Pipeline()
+        self.app.aboutToQuit.connect(self.pipeline.quit)
         self.local_settings = LocalSettings()
         if init_modes:
             self.modes = ["DummyData"]
@@ -101,6 +102,7 @@ class DataAcquisition(QWidget):
         self.MCA_set_time.editingFinished.connect(self.update_mca_time)
 
         # Timer to update table and plot
+        self.status = None
         self.timer = QtCore.QTimer()
         self.timer.timeout.connect(self.update_status)
         self.timer.start(250)
@@ -110,12 +112,12 @@ class DataAcquisition(QWidget):
             self.on_mode_change(self.settings_modes.currentIndex())
 
     def parse_runtime(self, time_string: str) -> int:
-        """Parse strings like 1h, 1h5m, 25s into seconds as integer."""
+        """Parse strings like 1h, 1h5m, 25s, or 5.5 into seconds as integer."""
         if not time_string:
             return 0
         try:
-            # already in seconds
-            return int(time_string)
+            # handle both "5" and "5.5" correctly as seconds
+            return int(float(time_string))
         except ValueError:
             try:
                 s = dateutil.parser.parse(time_string) - dateutil.parser.parse("0s")
@@ -386,8 +388,9 @@ class DataAcquisition(QWidget):
     def update_status(self):
         """Get information from processes."""
 
-        for i in range(10):
-            self.pipeline.poll()
+        messages_processed = 0
+        while self.pipeline.poll() and messages_processed < 100:
+            messages_processed += 1
 
         now = time.time()
 
@@ -401,7 +404,7 @@ class DataAcquisition(QWidget):
         for t, status_tmp in self.pipeline.reports.items():
             if t not in self.pipeline.tasks_active:
                 continue
-            status = copy.deepcopy(status_tmp)
+            self.status = copy.deepcopy(status_tmp)
             # Check if task is active
             self.last_report_time[t] = now
 
@@ -409,27 +412,27 @@ class DataAcquisition(QWidget):
             row = self.taskid_to_row[t]  # Get row once per task
 
             # Handle 'name' and 'status'
-            name_value = status.pop("name", t)  # t is the task class name
+            name_value = self.status.pop("name", t)  # t is the task class name
             name_item = QTableWidgetItem(str(name_value))
             self.task_table.setItem(row, self.key_to_pos["name"], name_item)
 
             status_item = QTableWidgetItem(
-                self.format_value("status", status.get("status", "n/a"))
+                self.format_value("status", self.status.get("status", "n/a"))
             )
             self.task_table.setItem(row, self.key_to_pos["status"], status_item)
 
             # Set CPU Percent
-            cpu_percent = status.pop("cpu", "n/a")
+            cpu_percent = self.status.pop("cpu", "n/a")
             cpu_item = QTableWidgetItem(self.format_value("cpu percent", cpu_percent))
             self.task_table.setItem(row, self.key_to_pos["cpu percent"], cpu_item)
 
             # Extract and set Memory (Percentage)
-            memory_percent = status.pop("memory", 0)
+            memory_percent = self.status.pop("memory", 0)
             memory_item = QTableWidgetItem(self.format_value("memory", memory_percent))
             self.task_table.setItem(row, self.key_to_pos["memory"], memory_item)
 
             # Set Queue Length
-            queue_length = status.pop("queue", 0)
+            queue_length = self.status.pop("queue", 0)
             queue_item = QTableWidgetItem(
                 self.format_value("queue length", queue_length)
             )
@@ -442,7 +445,7 @@ class DataAcquisition(QWidget):
             self.task_table.setItem(row, self.key_to_pos["activity"], activity_item)
 
             # Other keys for "Extra Info" and skip several keys
-            for key, val in status.items():
+            for key, val in self.status.items():
                 if key in [
                     "status",
                     "ps",
@@ -474,8 +477,6 @@ class DataAcquisition(QWidget):
             if extra_info:
                 self.task_table.setItem(row, self.key_to_pos["Extra Info"], item)
 
-        self.pipeline.reports = {}
-
     def format_value(self, key, value):
         """Format some table values better or replace with emoji.
 
@@ -487,8 +488,11 @@ class DataAcquisition(QWidget):
 
         if key == "memory":
             if isinstance(value, float | int):
-                mb = float(value) / (1024**2)
-                return f"{mb:.1f} MB"
+                for unit in ["B", "kB", "MB", "GB", "TB"]:
+                    if value < 1024.0:
+                        return f"{value:.1f} {unit}"
+                    value /= 1024.0
+                return f"{value:.1f} PB"
 
         if key == "cpu percent":
             if isinstance(value, float | int):
