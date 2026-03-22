@@ -1419,6 +1419,7 @@ class TracesPlotter(QWidget):
                 plot_widget.setTitle(f"{label} - Ch {channel} (Persistence: {displayed}/{total_stored} traces)")
             else:
                 # Normal mode - plot just the latest trace
+                plot_widget.setBackground('w')
                 self._plot_single_trace(channel, plot_widget)
                 plot_widget.setTitle(f"{label} - Ch {channel}")
             
@@ -1558,31 +1559,34 @@ class TracesPlotter(QWidget):
                 elif trace_type == "cfd":
                     # Compute CFD using polarity-corrected trace
                     traces_fpga = convert_trace_to_FPGA(working_trace[np.newaxis, :])
-                    
+
                     fast_result = compute_fast_trigger_validation(
                         traces_fpga,
                         L=self.hardware_params["fast_L"],
                         G=self.hardware_params["fast_G"],
                         threshold=self.hardware_params["fast_threshold"],
                     )
-                    
+
                     if fast_result["validation_passed"] and fast_result["fast_triggers"] is not None:
                         # Use fast trigger as input to CFD
                         fast_trace = fast_result["fast_triggers"][0]
-                        
+
+                        cfd_B = self.hardware_params.get("CFD_B", 5)
+                        cfd_D = self.hardware_params.get("CFD_D", 5)
+                        cfd_w = self.hardware_params.get("CFD_delay", 5)
+
                         # Calculate CFD with hardware parameters
-                        cfd_result, cfdtime, fast_filter, cfd_errors = calculate_CFD(
+                        cfd_result, _, _, _ = calculate_CFD(
                             fast_trace[np.newaxis, :],  # CFD expects 2D array
                             CFD_threshold=self.hardware_params.get("CFD_threshold", 50),
-                            w=self.hardware_params.get("CFD_delay", 5),
+                            w=cfd_w,
+                            B=cfd_B,
+                            D=cfd_D,
                             FF_threshold=self.hardware_params.get("FF_threshold", 100)
                         )
-                        
+
                         if cfd_result is not None and len(cfd_result) > 0:
                             signal = cfd_result[0]  # Extract first trace
-                            # Resize to match original trace length if needed
-                            if len(signal) != target_length:
-                                signal = self._resize_trace_to_match(signal, target_length, "cfd")
                         else:
                             continue  # Skip if CFD computation failed
                     else:
@@ -1721,25 +1725,42 @@ class TracesPlotter(QWidget):
                 # Apply baseline normalization to align all traces to zero baseline
                 signal = self.normalize_trace_to_zero_baseline(signal, trace_type)
                 
-                if trace_type == "fast_trigger":
+                if trace_type in ("fast_trigger", "cfd"):
                     fpga_sampling_period = 10.0  # ns per FPGA cycle
                     raw_sampling_period = 2.0   # ns per raw sample
-                    pretrigger_offset_ns = 200.0  # ns
-                    
-                    # Create time axes for interpolation with offset compensation
-                    fast_time_points = np.arange(len(signal)) * fpga_sampling_period + pretrigger_offset_ns
+
+                    if trace_type == "cfd":
+                        # CFD output starts B+D FPGA samples into the fast trigger
+                        cfd_B = self.hardware_params.get("CFD_B", 5)
+                        cfd_D = self.hardware_params.get("CFD_D", 5)
+                        cfd_start_offset_ns = (cfd_B + cfd_D) * fpga_sampling_period
+                    else:
+                        cfd_start_offset_ns = 0.0
+
+                    # Fast trigger L+G/2 delay maps FPGA sample 0 to this raw time
+                    fast_L = self.hardware_params["fast_L"]
+                    fast_G = self.hardware_params["fast_G"]
+                    fpga_delay_ns = (fast_L + fast_G // 2) * fpga_sampling_period
+
+                    # Build the FPGA time axis for this signal, offset-corrected
+                    signal_time_points = (
+                        np.arange(len(signal)) * fpga_sampling_period
+                        + fpga_delay_ns
+                        + cfd_start_offset_ns
+                    )
+
                     target_time_points = np.arange(target_length) * raw_sampling_period
-                    
-                    # Interpolate fast trigger to match raw trace timing
+
+                    # Interpolate to raw trace timing
                     from scipy import interpolate
                     interp_func = interpolate.interp1d(
-                        fast_time_points, signal, 
+                        signal_time_points, signal,
                         kind='linear', bounds_error=False, fill_value=0
                     )
                     signal = interp_func(target_time_points)
-                    
-                    # Use standard time axis correction
-                    corrected_time_axis = self.apply_time_correction(time_axis, trace_type)
+
+                    # Time axis already aligned, no further correction needed
+                    corrected_time_axis = time_axis
                 else:
                     # Apply offset correction to time axis for other trace types
                     corrected_time_axis = self.apply_time_correction(time_axis, trace_type)
