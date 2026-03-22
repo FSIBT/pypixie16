@@ -160,8 +160,6 @@ class BinaryReplayThread(QThread):
 
 
 class BinaryLoadingThread(QThread):
-    """Separate thread for loading binary files without blocking UI"""
-
     progress = pyqtSignal(str)
     finished = pyqtSignal(list, str)  # events, filename
     failed = pyqtSignal(str)
@@ -338,6 +336,9 @@ class BinaryFileLoader(QWidget):
                 )
                 if reply != QMessageBox.StandardButton.Yes:
                     return
+            
+            # Check for CFD and warn about timestamp accuracy
+            self._check_cfd_warning()
 
             # Start background loading
             self._start_background_loading(filename)
@@ -345,8 +346,30 @@ class BinaryFileLoader(QWidget):
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Cannot access file: {e}")
 
+    def _check_cfd_warning(self):
+        try:
+            # Check if parent scope has CFD settings
+            if hasattr(self.parent, 'traces_plotter'):
+                traces_plotter = self.parent.traces_plotter
+                
+                # Check if CFD trace type is enabled
+                if (hasattr(traces_plotter, 'trace_types') and 
+                    traces_plotter.trace_types.get('cfd', False)):
+                    
+                    QMessageBox.warning(
+                        self,
+                        "CFD Timing Warning",
+                        "CFD (Constant Fraction Discriminator) is currently enabled.\n\n"
+                        "When loading binary files with CFD enabled, timestamps may be "
+                        "inaccurate due to timing differences between the hardware CFD "
+                        "and software simulation.\n\n"
+                        "For accurate timing analysis of recorded data, consider "
+                        "disabling CFD trace display or use live data acquisition instead.",
+                    )
+        except Exception as e:
+            print(f"Warning: Could not check CFD status: {e}")
+
     def _start_background_loading(self, filename):
-        """Start loading in background thread"""
         print(f"Starting background loading: {filename}")
 
         # Update UI to loading state
@@ -363,14 +386,10 @@ class BinaryFileLoader(QWidget):
         self.loading_thread.start()
 
     def _on_loading_progress(self, message):
-        """Handle loading progress"""
         self.loading_label.setText(message)
         self.status_label.setText(message)
 
     def _on_loading_finished(self, events, filename):
-        """Handle successful loading"""
-        print(f"Loading completed: {len(events)} events")
-
         # Store loaded data
         self.events = events
         self.current_file = Path(filename)
@@ -423,7 +442,6 @@ class BinaryFileLoader(QWidget):
         print("Binary file cleared - back to live/dummy mode")
 
     def start_replay(self):
-        """Start replaying binary file (called by scope's Start button)"""
         if not self.is_binary_mode or not self.events:
             return False  # Not in binary mode
 

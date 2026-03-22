@@ -2,7 +2,9 @@ import sys
 import time
 import signal
 import traceback
-
+import gc
+import os
+import psutil
 
 from PyQt6.QtWidgets import (
     QApplication,
@@ -17,6 +19,7 @@ from PyQt6.QtWidgets import (
     QLabel,
     QComboBox,
     QSizePolicy,
+    QDialog,
 )
 from PyQt6.QtGui import QIcon
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal
@@ -138,6 +141,12 @@ class PixieHardwareManager:
     def is_parameter_cached(self, param_name: str, module: int = 0, channel: int = 0) -> bool:
         return self.hw_manager.is_parameter_cached(param_name, module, channel)
 
+    def read_from_dictionary(self, settings_dict: dict) -> bool:
+        return self.hw_manager.read_from_dictionary(settings_dict)
+
+    def load_default_settings(self) -> bool:
+        return self.hw_manager.load_default_settings()
+
     def get_state(self):
         return self.hw_manager.get_state()
 
@@ -153,6 +162,14 @@ class PixieScopeApp(QMainWindow):
 
         self.setup_signal_handlers()
 
+        self.is_remote_desktop = (
+            os.environ.get('NXSESSIONID') is not None or
+            'nomachine' in os.environ.get('NX_CLIENT', '').lower()
+        )
+        
+        if self.is_remote_desktop:
+            print("Remote desktop detected - using performance optimized timers")
+        
         self.dummy_mode = dummy_mode
         self.physical_slot = physical_slot
 
@@ -301,6 +318,8 @@ class PixieScopeApp(QMainWindow):
         self.parameter_controls.apply_all_requested.connect(self.handle_apply_all_parameters)
         self.parameter_controls.status_message.connect(self.update_info_bar)
         self.parameter_controls.read_hw_btn.clicked.connect(self.read_parameters_from_hardware)
+        self.parameter_controls.load_default_btn.clicked.connect(self.load_default_settings)
+        self.parameter_controls.load_dict_btn.clicked.connect(self.load_settings_from_file)
         default_controls_layout.addWidget(self.parameter_controls)
         
         # Data storage manager (not in UI panel)
@@ -428,13 +447,13 @@ class PixieScopeApp(QMainWindow):
                 if not self.default_controls_widget.parent():
                     self.right_layout.addWidget(self.default_controls_widget)
                 self.default_controls_widget.setVisible(True)
-                print("PixieScopeApp: Restored default controls on right panel")
             else:
                 # Hide default controls and show custom widget
                 self.default_controls_widget.setVisible(False)
                 self.right_layout.addWidget(custom_widget)
+                custom_widget.setVisible(True)
                 self.custom_controls_widget = custom_widget
-                print("PixieScopeApp: Swapped to custom controls on right panel")
+                print(f"swap_right_panel_controls: Added custom widget, visible={custom_widget.isVisible()}, parent={custom_widget.parent()}")
             
         except Exception as e:
             print(f"Error swapping right panel controls: {e}")
@@ -519,6 +538,15 @@ class PixieScopeApp(QMainWindow):
             print(error_msg)
 
     def start_acquisition(self):
+        # Prevent race conditions from rapid button clicking
+        if self.is_acquiring:
+            print("Start acquisition called but already acquiring - ignoring")
+            return
+        
+        # Disable both buttons immediately to prevent race conditions
+        self.start_btn.setEnabled(False)
+        self.stop_btn.setEnabled(False)
+        
         try:
             success = False
 
@@ -552,9 +580,17 @@ class PixieScopeApp(QMainWindow):
                 self.stop_btn.setEnabled(True)
                 self.status_label.setText(f"Status: Acquiring ({self.current_mode})")
             else:
+                # Failed to start - reset buttons to start state
+                self.is_acquiring = False
+                self.start_btn.setEnabled(True)
+                self.stop_btn.setEnabled(False)
                 raise RuntimeError("Failed to start acquisition")
 
         except Exception as e:
+            # Always reset button states on error
+            self.is_acquiring = False
+            self.start_btn.setEnabled(True)
+            self.stop_btn.setEnabled(False)
             error_msg = f"Failed to start acquisition: {str(e)}"
             print(error_msg)
             self.info_bar.setText(error_msg)
@@ -569,10 +605,11 @@ class PixieScopeApp(QMainWindow):
             if hasattr(self.spectrum_tab, "start_live_updates"):
                 self.spectrum_tab.start_live_updates()
 
-            # Set up timer to read histogram data every 2 seconds
+            # Set up timer to read histogram data
             self.acquisition_timer = QTimer()
             self.acquisition_timer.timeout.connect(self.read_histogram_data)
-            self.acquisition_timer.start(2000)
+            interval = 5000 if self.is_remote_desktop else 2000
+            self.acquisition_timer.start(interval)
 
             mode_status = "DUMMY MODE - " if self.dummy_mode else ""
             self.info_bar.setText(f"{mode_status}MCA mode: Collecting histograms...")
@@ -605,10 +642,12 @@ class PixieScopeApp(QMainWindow):
                 print("No binary file loaded")
             else:
                 print("Starting FIFO reader for real hardware...")
-                # Set up timer to read FIFO data every 50ms
+                # Set up timer to read FIFO data
                 self.data_timer = QTimer()
                 self.data_timer.timeout.connect(self.read_list_mode_fifo)
-                self.data_timer.start(50)
+                # Use longer interval for remote desktop to reduce network load
+                interval = 200 if self.is_remote_desktop else 50
+                self.data_timer.start(interval)
                 print("✓ FIFO timer started (50ms intervals)")
 
             # Start the data source
@@ -634,6 +673,14 @@ class PixieScopeApp(QMainWindow):
 
     def read_histogram_data(self):
         try:
+            # Periodic garbage collection for memory management
+            if not hasattr(self, '_histogram_gc_counter'):
+                self._histogram_gc_counter = 0
+            self._histogram_gc_counter += 1
+            
+            if self._histogram_gc_counter % 10 == 0:  # Every 10 calls (~20-50 seconds)
+                gc.collect()
+                
             # Read histograms from hardware
             histograms = self.pixie_hw.read_histograms()
 
@@ -670,6 +717,14 @@ class PixieScopeApp(QMainWindow):
             return
 
         try:
+            # Periodic garbage collection for memory management (more frequent in list mode)
+            if not hasattr(self, '_fifo_gc_counter'):
+                self._fifo_gc_counter = 0
+            self._fifo_gc_counter += 1
+            
+            if self._fifo_gc_counter % 20 == 0:  # Every 20 calls (~1-4 seconds)
+                gc.collect()
+                
             # Read data with debugging
             data_list = self.pixie_hw.read_list_mode_data()
 
@@ -680,24 +735,18 @@ class PixieScopeApp(QMainWindow):
             total_words = sum(len(data) for data in data_list)
             self._fifo_debug_counter += total_words
 
-            # Debug output every 5 seconds
-            current_time = time.time()
-            if current_time - self._last_fifo_debug > 5.0:
-                print(
-                    f"FIFO Debug: Read {total_words} words this cycle, {self._fifo_debug_counter} total"
-                )
-                print(f"FIFO Debug: data_list length = {len(data_list)}")
-                for i, data in enumerate(data_list):
-                    print(f"FIFO Debug: Module {i}: {len(data)} words")
-                print(f"FIFO Debug: Hardware state - dummy_mode: {self.pixie_hw.dummy_mode if self.pixie_hw else 'None'}")
-                print(f"FIFO Debug: Acquisition state - is_acquiring: {self.is_acquiring}, live_reader: {self.live_reader is not None}")
-                self._last_fifo_debug = current_time
+            # # Debug output every 5 seconds
+            # current_time = time.time()
+            # if current_time - self._last_fifo_debug > 5.0:
+            #     for i, data in enumerate(data_list):
+            #         print(f"FIFO Debug: Module {i}: {len(data)} words")
+            #     self._last_fifo_debug = current_time
 
             # Feed data to live reader
             for data in data_list:
                 if len(data) > 0:
                     self.live_reader.add_data(data)
-                    print(f"List Mode: Fed {len(data)} words to live reader")
+                    #print(f"List Mode: Fed {len(data)} words to live reader")
 
         except Exception as e:
             print(f"Error reading PIXIE FIFO: {e}")
@@ -707,24 +756,6 @@ class PixieScopeApp(QMainWindow):
         try:
             channel = getattr(event, "channel", 0)
             energy = getattr(event, "energy", 0)
-
-            # if not hasattr(self, "_event_debug_counter"):
-            #     self._event_debug_counter = 0
-
-            # self._event_debug_counter += 1
-            # if self._event_debug_counter % 1000 == 0:
-            #     if (
-            #         hasattr(self, "binary_loader")
-            #         and self.binary_loader.is_using_binary_data()
-            #     ):
-            #         data_source = "BINARY FILE"
-            #     elif self.dummy_mode:
-            #         data_source = "DUMMY DATA"
-            #     else:
-            #         data_source = "REAL HARDWARE"
-            #     print(
-            #         f"List Mode ({data_source}): Processed {self._event_debug_counter} events, latest: Ch{channel} E={energy}"
-            #     )
 
             if channel in self.channel_numbers:
                 # For unified plotter, feed data to both histogram and traces
@@ -752,6 +783,15 @@ class PixieScopeApp(QMainWindow):
     def stop_acquisition(self):
         if self.shutdown_in_progress:
             return
+            
+        # Prevent race conditions from rapid button clicking
+        if not self.is_acquiring:
+            print("Stop acquisition called but not acquiring - ignoring")
+            return
+
+        # Disable both buttons immediately to prevent race conditions
+        self.start_btn.setEnabled(False)
+        self.stop_btn.setEnabled(False)
 
         try:
             print("Stopping acquisition...")
@@ -808,7 +848,7 @@ class PixieScopeApp(QMainWindow):
 
             self.is_acquiring = False
 
-            # Update UI
+            # Update UI - Always set correct final state
             if not self.shutdown_in_progress:
                 try:
                     self.start_btn.setEnabled(True)
@@ -823,6 +863,13 @@ class PixieScopeApp(QMainWindow):
             print("✓ Acquisition stopped successfully")
 
         except Exception as e:
+            # Always reset button states on error
+            if not self.shutdown_in_progress:
+                try:
+                    self.start_btn.setEnabled(True)
+                    self.stop_btn.setEnabled(False)
+                except RuntimeError:
+                    pass
             print(f"Error stopping acquisition: {e}")
 
     def clear_data(self):
@@ -1035,24 +1082,65 @@ class PixieScopeApp(QMainWindow):
             self.update_info_bar(error_msg)
             logger.error(error_msg)
 
+    def load_default_settings(self):
+        try:
+            success = self.pixie_hw.load_default_settings()
+            if success:
+                # Refresh UI with loaded params
+                module = self.parameter_controls.module_spin.value()
+                channel = self.parameter_controls.channel_spin.value()
+                current_params = self.pixie_hw.hw_manager.get_all_parameters(module, channel)
+                if current_params:
+                    self.parameter_controls.set_all_parameters(current_params)
+                self.update_info_bar("Loaded default settings successfully")
+            else:
+                self.update_info_bar("Failed to load default settings")
+        except Exception as e:
+            self.update_info_bar(f"Error loading defaults: {e}")
+            logger.error(f"Error loading default settings: {e}")
+
+    def load_settings_from_file(self):
+        try:
+            from PyQt6.QtWidgets import QFileDialog
+            file_path, _ = QFileDialog.getOpenFileName(
+                self, "Load Settings File", "", "JSON Files (*.json);;All Files (*)"
+            )
+            if not file_path:
+                return
+
+            import json
+            with open(file_path, "r") as f:
+                settings_dict = json.load(f)
+
+            success = self.pixie_hw.read_from_dictionary(settings_dict)
+            if success:
+                module = self.parameter_controls.module_spin.value()
+                channel = self.parameter_controls.channel_spin.value()
+                current_params = self.pixie_hw.hw_manager.get_all_parameters(module, channel)
+                if current_params:
+                    self.parameter_controls.set_all_parameters(current_params)
+                self.update_info_bar(f"Loaded settings from {file_path}")
+            else:
+                self.update_info_bar("Failed to load settings from file")
+        except Exception as e:
+            self.update_info_bar(f"Error loading settings: {e}")
+            logger.error(f"Error loading settings from file: {e}")
+
     def update_info_bar(self, message):
         mode_status = "DUMMY MODE - " if self.dummy_mode else ""
         self.info_bar.setText(f"{mode_status}{message}")
     
     def on_cache_status_changed(self, message):
-        """Handle auto-save service status updates"""
         # Update status bar with cache info
         if hasattr(self, 'info_bar'):
             self.update_info_bar(f"Cache: {message}")
     
     def on_data_auto_saved(self, data_type, count):
-        """Handle auto-save completion notification"""
         logger.info(f"Auto-saved {count} {data_type} items to cache")
         if hasattr(self, 'info_bar'):
             self.update_info_bar(f"Auto-saved {count} {data_type} items")
     
     def register_data_sources(self):
-        """Register data sources with auto-save service"""
         try:
             # Register the currently active spectrum tab
             if hasattr(self, 'spectrum_tab') and self.spectrum_tab:
@@ -1076,6 +1164,7 @@ class PixieScopeApp(QMainWindow):
     
     def clear_all_buffers(self):
         """Clear all data buffers in the application"""
+        import gc
         try:
             if hasattr(self, 'spectrum_tab') and self.spectrum_tab:
                 # Clear TracesPlotter buffers
@@ -1094,6 +1183,13 @@ class PixieScopeApp(QMainWindow):
                         self.spectrum_tab.single_persistence_data[ch].clear()
                     logger.info("Cleared persistence buffers")
                 
+                # Clear persistence histograms (critical for memory)
+                if hasattr(self.spectrum_tab, 'persistence_histogram'):
+                    for ch in self.spectrum_tab.persistence_histogram:
+                        if hasattr(self.spectrum_tab.persistence_histogram[ch], 'reset'):
+                            self.spectrum_tab.persistence_histogram[ch].reset()
+                    logger.info("Cleared persistence histograms")
+                
                 # Clear MCA buffers
                 if hasattr(self.spectrum_tab, 'mca_data'):
                     for ch in self.spectrum_tab.mca_data:
@@ -1105,6 +1201,14 @@ class PixieScopeApp(QMainWindow):
                     self.spectrum_tab.histogram_tab.energy_data.clear()
                     logger.info("Cleared histogram energy buffers")
                 
+                # Clear coincidence tab data
+                if hasattr(self.spectrum_tab, 'coincidence_tab'):
+                    if hasattr(self.spectrum_tab.coincidence_tab, 'event_buffer'):
+                        self.spectrum_tab.coincidence_tab.event_buffer.clear()
+                    if hasattr(self.spectrum_tab.coincidence_tab, 'binary_data'):
+                        self.spectrum_tab.coincidence_tab.binary_data.clear()
+                    logger.info("Cleared coincidence data")
+                
                 # Reset overflow counters
                 if hasattr(self.spectrum_tab, 'trace_overflow_count'):
                     self.spectrum_tab.trace_overflow_count = {ch: 0 for ch in self.spectrum_tab.channels}
@@ -1115,15 +1219,22 @@ class PixieScopeApp(QMainWindow):
                     
                 logger.info("Reset overflow counters")
             
-            logger.info("All buffers cleared successfully")
+            # Clear main app MCA data
+            if hasattr(self, 'mca_data'):
+                for ch in self.mca_data:
+                    self.mca_data[ch].fill(0)
+            if hasattr(self, 'cumulative_mca_data'):
+                for ch in self.cumulative_mca_data:
+                    self.cumulative_mca_data[ch].fill(0)
+            
+            # Force garbage collection after clearing buffers
+            gc.collect()
+            logger.info("All buffers cleared and garbage collected successfully")
             
         except Exception as e:
             logger.warning(f"Error clearing buffers: {e}")
 
-    def open_save_settings_dialog(self):
-        """Open data storage settings dialog"""
-        from PyQt6.QtWidgets import QDialog, QVBoxLayout
-        
+    def open_save_settings_dialog(self):        
         dialog = QDialog(self)
         dialog.setWindowTitle("Save Settings")
         dialog.setModal(True)
@@ -1176,7 +1287,6 @@ class PixieScopeApp(QMainWindow):
         dialog.exec()
 
     def save_current_data(self):
-        """Save current data based on active mode"""
         try:
             if self.current_mode == "mca_mode":
                 self.save_mca_data()
@@ -1189,7 +1299,6 @@ class PixieScopeApp(QMainWindow):
             QMessageBox.critical(self, "Save Error", f"Error saving data: {str(e)}")
 
     def save_mca_data(self):
-        """Save MCA histogram data"""
         if not hasattr(self, 'spectrum_tab') or not self.spectrum_tab:
             QMessageBox.warning(self, "No Data", "No MCA data to save")
             return
@@ -1222,7 +1331,6 @@ class PixieScopeApp(QMainWindow):
             print(f"MCA data saved successfully")
 
     def save_list_mode_data(self):
-        """Save List Mode data (traces, histogram, etc.)"""
         if not hasattr(self, 'spectrum_tab') or not self.spectrum_tab:
             QMessageBox.warning(self, "No Data", "No List Mode data to save")
             return
@@ -1244,7 +1352,6 @@ class PixieScopeApp(QMainWindow):
             QMessageBox.warning(self, "Save Error", "Cannot determine List Mode tab")
 
     def save_histogram_data(self):
-        """Save histogram data from List Mode"""
         histogram_tab = getattr(self.spectrum_tab, 'histogram_tab', None)
         if not histogram_tab:
             QMessageBox.warning(self, "No Data", "No histogram data available")
@@ -1278,7 +1385,6 @@ class PixieScopeApp(QMainWindow):
                 print("List Mode histogram data saved successfully")
 
     def save_traces_data(self):
-        """Save raw traces data"""
         if hasattr(self.spectrum_tab, 'trace_data'):
             trace_data = self.spectrum_tab.trace_data
             
@@ -1300,18 +1406,14 @@ class PixieScopeApp(QMainWindow):
             QMessageBox.warning(self, "No Data", "No trace data available")
 
     def save_analysis_data(self):
-        """Save single channel analysis / energy spectrum data"""
         # Check if we're in list mode with TracesPlotter
         if hasattr(self.spectrum_tab, 'tab_widget'):
             # Get current tab info
             current_index = self.spectrum_tab.tab_widget.currentIndex()
             tab_name = self.spectrum_tab.tab_widget.tabText(current_index)
             
-            if tab_name == "Single Channel Analysis":
-                # We're on the correct tab, but the single channel analysis data might be
-                # in the TracesPlotter itself (persistence data) or in the histogram tab
-                
-                # Option 1: Try to get data from histogram tab (energy spectrum)
+            if tab_name == "Single Channel Analysis":              
+                # get data from histogram tab (energy spectrum)
                 if hasattr(self.spectrum_tab, 'histogram_tab') and hasattr(self.spectrum_tab.histogram_tab, 'energy_data'):
                     energy_data = self.spectrum_tab.histogram_tab.get_spectrum_data()
                     
@@ -1333,7 +1435,7 @@ class PixieScopeApp(QMainWindow):
                             print(f"Single channel analysis (energy spectrum) data saved successfully")
                         return
                         
-                # Option 2: Try to get persistence data from single channel analysis
+                # get persistence data from single channel analysis
                 if hasattr(self.spectrum_tab, 'single_persistence_data'):
                     persistence_data = {}
                     for channel, traces in self.spectrum_tab.single_persistence_data.items():
@@ -1466,6 +1568,21 @@ class PixieScopeApp(QMainWindow):
 
     def update_status(self):
         try:
+            # Get current memory usage using psutil
+            process = psutil.Process()
+            memory_mb = process.memory_info().rss / (1024 * 1024)  # Convert to MB
+            
+            memory_threshold = 800 if self.is_remote_desktop else 1500
+            warning_threshold = 600 if self.is_remote_desktop else 1200
+            
+            # Only warn occasionally to avoid spam
+            if memory_mb > warning_threshold and int(memory_mb) % 50 == 0:  # Every 50MB increment
+                print(f"NOTICE: Memory usage {memory_mb:.1f}MB (warning: {warning_threshold}MB, cleanup: {memory_threshold}MB)")
+                
+            if memory_mb > memory_threshold:
+                self.clear_all_buffers()
+                gc.collect()
+                
             # Update live reader statistics
             if self.live_reader:
                 try:
@@ -1482,6 +1599,15 @@ class PixieScopeApp(QMainWindow):
                 self.update_mca_channel_stats()
             elif self.current_mode == "list_mode":
                 self.update_list_mode_channel_stats()
+
+            if hasattr(self, '_memory_counter'):
+                self._memory_counter += 1
+            else:
+                self._memory_counter = 0
+                
+            if self._memory_counter % 10 == 0:  # Every 10 seconds
+                mode_status = "DUMMY MODE - " if self.dummy_mode else ""
+                self.info_bar.setText(f"{mode_status}Memory: {memory_mb:.0f}MB - {self.status_label.text()}")
 
         except Exception as e:
             print(f"Error in update_status: {e}")
@@ -1571,6 +1697,38 @@ class PixieScopeApp(QMainWindow):
                 ):
                     self.spectrum_tab.update_timer.stop()
                     self.spectrum_tab.update_timer.deleteLater()
+
+                # Clear plot widgets explicitly to prevent memory leaks
+                if hasattr(self.spectrum_tab, "plot_widget"):
+                    self.spectrum_tab.plot_widget.clear()
+                    self.spectrum_tab.plot_widget.getPlotItem().clear()
+                    if hasattr(self.spectrum_tab, "curves"):
+                        for curve in self.spectrum_tab.curves.values():
+                            if curve is not None:
+                                curve.setData([], [])
+                        self.spectrum_tab.curves.clear()
+                
+                # Clear MCA data to free memory
+                if hasattr(self.spectrum_tab, "mca_data"):
+                    self.spectrum_tab.mca_data.clear()
+
+                # Clear TracesPlotter widgets if it's a TracesPlotter
+                if hasattr(self.spectrum_tab, "raw_plot_widget"):
+                    self.spectrum_tab.raw_plot_widget.clear()
+                    self.spectrum_tab.raw_plot_widget.getPlotItem().clear()
+                    if hasattr(self.spectrum_tab, "raw_curves"):
+                        for curve in self.spectrum_tab.raw_curves.values():
+                            if curve is not None:
+                                curve.setData([], [])
+                        self.spectrum_tab.raw_curves.clear()
+
+                # Clear histogram tab if it exists
+                if hasattr(self.spectrum_tab, "histogram_tab") and self.spectrum_tab.histogram_tab:
+                    if hasattr(self.spectrum_tab.histogram_tab, "plot_widget"):
+                        self.spectrum_tab.histogram_tab.plot_widget.clear()
+                        self.spectrum_tab.histogram_tab.plot_widget.getPlotItem().clear()
+                    if hasattr(self.spectrum_tab.histogram_tab, "energy_data"):
+                        self.spectrum_tab.histogram_tab.energy_data.clear()
 
                 if hasattr(self, "left_layout"):
                     self.left_layout.removeWidget(self.spectrum_tab)
