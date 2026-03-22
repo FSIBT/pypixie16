@@ -253,10 +253,10 @@ class TracesPlotter(QWidget):
         self.single_persistence_overflow_count = {ch: 0 for ch in self.channels}
         
         # Persistence histogram
-        self.persistence_histogram = {ch: PersistenceHistogram() for ch in self.channels}
-        self.persistence_image_item = None 
+        self.persistence_histogram = {ch: PersistenceHistogram(x_bins=300, y_bins=150) for ch in self.channels}
+        self.persistence_image_item = None
         self.persistence_update_counter = {ch: 0 for ch in self.channels}  # Track traces since last update
-        self.persistence_update_interval = 10  # Update image every N traces
+        self.persistence_update_interval = 25  # Update image every N traces
 
         self.single_channel_controls_widget = None
 
@@ -1450,16 +1450,17 @@ class TracesPlotter(QWidget):
         # Create or reuse the image item
         if self.persistence_image_item is None:
             self.persistence_image_item = pg.ImageItem()
-            # Transparent-to-hot colormap: empty bins = transparent, traces = blue→red
+            # Opaque colormap: white = no traces, colored = traces (no alpha = less GPU load)
             colors = [
-                (255, 255, 255, 0),    # transparent (no traces)
-                (0, 100, 255, 120),    # light blue
-                (0, 200, 0, 180),      # green
-                (255, 200, 0, 220),    # yellow
-                (255, 0, 0, 255),      # red (most traces)
+                (255, 255, 255),  # white (no traces)
+                (200, 220, 255),  # very light blue
+                (0, 100, 255),    # blue
+                (0, 200, 0),      # green
+                (255, 200, 0),    # yellow
+                (255, 0, 0),      # red (most traces)
             ]
             cmap = pg.ColorMap(pos=np.linspace(0.0, 1.0, len(colors)), color=colors)
-            self.persistence_image_item.setLookupTable(cmap.getLookupTable(nPts=256, alpha=True))
+            self.persistence_image_item.setLookupTable(cmap.getLookupTable(nPts=256))
             plot_widget.addItem(self.persistence_image_item)
 
         # pyqtgraph ImageItem: columns=X, rows=Y, so transpose the histogram
