@@ -29,6 +29,7 @@ and binary data.
    getting_started
    pixie16
    pixie16_package
+   pixie16-scope-user-guide
    pixie16-scope-dev
    pixie16-scope-architecture
    contributing
