@@ -163,9 +163,7 @@ class PixieScopeApp(QMainWindow):
         self.setup_signal_handlers()
 
         self.is_remote_desktop = (
-            os.environ.get('SSH_CLIENT') is not None or
-            os.environ.get('SSH_TTY') is not None or
-            os.environ.get('SESSIONNAME', '').lower() in ['rdp-tcp', 'console'] or
+            os.environ.get('NXSESSIONID') is not None or
             'nomachine' in os.environ.get('NX_CLIENT', '').lower()
         )
         

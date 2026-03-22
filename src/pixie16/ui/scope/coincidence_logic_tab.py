@@ -252,10 +252,7 @@ class CoincidenceLogicTab(QWidget):
         
         # Use remote desktop detection for timer interval
         is_remote_desktop = (
-            os.environ.get('SSH_CLIENT') is not None or
-            os.environ.get('SSH_TTY') is not None or
             os.environ.get('NXSESSIONID') is not None or
-            os.environ.get('SESSIONNAME', '').lower() in ['rdp-tcp', 'console'] or
             'nomachine' in os.environ.get('NX_CLIENT', '').lower()
         )
         interval = 500 if is_remote_desktop else 100
@@ -410,9 +407,7 @@ class CoincidenceLogicTab(QWidget):
             if not self.update_timer.isActive():
                 # Use remote desktop detection for timer interval
                 is_remote_desktop = (
-                    os.environ.get('SSH_CLIENT') is not None or
-                    os.environ.get('SSH_TTY') is not None or
-                    os.environ.get('SESSIONNAME', '').lower() in ['rdp-tcp', 'console'] or
+                    os.environ.get('NXSESSIONID') is not None or
                     'nomachine' in os.environ.get('NX_CLIENT', '').lower()
                 )
                 interval = 200 if is_remote_desktop else 100
