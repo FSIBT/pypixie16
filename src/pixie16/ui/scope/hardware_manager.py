@@ -263,11 +263,23 @@ class DynamicPixieHardwareManager:
             )
             return True
 
+    # Parameters that must be set at module level, not channel level
+    MODULE_PARAMETERS = {
+        "MODULE_CSRA", "MODULE_CSRB", "MODULE_FORMAT", "MAX_EVENTS",
+        "SYNCH_WAIT", "IN_SYNCH", "SLOW_FILTER_RANGE", "FAST_FILTER_RANGE",
+        "FastTrigBackplaneEna", "CrateID", "SlotID", "ModID",
+        "TrigConfig0", "TrigConfig1", "TrigConfig2", "TrigConfig3",
+        "HOST_RT_PRESET",
+    }
+
     def _apply_parameter_to_hardware(
         self, param_name: str, value: any, module: int, channel: int
     ) -> bool:
         try:
-            px.control.set_channel_parameter(param_name, value, module, channel)
+            if param_name in self.MODULE_PARAMETERS:
+                px.control.set_module_parameter(param_name, value, module)
+            else:
+                px.control.set_channel_parameter(param_name, value, module, channel)
             return True
         except Exception as e:
             logger.error(f"Hardware update failed for {param_name}: {e}")

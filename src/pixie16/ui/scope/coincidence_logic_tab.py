@@ -169,6 +169,8 @@ class CoincidenceLogicTab(QWidget):
         # Channel A timing reference for alignment
         self.reference_timestamp = None
         self.reference_time_axis_offset = 200.0  # Default offset
+        # Track recent Channel A timestamps for reference channel mode
+        self.ch_a_timestamps = deque(maxlen=500)
         
         if len(self.channels) < 2:
             self.channels = list(range(2))
@@ -594,7 +596,7 @@ class CoincidenceLogicTab(QWidget):
         self.channel_a = self.channels[self.ch_a_combo.currentIndex()]
         self.binary_data.clear()
         self.ch_a_event_count = 0
-        # Reset time reference when Channel A changes
+        self.ch_a_timestamps.clear()
         self.reference_timestamp = None
         self.reference_time_axis_offset = 200.0
         # Clear the plot immediately so stale data from previous channel doesn't linger
@@ -623,9 +625,9 @@ class CoincidenceLogicTab(QWidget):
         elif "Coincidence-Centered" in mode_text:
             self.display_mode = "coincidence_centered"
         
-        # Reset time reference when mode changes
+        # Reset time reference when mode changes, but keep accumulated histogram data
         self.reference_timestamp = None
-        self.binary_data.clear()
+        self.ch_a_timestamps.clear()
         print(f"Display mode changed to: {self.display_mode}")
     
     def update_timing_params(self):
@@ -673,11 +675,14 @@ class CoincidenceLogicTab(QWidget):
                 self.parameter_changed.emit("ChanTrigStretch", chan_stretch_us, 0, channel)
                 self.parameter_changed.emit("ExternDelayLen", ext_delay_us, 0, channel)
             
+            # Refresh the display to show updated hardware values
+            self.update_params_display()
+
             QMessageBox.information(
                 self, "Parameters Applied",
                 f"Timing parameters applied to {message_channels}"
             )
-            
+
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to apply parameters: {e}")
     
@@ -733,6 +738,7 @@ class CoincidenceLogicTab(QWidget):
             self.event_buffer.append((event, trace_data))
 
             if event.channel == self.channel_a:
+                self.ch_a_timestamps.append(event.timestamp)
                 binary_results = self.compute_binary_logic(
                     trace_data, event.channel, event.timestamp, 'A'
                 )
@@ -774,29 +780,22 @@ class CoincidenceLogicTab(QWidget):
                 time_axis = np.arange(trace_length) * self.sampling_period_ns - trigger_time_ns
                 
             elif self.display_mode == "reference_channel":
-                # MODE 2: Reference Channel (Ch A Fixed)
+                # MODE 2: Reference Channel (Ch A = t=0, others show signed ns offset)
                 if channel_id == 'A':
-                    # Channel A: Always at fixed position (t=0 reference) - NO DRIFT
-                    # Set reference timestamp once and pin Channel A time axis to fixed position
-                    if self.reference_timestamp is None:
-                        self.reference_timestamp = event_timestamp
-                        print(f"Ch{self.channel_a} set as reference at timestamp {self.reference_timestamp}")
-                    
-                    # Channel A always uses the same fixed time axis (pinned to T=0)
+                    # Channel A always plots at t=0
                     time_axis = np.arange(trace_length) * self.sampling_period_ns - trigger_time_ns
-                        
+
                 elif channel_id == 'B':
-                    # Channel B: Show timing offset relative to Channel A reference
-                    if self.reference_timestamp is not None:
-                        # Calculate offset from Channel A reference timestamp
-                        timestamp_diff_ticks = event_timestamp - self.reference_timestamp
-                        timestamp_diff_ns = timestamp_diff_ticks * 10.0
-                        # Keep differences within ±2µs for better visualization
-                        timestamp_diff_ns = np.clip(timestamp_diff_ns, -2000, 2000)
-                        # Apply the timing offset to show relative timing
+                    # Find the nearest Channel A timestamp to this event
+                    if len(self.ch_a_timestamps) > 0:
+                        ch_a_ts = np.array(self.ch_a_timestamps)
+                        nearest_idx = np.argmin(np.abs(ch_a_ts - event_timestamp))
+                        nearest_ch_a_ts = ch_a_ts[nearest_idx]
+                        # Signed offset: positive = B is later, negative = B is earlier
+                        timestamp_diff_ns = event_timestamp - nearest_ch_a_ts
                         time_axis = np.arange(trace_length) * self.sampling_period_ns - trigger_time_ns + timestamp_diff_ns
                     else:
-                        # No reference yet, use default alignment until Channel A sets reference
+                        # No Channel A data yet
                         time_axis = np.arange(trace_length) * self.sampling_period_ns - trigger_time_ns
                         
             elif self.display_mode == "coincidence_centered":
@@ -1317,6 +1316,7 @@ class CoincidenceLogicTab(QWidget):
             self.ch_b_event_count = 0
             self.coincidence_count = 0
             self.triggered_timestamps.clear()
+            self.ch_a_timestamps.clear()
 
             self.clear_plot_safely()
             self.setup_plot()
