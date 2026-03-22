@@ -817,11 +817,6 @@ class TracesPlotter(QWidget):
         except Exception as e:
             QMessageBox.critical(self, "Save Error", f"Failed to save traces: {e}")
 
-    def update_single_persistence_count(self):
-        new_count = self.single_persistence_count_spin.value()
-        self.single_persistence_count = new_count
-        print(f"Updated persistence display count to {new_count} traces")
-        
     def update_parameter_info_display(self):
         if self.parameter_info_label:
             params_text = (
@@ -872,14 +867,6 @@ class TracesPlotter(QWidget):
             self.persistence_histogram[selected_channel].reset()
             print(f"Persistence histogram mode enabled for channel {selected_channel}")
 
-    def update_single_persistence_count(self):
-        self.single_persistence_count = self.single_persistence_count_spin.value()
-
-    def toggle_single_normalize(self, enabled):
-        self.single_persistence_normalize = enabled
-
-    def toggle_single_alpha_fade(self, enabled):
-        self.single_persistence_alpha_fade = enabled
         
     def calculate_trace_baseline(self, trace):
         if len(trace) < 20:
@@ -1419,7 +1406,6 @@ class TracesPlotter(QWidget):
                 plot_widget.setTitle(f"{label} - Ch {channel} (Persistence: {displayed}/{total_stored} traces)")
             else:
                 # Normal mode - plot just the latest trace
-                plot_widget.setBackground('w')
                 self._plot_single_trace(channel, plot_widget)
                 plot_widget.setTitle(f"{label} - Ch {channel}")
             
@@ -1464,21 +1450,17 @@ class TracesPlotter(QWidget):
         # Create or reuse the image item
         if self.persistence_image_item is None:
             self.persistence_image_item = pg.ImageItem()
-            # Black-background colormap: empty bins = black, traces = green/yellow/white
+            # Transparent-to-hot colormap: empty bins = transparent, traces = blue→red
             colors = [
-                (0, 0, 0),        # 0 = black (no traces)
-                (0, 40, 0),       # dim green
-                (0, 150, 0),      # green
-                (0, 255, 100),    # bright green
-                (255, 255, 0),    # yellow
-                (255, 255, 255),  # white (most traces)
+                (255, 255, 255, 0),    # transparent (no traces)
+                (0, 100, 255, 120),    # light blue
+                (0, 200, 0, 180),      # green
+                (255, 200, 0, 220),    # yellow
+                (255, 0, 0, 255),      # red (most traces)
             ]
             cmap = pg.ColorMap(pos=np.linspace(0.0, 1.0, len(colors)), color=colors)
-            self.persistence_image_item.setLookupTable(cmap.getLookupTable(nPts=256))
+            self.persistence_image_item.setLookupTable(cmap.getLookupTable(nPts=256, alpha=True))
             plot_widget.addItem(self.persistence_image_item)
-
-        # Set dark background for the plot to match
-        plot_widget.setBackground('k')
 
         # pyqtgraph ImageItem: columns=X, rows=Y, so transpose the histogram
         # img_data from PersistenceHistogram is (y_bins, x_bins) — need (x_bins, y_bins)
@@ -1496,12 +1478,12 @@ class TracesPlotter(QWidget):
         self.persistence_image_item.setPos(x_range[0], y_range[0])
         self.persistence_image_item.setTransform(pg.QtGui.QTransform().scale(x_scale, y_scale))
 
-        # Overlay the latest trace in white so the current signal is visible
+        # Overlay the latest trace so the current signal is visible
         latest_traces = list(self.trace_data[channel])
         if latest_traces:
             latest = latest_traces[-1]
             time_axis = self.calculate_real_time_axis(len(latest), channel)
-            plot_widget.plot(time_axis, latest, pen=pg.mkPen(color=(255, 255, 255, 200), width=1.5))
+            plot_widget.plot(time_axis, latest, pen=pg.mkPen(color='#1f77b4', width=1.5))
 
     def _plot_single_trace(self, channel, plot_widget):
         traces_list = list(self.trace_data[channel])
@@ -2615,32 +2597,13 @@ class TracesPlotter(QWidget):
         persistence_layout.addWidget(single_persistence_cb, 0, 0)
         self.single_persistence_cb = single_persistence_cb
         
-        persistence_layout.addWidget(QLabel("Count:"), 0, 1)
-        single_persistence_count_spin = QSpinBox()
-        single_persistence_count_spin.setRange(2, 10000)
-        single_persistence_count_spin.setValue(1000)
-        single_persistence_count_spin.valueChanged.connect(self.update_single_persistence_count)
-        persistence_layout.addWidget(single_persistence_count_spin, 0, 2)
-        self.single_persistence_count_spin = single_persistence_count_spin
-        
-        single_normalize_cb = QCheckBox("Normalize")
-        single_normalize_cb.toggled.connect(self.toggle_single_normalize)
-        persistence_layout.addWidget(single_normalize_cb, 1, 0)
-        self.single_normalize_cb = single_normalize_cb
-        
-        single_alpha_fade_cb = QCheckBox("Alpha Fade")
-        single_alpha_fade_cb.toggled.connect(self.toggle_single_alpha_fade)
-        persistence_layout.addWidget(single_alpha_fade_cb, 1, 1)
-        self.single_alpha_fade_cb = single_alpha_fade_cb
-        
-        
         save_btn = QPushButton("Save Buffer")
         save_btn.clicked.connect(self.save_traces_buffer)
-        persistence_layout.addWidget(save_btn, 2, 0, 1, 2)
-        
+        persistence_layout.addWidget(save_btn, 0, 1)
+
         clear_btn = QPushButton("Clear")
         clear_btn.clicked.connect(self.clear_persistence_only)
-        persistence_layout.addWidget(clear_btn, 2, 2)
+        persistence_layout.addWidget(clear_btn, 0, 2)
         
         persistence_group.setLayout(persistence_layout)
         persistence_group.setMaximumHeight(120)
