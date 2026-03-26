@@ -196,6 +196,7 @@ class ContinuousSpectrumPlotter(QWidget):
         
         # Set window size and position
         self.fwhm_window.resize(600, 800)
+        self.fwhm_window.setMinimumSize(300, 400)
         
         # Position window to the right of main window if possible
         if self.parent():
@@ -656,18 +657,18 @@ class ContinuousSpectrumPlotter(QWidget):
 
     def _update_legend(self):
         try:
-            # Remove existing legend
-            if self.display.plotItem.legend is not None:
-                self.display.plotItem.legend.scene().removeItem(self.display.plotItem.legend)
-                self.display.plotItem.legend = None
-            
-            # Create new legend and add only displayed channels
-            self.display.addLegend()
+            legend = self.display.plotItem.legend
+            if legend is None:
+                self.display.addLegend()
+                legend = self.display.plotItem.legend
+
+            # Clear legend entries without destroying the legend widget
+            legend.clear()
+
+            # Re-add only currently displayed channels
             for channel in self.display_channels:
                 if channel in self.plot_items:
-                    curve = self.plot_items[channel]
-                    # Add to legend manually
-                    self.display.plotItem.legend.addItem(curve, f"Ch {channel}")
+                    legend.addItem(self.plot_items[channel], f"Ch {channel}")
         except Exception as e:
             print(f"Error updating spectrum legend: {e}")
 
