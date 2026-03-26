@@ -135,16 +135,16 @@ class TraceReplayWidget(QWidget):
         self.buffer_size_spin = QSpinBox()
         self.buffer_size_spin.setRange(10, 5000)
         self.buffer_size_spin.setValue(self.buffer.max_size)
-        self.buffer_size_spin.setSuffix(" traces")
         self.buffer_size_spin.valueChanged.connect(self.on_buffer_size_changed)
         top_layout.addWidget(self.buffer_size_spin)
 
-        self.record_cb = QCheckBox("Record")
+        self.record_cb = QCheckBox("Rec")
         self.record_cb.setChecked(True)
+        self.record_cb.setToolTip("Record traces to buffer")
         self.record_cb.toggled.connect(self.on_recording_changed)
         top_layout.addWidget(self.record_cb)
 
-        self.replay_mode_cb = QCheckBox("Replay Mode")
+        self.replay_mode_cb = QCheckBox("Replay")
         self.replay_mode_cb.toggled.connect(self.on_replay_mode_changed)
         top_layout.addWidget(self.replay_mode_cb)
 

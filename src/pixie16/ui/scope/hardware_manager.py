@@ -272,12 +272,30 @@ class DynamicPixieHardwareManager:
         "HOST_RT_PRESET",
     }
 
+    # Bit parameters that require change_setting_from_dict instead of direct set
+    BIT_PARAMETERS = {"Gain", "GoodChannel", "CaptureTrace"}
+
     def _apply_parameter_to_hardware(
         self, param_name: str, value: any, module: int, channel: int
     ) -> bool:
         try:
             if param_name in self.MODULE_PARAMETERS:
                 px.control.set_module_parameter(param_name, value, module)
+            elif param_name == "Polarity":
+                raw_csra = px.SDK.read_single_channel_parameter(
+                    "CHANNEL_CSRA", module, channel, convert_bit_pattern=False
+                )
+                current_csra = int(raw_csra)
+                if value == "negative":
+                    new_csra = current_csra | 1
+                else:
+                    new_csra = current_csra & ~1
+                px.control.set_channel_parameter(
+                    "CHANNEL_CSRA", new_csra, module, channel
+                )
+            elif param_name in self.BIT_PARAMETERS:
+                settings = {"channels": [(module, channel)], param_name: value}
+                px.control.change_setting_from_dict(settings, call_pixie=True)
             else:
                 px.control.set_channel_parameter(param_name, value, module, channel)
             return True

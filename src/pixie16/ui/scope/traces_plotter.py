@@ -980,7 +980,8 @@ class TracesPlotter(QWidget):
         
         dialog = QDialog(self)
         dialog.setWindowTitle("Channel Polarity Settings")
-        dialog.setFixedSize(300, 400)
+        dialog.resize(300, 400)
+        dialog.setMinimumSize(250, 200)
         
         layout = QVBoxLayout()
         layout.addWidget(QLabel("Select channels to invert:"))
@@ -2516,20 +2517,19 @@ class TracesPlotter(QWidget):
         layout.setSpacing(5)
         
         # ===== Channel Selection =====
-        selector_group = QGroupBox("Channel Selection")
+        selector_group = QGroupBox("Channel")
         selector_layout = QHBoxLayout()
-        selector_layout.addWidget(QLabel("Channel:"))
-        
+        selector_layout.setSpacing(4)
+
         channel_combo = QComboBox()
         for ch in self.channels:
-            channel_combo.addItem(f"Ch {ch}")
+            channel_combo.addItem(str(ch))
         channel_combo.setCurrentIndex(0)
         channel_combo.currentIndexChanged.connect(self.update_selected_channel)
         selector_layout.addWidget(channel_combo)
         self.channel_combo = channel_combo
-        
-        # Add polarity control for selected channel
-        selector_layout.addWidget(QLabel("Polarity:"))
+
+        selector_layout.addWidget(QLabel("Pol:"))
         polarity_combo = QComboBox()
         polarity_combo.addItem("Normal")
         polarity_combo.addItem("Inverted")
@@ -2537,10 +2537,10 @@ class TracesPlotter(QWidget):
         polarity_combo.currentIndexChanged.connect(self.update_channel_polarity)
         selector_layout.addWidget(polarity_combo)
         self.polarity_combo = polarity_combo
-        
+
         selector_layout.addStretch()
         selector_group.setLayout(selector_layout)
-        selector_group.setMaximumHeight(80)
+        selector_group.setMaximumHeight(70)
         layout.addWidget(selector_group)
         
         # ===== Trace Replay =====
@@ -2561,7 +2561,7 @@ class TracesPlotter(QWidget):
         trace_types_layout.addWidget(raw_traces_cb, 0, 0)
         self.raw_traces_cb = raw_traces_cb
         
-        fast_trigger_cb = QCheckBox("Fast Trigger")
+        fast_trigger_cb = QCheckBox("FastTrig")
         fast_trigger_cb.toggled.connect(lambda: self.toggle_trace_type("fast_trigger"))
         trace_types_layout.addWidget(fast_trigger_cb, 0, 1)
         self.fast_trigger_cb = fast_trigger_cb
@@ -2576,7 +2576,7 @@ class TracesPlotter(QWidget):
         trace_types_layout.addWidget(cfd_cb, 1, 1)
         self.cfd_cb = cfd_cb
 
-        lgl_cb = QCheckBox("LGL Regions")
+        lgl_cb = QCheckBox("LGL")
         lgl_cb.setToolTip("Show L-G-L trapezoidal filter integration regions on trace")
         lgl_cb.toggled.connect(self.toggle_lgl_regions)
         trace_types_layout.addWidget(lgl_cb, 2, 0)
@@ -2605,14 +2605,12 @@ class TracesPlotter(QWidget):
         trace_types_layout.addLayout(lg_layout, 2, 1)
 
         trace_types_group.setLayout(trace_types_layout)
-        
-        # Wrap trace types in scroll area for better visibility  
+
         scroll_area = QScrollArea()
         scroll_area.setWidget(trace_types_group)
         scroll_area.setWidgetResizable(True)
-        scroll_area.setMaximumHeight(200)
-        scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
-        scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         layout.addWidget(scroll_area)
         
         # ===== Persistence Controls =====
@@ -2624,7 +2622,8 @@ class TracesPlotter(QWidget):
         persistence_layout.addWidget(single_persistence_cb, 0, 0)
         self.single_persistence_cb = single_persistence_cb
         
-        save_btn = QPushButton("Save Buffer")
+        save_btn = QPushButton("Save")
+        save_btn.setToolTip("Save trace buffer")
         save_btn.clicked.connect(self.save_traces_buffer)
         persistence_layout.addWidget(save_btn, 0, 1)
 
@@ -2633,7 +2632,7 @@ class TracesPlotter(QWidget):
         persistence_layout.addWidget(clear_btn, 0, 2)
         
         persistence_group.setLayout(persistence_layout)
-        persistence_group.setMaximumHeight(120)
+        persistence_group.setMaximumHeight(80)
         layout.addWidget(persistence_group)
         
         # ===== Current Parameters =====

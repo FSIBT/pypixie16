@@ -12,6 +12,7 @@ from PyQt6.QtWidgets import (
     QVBoxLayout,
     QHBoxLayout,
     QGridLayout,
+    QFormLayout,
     QGroupBox,
     QCheckBox,
     QPushButton,
@@ -283,199 +284,148 @@ class ParameterControls(QGroupBox):
 
     def create_trigger_tab(self):
         tab = QWidget()
-        layout = QGridLayout()
-        layout.setVerticalSpacing(10)
-        layout.setHorizontalSpacing(20)
+        layout = QFormLayout()
+        layout.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.FieldsStayAtSizeHint)
+        layout.setVerticalSpacing(6)
+        layout.setHorizontalSpacing(8)
 
-        row = 0
-
-        # Trigger Threshold
-        layout.addWidget(QLabel("Threshold:"), row, 0)
         self.threshold_spin = ValidatedSpinBox("TRIGGER_THRESHOLD", self.validator)
         self.threshold_spin.setValue(1000)
         self.parameter_widgets["TRIGGER_THRESHOLD"] = self.threshold_spin
-        layout.addWidget(self.threshold_spin, row, 1)
-        row += 1
+        layout.addRow("Threshold:", self.threshold_spin)
 
-        # Trigger Rise Time
-        layout.addWidget(QLabel("Rise Time:"), row, 0)
         self.trigger_rise_spin = ValidatedDoubleSpinBox(
             "TRIGGER_RISETIME", self.validator
         )
         self.trigger_rise_spin.setValue(0.1)
         self.parameter_widgets["TRIGGER_RISETIME"] = self.trigger_rise_spin
-        layout.addWidget(self.trigger_rise_spin, row, 1)
-        row += 1
+        layout.addRow("Rise Time:", self.trigger_rise_spin)
 
-        # Trigger Flat Top
-        layout.addWidget(QLabel("Flat Top:"), row, 0)
         self.trigger_flat_spin = ValidatedDoubleSpinBox(
             "TRIGGER_FLATTOP", self.validator
         )
         self.trigger_flat_spin.setValue(0.1)
         self.parameter_widgets["TRIGGER_FLATTOP"] = self.trigger_flat_spin
-        layout.addWidget(self.trigger_flat_spin, row, 1)
-        row += 1
+        layout.addRow("Flat Top:", self.trigger_flat_spin)
 
         tab.setLayout(layout)
         return tab
 
     def create_energy_tab(self):
         tab = QWidget()
-        layout = QGridLayout()
-        layout.setVerticalSpacing(10)
+        layout = QFormLayout()
+        layout.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.FieldsStayAtSizeHint)
+        layout.setVerticalSpacing(6)
+        layout.setHorizontalSpacing(8)
 
-        row = 0
-
-        # Energy Rise Time
-        layout.addWidget(QLabel("Rise Time:"), row, 0)
         self.energy_rise_spin = ValidatedDoubleSpinBox(
             "ENERGY_RISETIME", self.validator
         )
         self.energy_rise_spin.setValue(2.0)
         self.parameter_widgets["ENERGY_RISETIME"] = self.energy_rise_spin
-        layout.addWidget(self.energy_rise_spin, row, 1)
-        row += 1
+        layout.addRow("Rise Time:", self.energy_rise_spin)
 
-        # Energy Flat Top
-        layout.addWidget(QLabel("Flat Top:"), row, 0)
         self.energy_flat_spin = ValidatedDoubleSpinBox("ENERGY_FLATTOP", self.validator)
         self.energy_flat_spin.setValue(0.5)
         self.parameter_widgets["ENERGY_FLATTOP"] = self.energy_flat_spin
-        layout.addWidget(self.energy_flat_spin, row, 1)
-        row += 1
+        layout.addRow("Flat Top:", self.energy_flat_spin)
 
-        # Energy Minimum
-        layout.addWidget(QLabel("Energy Min:"), row, 0)
         self.emin_spin = ValidatedSpinBox("EMIN", self.validator)
         self.emin_spin.setValue(0)
         self.parameter_widgets["EMIN"] = self.emin_spin
-        layout.addWidget(self.emin_spin, row, 1)
-        row += 1
+        layout.addRow("Energy Min:", self.emin_spin)
 
-        # Energy Filter Taps (for debugging and live calibration)
-        layout.addWidget(QLabel("Energy L:"), row, 0)
         self.energy_L_spin = ValidatedSpinBox("ENERGY_L", self.validator)
         self.energy_L_spin.setValue(40)
         self.parameter_widgets["ENERGY_L"] = self.energy_L_spin
-        layout.addWidget(self.energy_L_spin, row, 1)
-        row += 1
-        
-        layout.addWidget(QLabel("Energy G:"), row, 0)
+        layout.addRow("Energy L:", self.energy_L_spin)
+
         self.energy_G_spin = ValidatedSpinBox("ENERGY_G", self.validator)
         self.energy_G_spin.setValue(10)
         self.parameter_widgets["ENERGY_G"] = self.energy_G_spin
-        layout.addWidget(self.energy_G_spin, row, 1)
-        row += 1
+        layout.addRow("Energy G:", self.energy_G_spin)
 
         tab.setLayout(layout)
         return tab
 
     def create_timing_tab(self):
         tab = QWidget()
-        layout = QGridLayout()
-        layout.setVerticalSpacing(10)
+        layout = QFormLayout()
+        layout.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.FieldsStayAtSizeHint)
+        layout.setVerticalSpacing(6)
+        layout.setHorizontalSpacing(8)
 
-        row = 0
-
-        # Preamplifier Tau
-        layout.addWidget(QLabel("Preamp Tau:"), row, 0)
         self.tau_spin = ValidatedDoubleSpinBox("TAU", self.validator)
         self.tau_spin.setValue(50.0)
         self.parameter_widgets["TAU"] = self.tau_spin
-        layout.addWidget(self.tau_spin, row, 1)
-        row += 1
+        layout.addRow("Preamp Tau:", self.tau_spin)
 
-        # External Deadtime
-        layout.addWidget(QLabel("Ext Deadtime:"), row, 0)
         self.xdt_spin = ValidatedDoubleSpinBox("XDT", self.validator)
         self.xdt_spin.setValue(0.0)
         self.parameter_widgets["XDT"] = self.xdt_spin
-        layout.addWidget(self.xdt_spin, row, 1)
-        row += 1
+        layout.addRow("Ext Deadtime:", self.xdt_spin)
 
-        # Baseline Percentage
-        layout.addWidget(QLabel("Baseline %:"), row, 0)
         self.baseline_percent_spin = ValidatedDoubleSpinBox(
             "BASELINE_PERCENT", self.validator
         )
         self.baseline_percent_spin.setValue(10.0)
         self.parameter_widgets["BASELINE_PERCENT"] = self.baseline_percent_spin
-        layout.addWidget(self.baseline_percent_spin, row, 1)
-        row += 1
+        layout.addRow("Baseline %:", self.baseline_percent_spin)
 
-        # Baseline Average
-        layout.addWidget(QLabel("Baseline Avg:"), row, 0)
         self.baseline_avg_spin = ValidatedSpinBox("BASELINE_AVERAGE", self.validator)
         self.baseline_avg_spin.setValue(4)
         self.parameter_widgets["BASELINE_AVERAGE"] = self.baseline_avg_spin
-        layout.addWidget(self.baseline_avg_spin, row, 1)
-        row += 1
+        layout.addRow("Baseline Avg:", self.baseline_avg_spin)
 
-        # Baseline Cut (BLCUT)
-        layout.addWidget(QLabel("Baseline Cut:"), row, 0)
         self.blcut_spin = ValidatedSpinBox("BLCUT", self.validator)
         self.blcut_spin.setValue(200)
         self.parameter_widgets["BLCUT"] = self.blcut_spin
-        layout.addWidget(self.blcut_spin, row, 1)
-        row += 1
+        layout.addRow("Baseline Cut:", self.blcut_spin)
 
         tab.setLayout(layout)
         return tab
 
     def create_trace_tab(self):
         tab = QWidget()
-        layout = QGridLayout()
-        layout.setVerticalSpacing(10)
+        layout = QFormLayout()
+        layout.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.FieldsStayAtSizeHint)
+        layout.setVerticalSpacing(6)
+        layout.setHorizontalSpacing(8)
 
-        row = 0
-
-        # Trace Length
-        layout.addWidget(QLabel("Trace Length:"), row, 0)
         self.trace_length_spin = ValidatedDoubleSpinBox("TRACE_LENGTH", self.validator)
         self.trace_length_spin.setValue(2.0)
         self.parameter_widgets["TRACE_LENGTH"] = self.trace_length_spin
-        layout.addWidget(self.trace_length_spin, row, 1)
-        row += 1
+        layout.addRow("Trace Length:", self.trace_length_spin)
 
-        # Trace Delay
-        layout.addWidget(QLabel("Trace Delay:"), row, 0)
         self.trace_delay_spin = ValidatedDoubleSpinBox("TRACE_DELAY", self.validator)
         self.trace_delay_spin.setValue(0.5)
         self.parameter_widgets["TRACE_DELAY"] = self.trace_delay_spin
-        layout.addWidget(self.trace_delay_spin, row, 1)
-        row += 1
+        layout.addRow("Trace Delay:", self.trace_delay_spin)
 
         tab.setLayout(layout)
         return tab
 
     def create_cfd_tab(self):
         tab = QWidget()
-        layout = QGridLayout()
-        layout.setVerticalSpacing(10)
+        layout = QFormLayout()
+        layout.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.FieldsStayAtSizeHint)
+        layout.setVerticalSpacing(6)
+        layout.setHorizontalSpacing(8)
 
-        row = 0
-
-        layout.addWidget(QLabel("CFD Delay:"), row, 0)
         self.cfd_delay_spin = ValidatedDoubleSpinBox("CFDDelay", self.validator)
         self.cfd_delay_spin.setValue(0.1)
         self.parameter_widgets["CFDDelay"] = self.cfd_delay_spin
-        layout.addWidget(self.cfd_delay_spin, row, 1)
-        row += 1
+        layout.addRow("CFD Delay:", self.cfd_delay_spin)
 
-        layout.addWidget(QLabel("CFD Scale:"), row, 0)
         self.cfd_scale_spin = ValidatedDoubleSpinBox("CFDScale", self.validator)
         self.cfd_scale_spin.setValue(1.0)
         self.parameter_widgets["CFDScale"] = self.cfd_scale_spin
-        layout.addWidget(self.cfd_scale_spin, row, 1)
-        row += 1
+        layout.addRow("CFD Scale:", self.cfd_scale_spin)
 
-        layout.addWidget(QLabel("CFD Threshold:"), row, 0)
         self.cfd_thresh_spin = ValidatedSpinBox("CFDThresh", self.validator)
         self.cfd_thresh_spin.setValue(500)
         self.parameter_widgets["CFDThresh"] = self.cfd_thresh_spin
-        layout.addWidget(self.cfd_thresh_spin, row, 1)
-        row += 1
+        layout.addRow("CFD Threshold:", self.cfd_thresh_spin)
 
         tab.setLayout(layout)
         return tab
@@ -483,38 +433,38 @@ class ParameterControls(QGroupBox):
     def create_qdc_tab(self):
         tab = QWidget()
         layout = QGridLayout()
-        layout.setVerticalSpacing(10)
+        layout.setVerticalSpacing(6)
+        layout.setHorizontalSpacing(8)
+        layout.setColumnStretch(0, 0)
+        layout.setColumnStretch(1, 0)
+        layout.setColumnStretch(2, 0)
+        layout.setColumnStretch(3, 0)
+        layout.setColumnStretch(4, 1)  # absorb extra space at the right
 
-        row = 0
-
-        for i in range(8):  # Show all 8 QDC channels
-            layout.addWidget(QLabel(f"QDC Len {i}:"), row, 0)
+        for i in range(8):
+            row = i % 4
+            col = (i // 4) * 2
+            layout.addWidget(QLabel(f"QDC Len {i}:"), row, col)
             qdc_spin = ValidatedDoubleSpinBox(f"QDCLen{i}", self.validator)
             qdc_spin.setValue(1.0)
             self.parameter_widgets[f"QDCLen{i}"] = qdc_spin
-            layout.addWidget(qdc_spin, row, 1)
-            row += 1
+            layout.addWidget(qdc_spin, row, col + 1)
 
         tab.setLayout(layout)
         return tab
 
     def create_hardware_tab(self):
         tab = QWidget()
-        layout = QGridLayout()
-        layout.setVerticalSpacing(10)
+        layout = QFormLayout()
+        layout.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.FieldsStayAtSizeHint)
+        layout.setVerticalSpacing(6)
+        layout.setHorizontalSpacing(8)
 
-        row = 0
-
-        # Voltage Offset
-        layout.addWidget(QLabel("DC Offset:"), row, 0)
         self.voffset_spin = ValidatedDoubleSpinBox("VOFFSET", self.validator)
         self.voffset_spin.setValue(0.0)
         self.parameter_widgets["VOFFSET"] = self.voffset_spin
-        layout.addWidget(self.voffset_spin, row, 1)
-        row += 1
+        layout.addRow("DC Offset:", self.voffset_spin)
 
-        # Gain
-        layout.addWidget(QLabel("Gain:"), row, 0)
         self.gain_combo = QComboBox()
         self.gain_combo.addItems(["0.625", "2.5"])
         self.gain_combo.setCurrentText("2.5")
@@ -522,45 +472,38 @@ class ParameterControls(QGroupBox):
             "Analog gain setting (0.625 = low gain, 2.5 = high gain)"
         )
         self.parameter_widgets["Gain"] = self.gain_combo
-        layout.addWidget(self.gain_combo, row, 1)
-        row += 1
+        layout.addRow("Gain:", self.gain_combo)
 
-        # Polarity
-        layout.addWidget(QLabel("Polarity:"), row, 0)
         self.polarity_combo = QComboBox()
         self.polarity_combo.addItems(["negative", "positive"])
         self.polarity_combo.setCurrentText("negative")
         self.polarity_combo.setToolTip("Signal polarity (must match detector output)")
         self.parameter_widgets["Polarity"] = self.polarity_combo
-        layout.addWidget(self.polarity_combo, row, 1)
-        row += 1
+        layout.addRow("Polarity:", self.polarity_combo)
 
-        # Channel Enable
         self.channel_enable_check = QCheckBox("Channel Enabled")
         self.channel_enable_check.setChecked(True)
         self.channel_enable_check.setToolTip(
             "Enable/disable channel for data processing"
         )
         self.parameter_widgets["GoodChannel"] = self.channel_enable_check
-        layout.addWidget(self.channel_enable_check, row, 0, 1, 2)
-        row += 1
+        layout.addRow("", self.channel_enable_check)
 
-        # Trace Capture
         self.trace_capture_check = QCheckBox("Capture Traces")
         self.trace_capture_check.setChecked(False)
         self.trace_capture_check.setToolTip(
             "Enable ADC trace recording (increases data volume)"
         )
         self.parameter_widgets["CaptureTrace"] = self.trace_capture_check
-        layout.addWidget(self.trace_capture_check, row, 0, 1, 2)
-        row += 1
+        layout.addRow("", self.trace_capture_check)
 
         tab.setLayout(layout)
         return tab
 
     def create_action_buttons(self):
         group = QGroupBox("Settings Actions")
-        layout = QHBoxLayout()
+        layout = QGridLayout()
+        layout.setSpacing(4)
 
         self.apply_all_btn = QPushButton("Apply All")
         self.apply_all_btn.setToolTip(
@@ -572,7 +515,7 @@ class ParameterControls(QGroupBox):
                     background-color: #4CAF50;
                     color: white;
                     font-weight: bold;
-                    padding: 8px 16px;
+                    padding: 6px;
                     border: none;
                     border-radius: 4px;
                 }
@@ -584,29 +527,28 @@ class ParameterControls(QGroupBox):
                 }
             """
         )
-        layout.addWidget(self.apply_all_btn)
+        layout.addWidget(self.apply_all_btn, 0, 0)
 
-        self.read_hw_btn = QPushButton("Read from Hardware")
+        self.read_hw_btn = QPushButton("Read HW")
         self.read_hw_btn.setToolTip("Read current parameter values from hardware")
-        layout.addWidget(self.read_hw_btn)
+        layout.addWidget(self.read_hw_btn, 0, 1)
 
         self.load_preset_btn = QPushButton("Load Preset")
         self.load_preset_btn.setToolTip("Load parameter values from file")
-        layout.addWidget(self.load_preset_btn)
+        layout.addWidget(self.load_preset_btn, 0, 2)
 
         self.save_preset_btn = QPushButton("Save Preset")
         self.save_preset_btn.setToolTip("Save current parameter values to file")
-        layout.addWidget(self.save_preset_btn)
+        layout.addWidget(self.save_preset_btn, 1, 0)
 
-        self.load_default_btn = QPushButton("Load Defaults")
+        self.load_default_btn = QPushButton("Defaults")
         self.load_default_btn.setToolTip("Load default parameter values from built-in defaults")
-        layout.addWidget(self.load_default_btn)
+        layout.addWidget(self.load_default_btn, 1, 1)
 
-        self.load_dict_btn = QPushButton("Load from File")
+        self.load_dict_btn = QPushButton("From File")
         self.load_dict_btn.setToolTip("Load parameter values from a JSON settings file")
-        layout.addWidget(self.load_dict_btn)
+        layout.addWidget(self.load_dict_btn, 1, 2)
 
-        layout.addStretch()
         group.setLayout(layout)
         return group
 

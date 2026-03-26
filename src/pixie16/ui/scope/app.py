@@ -158,7 +158,6 @@ class PixieScopeApp(QMainWindow):
         super().__init__()
 
         self.setWindowTitle(f"Complete PIXIE-16 Scope - Slot {physical_slot}")
-        self.setGeometry(100, 100, 1600, 1000)
 
         self.setup_signal_handlers()
 
@@ -256,9 +255,7 @@ class PixieScopeApp(QMainWindow):
         screen = QApplication.primaryScreen().geometry()
         window_width = min(1200, int(screen.width() * 0.85))
         window_height = min(800, int(screen.height() * 0.8))
-        self.setGeometry(100, 100, window_width, window_height)
-
-        self.setGeometry(100, 100, window_width, window_height)
+        self.resize(window_width, window_height)
         self.setMinimumSize(1000, 500)
 
         main_widget = QWidget()
@@ -346,15 +343,14 @@ class PixieScopeApp(QMainWindow):
         
         # Set sizes
         left_widget.setMinimumWidth(400)
-        right_widget.setMinimumWidth(200)
-        right_widget.setSizePolicy(
-            QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred
-        )
-        
+        right_widget.setMinimumWidth(320)
+
         # Add to splitter
         main_splitter.addWidget(left_widget)
         main_splitter.addWidget(right_widget)
-        main_splitter.setSizes([int(window_width * 0.75), int(window_width * 0.25)])
+        main_splitter.setStretchFactor(0, 1)  # left (plots) gets all extra space
+        main_splitter.setStretchFactor(1, 0)  # right (controls) stays compact
+        main_splitter.setSizes([int(window_width * 0.72), int(window_width * 0.28)])
         
         # Main layout
         main_layout = QVBoxLayout()

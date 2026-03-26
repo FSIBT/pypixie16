@@ -219,7 +219,7 @@ class DataAcquisition(QWidget):
         self.progress_bar.setMinimum(0)
         self.progress_bar.setMaximum(100)
         self.progress_bar.setValue(0)
-        self.progress_bar.setFixedWidth(800)
+        self.progress_bar.setMinimumWidth(200)
         self.run_time_progress_text = QLabel("00:00:00")
         self.run_time_left_text = QLabel("00:00:00")
 
