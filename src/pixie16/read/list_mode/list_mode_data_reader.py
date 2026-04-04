@@ -19,16 +19,162 @@ from typing import Union
 
 import numpy as np
 import pandas as pd
-
-try:
-    import cbitstruct as bitstruct
-except ModuleNotFoundError:
-    import bitstruct
+import struct
 
 import msgspec
 import math
 
-# from rich import print
+
+def unpack_header(data):
+    """Extract header fields from 16 bytes using bitwise operations.
+
+    Format: b1u14u5u4u4u4u32u3u13u16b1u15u16
+    Fields: pileup, Event Length, Header Length, crate, slot, channel,
+            EVTTIME_LO, CFD trigger source bits, CFD Fractional Time,
+            EVTTIME_HI, trace_flag, Trace Length, energy
+
+    Note: Works on byteswapped (big-endian) data bytes.
+    """
+    # Convert to bytes if it's a numpy array
+    if hasattr(data, "tobytes"):
+        data = data.tobytes()
+
+    # Unpack as 4 big-endian 32-bit words
+    w0, w1, w2, w3 = struct.unpack(">4I", data)
+
+    # Word 0: pileup(1) | Event Length(14) | Header Length(5) | crate(4) | slot(4) | channel(4)
+    pileup = bool((w0 >> 31) & 0x1)
+    event_length = (w0 >> 17) & 0x3FFF
+    header_length = (w0 >> 12) & 0x1F
+    crate = (w0 >> 8) & 0xF
+    slot = (w0 >> 4) & 0xF
+    channel = w0 & 0xF
+
+    # Word 1: EVTTIME_LO (32 bits)
+    evttime_lo = w1
+
+    # Word 2: CFD trigger source bits(3) | CFD Fractional Time(13) | EVTTIME_HI(16)
+    cfd_trigger = (w2 >> 29) & 0x7
+    cfd_frac = (w2 >> 16) & 0x1FFF
+    evttime_hi = w2 & 0xFFFF
+
+    # Word 3: trace_flag(1) | Trace Length(15) | energy(16)
+    trace_flag = bool((w3 >> 31) & 0x1)
+    trace_length = (w3 >> 16) & 0x7FFF
+    energy = w3 & 0xFFFF
+
+    return {
+        "pileup": pileup,
+        "Event Length": event_length,
+        "Header Length": header_length,
+        "crate": crate,
+        "slot": slot,
+        "channel": channel,
+        "EVTTIME_LO": evttime_lo,
+        "CFD trigger source bits": cfd_trigger,
+        "CFD Fractional Time": cfd_frac,
+        "EVTTIME_HI": evttime_hi,
+        "trace_flag": trace_flag,
+        "Trace Length": trace_length,
+        "energy": energy,
+    }
+
+
+def unpack_energy(data):
+    """Extract energy sum fields from 16 bytes (4 32-bit words).
+
+    Format: u32 u32 u32 f32
+    Fields: Esum_trailing, Esum_leading, Esum_gap, baseline
+    """
+    if hasattr(data, "tobytes"):
+        data = data.tobytes()
+
+    # Unpack as 3 big-endian uint32 and 1 big-endian float32
+    esum_trailing, esum_leading, esum_gap, baseline = struct.unpack(">3If", data)
+
+    return {
+        "Esum_trailing": esum_trailing,
+        "Esum_leading": esum_leading,
+        "Esum_gap": esum_gap,
+        "baseline": baseline,
+    }
+
+
+def unpack_qsums(data):
+    """Extract QDC sum fields from 32 bytes (8 32-bit words).
+
+    Format: u32 * 8
+    Fields: QDCSum0-7
+    """
+    if hasattr(data, "tobytes"):
+        data = data.tobytes()
+
+    # Unpack as 8 big-endian uint32
+    qsums = struct.unpack(">8I", data)
+
+    return {f"QDCSum{i}": qsums[i] for i in range(8)}
+
+
+def unpack_ext_time(data):
+    """Extract extended timestamp from 8 bytes (2 32-bit words).
+
+    Format: u32 p16 u16 (p16 means 16 padding bits)
+    Fields: Ext_TS_Lo, Ext_TS_Hi
+    """
+    if hasattr(data, "tobytes"):
+        data = data.tobytes()
+
+    # Unpack as 2 big-endian uint32
+    ext_ts_lo, ext_ts_hi_word = struct.unpack(">2I", data)
+
+    return {
+        "Ext_TS_Lo": ext_ts_lo,
+        "Ext_TS_Hi": ext_ts_hi_word & 0xFFFF,  # Take lower 16 bits
+    }
+
+
+def unpack_extra_header(data, extra_header_length):
+    """Unpack additional header data based on length.
+
+    Args:
+        data: Byte data (from byteswapped numpy array)
+        extra_header_length: Number of 32-bit words in extra header
+
+    Raises:
+        KeyError: If extra_header_length is not a valid value (indicates corrupt data)
+    """
+    # Valid extra header lengths
+    valid_lengths = {2, 4, 6, 8, 10, 12, 14}
+
+    if extra_header_length not in valid_lengths:
+        # Raise KeyError to match original behavior (for out-of-order file detection)
+        raise KeyError(extra_header_length)
+
+    if hasattr(data, "tobytes"):
+        data = data.tobytes()
+
+    result = {}
+    byte_offset = 0
+
+    # Determine what fields are present based on length
+    # Order: energy (4 words=16 bytes), qsums (8 words=32 bytes), ext_time (2 words=8 bytes)
+
+    if extra_header_length in [4, 6, 12, 14]:
+        # Has energy fields (16 bytes)
+        result.update(unpack_energy(data[byte_offset : byte_offset + 16]))
+        byte_offset += 16
+
+    if extra_header_length in [8, 10, 12, 14]:
+        # Has qsum fields (32 bytes)
+        result.update(unpack_qsums(data[byte_offset : byte_offset + 32]))
+        byte_offset += 32
+
+    if extra_header_length in [2, 6, 10, 14]:
+        # Has extended timestamp (8 bytes)
+        result.update(unpack_ext_time(data[byte_offset : byte_offset + 8]))
+        byte_offset += 8
+
+    return result
 
 
 class Event(msgspec.Struct):
@@ -64,103 +210,6 @@ class Event(msgspec.Struct):
 
     def to_list(self):
         return (getattr(self, f) for f in self.__struct_fields__)
-
-
-# The bit structure to unpack the pixie binary format
-EVENTS_PARTS = {
-    "header": (
-        "b1u14u5u4u4u4u32u3u13u16b1u15u16",
-        (
-            "pileup",
-            "Event Length",
-            "Header Length",
-            "crate",
-            "slot",
-            "channel",
-            "EVTTIME_LO",
-            "CFD trigger source bits",
-            "CFD Fractional Time",
-            "EVTTIME_HI",
-            "trace_flag",
-            "Trace Length",
-            "energy",
-        ),
-    ),
-    "energy": (
-        "u32" * 3 + "f32",
-        (
-            "Esum_trailing",
-            "Esum_leading",
-            "Esum_gap",
-            "baseline",
-        ),
-    ),
-    "Qsums": (
-        "u32" * 8,
-        (
-            "QDCSum0",
-            "QDCSum1",
-            "QDCSum2",
-            "QDCSum3",
-            "QDCSum4",
-            "QDCSum5",
-            "QDCSum6",
-            "QDCSum7",
-        ),
-    ),
-    "Ext Time": (
-        "u32p16u16",
-        (
-            "Ext_TS_Lo",
-            "Ext_TS_Hi",
-        ),
-    ),
-}
-
-# We now build all possible combinations out of these parts that can
-# show up in list mode data We also add a "0" option to just read the
-# first row, since this row contains the header length we need to read
-HEADER_FORMATS = bitstruct.CompiledFormatDict(
-    EVENTS_PARTS["header"][0], EVENTS_PARTS["header"][1]
-)
-
-# when more information is in the header, we look it up using the
-# following data structure. The key into this dictionary is how many
-# 32-bit words we still need to read
-EXTRA_HEADER_FORMATS = {
-    2: bitstruct.CompiledFormatDict(
-        EVENTS_PARTS["Ext Time"][0],
-        EVENTS_PARTS["Ext Time"][1],
-    ),
-    4: bitstruct.CompiledFormatDict(
-        EVENTS_PARTS["energy"][0],
-        EVENTS_PARTS["energy"][1],
-    ),
-    8: bitstruct.CompiledFormatDict(
-        EVENTS_PARTS["Qsums"][0],
-        EVENTS_PARTS["Qsums"][1],
-    ),
-    12: bitstruct.CompiledFormatDict(
-        EVENTS_PARTS["energy"][0] + EVENTS_PARTS["Qsums"][0],
-        EVENTS_PARTS["energy"][1] + EVENTS_PARTS["Qsums"][1],
-    ),
-    6: bitstruct.CompiledFormatDict(
-        EVENTS_PARTS["energy"][0] + EVENTS_PARTS["Ext Time"][0],
-        EVENTS_PARTS["energy"][1] + EVENTS_PARTS["Ext Time"][1],
-    ),
-    10: bitstruct.CompiledFormatDict(
-        EVENTS_PARTS["Qsums"][0] + EVENTS_PARTS["Ext Time"][0],
-        EVENTS_PARTS["Qsums"][1] + EVENTS_PARTS["Ext Time"][1],
-    ),
-    14: bitstruct.CompiledFormatDict(
-        EVENTS_PARTS["energy"][0]
-        + EVENTS_PARTS["Qsums"][0]
-        + EVENTS_PARTS["Ext Time"][0],
-        EVENTS_PARTS["energy"][1]
-        + EVENTS_PARTS["Qsums"][1]
-        + EVENTS_PARTS["Ext Time"][1],
-    ),
-}
 
 
 class EmptyError(Exception):
@@ -365,39 +414,28 @@ class ListModeDataReader:
     def pop(self) -> Event:
         """Pop the top event from queue"""
 
-        # try to get all the words for the next event
-        # if the complete next event isn't in queue an exception is thrown but no data is discarded
-        event_header = HEADER_FORMATS.unpack(self.reader.read(4).byteswap().tobytes())
+        # Read header (4 32-bit words = 16 bytes) and extract fields using bitwise operations
+        header_data = self.reader.read(4).byteswap()
+        event_header = unpack_header(header_data)
+
         header_length = event_header["Header Length"]
         extra_header_length = header_length - 4
         event_length = event_header["Event Length"]
 
-        # it's now save to read both header and trace
+        # Read additional header fields if present
         if extra_header_length > 0:
-            header_words = self.reader.read(extra_header_length, 4).byteswap().tobytes()
-            # unpack words/trace into their field values
-            try:
-                event_values = EXTRA_HEADER_FORMATS[extra_header_length].unpack(
-                    header_words
-                )
-                event_header.update(**event_values)
-            except KeyError:
-                print("Something went wrong with the binary data.", flush=True)
-                print(
-                    "If you are reading from multiple files, make sure they are ordered correctly.",
-                    flush=True,
-                )
-                raise
+            extra_data = self.reader.read(extra_header_length, 4).byteswap()
+            # Will raise KeyError if extra_header_length is invalid (corrupt/out-of-order data)
+            event_values = unpack_extra_header(extra_data, extra_header_length)
+            event_header.update(**event_values)
 
+        # Read trace data if present
         trace_length = event_length - header_length
         if trace_length:
-            trace_data = self.reader.read(trace_length, header_length).tobytes()
-            trace = np.frombuffer(trace_data, f"({trace_length},2)<u2", count=1)[
-                0, :, :
-            ]
-            trace = trace.flatten()
+            trace_words = self.reader.read(trace_length, header_length)
+            # Reinterpret uint32 array as uint16 - each 32-bit word contains two 16-bit samples
+            trace = trace_words.view(np.uint16)
         else:
-            trace_data = None
             trace = ()
 
         # if reader is a filereader, reader.read() will already advance the positions
@@ -408,7 +446,7 @@ class ListModeDataReader:
 
         # calculate event values that need to be derived from field values
         CFD_bits = event_header.pop("CFD trigger source bits")
-        CFD_error = CFD_bits == 7
+        CFD_error = bool(CFD_bits == 7)
         CFD_fractional_time = event_header.pop("CFD Fractional Time")
         if CFD_bits == 7:
             CFD_fraction = 0
@@ -472,7 +510,9 @@ def timestamps_and_sizes_from_files_generator(files):
     try:
         with FileReader(files) as r:
             while not r.done:
-                event_header = HEADER_FORMATS.unpack(r.read(4).byteswap().tobytes())
+                header_data = r.read(4).byteswap()
+                event_header = unpack_header(header_data)
+
                 header_length = event_header["Header Length"]
                 extra_header_length = header_length - 4
                 event_length = event_header["Event Length"]
