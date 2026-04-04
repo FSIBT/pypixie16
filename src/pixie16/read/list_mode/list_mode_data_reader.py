@@ -35,12 +35,8 @@ def unpack_header(data):
 
     Note: Works on little-endian data bytes directly from mmap.
     """
-    # Convert to bytes if it's a numpy array
-    if hasattr(data, "tobytes"):
-        data = data.tobytes()
-
-    # Unpack as 4 little-endian 32-bit words
-    w0, w1, w2, w3 = struct.unpack("<4I", data)
+    # Unpack as 4 little-endian 32-bit words (works with bytes or buffer)
+    w0, w1, w2, w3 = struct.unpack_from("<4I", data, 0)
 
     # Word 0: pileup(1) | Event Length(14) | Header Length(5) | crate(4) | slot(4) | channel(4)
     pileup = bool((w0 >> 31) & 0x1)
@@ -86,11 +82,10 @@ def unpack_energy(data):
     Format: u32 u32 u32 f32
     Fields: Esum_trailing, Esum_leading, Esum_gap, baseline
     """
-    if hasattr(data, "tobytes"):
-        data = data.tobytes()
-
-    # Unpack as 3 little-endian uint32 and 1 little-endian float32
-    esum_trailing, esum_leading, esum_gap, baseline = struct.unpack("<3If", data)
+    # Unpack as 3 little-endian uint32 and 1 little-endian float32 (works with bytes or buffer)
+    esum_trailing, esum_leading, esum_gap, baseline = struct.unpack_from(
+        "<3If", data, 0
+    )
 
     return {
         "Esum_trailing": esum_trailing,
@@ -106,11 +101,8 @@ def unpack_qsums(data):
     Format: u32 * 8
     Fields: QDCSum0-7
     """
-    if hasattr(data, "tobytes"):
-        data = data.tobytes()
-
-    # Unpack as 8 little-endian uint32
-    qsums = struct.unpack("<8I", data)
+    # Unpack as 8 little-endian uint32 (works with bytes or buffer)
+    qsums = struct.unpack_from("<8I", data, 0)
 
     return {f"QDCSum{i}": qsums[i] for i in range(8)}
 
@@ -121,11 +113,8 @@ def unpack_ext_time(data):
     Format: u32 p16 u16 (p16 means 16 padding bits)
     Fields: Ext_TS_Lo, Ext_TS_Hi
     """
-    if hasattr(data, "tobytes"):
-        data = data.tobytes()
-
-    # Unpack as 2 little-endian uint32
-    ext_ts_lo, ext_ts_hi_word = struct.unpack("<2I", data)
+    # Unpack as 2 little-endian uint32 (works with bytes or buffer)
+    ext_ts_lo, ext_ts_hi_word = struct.unpack_from("<2I", data, 0)
 
     return {
         "Ext_TS_Lo": ext_ts_lo,
