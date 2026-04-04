@@ -416,18 +416,18 @@ class ListModeDataReader:
 
         # Read header (4 32-bit words = 16 bytes) and extract fields using bitwise operations
         header_data = self.reader.read(4)
-        event_header = unpack_header(header_data)
+        h = unpack_header(header_data)
 
-        header_length = event_header["Header Length"]
+        header_length = h["Header Length"]
         extra_header_length = header_length - 4
-        event_length = event_header["Event Length"]
+        event_length = h["Event Length"]
 
         # Read additional header fields if present
         if extra_header_length > 0:
             extra_data = self.reader.read(extra_header_length, 4)
             # Will raise KeyError if extra_header_length is invalid (corrupt/out-of-order data)
             event_values = unpack_extra_header(extra_data, extra_header_length)
-            event_header.update(**event_values)
+            h.update(event_values)
 
         # Read trace data if present
         trace_length = event_length - header_length
@@ -444,39 +444,51 @@ class ListModeDataReader:
         # have read() not advance the buffer location.
         self.reader.advance(event_length)
 
-        # calculate event values that need to be derived from field values
-        CFD_bits = event_header.pop("CFD trigger source bits")
+        # Calculate derived fields
+        CFD_bits = h["CFD trigger source bits"]
         CFD_error = bool(CFD_bits == 7)
-        CFD_fractional_time = event_header.pop("CFD Fractional Time")
-        if CFD_bits == 7:
-            CFD_fraction = 0
-        else:
-            CFD_fraction = ((CFD_bits - 1) + CFD_fractional_time / 8192) * 2
-
-        timestamp = (
-            event_header.pop("EVTTIME_LO") + event_header.pop("EVTTIME_HI") * 2**32
-        ) * 10
-
-        if "Ext_TS_Lo" in event_header:
-            ext_timestamp = (
-                event_header.pop("Ext_TS_Lo") + event_header.pop("Ext_TS_Hi") * 2**32
-            )
-
-            event_header.update({"ext_timestamp": ext_timestamp})
-
-        for key in ["Event Length", "Header Length", "Trace Length"]:
-            event_header.pop(key, None)
-
-        event_header.update(
-            {
-                "timestamp": timestamp,
-                "CFD_fraction": CFD_fraction,
-                "trace": trace,
-                "CFD_error": CFD_error,
-            }
+        CFD_fractional_time = h["CFD Fractional Time"]
+        CFD_fraction = (
+            0 if CFD_bits == 7 else ((CFD_bits - 1) + CFD_fractional_time / 8192) * 2
         )
 
-        return Event(**event_header)
+        timestamp = (h["EVTTIME_LO"] + h["EVTTIME_HI"] * 2**32) * 10
+
+        # Build Event kwargs - start with always-present fields
+        kwargs = {
+            "channel": h["channel"],
+            "crate": h["crate"],
+            "slot": h["slot"],
+            "energy": h["energy"],
+            "timestamp": timestamp,
+            "CFD_fraction": CFD_fraction,
+            "trace": trace,
+            "CFD_error": CFD_error,
+            "pileup": h["pileup"],
+            "trace_flag": h["trace_flag"],
+        }
+
+        # Add optional fields if present (avoids .get() overhead for missing keys)
+        if "Esum_trailing" in h:
+            kwargs["Esum_trailing"] = h["Esum_trailing"]
+            kwargs["Esum_leading"] = h["Esum_leading"]
+            kwargs["Esum_gap"] = h["Esum_gap"]
+            kwargs["baseline"] = h["baseline"]
+
+        if "QDCSum0" in h:
+            kwargs["QDCSum0"] = h["QDCSum0"]
+            kwargs["QDCSum1"] = h["QDCSum1"]
+            kwargs["QDCSum2"] = h["QDCSum2"]
+            kwargs["QDCSum3"] = h["QDCSum3"]
+            kwargs["QDCSum4"] = h["QDCSum4"]
+            kwargs["QDCSum5"] = h["QDCSum5"]
+            kwargs["QDCSum6"] = h["QDCSum6"]
+            kwargs["QDCSum7"] = h["QDCSum7"]
+
+        if "Ext_TS_Lo" in h:
+            kwargs["ext_timestamp"] = h["Ext_TS_Lo"] + h["Ext_TS_Hi"] * 2**32
+
+        return Event(**kwargs)
 
     def iterevents(self):
         """Will raise an exception to exit loop."""
