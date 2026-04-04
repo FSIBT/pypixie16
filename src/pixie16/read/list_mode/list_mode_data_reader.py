@@ -33,14 +33,14 @@ def unpack_header(data):
             EVTTIME_LO, CFD trigger source bits, CFD Fractional Time,
             EVTTIME_HI, trace_flag, Trace Length, energy
 
-    Note: Works on byteswapped (big-endian) data bytes.
+    Note: Works on little-endian data bytes directly from mmap.
     """
     # Convert to bytes if it's a numpy array
     if hasattr(data, "tobytes"):
         data = data.tobytes()
 
-    # Unpack as 4 big-endian 32-bit words
-    w0, w1, w2, w3 = struct.unpack(">4I", data)
+    # Unpack as 4 little-endian 32-bit words
+    w0, w1, w2, w3 = struct.unpack("<4I", data)
 
     # Word 0: pileup(1) | Event Length(14) | Header Length(5) | crate(4) | slot(4) | channel(4)
     pileup = bool((w0 >> 31) & 0x1)
@@ -89,8 +89,8 @@ def unpack_energy(data):
     if hasattr(data, "tobytes"):
         data = data.tobytes()
 
-    # Unpack as 3 big-endian uint32 and 1 big-endian float32
-    esum_trailing, esum_leading, esum_gap, baseline = struct.unpack(">3If", data)
+    # Unpack as 3 little-endian uint32 and 1 little-endian float32
+    esum_trailing, esum_leading, esum_gap, baseline = struct.unpack("<3If", data)
 
     return {
         "Esum_trailing": esum_trailing,
@@ -109,8 +109,8 @@ def unpack_qsums(data):
     if hasattr(data, "tobytes"):
         data = data.tobytes()
 
-    # Unpack as 8 big-endian uint32
-    qsums = struct.unpack(">8I", data)
+    # Unpack as 8 little-endian uint32
+    qsums = struct.unpack("<8I", data)
 
     return {f"QDCSum{i}": qsums[i] for i in range(8)}
 
@@ -124,8 +124,8 @@ def unpack_ext_time(data):
     if hasattr(data, "tobytes"):
         data = data.tobytes()
 
-    # Unpack as 2 big-endian uint32
-    ext_ts_lo, ext_ts_hi_word = struct.unpack(">2I", data)
+    # Unpack as 2 little-endian uint32
+    ext_ts_lo, ext_ts_hi_word = struct.unpack("<2I", data)
 
     return {
         "Ext_TS_Lo": ext_ts_lo,
@@ -415,7 +415,7 @@ class ListModeDataReader:
         """Pop the top event from queue"""
 
         # Read header (4 32-bit words = 16 bytes) and extract fields using bitwise operations
-        header_data = self.reader.read(4).byteswap()
+        header_data = self.reader.read(4)
         event_header = unpack_header(header_data)
 
         header_length = event_header["Header Length"]
@@ -424,7 +424,7 @@ class ListModeDataReader:
 
         # Read additional header fields if present
         if extra_header_length > 0:
-            extra_data = self.reader.read(extra_header_length, 4).byteswap()
+            extra_data = self.reader.read(extra_header_length, 4)
             # Will raise KeyError if extra_header_length is invalid (corrupt/out-of-order data)
             event_values = unpack_extra_header(extra_data, extra_header_length)
             event_header.update(**event_values)
@@ -510,7 +510,7 @@ def timestamps_and_sizes_from_files_generator(files):
     try:
         with FileReader(files) as r:
             while not r.done:
-                header_data = r.read(4).byteswap()
+                header_data = r.read(4)
                 event_header = unpack_header(header_data)
 
                 header_length = event_header["Header Length"]
