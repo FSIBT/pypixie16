@@ -10,9 +10,11 @@ authors = [
    { name = "Ariel Amsellem", email = "ajamsellem@lbl.gov" },
    { name = "Andrew Rosenstrom", email = "arosenstrom@lbl.gov" },
    { name = "Brian Mak", email = "brianmak@lbl.gov" },
-   { name = "Mauricio Ayllon Unzueta", email = "mayllonu@lbl.gov" },
-   { name = "Will Larsen", email = "wlarsen@lbl.gov" },
    { name = "Caroline Egan", email ="cegan@lbl.gov" },
+   { name = "Juan Cristhian Luque Gutierrez", email ="JLuqueGutierrez@lbl.gov" },
+   { name = "Mauricio Ayllon Unzueta", email = "mayllonu@lbl.gov" },
+   { name = "Joann Sum", email =  "jsum@lbl.gov"},
+   { name = "Will Larsen", email = "wlarsen@lbl.gov" },
 ]
 readme = "README.md"
 license = {file = "LICENSE.txt"}
@@ -51,6 +53,7 @@ classifiers = [
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Topic :: Scientific/Engineering :: Physics",
 ]
 
