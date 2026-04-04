@@ -42,10 +42,6 @@ If you want to build the documentation
 
    pip install .[docs]
 
-If you want to speed up binary parsing, you should install the `cbitstruct` library or use
-
-   pip install .[fast]
-
 # Documentation
 
 Documentation is hosted on Read The Docs: https://readthedocs.org/projects/pypixie16/
