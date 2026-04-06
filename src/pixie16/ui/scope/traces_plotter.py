@@ -588,7 +588,7 @@ class TracesPlotter(QWidget):
     def on_tab_changed(self, index):
         current_tab = self.tab_widget.widget(index)
         tab_name = self.tab_widget.tabText(index)
-                
+
         # Only run compute-intensive updates for active tab
         if tab_name in ["Raw Traces", "Single Channel Analysis"]:
             if not self.update_timer.isActive():
@@ -604,6 +604,26 @@ class TracesPlotter(QWidget):
             if self.update_timer.isActive() and tab_name == "Coincidence Logic":
                 self.update_timer.stop()
                 print("TracesPlotter: Paused main traces processing - coincidence logic handles its own")
+
+        # Clear plot state on tab switch to prevent stale data display
+        if tab_name == "Raw Traces":
+            # Reset raw plot curves so stale data from before tab switch is gone
+            for channel in self.channels:
+                if channel in self.raw_curves:
+                    self.raw_curves[channel].setData([], [])
+            # Reset alignment reference so traces don't show with stale offsets
+            self.alignment_reference_timestamp = None
+        elif tab_name == "Single Channel Analysis":
+            # Clear the single channel plot so stale overlays/markers don't linger
+            if hasattr(self, 'channel_plot') and self.channel_plot is not None:
+                self.channel_plot.clear()
+            # Invalidate persistence image item since clear() removed it from the scene
+            self.persistence_image_item = None
+            # Reset trigger/peak state for a clean recompute
+            for channel in self.channels:
+                self.trigger_points[channel] = {}
+                self.peak_sample_points[channel] = {}
+                self.last_traces[channel] = None
         
         # Deactivate all tabs
         for i in range(self.tab_widget.count()):
@@ -1231,12 +1251,12 @@ class TracesPlotter(QWidget):
 
     def update_plots(self):
         try:
-            # Count total traces for debug
-            total_traces = sum(len(self.trace_data[ch]) for ch in self.channels if ch in self.trace_data)
+            current_tab = self.tab_widget.tabText(self.tab_widget.currentIndex())
 
-            
-            self.update_raw_traces_plot()
-            self.update_hardware_validation_plots()
+            if current_tab == "Raw Traces":
+                self.update_raw_traces_plot()
+            elif current_tab == "Single Channel Analysis":
+                self.update_hardware_validation_plots()
 
         except Exception as e:
             print(f"Error updating plots: {e}")
