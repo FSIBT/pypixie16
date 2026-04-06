@@ -1549,6 +1549,8 @@ class TracesPlotter(QWidget):
             working_trace = -working_trace
 
         # Compute fast trigger position on the raw trace (replaces leading edge marker)
+        # Pick the trigger closest to trace center — hardware places the pulse there
+        # via trace delay, so noise crossings far from center are spurious.
         try:
             traces_fpga = convert_trace_to_FPGA(working_trace[np.newaxis, :])
             fast_result = compute_fast_trigger_validation(
@@ -1560,7 +1562,9 @@ class TracesPlotter(QWidget):
             if (fast_result["validation_passed"]
                     and len(fast_result["trigger_indices"]) > 0
                     and len(fast_result["trigger_indices"][0]) > 0):
-                fpga_idx = fast_result["trigger_indices"][0][0]
+                all_triggers = fast_result["trigger_indices"][0]
+                trace_center_fpga = target_length // (2 * 5)
+                fpga_idx = min(all_triggers, key=lambda t: abs(t - trace_center_fpga))
                 fpga_delay = self.hardware_params["fast_L"] + (self.hardware_params["fast_G"] // 2)
                 fast_trigger_raw_pos = (fpga_idx + fpga_delay) * 5
                 self._store_trigger_info(channel, [fast_trigger_raw_pos], "main_trigger")
@@ -1671,9 +1675,10 @@ class TracesPlotter(QWidget):
                                 len(fast_trigger_indices) > 0
                                 and len(fast_trigger_indices[0]) > 0
                             ):
-                                # Fast trigger position in raw samples
-                                # Use the same delay-corrected calculation as in fast trigger processing
-                                fpga_idx = fast_trigger_indices[0][0]
+                                # Fast trigger position in raw samples — pick closest to trace center
+                                all_triggers = fast_trigger_indices[0]
+                                trace_center_fpga = target_length // (2 * 5)
+                                fpga_idx = min(all_triggers, key=lambda t: abs(t - trace_center_fpga))
                                 fast_L = self.hardware_params["fast_L"]
                                 fast_G = self.hardware_params["fast_G"]
                                 fpga_delay = fast_L + (fast_G // 2)
