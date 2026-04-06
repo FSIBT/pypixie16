@@ -7,20 +7,37 @@ and this project tries to adhere to [Semantic Versioning](https://semver.org/spe
 ## [Unreleased]
 
 ### Added
-- Started: Settings class now stores the original values, but uses the
+- Python 3.14 added to CI
+- new pixie16-scope: live view of data and ability to replay binary data files
+- Tests: synthetic event tests, API coverage, and benchmarks for list-mode reader
+- Pipeline: persistent tasks with ZMQ-based communication
+- Pipeline: comprehensive status reporting with memory usage and CPU tracking
+- Pipeline: heartbeat monitoring and error propagation
+- Tasks: new DummyData and TakeData tasks for testing
+- pixie16-daq: new Qt-based GUI application for data acquisition with
+  pipeline management and real-time status monitoring
+- Settings class now stores the original values, but uses the
   same values as used when settings values using a dict, e.g., units
   for times are in us, instead of raw FPGA values.
 - When comparing settings, you can now compare either the derived
   values or the raw values.
-- Ability to redirect logfile to a directory using an enviromental
+- Ability to redirect logfile to a directory using an environmental
   variable (`PIXIE16_LOG_DIR`) or a "Logging"->"logdir" entry in the
   config file
+- Function `data_rate_from_file` to get data rate in MB/s
+- Function `timestamps_and_sizes_from_files_generator` for efficient event scanning
 
 ### Changed
+- List mode reader performance: 4.25x faster (51K → 217K events/sec)
+- Updated copyright year to 2026
+- Updated author list in pyproject.toml
 - Switched to using ruff instead of pyupgrade and black
 - Minimum python required: 3.10 (to stay in sync with numpy)
-- Update for numpy 2.0: numpy.ndarray no longer uses newbyteorder directly.
+- Update for numpy 2.0: numpy.ndarray no longer uses newbyteorder directly
 - Better error message if binary files are loaded out of order
+- DataAcquisition UI: improved layout and status display
+- Pipeline: refactored with better error handling and task lifecycle management
+- Tasks: improved queue management and status reporting frequency
 
 ### Fixed
 - Handling of output file numbering in `run_list_mode`
@@ -29,8 +46,11 @@ and this project tries to adhere to [Semantic Versioning](https://semver.org/spe
   when only a partial event was in the buffer that was longer than 4
   words
 - Comparing settings did not print second value
-- Fix progress bar display when taking MCA data with `take_MCA_spectra`
-- switch from docopt to docopt-ng
+- Progress bar display when taking MCA data with `take_MCA_spectra`
+- Switch from docopt to docopt-ng
+
+### Removed
+- Dependency on bitstruct and cbitstruct packages
 
 ## [3.1.0] 2025-02-15
 

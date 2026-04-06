@@ -34,7 +34,6 @@ sys.modules.update((mod_name, Mock()) for mod_name in MOCK_MODULES)
 
 # for all other libraries we can let autodoc know to mock them.
 autodoc_mock_imports = [
-    "cbitstruct",
     "fast_histogram",
     "numpy",
     "pandas",
@@ -46,7 +45,7 @@ autodoc_mock_imports = [
 # -- Project information -----------------------------------------------------
 
 project = "pixie16"
-copyright = "2019-2023, The Regents of the University of California through Lawrence Berkeley National Laboratory (subject to receipt of any required approvals from the U.S. Dept. of Energy). All rights reserved"
+copyright = "2019-2026, The Regents of the University of California through Lawrence Berkeley National Laboratory (subject to receipt of any required approvals from the U.S. Dept. of Energy). All rights reserved"
 author = "Arun Persaud et al."
 
 # The full version, including alpha/beta/rc tags

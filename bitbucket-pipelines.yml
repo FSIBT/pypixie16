@@ -49,3 +49,15 @@ pipelines:
             - pip install fastparquet
             - pip install .[test]
             - pytest -v tests/ --junitxml=test-reports/report.xml
+      - step:
+          name: Test_3.14
+          image: python:3.14
+          caches:
+            - pip
+          script:
+            - apt-get update -y
+            - apt-get install -y python3-pyqt6 mesa-common-dev libglu1-mesa-dev
+            - pip install -U pip
+            - pip install fastparquet
+            - pip install .[test]
+            - pytest -v tests/ --junitxml=test-reports/report.xml

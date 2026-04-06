@@ -1,6 +1,5 @@
 alabaster
 appdirs
-cbitstruct
 docopt
 fast-histogram
 lmfit
