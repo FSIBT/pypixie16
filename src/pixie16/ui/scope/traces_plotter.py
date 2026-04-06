@@ -1531,21 +1531,32 @@ class TracesPlotter(QWidget):
         target_length = len(latest_trace)
         time_axis = self.calculate_real_time_axis(target_length, channel)
 
-        # Calculate trigger points for the latest trace
-        try:
-            main_trigger_points = self.calculate_main_trigger_point(latest_trace, channel)
-            if main_trigger_points:
-                self._store_trigger_info(channel, main_trigger_points, "main_trigger")
-            else:
-                self._store_trigger_info(channel, [], "main_trigger")
-        except Exception as e:
-            print(f"Error calculating main trigger for channel {channel}: {e}")
-            self._store_trigger_info(channel, [], "main_trigger")
-
         # Apply polarity inversion to the source trace before any processing
         working_trace = latest_trace
         if not self.channel_polarity.get(channel, True):
             working_trace = -working_trace
+
+        # Compute fast trigger position on the raw trace (replaces leading edge marker)
+        try:
+            traces_fpga = convert_trace_to_FPGA(working_trace[np.newaxis, :])
+            fast_result = compute_fast_trigger_validation(
+                traces_fpga,
+                L=self.hardware_params["fast_L"],
+                G=self.hardware_params["fast_G"],
+                threshold=self.hardware_params["fast_threshold"],
+            )
+            if (fast_result["validation_passed"]
+                    and len(fast_result["trigger_indices"]) > 0
+                    and len(fast_result["trigger_indices"][0]) > 0):
+                fpga_idx = fast_result["trigger_indices"][0][0]
+                fpga_delay = self.hardware_params["fast_L"] + (self.hardware_params["fast_G"] // 2)
+                fast_trigger_raw_pos = (fpga_idx + fpga_delay) * 5
+                self._store_trigger_info(channel, [fast_trigger_raw_pos], "main_trigger")
+            else:
+                self._store_trigger_info(channel, [], "main_trigger")
+        except Exception as e:
+            print(f"Error calculating fast trigger for channel {channel}: {e}")
+            self._store_trigger_info(channel, [], "main_trigger")
 
         # Plot enabled traces with proper scaling
         for trace_type, enabled in self.trace_types.items():
@@ -1888,25 +1899,22 @@ class TracesPlotter(QWidget):
         # Track which marker types we've added to legend
         added_to_legend = set()
 
-        if ("main_trigger" in trigger_info and trigger_info["main_trigger"] 
+        if ("main_trigger" in trigger_info and trigger_info["main_trigger"]
             and self.trace_types.get("raw", False)):
             main_trigger_points = trigger_info["main_trigger"]
-            # Use corrected time axis for raw trace alignment
-            raw_corrected_time_axis = self.apply_time_correction(time_axis, "raw")
             for idx, trigger_idx in enumerate(main_trigger_points):
-                if 0 <= trigger_idx < len(raw_corrected_time_axis) and 0 <= trigger_idx < target_length:
-                    trigger_time = raw_corrected_time_axis[trigger_idx]
+                if 0 <= trigger_idx < len(time_axis) and 0 <= trigger_idx < target_length:
+                    trigger_time = time_axis[trigger_idx]
                     trigger_amplitude = self.normalize_trace_to_zero_baseline(latest_trace, "raw")[trigger_idx]
-                    # add name to first instance
                     plot_widget.plot(
                         [trigger_time],
                         [trigger_amplitude],
                         pen=None,
                         symbol="t1",
-                        symbolBrush="darkgreen",
+                        symbolBrush="red",
                         symbolPen=pg.mkPen(color="black", width=2),
                         symbolSize=10,
-                        name="Leading Edge" if idx == 0 else None,
+                        name="Fast Trigger" if idx == 0 else None,
                     )
 
         # Add other trigger markers
