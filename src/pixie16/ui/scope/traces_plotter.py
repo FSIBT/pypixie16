@@ -2027,7 +2027,14 @@ class TracesPlotter(QWidget):
         self._add_trapezoidal_window_lines(plot_widget, channel, time_axis, latest_trace)
 
     def _add_trapezoidal_window_lines(self, plot_widget, channel, time_axis, latest_trace):
-        """Add shaded regions indicating the trapezoidal integration windows (L-G-L regions)."""
+        """Add shaded regions indicating the trapezoidal integration windows (L-G-L regions).
+
+        Draws two sets of LGL windows:
+        - Energy filter LGL (blue/green shading) — on the energy trace, using hardware-reported
+          S1/S2/S3 sum positions. Priority: these can be verified against Pixie-reported sums.
+        - Fast trigger LGL (orange shading) — on the fast trigger trace, computed from fast_L/fast_G.
+          Nice-to-have: Pixie doesn't report these sums so positions are calculated only.
+        """
         if not self.show_lgl_regions:
             return
 
@@ -2040,7 +2047,6 @@ class TracesPlotter(QWidget):
             if not self.channel_polarity.get(channel, True):
                 working_trace = -working_trace
 
-            energy_R = self.hardware_params["energy_R"]
             traces_fpga = convert_trace_to_FPGA(working_trace[np.newaxis, :])
             fast_result = compute_fast_trigger_validation(
                 traces_fpga,
@@ -2054,93 +2060,116 @@ class TracesPlotter(QWidget):
             if len(fast_trigger_indices) == 0 or len(fast_trigger_indices[0]) == 0:
                 return
 
-            # Fast trigger position in raw samples
-            # Use the trigger closest to the trace center (where hardware places the actual pulse)
+            # Pick the trigger closest to trace center (where hardware places the pulse)
             fast_L = self.hardware_params["fast_L"]
             fast_G = self.hardware_params["fast_G"]
             fpga_delay = fast_L + (fast_G // 2)
 
             all_triggers = fast_trigger_indices[0]
-            trace_center_fpga = len(latest_trace) // (2 * 5)  # center of trace in FPGA samples
+            trace_center_fpga = len(latest_trace) // (2 * 5)
             fpga_idx = min(all_triggers, key=lambda t: abs(t - trace_center_fpga))
-
-            trigger_raw_idx = (fpga_idx + fpga_delay) * 5
         except Exception:
             return
 
-        if trigger_raw_idx >= len(time_axis):
-            return
-
-        # Get energy filter parameters
-        L = self.hardware_params["energy_L"]
-        G = self.hardware_params["energy_G"]
-        P = self.hardware_params.get("energy_P", 1)
-
-        # Match compute_energy_filter exactly:
-        # trigger_pos = fpga_idx // slow_filter_range - 2*L - G + P
-        # readout k = trigger_pos + 2*L + G - 1 = fpga_idx // sfr + P - 1
-        # S3 ends at k, spans L steps. S2 spans G steps before S3. S1 spans L before S2.
-        slow_filter_range = 2 ** energy_R
-
-        # Readout position k in energy steps (from start of trace)
-        # fpga_delay accounts for the fast trigger's L + G//2 pipeline delay
-        k = (fpga_idx + fpga_delay) // slow_filter_range + P - 1
-
-        # Convert energy step positions to ns on the raw time axis
-        # Energy step 0 corresponds to raw sample 0 (time_axis[0])
-        # Each energy step = slow_filter_range * 5 raw samples
-        raw_samples_per_step = slow_filter_range * 5
         time_step = time_axis[1] - time_axis[0] if len(time_axis) > 1 else 2.0
 
-        def energy_step_to_ns(step):
-            raw_idx = step * raw_samples_per_step
-            return time_axis[0] + raw_idx * time_step
+        def _draw_lgl_regions(plot_widget, bounds, brush_l, brush_g, pen_l, pen_g, label_y_pos):
+            """Draw three shaded regions and labels for one set of LGL windows."""
+            l1_start, l1_end, g_end, l2_end = bounds
 
-        # S1 (baseline L): [k-2L-G+1, k-L-G]
-        l1_start = energy_step_to_ns(k - 2 * L - G + 1)
-        l1_end = energy_step_to_ns(k - L - G + 1)
-        # S2 (gap G): [k-L-G+1, k-L]
-        g_end = energy_step_to_ns(k - L + 1)
-        # S3 (signal L): [k-L+1, k]
-        l2_end = energy_step_to_ns(k + 1)
+            plot_widget.addItem(pg.LinearRegionItem(
+                values=[l1_start, l1_end], brush=brush_l, pen=pen_l, movable=False))
+            plot_widget.addItem(pg.LinearRegionItem(
+                values=[l1_end, g_end], brush=brush_g, pen=pen_g, movable=False))
+            plot_widget.addItem(pg.LinearRegionItem(
+                values=[g_end, l2_end], brush=brush_l, pen=pen_l, movable=False))
 
+            for label_text, pos in [('L', (l1_start + l1_end) / 2),
+                                     ('G', (l1_end + g_end) / 2),
+                                     ('L', (g_end + l2_end) / 2)]:
+                lbl_color = pen_g.color().name() if label_text == 'G' else pen_l.color().name()
+                plot_widget.addItem(pg.InfiniteLine(
+                    pos=pos, angle=90,
+                    pen=pg.mkPen(color=lbl_color, width=0),
+                    label=label_text,
+                    labelOpts={'position': label_y_pos, 'color': lbl_color, 'anchor': (0.5, 1)}
+                ))
 
-        # Leading L region (blue shaded)
-        l1_region = pg.LinearRegionItem(
-            values=[l1_start, l1_end],
-            brush=pg.mkBrush(30, 30, 180, 40),
-            pen=pg.mkPen(color='darkblue', style=pg.QtCore.Qt.PenStyle.DashLine, width=1.5),
-            movable=False,
-        )
-        plot_widget.addItem(l1_region)
+        # --- Energy filter LGL (priority — verifiable against Pixie-reported S1/S2/S3) ---
+        if self.trace_types.get("energy_filter", False):
+            energy_R = self.hardware_params["energy_R"]
+            slow_filter_range = 2 ** energy_R
+            L = self.hardware_params["energy_L"]
+            G = self.hardware_params["energy_G"]
 
-        # Gap G region (green shaded)
-        g_region = pg.LinearRegionItem(
-            values=[l1_end, g_end],
-            brush=pg.mkBrush(30, 160, 30, 40),
-            pen=pg.mkPen(color='darkgreen', style=pg.QtCore.Qt.PenStyle.DashLine, width=1.5),
-            movable=False,
-        )
-        plot_widget.addItem(g_region)
+            # Window widths in raw samples (ROOTS pattern: SlowLength * 2^sfr * 10 / 2)
+            spc = slow_filter_range * 5  # raw samples per energy step
+            Ls = L * spc
+            Gs = G * spc
 
-        # Trailing L region (blue shaded)
-        l2_region = pg.LinearRegionItem(
-            values=[g_end, l2_end],
-            brush=pg.mkBrush(30, 30, 180, 40),
-            pen=pg.mkPen(color='darkblue', style=pg.QtCore.Qt.PenStyle.DashLine, width=1.5),
-            movable=False,
-        )
-        plot_widget.addItem(l2_region)
+            # After energy trace alignment, S1 starts at fast_trigger_raw_pos
+            sum_start_raw = (fpga_idx + fpga_delay) * 5
 
-        # Add labels at region centers
-        for label_text, pos in [('L', (l1_start + l1_end) / 2), ('G', (l1_end + g_end) / 2), ('L', (g_end + l2_end) / 2)]:
-            color = 'darkblue' if label_text == 'L' else 'darkgreen'
-            plot_widget.addItem(pg.InfiniteLine(
-                pos=pos, angle=90,
-                pen=pg.mkPen(color=color, width=0),  # invisible line, just for label
-                label=label_text,
-                labelOpts={'position': 0.95, 'color': color, 'anchor': (0.5, 1)}
-            ))
+            # Energy trace is plotted on the corrected time axis
+            energy_time_axis = self.apply_time_correction(time_axis, "energy_filter")
+
+            def energy_raw_to_ns(raw_idx):
+                if 0 <= raw_idx < len(energy_time_axis):
+                    return energy_time_axis[int(raw_idx)]
+                return energy_time_axis[0] + raw_idx * time_step
+
+            # Contiguous windows: S1[Ls] | S2[Gs] | S3[Ls]
+            bounds = (
+                energy_raw_to_ns(sum_start_raw),
+                energy_raw_to_ns(sum_start_raw + Ls),
+                energy_raw_to_ns(sum_start_raw + Ls + Gs),
+                energy_raw_to_ns(sum_start_raw + 2 * Ls + Gs),
+            )
+            _draw_lgl_regions(
+                plot_widget, bounds,
+                brush_l=pg.mkBrush(30, 30, 180, 40),
+                brush_g=pg.mkBrush(30, 160, 30, 40),
+                pen_l=pg.mkPen(color='darkblue', style=pg.QtCore.Qt.PenStyle.DashLine, width=1.5),
+                pen_g=pg.mkPen(color='darkgreen', style=pg.QtCore.Qt.PenStyle.DashLine, width=1.5),
+                label_y_pos=0.95,
+            )
+
+        # --- Fast trigger LGL (nice-to-have — no hardware sums to verify against) ---
+        if self.trace_types.get("fast_trigger", False):
+            # Fast trigger filter sums at crossing point fpga_idx:
+            #   S1: FPGA [fpga_idx - 2L - G + 1, fpga_idx - L - G]
+            #   S2: FPGA [fpga_idx - L - G + 1, fpga_idx - L]  (gap)
+            #   S3: FPGA [fpga_idx - L + 1, fpga_idx]
+            # Each FPGA sample = 5 raw samples. The fast trigger trace is plotted on
+            # time_axis (uncorrected) with pipeline delay baked into the data interpolation,
+            # so FPGA sample n appears at raw position (n + fpga_delay) * 5.
+            ft_L = fast_L  # in FPGA samples
+            ft_G = fast_G
+            ft_Ls = ft_L * 5  # in raw samples
+            ft_Gs = ft_G * 5
+
+            # S1 starts at FPGA (fpga_idx - 2L - G + 1), mapped to raw with delay
+            ft_sum_start_raw = (fpga_idx - 2 * ft_L - ft_G + 1 + fpga_delay) * 5
+
+            def ft_raw_to_ns(raw_idx):
+                if 0 <= raw_idx < len(time_axis):
+                    return time_axis[int(raw_idx)]
+                return time_axis[0] + raw_idx * time_step
+
+            bounds = (
+                ft_raw_to_ns(ft_sum_start_raw),
+                ft_raw_to_ns(ft_sum_start_raw + ft_Ls),
+                ft_raw_to_ns(ft_sum_start_raw + ft_Ls + ft_Gs),
+                ft_raw_to_ns(ft_sum_start_raw + 2 * ft_Ls + ft_Gs),
+            )
+            _draw_lgl_regions(
+                plot_widget, bounds,
+                brush_l=pg.mkBrush(200, 120, 0, 30),
+                brush_g=pg.mkBrush(200, 200, 0, 30),
+                pen_l=pg.mkPen(color='darkorange', style=pg.QtCore.Qt.PenStyle.DotLine, width=1),
+                pen_g=pg.mkPen(color='goldenrod', style=pg.QtCore.Qt.PenStyle.DotLine, width=1),
+                label_y_pos=0.85,
+            )
 
     def _add_threshold_lines(self, plot_widget, trace_data):
         if self.amplitude_threshold <= 0:
