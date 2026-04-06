@@ -1367,9 +1367,11 @@ class TracesPlotter(QWidget):
 
             self.raw_stats_label.setText(stats_text)
 
-            # Apply auto-range only when appropriate
+            # Auto-range y-axis only — x-axis is locked to trace extent to prevent jitter
+            # (trace delay is a fixed hardware setting so x range shouldn't change)
             if auto_range_enabled and total_traces > 0:
-                self.raw_plot_widget.autoRange()
+                self.raw_plot_widget.enableAutoRange(axis='y')
+                self.raw_plot_widget.disableAutoRange(axis='x')
 
         except Exception as e:
             print(f"Error updating raw traces plot: {e}")
@@ -1441,10 +1443,20 @@ class TracesPlotter(QWidget):
                 # Normal mode - plot just the latest trace
                 self._plot_single_trace(channel, plot_widget)
                 plot_widget.setTitle(f"{label} - Ch {channel}")
-            
+
             # Add legend (it will be recreated with each update)
             plot_widget.addLegend()
-                
+
+            # Lock x-axis to trace extent to prevent marker/trace jitter from auto-range.
+            # Trace length and delay are fixed hardware settings — only y-axis needs rescaling.
+            traces_list = list(self.trace_data[channel])
+            if traces_list:
+                trace_len = len(traces_list[-1])
+                x_axis = self.calculate_real_time_axis(trace_len, channel)
+                plot_widget.setXRange(x_axis[0], x_axis[-1], padding=0.02)
+            plot_widget.enableAutoRange(axis='y')
+            plot_widget.disableAutoRange(axis='x')
+
             self.update_persistence_statistics(channel)
 
         except Exception as e:
