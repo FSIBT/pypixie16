@@ -159,6 +159,9 @@ class TracesPlotter(QWidget):
         self.trace_overflow_count = {ch: 0 for ch in self.channels}
         self.last_traces = {ch: None for ch in self.channels}
 
+        # Hardware-reported energy sums for LGL validation (per channel, latest event)
+        self.reported_esums = {ch: None for ch in self.channels}
+
         # Display settings (simplified for Raw Traces)
         self.max_traces_display = 10
         self.amplitude_threshold = 0.001
@@ -921,10 +924,12 @@ class TracesPlotter(QWidget):
         cache_key = f"{trace_type}_{L}_{G}"
         if cache_key not in self.offset_corrections:
             # Calculate offset based on trace type
+            # Note: energy_filter is NOT in this map — its data alignment (alignment_offset
+            # in _plot_single_trace) already positions the curve correctly. Adding a time
+            # correction here would double-shift the curve left.
             cfd_w = self.hardware_params.get("CFD_delay", 5)
             offset_map = {
                 "fast_trigger": (L + G // 2) * 5,  # FPGA to raw sample conversion
-                "energy_filter": (L + G // 2) * (2 ** self.hardware_params.get("energy_R", 3)) * 5,
                 "cfd": (L + G // 2 + cfd_w) * 5,  # Fast trigger delay + CFD delay
             }
             self.offset_corrections[cache_key] = offset_map.get(trace_type, 0)
@@ -1125,8 +1130,15 @@ class TracesPlotter(QWidget):
 
     def add_event_with_trace(self, event, trace_data):
         event_timestamp = getattr(event, "timestamp", None)
-        
 
+        # Store hardware-reported energy sums for LGL validation (if CaptureSums enabled)
+        esum_t = getattr(event, "Esum_trailing", -1)
+        esum_l = getattr(event, "Esum_leading", -1)
+        esum_g = getattr(event, "Esum_gap", -1)
+        if esum_t >= 0 and esum_l >= 0 and esum_g >= 0:
+            self.reported_esums[event.channel] = {
+                "trailing": esum_t, "leading": esum_l, "gap": esum_g
+            }
 
         # Add to raw traces display
         self.add_trace(event.channel, trace_data, event_timestamp)
