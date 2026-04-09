@@ -204,7 +204,7 @@ class PixieScopeApp(QMainWindow):
         self.live_reader = None
         self.data_source = None
         self.is_acquiring = False
-        self.current_mode = "mca_mode"
+        self.current_mode = "list_mode"
 
         # Timers
         self.acquisition_timer = None
@@ -273,10 +273,19 @@ class PixieScopeApp(QMainWindow):
         control_panel = self.create_control_panel()
         self.left_layout.addWidget(control_panel)
 
-        # Initialize with MCA plotter by default
-        self.spectrum_tab = MCASpectrumPlotter(
-            channels=self.channel_numbers, title="PIXIE-16 MCA Spectra"
+        # Initialize with List Mode (TracesPlotter) by default
+        if 6 not in self.channel_numbers:
+            print(f"WARNING: Channel 6 not in enabled channels {self.channel_numbers}, adding it...")
+            self.channel_numbers = list(self.channel_numbers) + [6]
+
+        self.spectrum_tab = TracesPlotter(
+            channels=self.channel_numbers,
+            title="PIXIE-16 List Mode",
+            hardware_manager=self.pixie_hw,
         )
+        self.spectrum_tab.parameter_changed.connect(self.handle_traces_parameter_change)
+        if hasattr(self.spectrum_tab, "request_right_panel_swap"):
+            self.spectrum_tab.request_right_panel_swap.connect(self.swap_right_panel_controls)
         self.left_layout.addWidget(self.spectrum_tab)
 
         # Right side - controls
@@ -378,7 +387,7 @@ class PixieScopeApp(QMainWindow):
         # Mode selection
         top_layout.addWidget(QLabel("Mode:"))
         self.mode_combo = QComboBox()
-        self.mode_combo.addItems(["MCA Mode", "List Mode"])
+        self.mode_combo.addItems(["List Mode", "MCA Mode"])
         self.mode_combo.currentTextChanged.connect(self.on_mode_changed)
         top_layout.addWidget(self.mode_combo)
 
