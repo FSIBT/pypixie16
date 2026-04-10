@@ -533,6 +533,34 @@ def timestamps_and_sizes_from_files_generator(files):
         return
 
 
+def timestamps_sizes_and_channel_from_files_generator(files):
+    """Yields (channel, timestamp, event_length_words) for each event in binary files."""
+    try:
+        with FileReader(files) as r:
+            while not r.done:
+                header_data = r.read(4)
+                event_header = unpack_header(header_data)
+
+                header_length = event_header["Header Length"]
+                extra_header_length = header_length - 4
+                event_length = event_header["Event Length"]
+
+                if extra_header_length > 0:
+                    r.read(extra_header_length, 4)
+
+                trace_length = event_length - header_length
+                if trace_length:
+                    r.read(trace_length, header_length)
+
+                channel = event_header["channel"]
+                timestamp = (
+                    event_header["EVTTIME_LO"] + event_header["EVTTIME_HI"] * 2**32
+                ) * 10
+                yield channel, timestamp, event_length
+    except (EmptyError, LeftoverBytesError):
+        return
+
+
 def data_rate_from_file(files):
     """
     Calculate the data rate in MB/s from a list of binary files.
@@ -558,6 +586,23 @@ def data_rate_from_file(files):
     # Convert to MB/s
     data_rate = {sec: b / (8 * 1024 * 1024) for sec, b in data.items()}
     return data_rate
+
+
+def data_rate_per_channel_from_file(files):
+    """
+    Calculate the data rate in MB/s per channel from a list of binary files.
+    Returns a nested dictionary {channel: {second: MB/s}}.
+    """
+    data = defaultdict(lambda: defaultdict(int))
+
+    for channel, timestamp, word in timestamps_sizes_and_channel_from_files_generator(files):
+        sec = math.floor(timestamp * 1e-9)
+        data[channel][sec] += word * 32  # word size is 32 bits
+
+    return {
+        channel: {sec: bits / (8 * 1024 * 1024) for sec, bits in per_sec.items()}
+        for channel, per_sec in data.items()
+    }
 
 
 def to_tuple(obj):
