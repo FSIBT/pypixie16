@@ -30,7 +30,7 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import pyqtSignal, Qt, QTimer
 from PyQt6.QtGui import QFont, QPalette
 
-from .parameter_validation import PixieParameterValidator, ParameterChangeManager
+from .parameter_validation import PixieParameterValidator
 
 logger = logging.getLogger(__name__)
 
@@ -68,7 +68,6 @@ class ValidatedDoubleSpinBox(QDoubleSpinBox):
 
 class ParameterControls(QGroupBox):
     parameter_changed = pyqtSignal(str, object, int, int)
-    apply_all_requested = pyqtSignal(dict, int, int)
     status_message = pyqtSignal(str)
     validation_error = pyqtSignal(
         str, str, object
@@ -84,13 +83,9 @@ class ParameterControls(QGroupBox):
 
         # Initialize validation system
         self.validator = PixieParameterValidator(module_type)
-        self.change_manager = ParameterChangeManager(
-            self.validator, self._hardware_update_callback
-        )
 
         # Widget storage for dynamic access
         self.parameter_widgets = {}
-        self.real_time_updates_enabled = True
 
         self.setup_ui()
         self.connect_signals()
@@ -148,10 +143,6 @@ class ParameterControls(QGroupBox):
         module_channel_group = self.create_module_channel_selector()
         content_layout.addWidget(module_channel_group)
 
-        # Real-time update toggle
-        update_controls = self.create_update_controls()
-        content_layout.addWidget(update_controls)
-
         # Parameter tabs
         param_tabs = self.create_parameter_tabs()
         content_layout.addWidget(param_tabs)
@@ -200,56 +191,9 @@ class ParameterControls(QGroupBox):
         self.channel_spin.setValue(self.current_channel)
         layout.addWidget(self.channel_spin)
 
-        # Add "Select All" toggle button
-        self.select_all_btn = QPushButton("All Channels")
-        self.select_all_btn.setCheckable(True)
-        self.select_all_btn.setChecked(False)
-        self.select_all_btn.clicked.connect(self.toggle_all_channels)
-        self.select_all_btn.setToolTip("Toggle between single channel and all channels")
-        layout.addWidget(self.select_all_btn)
-
         layout.addStretch()
         group.setLayout(layout)
         return group
-
-    def create_update_controls(self):
-        group = QGroupBox("Update Settings")
-        layout = QHBoxLayout()
-
-        self.realtime_check = QCheckBox("Real-time Updates")
-        self.realtime_check.setChecked(True)
-        self.realtime_check.setToolTip(
-            "Apply parameter changes immediately to hardware"
-        )
-        layout.addWidget(self.realtime_check)
-
-        layout.addWidget(QLabel("Debounce:"))
-        self.debounce_spin = QDoubleSpinBox()
-        self.debounce_spin.setRange(0.1, 5.0)
-        self.debounce_spin.setValue(0.5)
-        self.debounce_spin.setSuffix(" s")
-        self.debounce_spin.setDecimals(1)
-        self.debounce_spin.setToolTip("Delay before applying rapid parameter changes")
-        layout.addWidget(self.debounce_spin)
-
-        layout.addStretch()
-        group.setLayout(layout)
-        return group
-
-    def toggle_all_channels(self, checked):
-        if checked:
-            self.select_all_btn.setText("Single Channel")
-            self.channel_spin.setEnabled(False)
-            self.status_message.emit(
-                "All channels mode - parameters apply to all channels"
-            )
-            # You can emit a signal here to notify parent about all-channel mode
-        else:
-            self.select_all_btn.setText("All Channels")
-            self.channel_spin.setEnabled(True)
-            self.status_message.emit(
-                f"Single channel mode - parameters apply to Channel {self.channel_spin.value()}"
-            )
 
     def create_parameter_tabs(self):
         tabs = QTabWidget()
@@ -505,49 +449,25 @@ class ParameterControls(QGroupBox):
         layout = QGridLayout()
         layout.setSpacing(4)
 
-        self.apply_all_btn = QPushButton("Apply All")
-        self.apply_all_btn.setToolTip(
-            "Apply all current parameter values to selected module/channel"
-        )
-        self.apply_all_btn.setStyleSheet(
-            """
-                QPushButton {
-                    background-color: #4CAF50;
-                    color: white;
-                    font-weight: bold;
-                    padding: 6px;
-                    border: none;
-                    border-radius: 4px;
-                }
-                QPushButton:hover {
-                    background-color: #45a049;
-                }
-                QPushButton:pressed {
-                    background-color: #3d8b40;
-                }
-            """
-        )
-        layout.addWidget(self.apply_all_btn, 0, 0)
-
         self.read_hw_btn = QPushButton("Read HW")
         self.read_hw_btn.setToolTip("Read current parameter values from hardware")
-        layout.addWidget(self.read_hw_btn, 0, 1)
+        layout.addWidget(self.read_hw_btn, 0, 0)
 
         self.load_preset_btn = QPushButton("Load Preset")
         self.load_preset_btn.setToolTip("Load parameter values from file")
-        layout.addWidget(self.load_preset_btn, 0, 2)
+        layout.addWidget(self.load_preset_btn, 0, 1)
 
         self.save_preset_btn = QPushButton("Save Preset")
         self.save_preset_btn.setToolTip("Save current parameter values to file")
-        layout.addWidget(self.save_preset_btn, 1, 0)
+        layout.addWidget(self.save_preset_btn, 0, 2)
 
         self.load_default_btn = QPushButton("Defaults")
         self.load_default_btn.setToolTip("Load default parameter values from built-in defaults")
-        layout.addWidget(self.load_default_btn, 1, 1)
+        layout.addWidget(self.load_default_btn, 1, 0)
 
         self.load_dict_btn = QPushButton("From File")
         self.load_dict_btn.setToolTip("Load parameter values from a JSON settings file")
-        layout.addWidget(self.load_dict_btn, 1, 2)
+        layout.addWidget(self.load_dict_btn, 1, 1)
 
         group.setLayout(layout)
         return group
@@ -557,16 +477,11 @@ class ParameterControls(QGroupBox):
         self.module_spin.valueChanged.connect(self.on_module_changed)
         self.channel_spin.valueChanged.connect(self.on_channel_changed)
 
-        # Real-time update controls
-        self.realtime_check.toggled.connect(self.on_realtime_toggled)
-        self.debounce_spin.valueChanged.connect(self.on_debounce_changed)
-
         # Connect all parameter widgets
         for param_name, widget in self.parameter_widgets.items():
             self._connect_parameter_widget(param_name, widget)
 
         # Action buttons
-        self.apply_all_btn.clicked.connect(self.apply_all_settings)
         self.read_hw_btn.clicked.connect(self.read_from_hardware)
         self.load_preset_btn.clicked.connect(self.load_preset)
         self.save_preset_btn.clicked.connect(self.save_preset)
@@ -591,60 +506,21 @@ class ParameterControls(QGroupBox):
         module = self.module_spin.value()
         channel = self.channel_spin.value()
 
-        if self.real_time_updates_enabled:
-            # Emit for immediate hardware update
-            self.parameter_changed.emit(param_name, value, module, channel)
-            self.status_message.emit(
-                f"Applied {param_name} = {value} to M{module}:Ch{channel}"
-            )
-        else:
-            self.status_message.emit(
-                f"Parameter {param_name} changed to {value} (pending apply)"
-            )
-
-    def on_realtime_toggled(self, enabled: bool):
-        self.real_time_updates_enabled = enabled
-        if enabled:
-            self.status_message.emit(
-                "Real-time updates enabled - parameters applied immediately"
-            )
-        else:
-            self.status_message.emit(
-                "Real-time updates disabled - use 'Apply All' button"
-            )
-
-    def on_debounce_changed(self, delay: float):
-        self.change_manager.debounce_delay = delay
-        self.status_message.emit(f"Debounce delay set to {delay} seconds")
+        # Emit for immediate per-channel hardware update
+        self.parameter_changed.emit(param_name, value, module, channel)
+        self.status_message.emit(
+            f"Applied {param_name} = {value} to M{module}:Ch{channel}"
+        )
 
     def on_module_changed(self, module: int):
         self.current_module = module
         self.status_message.emit(f"Selected Module {module}")
-        # Read parameters from new module if real-time updates enabled
-        if self.real_time_updates_enabled:
-            QTimer.singleShot(100, self.read_from_hardware)
+        QTimer.singleShot(100, self.read_from_hardware)
 
     def on_channel_changed(self, channel: int):
         self.current_channel = channel
         self.status_message.emit(f"Selected Channel {channel}")
-        # Read parameters from new channel if real-time updates enabled
-        if self.real_time_updates_enabled:
-            QTimer.singleShot(100, self.read_from_hardware)
-
-    def apply_all_settings(self):
-        params = self.get_all_parameters()
-        module = self.module_spin.value()
-        channel = self.channel_spin.value()
-
-        # Validate all parameters
-        validated_params = self.validator.validate_parameter_set(
-            params, module, channel
-        )
-
-        self.apply_all_requested.emit(validated_params, module, channel)
-        self.status_message.emit(
-            f"Applied all settings to Module {module}, Channel {channel}"
-        )
+        QTimer.singleShot(100, self.read_from_hardware)
 
     def read_from_hardware(self):  # Implemented by the parent scope application
         self.status_message.emit("Reading parameters from hardware...")
@@ -687,7 +563,7 @@ class ParameterControls(QGroupBox):
                     self._connect_parameter_widget(param_name, widget)
 
     def _disconnect_widget_signals(self, widget):
-        if isinstance(widget | (QSpinBox | QDoubleSpinBox)):
+        if isinstance(widget, (QSpinBox, QDoubleSpinBox)):
             widget.valueChanged.disconnect()
         elif isinstance(widget, QComboBox):
             widget.currentTextChanged.disconnect()
@@ -800,12 +676,6 @@ class ParameterControls(QGroupBox):
             logger.error(error_msg)
             self.status_message.emit(error_msg)
             QMessageBox.warning(self, "Save Error", error_msg)
-
-    def _hardware_update_callback(
-        self, params: dict[str, any], module: int, channel: int
-    ):
-        # This will be connected by the parent scope application
-        self.apply_all_requested.emit(params, module, channel)
 
     def set_module_channel(self, module: int, channel: int):
         self.module_spin.setValue(module)
