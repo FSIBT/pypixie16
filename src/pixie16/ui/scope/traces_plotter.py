@@ -401,6 +401,7 @@ class TracesPlotter(QWidget):
         self.raw_plot_widget.showGrid(True, True, alpha=0.3)
         self.raw_plot_widget.addLegend()
         self.raw_plot_widget.setBackground("w")
+        self.raw_plot_widget.getViewBox().sigRangeChangedManually.connect(self._on_user_zoom)
         layout.addWidget(self.raw_plot_widget)
 
         # Basic statistics
@@ -675,6 +676,7 @@ class TracesPlotter(QWidget):
         self.channel_plot.showGrid(True, True, alpha=0.3)
         self.channel_plot.setBackground("w")
         self.channel_plot.addLegend(offset=(10, 10))
+        self.channel_plot.getViewBox().sigRangeChangedManually.connect(self._on_user_zoom)
         
         self.channel_plot.setSizePolicy(
             QSizePolicy.Policy.Expanding,  # Horizontal: expand
@@ -881,6 +883,17 @@ class TracesPlotter(QWidget):
 
     def toggle_auto_scale(self, enabled):
         self.auto_scale = enabled
+        if enabled:
+            # One-shot auto-range to snap to current data immediately
+            self.raw_plot_widget.autoRange()
+            if hasattr(self, "channel_plot") and self.channel_plot is not None:
+                self.channel_plot.autoRange()
+
+    def _on_user_zoom(self, _view_box):
+        """Called when the user manually zooms/pans a plot. Disables auto-scale."""
+        if self.auto_scale:
+            self.auto_scale = False
+            self.auto_scale_cb.setChecked(False)
 
     def toggle_single_persistence(self, enabled):
         self.single_channel_persistence = enabled
@@ -1367,11 +1380,13 @@ class TracesPlotter(QWidget):
 
             self.raw_stats_label.setText(stats_text)
 
-            # Auto-range y-axis only — x-axis is locked to trace extent to prevent jitter
-            # (trace delay is a fixed hardware setting so x range shouldn't change)
+            # One-shot y-axis auto-range — does NOT re-enable continuous auto-range,
+            # so a subsequent manual zoom will stick until the user re-checks Auto Scale.
             if auto_range_enabled and total_traces > 0:
-                self.raw_plot_widget.enableAutoRange(axis='y')
-                self.raw_plot_widget.disableAutoRange(axis='x')
+                y_min, y_max = self.raw_plot_widget.getViewBox().childrenBounds()[1]
+                if y_min is not None and y_max is not None:
+                    padding = (y_max - y_min) * 0.05 or 1
+                    self.raw_plot_widget.setYRange(y_min - padding, y_max + padding)
 
         except Exception as e:
             print(f"Error updating raw traces plot: {e}")
@@ -1454,8 +1469,12 @@ class TracesPlotter(QWidget):
                 trace_len = len(traces_list[-1])
                 x_axis = self.calculate_real_time_axis(trace_len, channel)
                 plot_widget.setXRange(x_axis[0], x_axis[-1], padding=0.02)
-            plot_widget.enableAutoRange(axis='y')
-            plot_widget.disableAutoRange(axis='x')
+            # One-shot y-axis fit (does not re-enable continuous auto-range)
+            if self.auto_scale:
+                y_min, y_max = plot_widget.getViewBox().childrenBounds()[1]
+                if y_min is not None and y_max is not None:
+                    padding = (y_max - y_min) * 0.05 or 1
+                    plot_widget.setYRange(y_min - padding, y_max + padding)
 
             self.update_persistence_statistics(channel)
 
