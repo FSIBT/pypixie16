@@ -277,11 +277,18 @@ class DynamicPixieHardwareManager:
     # change_setting_from_dict reads CSRA, flips the right bit, and writes it back.
     BIT_PARAMETERS = {"Gain", "GoodChannel", "CaptureTrace", "Polarity"}
 
+    # UI-only parameters that have no direct SDK equivalent.
+    # These are display/debug values and must NOT be sent to the hardware.
+    UI_ONLY_PARAMETERS = {"ENERGY_L", "ENERGY_G"}
+
     def _apply_parameter_to_hardware(
         self, param_name: str, value: any, module: int, channel: int
     ) -> bool:
         try:
-            if param_name in self.MODULE_PARAMETERS:
+            if param_name in self.UI_ONLY_PARAMETERS:
+                logger.debug(f"Skipping UI-only parameter {param_name}")
+                return True
+            elif param_name in self.MODULE_PARAMETERS:
                 px.control.set_module_parameter(param_name, value, module)
             elif param_name in self.BIT_PARAMETERS:
                 # Scope restricted to the target (module, channel) so we never
