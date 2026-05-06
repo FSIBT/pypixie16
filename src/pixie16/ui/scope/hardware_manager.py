@@ -289,14 +289,26 @@ class DynamicPixieHardwareManager:
                 logger.debug(f"Skipping UI-only parameter {param_name}")
                 return True
             elif param_name in self.MODULE_PARAMETERS:
-                px.control.set_module_parameter(param_name, value, module)
+                readback = px.control.set_module_parameter(param_name, value, module)
+                logger.debug(f"Module param {param_name}: wrote={value}, readback={readback}")
             elif param_name in self.BIT_PARAMETERS:
-                # Scope restricted to the target (module, channel) so we never
-                # spill a setting onto other detectors.
                 settings = {"channels": [(module, channel)], param_name: value}
                 px.control.change_setting_from_dict(settings, call_pixie=True)
             else:
-                px.control.set_channel_parameter(param_name, value, module, channel)
+                readback = px.control.set_channel_parameter(param_name, value, module, channel)
+                if readback is not None:
+                    # Check if hardware accepted the value
+                    try:
+                        diff = abs(float(readback) - float(value))
+                        tolerance = max(1.0, abs(float(value)) * 0.01)  # 1% or 1 unit
+                        if diff > tolerance:
+                            logger.warning(
+                                f"{param_name}: wrote {value} but hardware returned {readback} "
+                                f"on M{module}:Ch{channel}"
+                            )
+                            print(f"  WARNING: {param_name} wrote={value} but hardware has {readback}")
+                    except (ValueError, TypeError):
+                        pass
             return True
         except Exception as e:
             logger.error(

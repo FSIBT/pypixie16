@@ -1004,12 +1004,24 @@ class PixieScopeApp(QMainWindow):
 
         print(f"APPLY: was_acquiring={was_acquiring}, params={[(p[0],p[1]) for p in params]}")
 
-        # Stop acquisition
+        # Fully terminate the PIXIE run so DSP accepts parameter changes
         if was_acquiring:
             self.stop_acquisition()
 
+        # Ensure hardware run is fully ended before writing params
+        if not self.dummy_mode:
+            try:
+                import pixie16 as px
+                px.control.end_run()  # Explicit end_run in case stop_acquisition didn't
+                time.sleep(0.5)       # Let DSP fully stop
+                # Verify run is stopped
+                run_active = px.control.check_run_status()
+                print(f"  Run status after end_run: {'ACTIVE' if run_active else 'STOPPED'}")
+            except Exception as e:
+                print(f"  end_run check failed: {e}")
+
         self.update_info_bar("Applying parameters to hardware...")
-        QApplication.processEvents()  # Let UI update before blocking
+        QApplication.processEvents()
 
         # Apply all parameters to hardware
         success_count = 0
