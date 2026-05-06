@@ -545,12 +545,17 @@ class ParameterControls(QGroupBox):
         for param_name, value in params.items():
             if param_name in self.parameter_widgets:
                 widget = self.parameter_widgets[param_name]
-                if isinstance(widget, QSpinBox | QDoubleSpinBox):
-                    widget.setValue(value)
-                elif isinstance(widget, QComboBox):
-                    widget.setCurrentText(str(value))
-                elif isinstance(widget, QCheckBox):
-                    widget.setChecked(bool(value))
+                try:
+                    if isinstance(widget, QSpinBox):
+                        widget.setValue(int(round(value)))
+                    elif isinstance(widget, QDoubleSpinBox):
+                        widget.setValue(float(value))
+                    elif isinstance(widget, QComboBox):
+                        widget.setCurrentText(str(value))
+                    elif isinstance(widget, QCheckBox):
+                        widget.setChecked(bool(value))
+                except (ValueError, TypeError) as e:
+                    logger.warning(f"Could not set {param_name}={value}: {e}")
 
     def set_default_values(self):
         # Core trigger parameters
