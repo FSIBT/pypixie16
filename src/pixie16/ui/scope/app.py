@@ -1,6 +1,7 @@
 import sys
 import time
 import signal
+import threading
 import traceback
 import gc
 import os
@@ -520,17 +521,11 @@ class PixieScopeApp(QMainWindow):
     def handle_traces_parameter_change(self, param_name, value, module, channel):
         try:
             if not self.dummy_mode and self.pixie_hw:
-                success = self.pixie_hw.update_parameter(
-                    param_name, value, module, channel
-                )
-                if success:
-                    self.update_info_bar(
-                        f"Hardware Validation: {param_name} = {value} on M{module}:Ch{channel}"
-                    )
-                else:
-                    self.update_info_bar(
-                        f"Hardware Validation: Failed to set {param_name} on M{module}:Ch{channel}"
-                    )
+                threading.Thread(
+                    target=self._apply_parameter_async,
+                    args=(param_name, value, module, channel),
+                    daemon=True,
+                ).start()
             else:
                 self.update_info_bar(
                     f"DUMMY MODE - Hardware Validation: {param_name} = {value}"
@@ -989,32 +984,35 @@ class PixieScopeApp(QMainWindow):
                 self.update_info_bar(f"Parameter validation failed: {error_msg}")
                 return
 
-            # Apply to hardware
+            # Update plotter immediately so the display reflects the change
+            self._sync_parameter_to_plotter(param_name, corrected_value, channel)
+
+            # Apply to hardware in a background thread to avoid freezing the GUI
             if not self.dummy_mode:
-                success = self.pixie_hw.update_parameter(
-                    param_name, corrected_value, module, channel
-                )
-                if success:
-                    self.update_info_bar(
-                        f"Set {param_name} = {corrected_value} on M{module}:Ch{channel}"
-                    )
-                else:
-                    self.update_info_bar(
-                        f"Failed to set {param_name} on M{module}:Ch{channel}"
-                    )
-                    return
+                threading.Thread(
+                    target=self._apply_parameter_async,
+                    args=(param_name, corrected_value, module, channel),
+                    daemon=True,
+                ).start()
             else:
                 self.update_info_bar(
                     f"DUMMY MODE - {param_name} = {corrected_value} on M{module}:Ch{channel}"
                 )
 
-            # Propagate to traces plotter so plots reflect the new value
-            self._sync_parameter_to_plotter(param_name, corrected_value, channel)
-
         except Exception as e:
             error_msg = f"Error setting {param_name}: {e}"
             self.update_info_bar(error_msg)
             logger.error(error_msg)
+
+    def _apply_parameter_async(self, param_name, value, module, channel):
+        """Write parameter to hardware off the GUI thread."""
+        success = self.pixie_hw.update_parameter(param_name, value, module, channel)
+        # Schedule status update back on the GUI thread
+        QTimer.singleShot(0, lambda: self.update_info_bar(
+            f"Set {param_name} = {value} on M{module}:Ch{channel}"
+            if success else
+            f"Failed to set {param_name} on M{module}:Ch{channel}"
+        ))
 
     def _sync_parameter_to_plotter(self, param_name, value, channel):
         """Push a parameter change into the traces plotter's internal state."""
