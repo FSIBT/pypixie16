@@ -69,6 +69,7 @@ class ValidatedDoubleSpinBox(QDoubleSpinBox):
 class ParameterControls(QGroupBox):
     parameter_changed = pyqtSignal(str, object, int, int)
     status_message = pyqtSignal(str)
+    request_read_hardware = pyqtSignal()
     validation_error = pyqtSignal(
         str, str, object
     )  # param_name, error_msg, attempted_value
@@ -449,25 +450,34 @@ class ParameterControls(QGroupBox):
         layout = QGridLayout()
         layout.setSpacing(4)
 
+        self.apply_channel_btn = QPushButton("Apply to Channel")
+        self.apply_channel_btn.setToolTip(
+            "Write all parameter values to the selected module/channel"
+        )
+        self.apply_channel_btn.setStyleSheet(
+            "QPushButton { font-weight: bold; background-color: #d0f0d0; }"
+        )
+        layout.addWidget(self.apply_channel_btn, 0, 0, 1, 2)
+
         self.read_hw_btn = QPushButton("Read HW")
         self.read_hw_btn.setToolTip("Read current parameter values from hardware")
-        layout.addWidget(self.read_hw_btn, 0, 0)
+        layout.addWidget(self.read_hw_btn, 0, 2)
 
         self.load_preset_btn = QPushButton("Load Preset")
         self.load_preset_btn.setToolTip("Load parameter values from file")
-        layout.addWidget(self.load_preset_btn, 0, 1)
+        layout.addWidget(self.load_preset_btn, 1, 0)
 
         self.save_preset_btn = QPushButton("Save Preset")
         self.save_preset_btn.setToolTip("Save current parameter values to file")
-        layout.addWidget(self.save_preset_btn, 0, 2)
+        layout.addWidget(self.save_preset_btn, 1, 1)
 
         self.load_default_btn = QPushButton("Defaults")
         self.load_default_btn.setToolTip("Load default parameter values from built-in defaults")
-        layout.addWidget(self.load_default_btn, 1, 0)
+        layout.addWidget(self.load_default_btn, 1, 2)
 
         self.load_dict_btn = QPushButton("From File")
         self.load_dict_btn.setToolTip("Load parameter values from a JSON settings file")
-        layout.addWidget(self.load_dict_btn, 1, 1)
+        layout.addWidget(self.load_dict_btn, 2, 0)
 
         group.setLayout(layout)
         return group
@@ -477,53 +487,41 @@ class ParameterControls(QGroupBox):
         self.module_spin.valueChanged.connect(self.on_module_changed)
         self.channel_spin.valueChanged.connect(self.on_channel_changed)
 
-        # Connect all parameter widgets
-        for param_name, widget in self.parameter_widgets.items():
-            self._connect_parameter_widget(param_name, widget)
-
         # Action buttons
+        self.apply_channel_btn.clicked.connect(self.apply_to_channel)
         self.read_hw_btn.clicked.connect(self.read_from_hardware)
         self.load_preset_btn.clicked.connect(self.load_preset)
         self.save_preset_btn.clicked.connect(self.save_preset)
 
-    def _connect_parameter_widget(self, param_name: str, widget):
-        if isinstance(widget, QSpinBox | QDoubleSpinBox):
-            widget.valueChanged.connect(
-                lambda value, name=param_name: self.on_parameter_changed(name, value)
-            )
-        elif isinstance(widget, QComboBox):
-            widget.currentTextChanged.connect(
-                lambda text, name=param_name: self.on_parameter_changed(name, text)
-            )
-        elif isinstance(widget, QCheckBox):
-            widget.toggled.connect(
-                lambda checked, name=param_name: self.on_parameter_changed(
-                    name, checked
-                )
-            )
-
-    def on_parameter_changed(self, param_name: str, value):
+    def apply_to_channel(self):
+        """Apply all current parameter values to the selected module/channel."""
         module = self.module_spin.value()
         channel = self.channel_spin.value()
 
-        # Emit for immediate per-channel hardware update
-        self.parameter_changed.emit(param_name, value, module, channel)
+        params = self.get_all_parameters()
+        for param_name, value in params.items():
+            self.parameter_changed.emit(param_name, value, module, channel)
+
         self.status_message.emit(
-            f"Applied {param_name} = {value} to M{module}:Ch{channel}"
+            f"Applied {len(params)} parameters to M{module}:Ch{channel}"
         )
 
     def on_module_changed(self, module: int):
         self.current_module = module
         self.status_message.emit(f"Selected Module {module}")
-        QTimer.singleShot(100, self.read_from_hardware)
+        QTimer.singleShot(100, self._request_hw_read)
 
     def on_channel_changed(self, channel: int):
         self.current_channel = channel
         self.status_message.emit(f"Selected Channel {channel}")
-        QTimer.singleShot(100, self.read_from_hardware)
+        QTimer.singleShot(100, self._request_hw_read)
 
-    def read_from_hardware(self):  # Implemented by the parent scope application
-        self.status_message.emit("Reading parameters from hardware...")
+    def _request_hw_read(self):
+        """Request the app to read hardware params for current module/channel."""
+        self.request_read_hardware.emit()
+
+    def read_from_hardware(self):  # Kept for manual "Read HW" button
+        self.request_read_hardware.emit()
 
     def get_all_parameters(self) -> dict[str, any]:
         params = {}
@@ -547,28 +545,12 @@ class ParameterControls(QGroupBox):
         for param_name, value in params.items():
             if param_name in self.parameter_widgets:
                 widget = self.parameter_widgets[param_name]
-
-                # Temporarily disconnect signals to avoid recursive updates
-                self._disconnect_widget_signals(widget)
-
-                try:
-                    if isinstance(widget, QSpinBox | QDoubleSpinBox):
-                        widget.setValue(value)
-                    elif isinstance(widget, QComboBox):
-                        widget.setCurrentText(str(value))
-                    elif isinstance(widget, QCheckBox):
-                        widget.setChecked(bool(value))
-                finally:
-                    # Reconnect signals
-                    self._connect_parameter_widget(param_name, widget)
-
-    def _disconnect_widget_signals(self, widget):
-        if isinstance(widget, (QSpinBox, QDoubleSpinBox)):
-            widget.valueChanged.disconnect()
-        elif isinstance(widget, QComboBox):
-            widget.currentTextChanged.disconnect()
-        elif isinstance(widget, QCheckBox):
-            widget.toggled.disconnect()
+                if isinstance(widget, QSpinBox | QDoubleSpinBox):
+                    widget.setValue(value)
+                elif isinstance(widget, QComboBox):
+                    widget.setCurrentText(str(value))
+                elif isinstance(widget, QCheckBox):
+                    widget.setChecked(bool(value))
 
     def set_default_values(self):
         # Core trigger parameters

@@ -321,9 +321,9 @@ class PixieScopeApp(QMainWindow):
             title="Parameters",
             module_type="500MHz",
         )
-        self.parameter_controls.parameter_changed.connect(self.handle_parameter_change)
+        self.parameter_controls.parameter_changed.connect(self.apply_all_parameters)
         self.parameter_controls.status_message.connect(self.update_info_bar)
-        self.parameter_controls.read_hw_btn.clicked.connect(self.read_parameters_from_hardware)
+        self.parameter_controls.request_read_hardware.connect(self.read_parameters_from_hardware)
         self.parameter_controls.load_default_btn.clicked.connect(self.load_default_settings)
         self.parameter_controls.load_dict_btn.clicked.connect(self.load_settings_from_file)
         default_controls_layout.addWidget(self.parameter_controls)
@@ -519,13 +519,11 @@ class PixieScopeApp(QMainWindow):
         self.info_bar.setText(f"Mode changed: {old_mode} → {self.current_mode}")
 
     def handle_traces_parameter_change(self, param_name, value, module, channel):
+        """Handle parameter changes from the traces plotter's own controls."""
         try:
             if not self.dummy_mode and self.pixie_hw:
-                threading.Thread(
-                    target=self._apply_parameter_async,
-                    args=(param_name, value, module, channel),
-                    daemon=True,
-                ).start()
+                # Use the same batch mechanism
+                self.apply_all_parameters(param_name, value, module, channel)
             else:
                 self.update_info_bar(
                     f"DUMMY MODE - Hardware Validation: {param_name} = {value}"
@@ -969,50 +967,109 @@ class PixieScopeApp(QMainWindow):
         "ENERGY_RISETIME": ("energy_L", lambda v: int(round(v / 0.01))), # μs → steps
         "ENERGY_FLATTOP": ("energy_G", lambda v: int(round(v / 0.01))),  # μs → steps
         "TAU": ("decay_ns", lambda v: v * 1000),                         # μs → ns
+        "EMIN": ("energy_P", None),                                      # peak sample
+        "CFDDelay": ("CFD_delay", None),                                 # FPGA ticks
+        "CFDThresh": ("CFD_threshold", None),                            # ADC units
+        "ENERGY_L": ("energy_L", None),                                  # UI-only, direct FPGA steps
+        "ENERGY_G": ("energy_G", None),                                  # UI-only, direct FPGA steps
     }
 
     def handle_parameter_change(self, param_name, value, module, channel):
+        """Handle a single parameter apply from the Apply to Channel button.
+
+        Stops acquisition, writes to hardware, syncs plotter, restarts.
+        Called once per parameter in the batch from apply_to_channel().
+        """
         try:
-            # Validate parameter
+            # Validate
             is_valid, corrected_value, error_msg = (
                 self.parameter_validator.validate_parameter(
                     param_name, value, module, channel
                 )
             )
-
             if not is_valid:
-                self.update_info_bar(f"Parameter validation failed: {error_msg}")
-                return
+                self.update_info_bar(f"Validation failed: {param_name}: {error_msg}")
+                return False
 
-            # Update plotter immediately so the display reflects the change
-            self._sync_parameter_to_plotter(param_name, corrected_value, channel)
-
-            # Apply to hardware in a background thread to avoid freezing the GUI
+            # Write to hardware (run is already stopped by apply_all_parameters)
             if not self.dummy_mode:
-                threading.Thread(
-                    target=self._apply_parameter_async,
-                    args=(param_name, corrected_value, module, channel),
-                    daemon=True,
-                ).start()
-            else:
-                self.update_info_bar(
-                    f"DUMMY MODE - {param_name} = {corrected_value} on M{module}:Ch{channel}"
+                success = self.pixie_hw.update_parameter(
+                    param_name, corrected_value, module, channel
                 )
+                if not success:
+                    self.update_info_bar(
+                        f"Failed to set {param_name} on M{module}:Ch{channel}"
+                    )
+                    return False
+
+            # Sync to plotter internal state
+            self._sync_parameter_to_plotter(param_name, corrected_value, channel)
+            return True
 
         except Exception as e:
-            error_msg = f"Error setting {param_name}: {e}"
-            self.update_info_bar(error_msg)
-            logger.error(error_msg)
+            logger.error(f"Error setting {param_name}: {e}")
+            return False
 
-    def _apply_parameter_async(self, param_name, value, module, channel):
-        """Write parameter to hardware off the GUI thread."""
-        success = self.pixie_hw.update_parameter(param_name, value, module, channel)
-        # Schedule status update back on the GUI thread
-        QTimer.singleShot(0, lambda: self.update_info_bar(
-            f"Set {param_name} = {value} on M{module}:Ch{channel}"
-            if success else
-            f"Failed to set {param_name} on M{module}:Ch{channel}"
-        ))
+    def apply_all_parameters(self, param_name, value, module, channel):
+        """Called for each parameter from Apply to Channel. Batches via a timer."""
+        # Accumulate parameters to apply
+        if not hasattr(self, '_pending_params'):
+            self._pending_params = []
+
+        self._pending_params.append((param_name, value, module, channel))
+
+        # Debounce: schedule the actual apply after all signals have been emitted
+        if not hasattr(self, '_apply_timer') or self._apply_timer is None:
+            self._apply_timer = QTimer(self)
+            self._apply_timer.setSingleShot(True)
+            self._apply_timer.timeout.connect(self._execute_apply_batch)
+
+        self._apply_timer.start(50)  # 50ms debounce
+
+    def _execute_apply_batch(self):
+        """Stop acquisition, apply all pending params, read back, restart."""
+        params = self._pending_params
+        self._pending_params = []
+
+        if not params:
+            return
+
+        was_acquiring = self.is_acquiring
+        module = params[0][2]
+        channel = params[0][3]
+
+        # Stop acquisition so hardware bus is free
+        if was_acquiring:
+            self.stop_acquisition()
+            # Small delay to let hardware settle
+            time.sleep(0.1)
+
+        # Apply all parameters to hardware
+        success_count = 0
+        for param_name, value, mod, ch in params:
+            if self.handle_parameter_change(param_name, value, mod, ch):
+                success_count += 1
+
+        # Read back from hardware to get actual applied values (DSP may adjust)
+        if not self.dummy_mode and self.pixie_hw.is_initialized:
+            try:
+                self.pixie_hw.refresh_parameters(module, channel)
+                current_params = self.pixie_hw.get_all_parameters(module, channel)
+                if current_params:
+                    self.parameter_controls.set_all_parameters(current_params)
+                    # Sync all read-back values to the plotter
+                    for p_name, p_value in current_params.items():
+                        self._sync_parameter_to_plotter(p_name, p_value, channel)
+            except Exception as e:
+                logger.warning(f"Read-back after apply failed: {e}")
+
+        self.update_info_bar(
+            f"Applied {success_count}/{len(params)} parameters to M{module}:Ch{channel}"
+        )
+
+        # Restart acquisition
+        if was_acquiring:
+            QTimer.singleShot(200, self.start_acquisition)
 
     def _sync_parameter_to_plotter(self, param_name, value, channel):
         """Push a parameter change into the traces plotter's internal state."""
@@ -1034,34 +1091,43 @@ class PixieScopeApp(QMainWindow):
         plotter.hardware_params[plotter_key] = plotter_value
 
     def read_parameters_from_hardware(self):
+        module = self.parameter_controls.module_spin.value()
+        channel = self.parameter_controls.channel_spin.value()
+
+        if not self.dummy_mode and self.pixie_hw.is_initialized:
+            self.update_info_bar(f"Reading parameters from M{module}:Ch{channel}...")
+            threading.Thread(
+                target=self._read_parameters_async,
+                args=(module, channel),
+                daemon=True,
+            ).start()
+        else:
+            self.update_info_bar("Hardware not available for parameter reading")
+
+    def _read_parameters_async(self, module, channel):
+        """Read parameters from hardware off the GUI thread."""
         try:
-            module = self.parameter_controls.module_spin.value()
-            channel = self.parameter_controls.channel_spin.value()
-
-            if not self.dummy_mode and self.pixie_hw.is_initialized:
-                # Refresh parameter cache from hardware
-                self.pixie_hw.refresh_parameters(module, channel)
-
-                # Get parameters and update UI
-                current_params = self.pixie_hw.hw_manager.get_all_parameters(
-                    module, channel
-                )
-                if current_params:
-                    self.parameter_controls.set_all_parameters(current_params)
-                    self.update_info_bar(
-                        f"Read {len(current_params)} parameters from M{module}:Ch{channel}"
-                    )
-                else:
-                    self.update_info_bar(
-                        f"No parameters found for M{module}:Ch{channel}"
-                    )
-            else:
-                self.update_info_bar("Hardware not available for parameter reading")
-
+            self.pixie_hw.refresh_parameters(module, channel)
+            current_params = self.pixie_hw.get_all_parameters(module, channel)
+            # Update UI back on the GUI thread
+            QTimer.singleShot(0, lambda: self._finish_read_parameters(current_params, module, channel))
         except Exception as e:
             error_msg = f"Error reading parameters from hardware: {e}"
-            self.update_info_bar(error_msg)
+            QTimer.singleShot(0, lambda: self.update_info_bar(error_msg))
             logger.error(error_msg)
+
+    def _finish_read_parameters(self, params, module, channel):
+        """Update UI with parameters read from hardware (runs on GUI thread)."""
+        if params:
+            self.parameter_controls.set_all_parameters(params)
+            # Sync to plotter so plots use the correct values for this channel
+            for p_name, p_value in params.items():
+                self._sync_parameter_to_plotter(p_name, p_value, channel)
+            self.update_info_bar(
+                f"Read {len(params)} parameters from M{module}:Ch{channel}"
+            )
+        else:
+            self.update_info_bar(f"No parameters found for M{module}:Ch{channel}")
 
     def load_default_settings(self):
         try:
@@ -1070,9 +1136,11 @@ class PixieScopeApp(QMainWindow):
                 # Refresh UI with loaded params
                 module = self.parameter_controls.module_spin.value()
                 channel = self.parameter_controls.channel_spin.value()
-                current_params = self.pixie_hw.hw_manager.get_all_parameters(module, channel)
+                current_params = self.pixie_hw.get_all_parameters(module, channel)
                 if current_params:
                     self.parameter_controls.set_all_parameters(current_params)
+                    for p_name, p_value in current_params.items():
+                        self._sync_parameter_to_plotter(p_name, p_value, channel)
                 self.update_info_bar("Loaded default settings successfully")
             else:
                 self.update_info_bar("Failed to load default settings")
@@ -1097,9 +1165,11 @@ class PixieScopeApp(QMainWindow):
             if success:
                 module = self.parameter_controls.module_spin.value()
                 channel = self.parameter_controls.channel_spin.value()
-                current_params = self.pixie_hw.hw_manager.get_all_parameters(module, channel)
+                current_params = self.pixie_hw.get_all_parameters(module, channel)
                 if current_params:
                     self.parameter_controls.set_all_parameters(current_params)
+                    for p_name, p_value in current_params.items():
+                        self._sync_parameter_to_plotter(p_name, p_value, channel)
                 self.update_info_bar(f"Loaded settings from {file_path}")
             else:
                 self.update_info_bar("Failed to load settings from file")
