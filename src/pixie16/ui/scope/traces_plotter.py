@@ -534,7 +534,15 @@ class TracesPlotter(QWidget):
             )
 
 
-    def calculate_aligned_time_axis(self, trace_length, event_timestamp=None):
+    def calculate_aligned_time_axis(self, trace_length, event_timestamp=None, channel=None):
+        # Base sample times
+        trace_time_axis_ns = np.arange(trace_length) * self.sampling_period_ns
+
+        # Apply trace delay offset (trigger at t=0, pre-trigger is negative)
+        if channel is not None:
+            trace_delay = self.trace_delay_ns.get(channel, 0)
+            trace_time_axis_ns = trace_time_axis_ns - trace_delay
+
         if (
             self.time_alignment_mode == "channel_aligned"
             and event_timestamp is not None
@@ -544,13 +552,9 @@ class TracesPlotter(QWidget):
             if ref_timestamp is not None:
                 # Calculate time difference in ns (timestamps are in 10ns units)
                 time_offset_ns = (event_timestamp - ref_timestamp) * 10.0
-                
-                # Create time axis in nanoseconds (keep existing scale)
-                trace_time_axis_ns = np.arange(trace_length) * self.sampling_period_ns
                 return trace_time_axis_ns + time_offset_ns
             else:
-                # No reference yet, use default
-                return np.arange(trace_length) * self.sampling_period_ns
+                return trace_time_axis_ns
 
         elif (
             self.time_alignment_mode == "real_time_axis" and event_timestamp is not None
@@ -559,13 +563,9 @@ class TracesPlotter(QWidget):
 
             if latest_timestamp is not None:
                 time_from_now_ns = (event_timestamp - latest_timestamp) * 10.0
-
-                # Create time axis starting from this relative time
-                trace_time_axis_ns = np.arange(trace_length) * self.sampling_period_ns
                 return trace_time_axis_ns + time_from_now_ns
-        else:
-            # Default: keep original behavior
-            return np.arange(trace_length) * self.sampling_period_ns
+
+        return trace_time_axis_ns
 
     def get_latest_timestamp_across_channels(self):
         latest = None
@@ -1343,7 +1343,7 @@ class TracesPlotter(QWidget):
                         if len(trace) == trace_length:
                             # Calculate time axis with alignment
                             time_axis = self.calculate_aligned_time_axis(
-                                trace_length, timestamp
+                                trace_length, timestamp, channel
                             )
 
                             # Apply polarity inversion if enabled for this channel
@@ -2236,19 +2236,16 @@ class TracesPlotter(QWidget):
             )
 
     def _add_threshold_lines(self, plot_widget, trace_data):
-        if self.amplitude_threshold <= 0:
+        fast_thresh = self.hardware_params.get("fast_threshold", 0)
+        if fast_thresh <= 0:
             return
-            
-        # Calculate baseline for threshold reference
-        baseline = self.calculate_trace_baseline(trace_data)
-        threshold_line = baseline + self.amplitude_threshold
-        
-        # Add horizontal threshold line
+
+        # Draw the hardware trigger threshold line (in ADC units)
         plot_widget.addItem(pg.InfiniteLine(
-            pos=threshold_line,
+            pos=fast_thresh,
             angle=0,  # Horizontal line
             pen=pg.mkPen(color='red', style=pg.QtCore.Qt.PenStyle.DashLine, width=2),
-            label=f'Threshold: {self.amplitude_threshold:.3f}',
+            label=f'Trigger Threshold: {fast_thresh} ADC',
             labelOpts={'position': 0.95, 'color': 'red'}
         ))
 

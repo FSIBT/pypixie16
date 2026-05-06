@@ -991,38 +991,25 @@ class PixieScopeApp(QMainWindow):
         self._apply_timer.start(50)  # 50ms debounce
 
     def _execute_apply_batch(self):
-        """Stop acquisition, then apply params in a background thread."""
+        """Stop acquisition, apply params, read back, restart. All synchronous."""
         params = self._pending_params
         self._pending_params = []
 
         if not params:
             return
 
-        self._apply_was_acquiring = self.is_acquiring
-        self._apply_params = params
-        print(f"APPLY: was_acquiring={self._apply_was_acquiring}, params={[(p[0],p[1]) for p in params]}")
-
-        # Stop acquisition on the GUI thread (updates buttons etc.)
-        if self._apply_was_acquiring:
-            self.stop_acquisition()
-
-        self.update_info_bar("Applying parameters to hardware...")
-
-        # Do the slow hardware I/O in a background thread
-        threading.Thread(
-            target=self._apply_batch_worker,
-            daemon=True,
-        ).start()
-
-    def _apply_batch_worker(self):
-        """Background thread: write params, read back. No GUI calls here."""
-        params = self._apply_params
+        was_acquiring = self.is_acquiring
         module = params[0][2]
         channel = params[0][3]
 
-        # Let hardware settle after stopping
-        if self._apply_was_acquiring:
-            time.sleep(0.1)
+        print(f"APPLY: was_acquiring={was_acquiring}, params={[(p[0],p[1]) for p in params]}")
+
+        # Stop acquisition
+        if was_acquiring:
+            self.stop_acquisition()
+
+        self.update_info_bar("Applying parameters to hardware...")
+        QApplication.processEvents()  # Let UI update before blocking
 
         # Apply all parameters to hardware
         success_count = 0
@@ -1041,49 +1028,42 @@ class PixieScopeApp(QMainWindow):
             else:
                 success_count += 1
 
-        # Read back from hardware to confirm what was actually set
+        written_names = {p[0] for p in params}
         print(f"  Applied {success_count}/{len(params)} params. Reading back from M{module}:Ch{channel}...")
-        readback_params = None
         if not self.dummy_mode and self.pixie_hw.is_initialized:
             try:
                 self.pixie_hw.refresh_parameters(module, channel)
                 readback_params = self.pixie_hw.get_all_parameters(module, channel)
-                # Show read-back for params we just wrote
-                written_names = {p[0] for p in params}
-                for name in written_names:
-                    if name in readback_params:
-                        print(f"  READ-BACK {name} = {readback_params[name]}")
+                if readback_params:
+                    # Only update spinboxes + plotter for params we actually wrote
+                    applied_readback = {
+                        name: readback_params[name]
+                        for name in written_names
+                        if name in readback_params
+                    }
+                    for name, val in applied_readback.items():
+                        print(f"  READ-BACK {name} = {val}")
+                    self.parameter_controls.set_all_parameters(applied_readback)
+                    for p_name, p_value in applied_readback.items():
+                        self._sync_parameter_to_plotter(p_name, p_value, channel)
             except Exception as e:
                 print(f"  Read-back failed: {e}")
-                logger.warning(f"Read-back after apply failed: {e}")
 
-        # Schedule GUI updates back on the main thread
-        QTimer.singleShot(0, lambda: self._apply_batch_finished(
-            success_count, len(params), module, channel, readback_params
-        ))
-
-    def _apply_batch_finished(self, success_count, total, module, channel, readback_params):
-        """GUI thread: update UI after background apply completes."""
-        if readback_params:
-            self.parameter_controls.set_all_parameters(readback_params)
-            for p_name, p_value in readback_params.items():
-                self._sync_parameter_to_plotter(p_name, p_value, channel)
-
-        # Clear trace buffers if TRACE_LENGTH changed (old traces are wrong size)
-        written_names = {p[0] for p in self._apply_params}
-        if "TRACE_LENGTH" in written_names:
+        # Clear trace buffers if trace params changed (old data is stale/wrong size)
+        written_names = {p[0] for p in params}
+        if written_names & {"TRACE_LENGTH", "TRACE_DELAY"}:
             plotter = getattr(self, "spectrum_tab", None)
             if plotter and hasattr(plotter, "clear_data"):
                 plotter.clear_data()
-                print("  Cleared trace buffers (TRACE_LENGTH changed)")
+                print(f"  Cleared trace buffers ({written_names & {'TRACE_LENGTH', 'TRACE_DELAY'}} changed)")
 
         self.update_info_bar(
-            f"Applied {success_count}/{total} parameters to M{module}:Ch{channel}"
+            f"Applied {success_count}/{len(params)} parameters to M{module}:Ch{channel}"
         )
 
-        # Always restart acquisition after apply
-        print(f"APPLY DONE: was_acquiring={self._apply_was_acquiring}, restarting...")
-        QTimer.singleShot(100, self.start_acquisition)
+        # Always restart
+        print("APPLY DONE: restarting acquisition...")
+        self.start_acquisition()
 
     def _sync_parameter_to_plotter(self, param_name, value, channel):
         """Push a parameter change into the traces plotter's internal state."""
@@ -1094,6 +1074,12 @@ class PixieScopeApp(QMainWindow):
         # Handle TRACE_DELAY separately (per-channel dict, different storage)
         if param_name == "TRACE_DELAY":
             plotter.trace_delay_ns[channel] = value * 1000  # μs → ns
+            return
+
+        # Handle Polarity (per-channel, stored in channel_polarity dict)
+        if param_name == "Polarity":
+            is_normal = (value == "positive") if isinstance(value, str) else bool(value)
+            plotter.channel_polarity[channel] = is_normal
             return
 
         mapping = self._PARAM_TO_PLOTTER.get(param_name)
