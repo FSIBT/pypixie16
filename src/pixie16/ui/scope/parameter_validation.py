@@ -214,7 +214,7 @@ class PixieParameterValidator:
                 name="CFDDelay",
                 data_type=float,
                 min_value=0.0,
-                max_value=2.0,  # μs
+                max_value=0.63,  # μs (63 FPGA ticks × 10ns)
                 unit="μs",
                 description="CFD delay time",
                 dsp_variable="CFDDELAY",

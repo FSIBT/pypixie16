@@ -974,42 +974,6 @@ class PixieScopeApp(QMainWindow):
         "ENERGY_G": ("energy_G", None),                                  # UI-only, direct FPGA steps
     }
 
-    def handle_parameter_change(self, param_name, value, module, channel):
-        """Handle a single parameter apply from the Apply to Channel button.
-
-        Stops acquisition, writes to hardware, syncs plotter, restarts.
-        Called once per parameter in the batch from apply_to_channel().
-        """
-        try:
-            # Validate
-            is_valid, corrected_value, error_msg = (
-                self.parameter_validator.validate_parameter(
-                    param_name, value, module, channel
-                )
-            )
-            if not is_valid:
-                self.update_info_bar(f"Validation failed: {param_name}: {error_msg}")
-                return False
-
-            # Write to hardware (run is already stopped by apply_all_parameters)
-            if not self.dummy_mode:
-                success = self.pixie_hw.update_parameter(
-                    param_name, corrected_value, module, channel
-                )
-                if not success:
-                    self.update_info_bar(
-                        f"Failed to set {param_name} on M{module}:Ch{channel}"
-                    )
-                    return False
-
-            # Sync to plotter internal state
-            self._sync_parameter_to_plotter(param_name, corrected_value, channel)
-            return True
-
-        except Exception as e:
-            logger.error(f"Error setting {param_name}: {e}")
-            return False
-
     def apply_all_parameters(self, param_name, value, module, channel):
         """Called for each parameter from Apply to Channel. Batches via a timer."""
         # Accumulate parameters to apply
@@ -1027,49 +991,99 @@ class PixieScopeApp(QMainWindow):
         self._apply_timer.start(50)  # 50ms debounce
 
     def _execute_apply_batch(self):
-        """Stop acquisition, apply all pending params, read back, restart."""
+        """Stop acquisition, then apply params in a background thread."""
         params = self._pending_params
         self._pending_params = []
 
         if not params:
             return
 
-        was_acquiring = self.is_acquiring
+        self._apply_was_acquiring = self.is_acquiring
+        self._apply_params = params
+        print(f"APPLY: was_acquiring={self._apply_was_acquiring}, params={[(p[0],p[1]) for p in params]}")
+
+        # Stop acquisition on the GUI thread (updates buttons etc.)
+        if self._apply_was_acquiring:
+            self.stop_acquisition()
+
+        self.update_info_bar("Applying parameters to hardware...")
+
+        # Do the slow hardware I/O in a background thread
+        threading.Thread(
+            target=self._apply_batch_worker,
+            daemon=True,
+        ).start()
+
+    def _apply_batch_worker(self):
+        """Background thread: write params, read back. No GUI calls here."""
+        params = self._apply_params
         module = params[0][2]
         channel = params[0][3]
 
-        # Stop acquisition so hardware bus is free
-        if was_acquiring:
-            self.stop_acquisition()
-            # Small delay to let hardware settle
+        # Let hardware settle after stopping
+        if self._apply_was_acquiring:
             time.sleep(0.1)
 
         # Apply all parameters to hardware
         success_count = 0
         for param_name, value, mod, ch in params:
-            if self.handle_parameter_change(param_name, value, mod, ch):
+            is_valid, corrected_value, error_msg = (
+                self.parameter_validator.validate_parameter(param_name, value, mod, ch)
+            )
+            if not is_valid:
+                print(f"  SKIP {param_name}={value} - validation failed: {error_msg}")
+                continue
+            if not self.dummy_mode:
+                result = self.pixie_hw.update_parameter(param_name, corrected_value, mod, ch)
+                print(f"  {'OK' if result else 'FAIL'} {param_name}={corrected_value} → M{mod}:Ch{ch}")
+                if result:
+                    success_count += 1
+            else:
                 success_count += 1
 
-        # Read back from hardware to get actual applied values (DSP may adjust)
+        # Read back from hardware to confirm what was actually set
+        print(f"  Applied {success_count}/{len(params)} params. Reading back from M{module}:Ch{channel}...")
+        readback_params = None
         if not self.dummy_mode and self.pixie_hw.is_initialized:
             try:
                 self.pixie_hw.refresh_parameters(module, channel)
-                current_params = self.pixie_hw.get_all_parameters(module, channel)
-                if current_params:
-                    self.parameter_controls.set_all_parameters(current_params)
-                    # Sync all read-back values to the plotter
-                    for p_name, p_value in current_params.items():
-                        self._sync_parameter_to_plotter(p_name, p_value, channel)
+                readback_params = self.pixie_hw.get_all_parameters(module, channel)
+                # Show read-back for params we just wrote
+                written_names = {p[0] for p in params}
+                for name in written_names:
+                    if name in readback_params:
+                        print(f"  READ-BACK {name} = {readback_params[name]}")
             except Exception as e:
+                print(f"  Read-back failed: {e}")
                 logger.warning(f"Read-back after apply failed: {e}")
 
+        # Schedule GUI updates back on the main thread
+        QTimer.singleShot(0, lambda: self._apply_batch_finished(
+            success_count, len(params), module, channel, readback_params
+        ))
+
+    def _apply_batch_finished(self, success_count, total, module, channel, readback_params):
+        """GUI thread: update UI after background apply completes."""
+        if readback_params:
+            self.parameter_controls.set_all_parameters(readback_params)
+            for p_name, p_value in readback_params.items():
+                self._sync_parameter_to_plotter(p_name, p_value, channel)
+
+        # Clear trace buffers if TRACE_LENGTH changed (old traces are wrong size)
+        written_names = {p[0] for p in self._apply_params}
+        if "TRACE_LENGTH" in written_names:
+            plotter = getattr(self, "spectrum_tab", None)
+            if plotter and hasattr(plotter, "clear_data"):
+                plotter.clear_data()
+                print("  Cleared trace buffers (TRACE_LENGTH changed)")
+
         self.update_info_bar(
-            f"Applied {success_count}/{len(params)} parameters to M{module}:Ch{channel}"
+            f"Applied {success_count}/{total} parameters to M{module}:Ch{channel}"
         )
 
-        # Restart acquisition
-        if was_acquiring:
-            QTimer.singleShot(200, self.start_acquisition)
+        # Always restart acquisition after apply
+        print(f"APPLY DONE: was_acquiring={self._apply_was_acquiring}, restarting...")
+        QTimer.singleShot(100, self.start_acquisition)
 
     def _sync_parameter_to_plotter(self, param_name, value, channel):
         """Push a parameter change into the traces plotter's internal state."""

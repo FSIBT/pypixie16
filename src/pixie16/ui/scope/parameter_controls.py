@@ -196,36 +196,47 @@ class ParameterControls(QGroupBox):
         group.setLayout(layout)
         return group
 
+    # Which parameter names belong to which tab
+    _TAB_PARAMS = {
+        "Trigger": ["TRIGGER_THRESHOLD", "TRIGGER_RISETIME", "TRIGGER_FLATTOP"],
+        "Energy": ["ENERGY_RISETIME", "ENERGY_FLATTOP", "EMIN", "ENERGY_L", "ENERGY_G"],
+        "Timing": ["TAU", "XDT", "BASELINE_PERCENT", "BASELINE_AVERAGE", "BLCUT"],
+        "Traces": ["TRACE_LENGTH", "TRACE_DELAY"],
+        "CFD": ["CFDDelay", "CFDScale", "CFDThresh"],
+        "QDC": [f"QDCLen{i}" for i in range(8)],
+        "Hardware": ["VOFFSET", "Gain", "Polarity", "GoodChannel", "CaptureTrace"],
+    }
+
     def create_parameter_tabs(self):
-        tabs = QTabWidget()
-        tabs.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Minimum)
+        self.param_tabs = QTabWidget()
+        self.param_tabs.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Minimum)
 
         # Core acquisition parameters
         trigger_tab = self.create_trigger_tab()
-        tabs.addTab(trigger_tab, "Trigger")
+        self.param_tabs.addTab(trigger_tab, "Trigger")
 
         energy_tab = self.create_energy_tab()
-        tabs.addTab(energy_tab, "Energy")
+        self.param_tabs.addTab(energy_tab, "Energy")
 
         # Advanced timing parameters
         timing_tab = self.create_timing_tab()
-        tabs.addTab(timing_tab, "Timing")
+        self.param_tabs.addTab(timing_tab, "Timing")
 
         # Split advanced into three tabs
         trace_tab = self.create_trace_tab()
-        tabs.addTab(trace_tab, "Traces")
+        self.param_tabs.addTab(trace_tab, "Traces")
 
         cfd_tab = self.create_cfd_tab()
-        tabs.addTab(cfd_tab, "CFD")
+        self.param_tabs.addTab(cfd_tab, "CFD")
 
         qdc_tab = self.create_qdc_tab()
-        tabs.addTab(qdc_tab, "QDC")
+        self.param_tabs.addTab(qdc_tab, "QDC")
 
         # Hardware configuration
         hardware_tab = self.create_hardware_tab()
-        tabs.addTab(hardware_tab, "Hardware")
+        self.param_tabs.addTab(hardware_tab, "Hardware")
 
-        return tabs
+        return self.param_tabs
 
     def create_trigger_tab(self):
         tab = QWidget()
@@ -494,16 +505,24 @@ class ParameterControls(QGroupBox):
         self.save_preset_btn.clicked.connect(self.save_preset)
 
     def apply_to_channel(self):
-        """Apply all current parameter values to the selected module/channel."""
+        """Apply only the parameters from the currently visible tab."""
         module = self.module_spin.value()
         channel = self.channel_spin.value()
 
-        params = self.get_all_parameters()
-        for param_name, value in params.items():
-            self.parameter_changed.emit(param_name, value, module, channel)
+        # Get the active tab name
+        active_tab_name = self.param_tabs.tabText(self.param_tabs.currentIndex())
+        active_param_names = self._TAB_PARAMS.get(active_tab_name, [])
+
+        # Only emit params from the visible tab
+        all_params = self.get_all_parameters()
+        count = 0
+        for param_name in active_param_names:
+            if param_name in all_params:
+                self.parameter_changed.emit(param_name, all_params[param_name], module, channel)
+                count += 1
 
         self.status_message.emit(
-            f"Applied {len(params)} parameters to M{module}:Ch{channel}"
+            f"Applied {count} params ({active_tab_name}) to M{module}:Ch{channel}"
         )
 
     def on_module_changed(self, module: int):

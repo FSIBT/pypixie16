@@ -265,7 +265,13 @@ class AutoSaveBufferService(QObject):
             
             for ch in traces_plotter.channels:
                 if ch in traces_plotter.trace_data and len(traces_plotter.trace_data[ch]) > 0:
-                    traces_data[f'channel_{ch}'] = list(traces_plotter.trace_data[ch])
+                    traces_list = list(traces_plotter.trace_data[ch])
+                    # Filter to most common length (mixed lengths after TRACE_LENGTH change)
+                    lengths = [len(t) for t in traces_list]
+                    most_common_len = max(set(lengths), key=lengths.count)
+                    traces_data[f'channel_{ch}'] = np.array(
+                        [t for t in traces_list if len(t) == most_common_len]
+                    )
                     timestamps_data[f'channel_{ch}_timestamps'] = list(
                         traces_plotter.trace_timestamps.get(ch, [])
                     )

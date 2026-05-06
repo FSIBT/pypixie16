@@ -763,7 +763,15 @@ class TracesPlotter(QWidget):
                     if reply != QMessageBox.StandardButton.Yes:
                         return
                 
-                traces_array = np.array(traces_list)
+                # Filter to most common trace length (mixed lengths happen after
+                # TRACE_LENGTH changes mid-run)
+                lengths = [len(t) for t in traces_list]
+                most_common_len = max(set(lengths), key=lengths.count)
+                uniform_traces = [t for t in traces_list if len(t) == most_common_len]
+                if len(uniform_traces) < len(traces_list):
+                    print(f"Dropped {len(traces_list) - len(uniform_traces)} traces with "
+                          f"non-standard length (kept {most_common_len}-sample traces)")
+                traces_array = np.array(uniform_traces)
                 save_path = data_manager.get_save_path('traces', f"traces_ch{selected_channel}_{timestamp}.npy")
                 np.save(save_path, traces_array)
                 
