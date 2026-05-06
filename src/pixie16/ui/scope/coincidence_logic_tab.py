@@ -507,6 +507,7 @@ class CoincidenceLogicTab(QWidget):
         self.binary_plot.setBackground("w")
         self.binary_plot.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self.binary_plot.setMinimumHeight(200)
+        self.binary_plot.getViewBox().sigRangeChangedManually.connect(self._on_user_zoom)
         
         layout.addWidget(self.binary_plot, 1)
         
@@ -731,6 +732,14 @@ class CoincidenceLogicTab(QWidget):
     
     def toggle_auto_scale(self, enabled):
         self.auto_scale = enabled
+        if enabled:
+            self.binary_plot.autoRange()
+
+    def _on_user_zoom(self, _mask):
+        """Called when the user manually zooms/pans. Disables auto-scale."""
+        if self.auto_scale:
+            self.auto_scale = False
+            self.auto_scale_cb.setChecked(False)
         if not enabled:
             self.binary_plot.disableAutoRange()
     
@@ -1121,13 +1130,12 @@ class CoincidenceLogicTab(QWidget):
                     for step in self._STEPS_B:
                         self._update_trace('B', step, None, None)
 
-            # X-range: only update when auto_scale is on, do it once after
-            # all setData() calls to avoid per-item view shifts (the jiggle).
+            # One-shot x-range fit after all setData() calls.
             if self.auto_scale:
-                self.binary_plot.enableAutoRange(axis='x')
-                # Immediately disable so the next setData() round doesn't
-                # trigger auto-range again mid-update.
-                self.binary_plot.disableAutoRange()
+                x_min, x_max = self.binary_plot.getViewBox().childrenBounds()[0]
+                if x_min is not None and x_max is not None:
+                    padding = (x_max - x_min) * 0.05 or 1
+                    self.binary_plot.setXRange(x_min - padding, x_max + padding)
 
             self.plot_histograms()
             self._update_status_labels()

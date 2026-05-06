@@ -134,6 +134,9 @@ class ContinuousSpectrumPlotter(QWidget):
         self.display.setMenuEnabled(enableMenu=True)
         self.display.addLegend()
 
+        # Disable auto-scale when user manually zooms/pans
+        self.display.getViewBox().sigRangeChangedManually.connect(self._on_user_zoom)
+
         # Store reference to plot widget for FWHM integration
         self.plot_widget = self.display
 
@@ -558,10 +561,9 @@ class ContinuousSpectrumPlotter(QWidget):
                 print(f"Error updating channel {channel}: {e}")
                 self.plot_items[channel].setData([], [])
 
-        # Set proper axis ranges
+        # Set proper axis ranges (one-shot, never re-enables continuous auto-range)
         if self.auto_scale_cb.isChecked() and total_events > 0:
-            self.display.enableAutoRange('x', True)
-            self.display.enableAutoRange('y', False)
+            self.display.setXRange(*self.energy_range)
             if not self.log_scale_cb.isChecked():
                 # Find max Y value across all channels
                 max_counts = 0
@@ -571,19 +573,11 @@ class ContinuousSpectrumPlotter(QWidget):
                         if len(energies) > 0:
                             counts, _ = np.histogram(energies, bins=self.bins, range=self.energy_range)
                             max_counts = max(max_counts, np.max(counts))
-                
+
                 if max_counts > 0:
-                    self.display.setYRange(0, max_counts * 1.1)  # 10% margin above max
+                    self.display.setYRange(0, max_counts * 1.1)
                 else:
-                    self.display.setYRange(0, 100)  # Default range
-        else:
-            self.display.enableAutoRange('x', False)
-            self.display.enableAutoRange('y', False)
-            
-            if not self.log_scale_cb.isChecked():
-                current_range = self.display.getViewBox().viewRange()[1]
-                y_max = max(current_range[1], 100)
-                self.display.setYRange(0, y_max, padding=0)  # No padding to ensure exact 0 start
+                    self.display.setYRange(0, 100)
 
     def update_energy_range(self):
         self.energy_range = (self.energy_min_spin.value(), self.energy_max_spin.value())
@@ -598,17 +592,15 @@ class ContinuousSpectrumPlotter(QWidget):
             self.display.setLabel("left", "Counts")
 
     def toggle_auto_scale(self, checked):
-        if not checked:
-            self.display.enableAutoRange('x', False)
-            self.display.enableAutoRange('y', False)
+        if checked:
+            # One-shot snap to full range
             self.display.setXRange(*self.energy_range)
-            if not self.log_scale_cb.isChecked():
-                current_range = self.display.getViewBox().viewRange()[1]
-                y_max = max(current_range[1], 100)
-                self.display.setYRange(0, y_max, padding=0)
-        else:
-            # Auto mode handled in update_display
-            pass
+            self.display.autoRange(axis='y')
+
+    def _on_user_zoom(self, _mask):
+        """Called when the user manually zooms/pans. Disables auto-scale."""
+        if self.auto_scale_cb.isChecked():
+            self.auto_scale_cb.setChecked(False)
     
     def toggle_background_subtraction(self, checked):
         self.show_background_subtracted = checked

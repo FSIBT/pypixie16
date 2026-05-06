@@ -965,6 +965,17 @@ class PixieScopeApp(QMainWindow):
         except Exception as e:
             print(f"Error updating display channels: {e}")
 
+    # Mapping from SDK parameter names to traces_plotter hardware_params keys.
+    # Conversion: None = direct copy, otherwise a callable (value) -> plotter value.
+    _PARAM_TO_PLOTTER = {
+        "TRIGGER_THRESHOLD": ("fast_threshold", None),
+        "TRIGGER_RISETIME": ("fast_L", lambda v: int(round(v / 0.01))),  # μs → FPGA ticks
+        "TRIGGER_FLATTOP": ("fast_G", lambda v: int(round(v / 0.01))),   # μs → FPGA ticks
+        "ENERGY_RISETIME": ("energy_L", lambda v: int(round(v / 0.01))), # μs → steps
+        "ENERGY_FLATTOP": ("energy_G", lambda v: int(round(v / 0.01))),  # μs → steps
+        "TAU": ("decay_ns", lambda v: v * 1000),                         # μs → ns
+    }
+
     def handle_parameter_change(self, param_name, value, module, channel):
         try:
             # Validate parameter
@@ -991,15 +1002,38 @@ class PixieScopeApp(QMainWindow):
                     self.update_info_bar(
                         f"Failed to set {param_name} on M{module}:Ch{channel}"
                     )
+                    return
             else:
                 self.update_info_bar(
                     f"DUMMY MODE - {param_name} = {corrected_value} on M{module}:Ch{channel}"
                 )
 
+            # Propagate to traces plotter so plots reflect the new value
+            self._sync_parameter_to_plotter(param_name, corrected_value, channel)
+
         except Exception as e:
             error_msg = f"Error setting {param_name}: {e}"
             self.update_info_bar(error_msg)
             logger.error(error_msg)
+
+    def _sync_parameter_to_plotter(self, param_name, value, channel):
+        """Push a parameter change into the traces plotter's internal state."""
+        plotter = getattr(self, "spectrum_tab", None)
+        if plotter is None or not hasattr(plotter, "hardware_params"):
+            return
+
+        # Handle TRACE_DELAY separately (per-channel dict, different storage)
+        if param_name == "TRACE_DELAY":
+            plotter.trace_delay_ns[channel] = value * 1000  # μs → ns
+            return
+
+        mapping = self._PARAM_TO_PLOTTER.get(param_name)
+        if mapping is None:
+            return
+
+        plotter_key, converter = mapping
+        plotter_value = converter(value) if converter else value
+        plotter.hardware_params[plotter_key] = plotter_value
 
     def read_parameters_from_hardware(self):
         try:
