@@ -1,7 +1,6 @@
 import sys
 import time
 import signal
-import threading
 import traceback
 import gc
 import os
@@ -1103,30 +1102,22 @@ class PixieScopeApp(QMainWindow):
         plotter.hardware_params[plotter_key] = plotter_value
 
     def read_parameters_from_hardware(self):
+        """Read parameters synchronously. The PIXIE SDK is not thread-safe."""
         module = self.parameter_controls.module_spin.value()
         channel = self.parameter_controls.channel_spin.value()
 
         if not self.dummy_mode and self.pixie_hw.is_initialized:
             self.update_info_bar(f"Reading parameters from M{module}:Ch{channel}...")
-            threading.Thread(
-                target=self._read_parameters_async,
-                args=(module, channel),
-                daemon=True,
-            ).start()
+            QApplication.processEvents()
+            try:
+                self.pixie_hw.refresh_parameters(module, channel)
+                current_params = self.pixie_hw.get_all_parameters(module, channel)
+                self._finish_read_parameters(current_params, module, channel)
+            except Exception as e:
+                self.update_info_bar(f"Error reading parameters: {e}")
+                logger.error(f"Error reading parameters from hardware: {e}")
         else:
             self.update_info_bar("Hardware not available for parameter reading")
-
-    def _read_parameters_async(self, module, channel):
-        """Read parameters from hardware off the GUI thread."""
-        try:
-            self.pixie_hw.refresh_parameters(module, channel)
-            current_params = self.pixie_hw.get_all_parameters(module, channel)
-            # Update UI back on the GUI thread
-            QTimer.singleShot(0, lambda: self._finish_read_parameters(current_params, module, channel))
-        except Exception as e:
-            error_msg = f"Error reading parameters from hardware: {e}"
-            QTimer.singleShot(0, lambda: self.update_info_bar(error_msg))
-            logger.error(error_msg)
 
     def _finish_read_parameters(self, params, module, channel):
         """Update UI with parameters read from hardware (runs on GUI thread)."""
