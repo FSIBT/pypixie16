@@ -238,19 +238,78 @@ Located in `src/pixie16/read/list_mode/`, this module parses binary event data f
 **Mock mode:** Allows development without hardware by simulating SDK functions
 
 ### 4. GUI Applications (PyQt6)
-All GUIs use PyQt6 with modular design:
-
-**pixie16-scope:**
-- Real-time trace visualization
-- List mode histogram display
-- Coincidence logic analysis
-- Binary file replay
+All GUIs use PyQt6 with modular design.
 
 **pixie16-daq:**
 - Pipeline control interface
 - Real-time status monitoring
 - Configuration management
 - Run control (MCA, list mode, traces)
+
+### 5. pixie16-scope Architecture (Detailed)
+
+The scope (`src/pixie16/ui/scope/`) is the primary real-time visualization tool. Entry point: `pixie16-scope` CLI → `cli/scope.py` → `PixieScopeApp`.
+
+**File-by-file breakdown:**
+
+| File | Role |
+|---|---|
+| `app.py` | Main QMainWindow. Owns all components, connects signals, manages acquisition start/stop. Split layout: left=plots, right=controls. |
+| `hardware_manager.py` | Wraps the C SDK. Parameter cache (per module/channel), `update_parameter()`, `refresh_parameter_cache()`, `end_run()`. Thread lock for SDK calls. Routes params to `set_channel_parameter`, `set_module_parameter`, or `change_setting_from_dict` depending on type. |
+| `parameter_controls.py` | Collapsible right-panel widget with 7 tabs: Trigger, Energy, Timing, Traces, CFD, QDC, Hardware. Each tab has spinboxes for its params. "Apply to Channel" button writes only the active tab's params. Channel/module selector triggers hardware read-back. |
+| `parameter_validation.py` | `PixieParameterValidator` with `ParameterSpec` dataclass per param. Range checking, type coercion, constraint warnings. Module-type aware (100MHz vs 250MHz vs 500MHz). |
+| `traces_plotter.py` | Central tab container with 4 sub-tabs: Histogram, Raw Traces, Single Channel Analysis, Coincidence Logic. Owns `hardware_params` dict used for filter computations. Manages trace buffers (deque per channel), persistence histograms, polarity, time axis calculation. |
+| `spectrum_plotter.py` | `ContinuousSpectrumPlotter` — real-time energy histogram from list mode events. Bins energies, shows per-channel spectra with legend. Auto-scale, log scale, background subtraction. |
+| `mca_spectrum_plotter.py` | `MCASpectrumPlotter` — MCA histogram mode display (up to 32k bins). Different from spectrum_plotter (MCA mode vs list mode). |
+| `coincidence_logic_tab.py` | Binary logic visualization: 6 steps (Local Fast Trigger → Backplane → Chan Trig → Validation → Processing → Validated Processing). Delta-T histogram. Two display modes: trigger-aligned and reference-channel. |
+| `channel_controls.py` | Channel enable/disable checkboxes, display channel selection. |
+| `fwhm_analyzer.py` | Peak detection using scipy.signal.find_peaks, Gaussian fitting with lmfit for FWHM calculation. |
+| `fwhm_widget.py` | UI for ROI (Region of Interest) selection on spectra, Gaussian peak fitting display, FWHM readout. |
+| `binary_loader.py` | Loads `.bin` list mode files for offline replay. Integrates with Start/Stop buttons. |
+| `traces_replay.py` | Stores traces in a circular buffer, provides navigation (prev/next/jump) for reviewing captured waveforms. |
+| `data_manager.py` | `DataSettingsManager` — manages save directories, file naming, data format settings. |
+| `auto_save_buffer.py` | Periodically auto-saves trace buffers, MCA data, and histograms to a cache directory. Handles cleanup of old cache files. |
+| `persistence_histogram.py` | `PersistenceHistogram` — fast 2D histogram accumulation using `fast_histogram` library for persistence-mode trace display. |
+
+**Signal/data flow for parameter changes:**
+```
+ParameterControls.apply_to_channel()
+  → emits parameter_changed(name, value, module, channel) per param
+  → app.apply_all_parameters() accumulates + debounces (50ms)
+  → app._execute_apply_batch():
+      1. stop_acquisition() + kill FIFO timer
+      2. processEvents() to flush pending callbacks
+      3. px.control.end_run() + sleep for DSP settle
+      4. pixie_hw.update_parameter() per param (writes to SDK)
+      5. pixie_hw.refresh_parameters() (reads back from hardware)
+      6. set_all_parameters() on UI (only params that were written)
+      7. _sync_parameter_to_plotter() (updates traces_plotter.hardware_params)
+      8. start_acquisition() to resume
+```
+
+**Signal/data flow for live data:**
+```
+FIFO timer (50ms) → read_list_mode_fifo()
+  → pixie_hw.read_list_mode_data() → list of Events
+  → for each event with trace:
+      traces_plotter.add_trace_data(channel, trace, energy, timestamp)
+      coincidence_tab.add_event_with_trace(event)
+  → for each event energy:
+      spectrum_plotter.add_energy(channel, energy)
+```
+
+**Key internal state in traces_plotter:**
+- `hardware_params` dict — filter settings (fast_L, fast_G, fast_threshold, energy_L/G/R/P, decay_ns, CFD params). Global, updated by `_sync_parameter_to_plotter`. Single Channel Analysis reads per-channel from hardware_manager on channel switch.
+- `trace_data[channel]` — deque of raw traces per channel (maxlen=1000)
+- `trace_delay_ns[channel]` — per-channel trace delay for time axis
+- `channel_polarity[channel]` — per-channel polarity inversion
+- `display_channels` — which channels are visible on raw traces
+
+**PIXIE SDK constraints:**
+- C library is NOT thread-safe — all SDK calls must be serialized on one thread
+- Parameters require run to be stopped before writing (end_run → write → start_run)
+- Some params (TRIGGER_THRESHOLD) are capped by DSP based on filter settings
+- `Pixie16WriteSglChanPar` can segfault on invalid params (e.g., TRIGGER_RISETIME too large for trace length)
 
 ## Configuration
 
