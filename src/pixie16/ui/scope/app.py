@@ -1003,17 +1003,25 @@ class PixieScopeApp(QMainWindow):
 
         print(f"APPLY: was_acquiring={was_acquiring}, params={[(p[0],p[1]) for p in params]}")
 
-        # Fully terminate the PIXIE run so DSP accepts parameter changes
+        # Fully stop everything before touching the SDK
         if was_acquiring:
             self.stop_acquisition()
+
+        # Kill any lingering FIFO timer to prevent concurrent SDK access
+        if hasattr(self, "data_timer") and self.data_timer:
+            self.data_timer.stop()
+            self.data_timer = None
+
+        # Process pending events so any in-flight timer callbacks complete
+        QApplication.processEvents()
 
         # Ensure hardware run is fully ended before writing params
         if not self.dummy_mode:
             try:
                 import pixie16 as px
-                px.control.end_run()  # Explicit end_run in case stop_acquisition didn't
-                time.sleep(0.5)       # Let DSP fully stop
-                # Verify run is stopped
+                time.sleep(0.3)  # Let any in-flight SDK calls finish
+                px.control.end_run()
+                time.sleep(0.3)  # Let DSP fully stop
                 run_active = px.control.check_run_status()
                 print(f"  Run status after end_run: {'ACTIVE' if run_active else 'STOPPED'}")
             except Exception as e:
