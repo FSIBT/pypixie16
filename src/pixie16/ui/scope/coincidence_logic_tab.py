@@ -858,20 +858,14 @@ class CoincidenceLogicTab(QWidget):
                     # Non-reference channel: offset by timestamp difference to nearest coincident ref event
                     ref_timestamps = self.ch_a_timestamps if self.reference_channel_id == 'A' else self.ch_b_timestamps
                     window_ns = self.hardware_params.get("validation_window", 1000)
+                    timestamp_diff_ns = 0
                     if len(ref_timestamps) > 0:
-                        ref_ts = np.array(ref_timestamps)
-                        diffs = np.abs(ref_ts - event_timestamp)
-                        nearest_idx = np.argmin(diffs)
-                        if diffs[nearest_idx] <= window_ns:
-                            nearest_ref_ts = ref_ts[nearest_idx]
-                            # Signed offset in ns (positive = this channel is later)
-                            timestamp_diff_ns = event_timestamp - nearest_ref_ts
-                        else:
-                            # No coincident reference event — skip this event
-                            return None
-                        time_axis = np.arange(trace_length) * self.sampling_period_ns - trigger_time_ns + timestamp_diff_ns
-                    else:
-                        time_axis = np.arange(trace_length) * self.sampling_period_ns - trigger_time_ns
+                        # Only use the most recent reference event
+                        latest_ref_ts = ref_timestamps[-1]
+                        time_diff = abs(latest_ref_ts - event_timestamp)
+                        if time_diff <= window_ns:
+                            timestamp_diff_ns = event_timestamp - latest_ref_ts
+                    time_axis = np.arange(trace_length) * self.sampling_period_ns - trigger_time_ns + timestamp_diff_ns
                         
             else:
                 # Fallback - trigger aligned
