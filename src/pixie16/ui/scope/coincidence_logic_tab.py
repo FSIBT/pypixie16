@@ -805,9 +805,9 @@ class CoincidenceLogicTab(QWidget):
     def _record_delta_t(self, event_timestamp, arriving_channel_id):
         """Record delta-T (timestamp_B - timestamp_A) for coincident event pairs.
 
-        Uses the validation_window to determine if events are coincident.
+        Only compares against the most recent event from the other channel
+        to avoid false coincidences from deep buffer searches.
         """
-        # event.timestamp is already in nanoseconds (EVTTIME * 10)
         window_ns = self.hardware_params.get("validation_window", 1000)
 
         if arriving_channel_id == 'B':
@@ -818,17 +818,13 @@ class CoincidenceLogicTab(QWidget):
         if len(other_timestamps) == 0:
             return
 
-        # Find nearest event in the other channel within window
-        other_ts = np.array(other_timestamps)
-        diffs = np.abs(other_ts - event_timestamp)
-        nearest_idx = np.argmin(diffs)
-        if diffs[nearest_idx] <= window_ns:
-            nearest_ts = other_ts[nearest_idx]
+        # Only compare against the most recent event from the other channel
+        nearest_ts = other_timestamps[-1]
+        time_diff = abs(nearest_ts - event_timestamp)
+        if time_diff <= window_ns:
             if arriving_channel_id == 'B':
-                # B arrived, nearest is A: delta_t = B - A
                 delta_t_ns = event_timestamp - nearest_ts
             else:
-                # A arrived, nearest is B: delta_t = B - A
                 delta_t_ns = nearest_ts - event_timestamp
             self.delta_t_values.append(delta_t_ns)
     
@@ -955,67 +951,54 @@ class CoincidenceLogicTab(QWidget):
                     chan_trig[coinc_idx:coinc_end_idx] = 1
                     self.coincidence_count += 1
             
-            # STEP 4: Channel Validation Trigger - FIXED timing, not dependent on coincidence
-            # Green validation windows should be stable and not move
-            chan_stretch_ns = self.hardware_params["chan_trig_stretch"]
+            # STEPS 4-6 only fire when there is a real coincidence (chan_trig)
             chan_validation_trig = np.zeros(trace_length, dtype=np.int8)
-
-            # Use external_delay_len parameter for validation timing
-            ext_delay_ns = self.hardware_params["external_delay_len"]
-            validation_delay_ns = bp_delay_ns + ext_delay_ns
-            validation_start_time = first_trigger_time_ns + validation_delay_ns
-            validation_end_time = validation_start_time + chan_stretch_ns
-            
-            val_start_idx = np.searchsorted(time_axis, validation_start_time)
-            val_end_idx = np.searchsorted(time_axis, validation_end_time)
-            
-            if val_start_idx < trace_length and val_end_idx <= trace_length:
-                chan_validation_trig[val_start_idx:val_end_idx] = 1
-            
-            # STEP 5: Local Fast for Processing
-            # Adjust timing to center blue signal in middle of green (chan_validation_trig)
             local_fast_for_processing = np.zeros(trace_length, dtype=np.int8)
-            
-            if np.any(chan_validation_trig > 0):
-                # Find the green signal boundaries
-                green_start_idx = np.where(chan_validation_trig > 0)[0][0]
-                green_end_idx = np.where(chan_validation_trig > 0)[0][-1]
-                green_duration_samples = green_end_idx - green_start_idx + 1
-                
-                # Center the blue signal in the green signal
-                blue_pulse_samples = int(10 / self.sampling_period_ns)  # 10ns pulse
-                blue_center_idx = green_start_idx + green_duration_samples // 2
-                blue_start_idx = max(0, blue_center_idx - blue_pulse_samples // 2)
-                blue_end_idx = min(trace_length, blue_start_idx + blue_pulse_samples)
-                
-                if blue_start_idx < trace_length:
-                    local_fast_for_processing[blue_start_idx:blue_end_idx] = 1
-                    
-                # Update validation statistics
-                stats_key = "ch_a_validation_stats" if channel_id == 'A' else "ch_b_validation_stats"
-                stats = getattr(self, stats_key)
-                stats["total_events"] += 1
-                
-                # Track cross-channel events and alignment
-                if other_had_trigger:
-                    stats["cross_channel_events"] += 1
-                    # Check if the cross-channel alignment is good (validation window overlaps properly)
-                    if np.any(chan_validation_trig > 0):
-                        stats["cross_channel_aligned"] += 1
-                
-                # Check if blue is inside green (should always be true now with centering)
-                blue_in_green = np.any(local_fast_for_processing & chan_validation_trig)
-                if blue_in_green:
-                    stats["blue_in_green_count"] += 1
-            
-            # STEP 6: Validated Trigger for Processing
-            validated_trig_for_processing = local_fast_for_processing & chan_validation_trig
-            
-            # Update yellow validation statistics
+            validated_trig_for_processing = np.zeros(trace_length, dtype=np.int8)
+
             stats_key = "ch_a_validation_stats" if channel_id == 'A' else "ch_b_validation_stats"
             stats = getattr(self, stats_key)
-            if np.any(validated_trig_for_processing > 0):
-                stats["yellow_valid_count"] += 1
+            stats["total_events"] += 1
+
+            if other_had_trigger:
+                # STEP 4: Channel Validation Trigger (green window)
+                chan_stretch_ns = self.hardware_params["chan_trig_stretch"]
+                ext_delay_ns = self.hardware_params["external_delay_len"]
+                validation_delay_ns = bp_delay_ns + ext_delay_ns
+                validation_start_time = first_trigger_time_ns + validation_delay_ns
+                validation_end_time = validation_start_time + chan_stretch_ns
+
+                val_start_idx = np.searchsorted(time_axis, validation_start_time)
+                val_end_idx = np.searchsorted(time_axis, validation_end_time)
+
+                if val_start_idx < trace_length and val_end_idx <= trace_length:
+                    chan_validation_trig[val_start_idx:val_end_idx] = 1
+
+                # STEP 5: Local Fast for Processing (blue pulse centered in green)
+                if np.any(chan_validation_trig > 0):
+                    green_indices = np.where(chan_validation_trig > 0)[0]
+                    green_start_idx = green_indices[0]
+                    green_duration_samples = green_indices[-1] - green_start_idx + 1
+
+                    blue_pulse_samples = int(10 / self.sampling_period_ns)
+                    blue_center_idx = green_start_idx + green_duration_samples // 2
+                    blue_start_idx = max(0, blue_center_idx - blue_pulse_samples // 2)
+                    blue_end_idx = min(trace_length, blue_start_idx + blue_pulse_samples)
+
+                    if blue_start_idx < trace_length:
+                        local_fast_for_processing[blue_start_idx:blue_end_idx] = 1
+
+                # STEP 6: Validated Trigger for Processing (AND of steps 4 & 5)
+                validated_trig_for_processing = local_fast_for_processing & chan_validation_trig
+
+                # Update validation statistics
+                stats["cross_channel_events"] += 1
+                if np.any(chan_validation_trig > 0):
+                    stats["cross_channel_aligned"] += 1
+                if np.any(local_fast_for_processing & chan_validation_trig):
+                    stats["blue_in_green_count"] += 1
+                if np.any(validated_trig_for_processing > 0):
+                    stats["yellow_valid_count"] += 1
             
             return {
                 "local_fast_trigger": local_fast_trigger,
@@ -1037,13 +1020,13 @@ class CoincidenceLogicTab(QWidget):
         if window_ns is None:
             window_ns = self.hardware_params.get("validation_window", 1000)
 
-        # Only match against events that had a real trigger (above threshold)
-        # event.timestamp is in nanoseconds, so compare directly in ns
+        # Only compare against the MOST RECENT event from the other channel.
+        # Searching through all 500 buffered timestamps causes false coincidences
+        # at any reasonable event rate.
         for ch, ts in reversed(self.triggered_timestamps):
             if ch == other_channel:
                 time_diff_ns = abs(ts - event_timestamp)
-                if time_diff_ns <= window_ns:
-                    return True
+                return time_diff_ns <= window_ns  # Only check the latest one
 
         return False
     
