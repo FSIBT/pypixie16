@@ -998,14 +998,49 @@ class TracesPlotter(QWidget):
         if hasattr(self, 'channel_combo') and self.channel_combo.currentIndex() >= 0:
             self.selected_channel = self.channels[self.channel_combo.currentIndex()]
             self.channel_plot.setTitle(f"Channel {self.selected_channel} Validation")
-            
+
             # Update polarity combo to reflect selected channel's polarity
             if hasattr(self, 'polarity_combo'):
                 current_polarity = self.channel_polarity.get(self.selected_channel, True)
                 self.polarity_combo.setCurrentIndex(0 if current_polarity else 1)
-            
+
+            # Load this channel's hardware params so the validation plot
+            # uses the correct filter settings (L, G, threshold, etc.)
+            self._load_channel_hardware_params(self.selected_channel)
+
             # Force immediate plot update for the new channel
             self.update_hardware_validation_plots()
+
+    def _load_channel_hardware_params(self, channel):
+        """Read hardware params for a specific channel into self.hardware_params."""
+        if not self.hardware_manager or not hasattr(self.hardware_manager, 'is_initialized'):
+            return
+        if not self.hardware_manager.is_initialized:
+            return
+
+        try:
+            params = self.hardware_manager.get_all_parameters(0, channel)
+            if not params:
+                return
+
+            # Map SDK names → plotter keys (same mapping as app._PARAM_TO_PLOTTER)
+            mapping = {
+                "TRIGGER_THRESHOLD": ("fast_threshold", None),
+                "TRIGGER_RISETIME": ("fast_L", lambda v: int(round(v / 0.01))),
+                "TRIGGER_FLATTOP": ("fast_G", lambda v: int(round(v / 0.01))),
+                "ENERGY_RISETIME": ("energy_L", lambda v: int(round(v / 0.01))),
+                "ENERGY_FLATTOP": ("energy_G", lambda v: int(round(v / 0.01))),
+                "TAU": ("decay_ns", lambda v: v * 1000),
+                "EMIN": ("energy_P", None),
+                "CFDDelay": ("CFD_delay", None),
+                "CFDThresh": ("CFD_threshold", None),
+            }
+            for sdk_name, (plotter_key, converter) in mapping.items():
+                if sdk_name in params:
+                    val = params[sdk_name]
+                    self.hardware_params[plotter_key] = converter(val) if converter else val
+        except Exception as e:
+            print(f"Could not load hardware params for Ch{channel}: {e}")
 
         else:
             pass  # channel_combo not available or invalid index
