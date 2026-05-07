@@ -442,6 +442,16 @@ class PixieParameterValidator:
                     f"M{module}:Ch{channel} - Long traces ({value} μs) increase data volume significantly"
                 )
 
+        # Reject filter times that would exceed half the trace length.
+        # The fast filter needs 2*L + G FPGA ticks; FPGA trace is ~trace_μs/0.01/5.
+        # As a safe limit, reject rise/flat times > trace_length/2.
+        elif name in ("TRIGGER_RISETIME", "TRIGGER_FLATTOP"):
+            if value > 0.5:
+                logger.warning(
+                    f"M{module}:Ch{channel} - Large trigger {name}={value} μs may not fit "
+                    f"within short traces. If plotting fails, reduce this value."
+                )
+
         return True, value, ""
 
     def get_parameter_info(self, name: str) -> ParameterSpec | None:

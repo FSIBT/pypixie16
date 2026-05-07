@@ -2292,7 +2292,15 @@ class TracesPlotter(QWidget):
 
         if trace_type == "raw":
             return working_trace
-        elif trace_type == "fast_trigger":
+
+        # Guard: check filter params fit within trace length (FPGA domain is 5:1)
+        fpga_trace_len = len(latest_trace) // 5
+        fast_L = self.hardware_params.get("fast_L", 2)
+        fast_G = self.hardware_params.get("fast_G", 2)
+        if trace_type in ("fast_trigger", "cfd") and (2 * fast_L + fast_G) >= fpga_trace_len:
+            return None  # Filter longer than trace, can't compute
+
+        if trace_type == "fast_trigger":
             traces_fpga = convert_trace_to_FPGA(working_trace[np.newaxis, :])
             
             fast_result = compute_fast_trigger_validation(
@@ -2349,15 +2357,24 @@ class TracesPlotter(QWidget):
             else:
                 return None
         elif trace_type == "energy_filter":
+            # Guard: check energy filter params fit within trace
+            energy_R = self.hardware_params.get("energy_R", 1)
+            energy_L = self.hardware_params.get("energy_L", 10)
+            energy_G = self.hardware_params.get("energy_G", 5)
+            slow_filter_range = 2 ** energy_R
+            energy_samples = (2 * energy_L + energy_G) * slow_filter_range
+            if energy_samples >= fpga_trace_len:
+                return None  # Energy filter longer than trace
+
             traces_fpga = convert_trace_to_FPGA(working_trace[np.newaxis, :])
-            
+
             fast_result = compute_fast_trigger_validation(
                 traces_fpga,
-                L=self.hardware_params["fast_L"],       # Real hardware parameter
-                G=self.hardware_params["fast_G"],       # Real hardware parameter
-                threshold=self.hardware_params["fast_threshold"], # Real hardware parameter
+                L=self.hardware_params["fast_L"],
+                G=self.hardware_params["fast_G"],
+                threshold=self.hardware_params["fast_threshold"],
             )
-            
+
             if fast_result["validation_passed"]:
                 energy_result = compute_energy_filter(
                     traces_fpga,
