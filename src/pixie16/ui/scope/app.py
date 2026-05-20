@@ -1725,6 +1725,11 @@ class PixieScopeApp(QMainWindow):
         try:
             print("Shutting down Complete PIXIE-16 Scope...")
 
+            # Close any secondary/child windows (detached plots, dialogs, etc.)
+            for child in self.findChildren(QWidget):
+                if child.isWindow() and child is not self:
+                    child.close()
+
             # Stop acquisition first
             if self.is_acquiring:
                 print("  Stopping acquisition...")

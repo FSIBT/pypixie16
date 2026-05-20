@@ -1625,10 +1625,28 @@ class TracesPlotter(QWidget):
                     and len(fast_result["trigger_indices"]) > 0
                     and len(fast_result["trigger_indices"][0]) > 0):
                 all_triggers = fast_result["trigger_indices"][0]
-                trace_center_fpga = target_length // (2 * 5)
-                fpga_idx = min(all_triggers, key=lambda t: abs(t - trace_center_fpga))
-                fpga_delay = self.hardware_params["fast_L"] + (self.hardware_params["fast_G"] // 2)
-                fast_trigger_raw_pos = (fpga_idx + fpga_delay) * 5
+                fast_L = self.hardware_params["fast_L"]
+                fast_G = self.hardware_params["fast_G"]
+
+                # Trigger indices are in the FPGA-rate coordinate system of the
+                # shortened filter output. The trapezoidal convolution loses
+                # 2L+G-1 "super-FPGA" samples from the start (because
+                # calculate_filter internally converts FPGA→super-FPGA, groups
+                # of 5, before applying the filter). After repeat(5) expansion,
+                # the filter output is (2L+G-1)*5 shorter than the input FPGA
+                # trace. Each FPGA-rate index maps to 5 raw samples.
+                filter_offset = (2 * fast_L + fast_G - 1) * 5  # in FPGA-rate units
+                group_delay = (fast_L + fast_G // 2) * 5       # filter group delay
+
+                # Pick the trigger closest to the CENTER of the filter output
+                # (not the original trace, which is in a different coordinate space)
+                filter_center = len(fast_result["fast_triggers"][0]) // 2
+                fpga_idx = min(all_triggers, key=lambda t: abs(t - filter_center))
+
+                # Map to raw-trace position:
+                #   (fpga_idx + filter_offset) * 5 = filter threshold crossing
+                #   subtract group_delay * 5 to find actual rising-edge position
+                fast_trigger_raw_pos = (fpga_idx + filter_offset - group_delay) * 5
                 self._store_trigger_info(channel, [fast_trigger_raw_pos], "main_trigger")
             else:
                 self._store_trigger_info(channel, [], "main_trigger")
@@ -1645,7 +1663,8 @@ class TracesPlotter(QWidget):
                 if trace_type == "raw":
                     signal = working_trace
                 elif trace_type == "fast_trigger":
-                    # Compute actual fast trigger using polarity-corrected trace
+                    # Fast trigger filter: narrow trapezoidal shape using fast_L/fast_G
+                    # (NOT the slow/energy filter — that uses energy_L/energy_G/energy_R)
                     traces_fpga = convert_trace_to_FPGA(working_trace[np.newaxis, :])
 
                     fast_result = compute_fast_trigger_validation(
@@ -1697,7 +1716,8 @@ class TracesPlotter(QWidget):
                     else:
                         continue  # Skip if fast trigger computation failed
                 elif trace_type == "energy_filter":
-                    # Energy filter - use polarity-corrected trace
+                    # Slow/energy filter: broad trapezoidal shape using energy_L/energy_G/energy_R
+                    # (NOT the fast trigger filter — that uses fast_L/fast_G)
                     traces_fpga = convert_trace_to_FPGA(working_trace[np.newaxis, :])
 
                     fast_result = compute_fast_trigger_validation(
@@ -1737,14 +1757,19 @@ class TracesPlotter(QWidget):
                                 len(fast_trigger_indices) > 0
                                 and len(fast_trigger_indices[0]) > 0
                             ):
-                                # Fast trigger position in raw samples — pick closest to trace center
+                                # Fast trigger position in raw samples — pick closest
+                                # to the center of the filter output (not the original
+                                # trace, which is in a different coordinate space).
                                 all_triggers = fast_trigger_indices[0]
-                                trace_center_fpga = target_length // (2 * 5)
-                                fpga_idx = min(all_triggers, key=lambda t: abs(t - trace_center_fpga))
                                 fast_L = self.hardware_params["fast_L"]
                                 fast_G = self.hardware_params["fast_G"]
-                                fpga_delay = fast_L + (fast_G // 2)
-                                fast_trigger_raw_pos = (fpga_idx + fpga_delay) * 5
+                                # Account for 2L+G-1 super-FPGA samples lost by the
+                                # trapezoidal convolution (see Task 1 / marker fix).
+                                filter_offset = (2 * fast_L + fast_G - 1) * 5
+                                group_delay = (fast_L + fast_G // 2) * 5
+                                filter_center = len(fast_result["fast_triggers"][0]) // 2
+                                fpga_idx = min(all_triggers, key=lambda t: abs(t - filter_center))
+                                fast_trigger_raw_pos = (fpga_idx + filter_offset - group_delay) * 5
 
                                 # Energy trigger position in raw samples
                                 if trigger_pos is not None:
@@ -1843,15 +1868,19 @@ class TracesPlotter(QWidget):
                     else:
                         cfd_start_offset_ns = 0.0
 
-                    # Fast trigger L+G/2 delay maps FPGA sample 0 to this raw time
+                    # The filter output is shorter than the original trace by
+                    # 2L+G-1 "super-FPGA" samples at the start. Because
+                    # calculate_filter internally converts FPGA→super-FPGA
+                    # (groups of 5) before applying the trapezoidal filter,
+                    # each super-FPGA sample spans 50 ns (5 FPGA × 10 ns).
                     fast_L = self.hardware_params["fast_L"]
                     fast_G = self.hardware_params["fast_G"]
-                    fpga_delay_ns = (fast_L + fast_G // 2) * fpga_sampling_period
+                    filter_offset_ns = (2 * fast_L + fast_G - 1) * 50.0
 
                     # Build the FPGA time axis for this signal, offset-corrected
                     signal_time_points = (
                         np.arange(len(signal)) * fpga_sampling_period
-                        + fpga_delay_ns
+                        + filter_offset_ns
                         + cfd_start_offset_ns
                     )
 
@@ -2090,6 +2119,7 @@ class TracesPlotter(QWidget):
             peak_samples = peak_info["energy_filter"]
 
             for idx, peak_idx in enumerate(peak_samples):
+                peak_idx = int(peak_idx)
                 if 0 <= peak_idx < len(time_axis) and 0 <= peak_idx < target_length:
                     corrected_time_axis = self.apply_time_correction(time_axis, "energy_filter")
                     peak_time = corrected_time_axis[peak_idx] if peak_idx < len(corrected_time_axis) else time_axis[peak_idx]
@@ -2159,20 +2189,21 @@ class TracesPlotter(QWidget):
             if len(fast_trigger_indices) == 0 or len(fast_trigger_indices[0]) == 0:
                 return
 
-            # Pick the trigger closest to trace center (where hardware places the pulse)
+            # Pick the trigger closest to center of the filter output
             fast_L = self.hardware_params["fast_L"]
             fast_G = self.hardware_params["fast_G"]
-            fpga_delay = fast_L + (fast_G // 2)
+            filter_offset = (2 * fast_L + fast_G - 1) * 5  # 2L+G-1 super-FPGA → FPGA-rate
+            group_delay = (fast_L + fast_G // 2) * 5
 
             all_triggers = fast_trigger_indices[0]
-            trace_center_fpga = len(latest_trace) // (2 * 5)
-            fpga_idx = min(all_triggers, key=lambda t: abs(t - trace_center_fpga))
+            filter_center = len(fast_result["fast_triggers"][0]) // 2
+            fpga_idx = min(all_triggers, key=lambda t: abs(t - filter_center))
         except Exception:
             return
 
         time_step = time_axis[1] - time_axis[0] if len(time_axis) > 1 else 2.0
 
-        def _draw_lgl_regions(plot_widget, bounds, brush_l, brush_g, pen_l, pen_g, label_y_pos):
+        def _draw_lgl_regions(plot_widget, bounds, brush_l, brush_g, pen_l, pen_g, label_y_pos, region_name="LGL"):
             """Draw three shaded regions and labels for one set of LGL windows."""
             l1_start, l1_end, g_end, l2_end = bounds
 
@@ -2187,10 +2218,11 @@ class TracesPlotter(QWidget):
                                      ('G', (l1_end + g_end) / 2),
                                      ('L', (g_end + l2_end) / 2)]:
                 lbl_color = pen_g.color().name() if label_text == 'G' else pen_l.color().name()
+                display_label = f"{region_name} {label_text}"
                 plot_widget.addItem(pg.InfiniteLine(
                     pos=pos, angle=90,
                     pen=pg.mkPen(color=lbl_color, width=0),
-                    label=label_text,
+                    label=display_label,
                     labelOpts={'position': label_y_pos, 'color': lbl_color, 'anchor': (0.5, 1)}
                 ))
 
@@ -2206,8 +2238,8 @@ class TracesPlotter(QWidget):
             Ls = L * spc
             Gs = G * spc
 
-            # After energy trace alignment, S1 starts at fast_trigger_raw_pos
-            sum_start_raw = (fpga_idx + fpga_delay) * 5
+            # After energy trace alignment, S1 starts at the trigger position
+            sum_start_raw = (fpga_idx + filter_offset - group_delay) * 5
 
             # Energy trace is plotted on the corrected time axis
             energy_time_axis = self.apply_time_correction(time_axis, "energy_filter")
@@ -2224,6 +2256,7 @@ class TracesPlotter(QWidget):
                 energy_raw_to_ns(sum_start_raw + Ls + Gs),
                 energy_raw_to_ns(sum_start_raw + 2 * Ls + Gs),
             )
+            energy_lgl_name = f"LGL_energy ({L}\u00d7{G})"
             _draw_lgl_regions(
                 plot_widget, bounds,
                 brush_l=pg.mkBrush(30, 30, 180, 40),
@@ -2231,6 +2264,7 @@ class TracesPlotter(QWidget):
                 pen_l=pg.mkPen(color='darkblue', style=pg.QtCore.Qt.PenStyle.DashLine, width=1.5),
                 pen_g=pg.mkPen(color='darkgreen', style=pg.QtCore.Qt.PenStyle.DashLine, width=1.5),
                 label_y_pos=0.95,
+                region_name=energy_lgl_name,
             )
 
         # --- Fast trigger LGL (nice-to-have — no hardware sums to verify against) ---
@@ -2247,8 +2281,9 @@ class TracesPlotter(QWidget):
             ft_Ls = ft_L * 5  # in raw samples
             ft_Gs = ft_G * 5
 
-            # S1 starts at FPGA (fpga_idx - 2L - G + 1), mapped to raw with delay
-            ft_sum_start_raw = (fpga_idx - 2 * ft_L - ft_G + 1 + fpga_delay) * 5
+            # S1 starts at FPGA (fpga_idx - 2L - G + 1), mapped to raw with
+            # filter offset (2L+G-1 super-FPGA samples lost at trace start)
+            ft_sum_start_raw = (fpga_idx - 2 * ft_L - ft_G + 1 + filter_offset) * 5
 
             def ft_raw_to_ns(raw_idx):
                 if 0 <= raw_idx < len(time_axis):
@@ -2261,6 +2296,7 @@ class TracesPlotter(QWidget):
                 ft_raw_to_ns(ft_sum_start_raw + ft_Ls + ft_Gs),
                 ft_raw_to_ns(ft_sum_start_raw + 2 * ft_Ls + ft_Gs),
             )
+            fast_lgl_name = f"LGL_fast ({ft_L}\u00d7{ft_G})"
             _draw_lgl_regions(
                 plot_widget, bounds,
                 brush_l=pg.mkBrush(200, 120, 0, 30),
@@ -2268,21 +2304,34 @@ class TracesPlotter(QWidget):
                 pen_l=pg.mkPen(color='darkorange', style=pg.QtCore.Qt.PenStyle.DotLine, width=1),
                 pen_g=pg.mkPen(color='goldenrod', style=pg.QtCore.Qt.PenStyle.DotLine, width=1),
                 label_y_pos=0.85,
+                region_name=fast_lgl_name,
             )
 
     def _add_threshold_lines(self, plot_widget, trace_data):
+        # Always draw the fast-trigger threshold line (solid)
         fast_thresh = self.hardware_params.get("fast_threshold", 0)
-        if fast_thresh <= 0:
-            return
+        if fast_thresh > 0:
+            plot_widget.addItem(pg.InfiniteLine(
+                pos=fast_thresh,
+                angle=0,
+                pen=pg.mkPen(color='red', style=pg.QtCore.Qt.PenStyle.SolidLine, width=2),
+                label=f'Fast Threshold: {fast_thresh} ADC',
+                labelOpts={'position': 0.95, 'color': 'red'}
+            ))
 
-        # Draw the hardware trigger threshold line (in ADC units)
-        plot_widget.addItem(pg.InfiniteLine(
-            pos=fast_thresh,
-            angle=0,  # Horizontal line
-            pen=pg.mkPen(color='red', style=pg.QtCore.Qt.PenStyle.DashLine, width=2),
-            label=f'Trigger Threshold: {fast_thresh} ADC',
-            labelOpts={'position': 0.95, 'color': 'red'}
-        ))
+        # Draw CFD threshold line (dashed) only when CFD trace is enabled
+        cfd_enabled = self.trace_types.get("cfd", False)
+        if cfd_enabled:
+            cfd_thresh = self.hardware_params.get("cfd_threshold",
+                         self.hardware_params.get("CFD_threshold", 0))
+            if cfd_thresh > 0:
+                plot_widget.addItem(pg.InfiniteLine(
+                    pos=cfd_thresh,
+                    angle=0,
+                    pen=pg.mkPen(color='magenta', style=pg.QtCore.Qt.PenStyle.DashLine, width=2),
+                    label=f'CFD Threshold: {cfd_thresh} ADC',
+                    labelOpts={'position': 0.85, 'color': 'magenta'}
+                ))
 
     def compute_hardware_traces(self, trace_type, latest_trace, channel):
         # Apply polarity correction for negative pulses
@@ -2739,7 +2788,7 @@ class TracesPlotter(QWidget):
         self.cfd_cb = cfd_cb
 
         lgl_cb = QCheckBox("LGL")
-        lgl_cb.setToolTip("Show L-G-L trapezoidal filter integration regions on trace")
+        lgl_cb.setToolTip("Show LGL_fast and LGL_energy trapezoidal integration regions")
         lgl_cb.toggled.connect(self.toggle_lgl_regions)
         trace_types_layout.addWidget(lgl_cb, 2, 0)
         self.show_lgl_cb = lgl_cb

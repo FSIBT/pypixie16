@@ -595,7 +595,7 @@ class ContinuousSpectrumPlotter(QWidget):
         if checked:
             # One-shot snap to full range
             self.display.setXRange(*self.energy_range)
-            self.display.autoRange(axis='y')
+            self.display.getViewBox().enableAutoRange(axis='y')
 
     def _on_user_zoom(self, _mask):
         """Called when the user manually zooms/pans. Disables auto-scale."""

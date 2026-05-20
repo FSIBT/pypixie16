@@ -255,6 +255,7 @@ class CoincidenceLogicTab(QWidget):
         self.ch_a_event_count = 0
         self.ch_b_event_count = 0
         self.coincidence_count = 0
+        self._data_dirty = False  # Set True when new data arrives, cleared after redraw
 
         # Track timestamps of events that had a real trigger (above threshold)
         self.triggered_timestamps = deque(maxlen=500)
@@ -773,6 +774,7 @@ class CoincidenceLogicTab(QWidget):
             return
 
         try:
+            self._data_dirty = True
             self.event_buffer.append((event, trace_data))
 
             if event.channel == self.channel_a:
@@ -1060,6 +1062,12 @@ class CoincidenceLogicTab(QWidget):
     def update_visualization(self):
         """Update plot data via setData() on pre-created items. Never clears."""
         try:
+            # Skip redraw if no new data arrived since last update — prevents
+            # the display from flashing when a channel has no coincidence events.
+            if not self._data_dirty:
+                return
+            self._data_dirty = False
+
             data = self.binary_data.get_latest_data()
 
             has_ch_a = data['ch_a']['local_fast_trigger'] is not None
@@ -1069,7 +1077,7 @@ class CoincidenceLogicTab(QWidget):
                 elapsed = time.time() - self.last_update_time
                 if elapsed > 2.0:
                     self.status_label.setText(
-                        f"No data - Ch{self.channel_a}(A) Ch{self.channel_b}(B)"
+                        f"Waiting for coincidence\u2026 Ch{self.channel_a}(A) Ch{self.channel_b}(B)"
                     )
                     self.last_update_time = time.time()
                 return
