@@ -366,15 +366,13 @@ class ContinuousSpectrumPlotter(QWidget):
             # Import here to avoid circular imports
             from ...analyze import convert_trace_to_FPGA, compute_fast_trigger_validation, compute_three_sums
             
-            # Convert trace to FPGA format
             R = hardware_params["energy_R"]
-            fpga_trace = convert_trace_to_FPGA(np.array([trace]), R)
-            
-            # Get fast trigger position
+
+            # Get fast trigger position (pass raw trace — no double conversion)
             fast_result = compute_fast_trigger_validation(
-                fpga_trace,
+                np.array([trace]),
                 hardware_params["fast_L"],
-                hardware_params["fast_G"], 
+                hardware_params["fast_G"],
                 hardware_params["fast_threshold"],
                 baseline_index=50
             )
@@ -393,10 +391,17 @@ class ContinuousSpectrumPlotter(QWidget):
                         self.energy_data[channel].append(float(calculated_energy))
                 return
                 
-            trigger_index = fast_result["trigger_indices"][0]
-            
+            # Convert raw-rate trigger indices to FPGA positions
+            fast_L = hardware_params["fast_L"]
+            fast_G = hardware_params["fast_G"]
+            filter_loss = (2 * fast_L + fast_G - 1) * 5
+            trigger_index = (fast_result["trigger_indices"][0] + filter_loss) // 5
+
+            # FPGA trace needed by compute_three_sums / compute_energy_filter
+            fpga_trace = convert_trace_to_FPGA(np.array([trace]), R)
+
             # Calculate energy using three sums
-            three_sums_result = compute_three_sums(fpga_trace, R, 
+            three_sums_result = compute_three_sums(fpga_trace, R,
                                                  hardware_params["energy_L"],
                                                  hardware_params["energy_G"], 
                                                  baseline_index=50)

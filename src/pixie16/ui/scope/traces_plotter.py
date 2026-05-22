@@ -1614,9 +1614,9 @@ class TracesPlotter(QWidget):
         # Pick the trigger closest to trace center — hardware places the pulse there
         # via trace delay, so noise crossings far from center are spurious.
         try:
-            traces_fpga = convert_trace_to_FPGA(working_trace[np.newaxis, :])
+            # Pass raw trace — calculate_filter handles FPGA conversion internally.
             fast_result = compute_fast_trigger_validation(
-                traces_fpga,
+                working_trace[np.newaxis, :],
                 L=self.hardware_params["fast_L"],
                 G=self.hardware_params["fast_G"],
                 threshold=self.hardware_params["fast_threshold"],
@@ -1628,25 +1628,20 @@ class TracesPlotter(QWidget):
                 fast_L = self.hardware_params["fast_L"]
                 fast_G = self.hardware_params["fast_G"]
 
-                # Trigger indices are in the FPGA-rate coordinate system of the
-                # shortened filter output. The trapezoidal convolution loses
-                # 2L+G-1 "super-FPGA" samples from the start (because
-                # calculate_filter internally converts FPGA→super-FPGA, groups
-                # of 5, before applying the filter). After repeat(5) expansion,
-                # the filter output is (2L+G-1)*5 shorter than the input FPGA
-                # trace. Each FPGA-rate index maps to 5 raw samples.
-                filter_offset = (2 * fast_L + fast_G - 1) * 5  # in FPGA-rate units
-                group_delay = (fast_L + fast_G // 2) * 5       # filter group delay
+                # Trigger indices are in the 2 ns filter output, which is
+                # (2L+G-1)*5 raw samples shorter than the input trace (the
+                # trapezoidal convolution consumes 2L+G-1 FPGA samples from
+                # the front, each spanning 5 raw samples).
+                filter_loss = (2 * fast_L + fast_G - 1) * 5   # raw samples
+                group_delay = (fast_L + fast_G // 2) * 5      # raw samples
 
-                # Pick the trigger closest to the CENTER of the filter output
-                # (not the original trace, which is in a different coordinate space)
+                # Pick the trigger closest to center of the filter output
                 filter_center = len(fast_result["fast_triggers"][0]) // 2
-                fpga_idx = min(all_triggers, key=lambda t: abs(t - filter_center))
+                trig_idx = min(all_triggers, key=lambda t: abs(t - filter_center))
 
-                # Map to raw-trace position:
-                #   (fpga_idx + filter_offset) * 5 = filter threshold crossing
-                #   subtract group_delay * 5 to find actual rising-edge position
-                fast_trigger_raw_pos = (fpga_idx + filter_offset - group_delay) * 5
+                # Map to raw-trace position: add filter_loss (offset to
+                # original trace), subtract group_delay (rising-edge correction)
+                fast_trigger_raw_pos = trig_idx + filter_loss - group_delay
                 self._store_trigger_info(channel, [fast_trigger_raw_pos], "main_trigger")
             else:
                 self._store_trigger_info(channel, [], "main_trigger")
@@ -1665,27 +1660,21 @@ class TracesPlotter(QWidget):
                 elif trace_type == "fast_trigger":
                     # Fast trigger filter: narrow trapezoidal shape using fast_L/fast_G
                     # (NOT the slow/energy filter — that uses energy_L/energy_G/energy_R)
-                    traces_fpga = convert_trace_to_FPGA(working_trace[np.newaxis, :])
-
                     fast_result = compute_fast_trigger_validation(
-                        traces_fpga,
+                        working_trace[np.newaxis, :],
                         L=self.hardware_params["fast_L"],
                         G=self.hardware_params["fast_G"],
                         threshold=self.hardware_params["fast_threshold"],
                     )
 
                     if fast_result["validation_passed"] and fast_result["fast_triggers"] is not None:
-                        # Extract the fast trigger trace (first trace if multiple)
-                        # Don't resize here - interpolation below handles FPGA->raw timing
                         signal = fast_result["fast_triggers"][0]
                     else:
                         continue  # Skip if computation failed
                 elif trace_type == "cfd":
                     # Compute CFD using polarity-corrected trace
-                    traces_fpga = convert_trace_to_FPGA(working_trace[np.newaxis, :])
-
                     fast_result = compute_fast_trigger_validation(
-                        traces_fpga,
+                        working_trace[np.newaxis, :],
                         L=self.hardware_params["fast_L"],
                         G=self.hardware_params["fast_G"],
                         threshold=self.hardware_params["fast_threshold"],
@@ -1718,16 +1707,24 @@ class TracesPlotter(QWidget):
                 elif trace_type == "energy_filter":
                     # Slow/energy filter: broad trapezoidal shape using energy_L/energy_G/energy_R
                     # (NOT the fast trigger filter — that uses fast_L/fast_G)
-                    traces_fpga = convert_trace_to_FPGA(working_trace[np.newaxis, :])
-
                     fast_result = compute_fast_trigger_validation(
-                        traces_fpga,
+                        working_trace[np.newaxis, :],
                         L=self.hardware_params["fast_L"],
                         G=self.hardware_params["fast_G"],
                         threshold=self.hardware_params["fast_threshold"],
                     )
 
                     if fast_result["validation_passed"]:
+                        # compute_energy_filter expects FPGA traces and trigger
+                        # indices in the FPGA coordinate system.
+                        traces_fpga = convert_trace_to_FPGA(working_trace[np.newaxis, :])
+                        fast_L = self.hardware_params["fast_L"]
+                        fast_G = self.hardware_params["fast_G"]
+                        filter_loss = (2 * fast_L + fast_G - 1) * 5
+                        trigger_indices_fpga = [
+                            (idx + filter_loss) // 5
+                            for idx in fast_result["trigger_indices"]
+                        ]
                         energy_result = compute_energy_filter(
                             traces_fpga,
                             R=self.hardware_params["energy_R"],
@@ -1735,7 +1732,7 @@ class TracesPlotter(QWidget):
                             G=self.hardware_params["energy_G"],
                             P=self.hardware_params["energy_P"],
                             decay_ns=self.hardware_params["decay_ns"],
-                            trigger_indices=fast_result["trigger_indices"],
+                            trigger_indices=trigger_indices_fpga,
                             baseline_index=fast_result["baseline_stats"]["baseline_index"],
                         )
 
@@ -1757,19 +1754,13 @@ class TracesPlotter(QWidget):
                                 len(fast_trigger_indices) > 0
                                 and len(fast_trigger_indices[0]) > 0
                             ):
-                                # Fast trigger position in raw samples — pick closest
-                                # to the center of the filter output (not the original
-                                # trace, which is in a different coordinate space).
+                                # Trigger indices are in 2 ns filter output coords.
                                 all_triggers = fast_trigger_indices[0]
-                                fast_L = self.hardware_params["fast_L"]
-                                fast_G = self.hardware_params["fast_G"]
-                                # Account for 2L+G-1 super-FPGA samples lost by the
-                                # trapezoidal convolution (see Task 1 / marker fix).
-                                filter_offset = (2 * fast_L + fast_G - 1) * 5
+                                filter_loss = (2 * fast_L + fast_G - 1) * 5
                                 group_delay = (fast_L + fast_G // 2) * 5
                                 filter_center = len(fast_result["fast_triggers"][0]) // 2
-                                fpga_idx = min(all_triggers, key=lambda t: abs(t - filter_center))
-                                fast_trigger_raw_pos = (fpga_idx + filter_offset - group_delay) * 5
+                                trig_idx = min(all_triggers, key=lambda t: abs(t - filter_center))
+                                fast_trigger_raw_pos = trig_idx + filter_loss - group_delay
 
                                 # Energy trigger position in raw samples
                                 if trigger_pos is not None:
@@ -1857,44 +1848,27 @@ class TracesPlotter(QWidget):
                 signal = self.normalize_trace_to_zero_baseline(signal, trace_type)
                 
                 if trace_type in ("fast_trigger", "cfd"):
-                    fpga_sampling_period = 10.0  # ns per FPGA cycle
-                    raw_sampling_period = 2.0   # ns per raw sample
-
-                    if trace_type == "cfd":
-                        # CFD output starts B+D FPGA samples into the fast trigger
-                        cfd_B = self.hardware_params.get("CFD_B", 5)
-                        cfd_D = self.hardware_params.get("CFD_D", 5)
-                        cfd_start_offset_ns = (cfd_B + cfd_D) * fpga_sampling_period
-                    else:
-                        cfd_start_offset_ns = 0.0
-
-                    # The filter output is shorter than the original trace by
-                    # 2L+G-1 "super-FPGA" samples at the start. Because
-                    # calculate_filter internally converts FPGA→super-FPGA
-                    # (groups of 5) before applying the trapezoidal filter,
-                    # each super-FPGA sample spans 50 ns (5 FPGA × 10 ns).
+                    # The filter output is at 2 ns rate (same as raw trace)
+                    # but shorter by (2L+G-1)*5 samples at the start.
+                    # Place it at the correct offset via zero-padding.
                     fast_L = self.hardware_params["fast_L"]
                     fast_G = self.hardware_params["fast_G"]
-                    filter_offset_ns = (2 * fast_L + fast_G - 1) * 50.0
+                    filter_offset = (2 * fast_L + fast_G - 1) * 5  # raw samples
 
-                    # Build the FPGA time axis for this signal, offset-corrected
-                    signal_time_points = (
-                        np.arange(len(signal)) * fpga_sampling_period
-                        + filter_offset_ns
-                        + cfd_start_offset_ns
-                    )
+                    if trace_type == "cfd":
+                        # CFD output starts B+D samples further into the
+                        # fast trigger signal (B, D are in raw-rate units
+                        # of the fast trigger output).
+                        cfd_B = self.hardware_params.get("CFD_B", 5)
+                        cfd_D = self.hardware_params.get("CFD_D", 5)
+                        filter_offset += cfd_B + cfd_D
 
-                    target_time_points = np.arange(target_length) * raw_sampling_period
+                    padded = np.zeros(target_length)
+                    end = min(filter_offset + len(signal), target_length)
+                    if end > filter_offset:
+                        padded[filter_offset:end] = signal[:end - filter_offset]
+                    signal = padded
 
-                    # Interpolate to raw trace timing
-                    from scipy import interpolate
-                    interp_func = interpolate.interp1d(
-                        signal_time_points, signal,
-                        kind='linear', bounds_error=False, fill_value=0
-                    )
-                    signal = interp_func(target_time_points)
-
-                    # Time axis already aligned, no further correction needed
                     corrected_time_axis = time_axis
                 else:
                     # Apply offset correction to time axis for other trace types
@@ -2176,9 +2150,8 @@ class TracesPlotter(QWidget):
             if not self.channel_polarity.get(channel, True):
                 working_trace = -working_trace
 
-            traces_fpga = convert_trace_to_FPGA(working_trace[np.newaxis, :])
             fast_result = compute_fast_trigger_validation(
-                traces_fpga,
+                working_trace[np.newaxis, :],
                 L=self.hardware_params["fast_L"],
                 G=self.hardware_params["fast_G"],
                 threshold=self.hardware_params["fast_threshold"],
@@ -2189,15 +2162,15 @@ class TracesPlotter(QWidget):
             if len(fast_trigger_indices) == 0 or len(fast_trigger_indices[0]) == 0:
                 return
 
-            # Pick the trigger closest to center of the filter output
+            # Trigger indices in 2 ns filter output; offset by filter_loss
             fast_L = self.hardware_params["fast_L"]
             fast_G = self.hardware_params["fast_G"]
-            filter_offset = (2 * fast_L + fast_G - 1) * 5  # 2L+G-1 super-FPGA → FPGA-rate
+            filter_loss = (2 * fast_L + fast_G - 1) * 5
             group_delay = (fast_L + fast_G // 2) * 5
 
             all_triggers = fast_trigger_indices[0]
             filter_center = len(fast_result["fast_triggers"][0]) // 2
-            fpga_idx = min(all_triggers, key=lambda t: abs(t - filter_center))
+            trig_idx = min(all_triggers, key=lambda t: abs(t - filter_center))
         except Exception:
             return
 
@@ -2238,8 +2211,8 @@ class TracesPlotter(QWidget):
             Ls = L * spc
             Gs = G * spc
 
-            # After energy trace alignment, S1 starts at the trigger position
-            sum_start_raw = (fpga_idx + filter_offset - group_delay) * 5
+            # S1 starts at the trigger position (rising edge in raw coords)
+            sum_start_raw = trig_idx + filter_loss - group_delay
 
             # Energy trace is plotted on the corrected time axis
             energy_time_axis = self.apply_time_correction(time_axis, "energy_filter")
@@ -2269,21 +2242,20 @@ class TracesPlotter(QWidget):
 
         # --- Fast trigger LGL (nice-to-have — no hardware sums to verify against) ---
         if self.trace_types.get("fast_trigger", False):
-            # Fast trigger filter sums at crossing point fpga_idx:
-            #   S1: FPGA [fpga_idx - 2L - G + 1, fpga_idx - L - G]
-            #   S2: FPGA [fpga_idx - L - G + 1, fpga_idx - L]  (gap)
-            #   S3: FPGA [fpga_idx - L + 1, fpga_idx]
-            # Each FPGA sample = 5 raw samples. The fast trigger trace is plotted on
-            # time_axis (uncorrected) with pipeline delay baked into the data interpolation,
-            # so FPGA sample n appears at raw position (n + fpga_delay) * 5.
-            ft_L = fast_L  # in FPGA samples
+            # Fast trigger filter sums around the crossing point trig_idx.
+            # In the FPGA domain the trapezoidal sums span:
+            #   S1: [k-2L-G+1, k-L-G],  S2 (gap): [k-L-G+1, k-L],  S3: [k-L+1, k]
+            # Each FPGA sample = 5 raw samples.
+            ft_L = fast_L  # FPGA cycles
             ft_G = fast_G
-            ft_Ls = ft_L * 5  # in raw samples
+            ft_Ls = ft_L * 5  # raw samples
             ft_Gs = ft_G * 5
 
-            # S1 starts at FPGA (fpga_idx - 2L - G + 1), mapped to raw with
-            # filter offset (2L+G-1 super-FPGA samples lost at trace start)
-            ft_sum_start_raw = (fpga_idx - 2 * ft_L - ft_G + 1 + filter_offset) * 5
+            # trig_idx is in 2 ns filter output coords.  The crossing's FPGA
+            # position in the original trace is (trig_idx + filter_loss) // 5.
+            # Map that back to raw: (fpga_pos) * 5.  S1 starts at k-2L-G+1.
+            fpga_cross = (trig_idx + filter_loss) // 5
+            ft_sum_start_raw = (fpga_cross - 2 * ft_L - ft_G + 1) * 5
 
             def ft_raw_to_ns(raw_idx):
                 if 0 <= raw_idx < len(time_axis):
@@ -2350,53 +2322,47 @@ class TracesPlotter(QWidget):
             return None  # Filter longer than trace, can't compute
 
         if trace_type == "fast_trigger":
-            traces_fpga = convert_trace_to_FPGA(working_trace[np.newaxis, :])
-            
             fast_result = compute_fast_trigger_validation(
-                traces_fpga,
-                L=self.hardware_params["fast_L"],       # Real hardware parameter
-                G=self.hardware_params["fast_G"],       # Real hardware parameter  
-                threshold=self.hardware_params["fast_threshold"], # Real hardware parameter
+                working_trace[np.newaxis, :],
+                L=self.hardware_params["fast_L"],
+                G=self.hardware_params["fast_G"],
+                threshold=self.hardware_params["fast_threshold"],
             )
-            
+
             if fast_result["validation_passed"] and fast_result["fast_triggers"] is not None:
                 signal = fast_result["fast_triggers"][0]
-                # Interpolate from FPGA timing (10ns) to raw timing (2ns)
+                # Output is at 2 ns rate — pad to match raw trace length
                 target_length = len(latest_trace)
-                fpga_time = np.arange(len(signal)) * 10.0  # FPGA at 10ns/point
-                raw_time = np.arange(target_length) * 2.0  # Raw at 2ns/point
-                from scipy import interpolate
-                interp_func = interpolate.interp1d(
-                    fpga_time, signal,
-                    kind='linear', bounds_error=False, fill_value=0
-                )
-                return interp_func(raw_time)
+                fast_L = self.hardware_params.get("fast_L", 2)
+                fast_G = self.hardware_params.get("fast_G", 2)
+                offset = (2 * fast_L + fast_G - 1) * 5
+                padded = np.zeros(target_length)
+                end = min(offset + len(signal), target_length)
+                if end > offset:
+                    padded[offset:end] = signal[:end - offset]
+                return padded
             else:
                 return None
         elif trace_type == "cfd":
-            traces_fpga = convert_trace_to_FPGA(working_trace[np.newaxis, :])
-            
             fast_result = compute_fast_trigger_validation(
-                traces_fpga,
-                L=self.hardware_params["fast_L"],       # Real hardware parameter
-                G=self.hardware_params["fast_G"],       # Real hardware parameter
-                threshold=self.hardware_params["fast_threshold"], # Real hardware parameter
+                working_trace[np.newaxis, :],
+                L=self.hardware_params["fast_L"],
+                G=self.hardware_params["fast_G"],
+                threshold=self.hardware_params["fast_threshold"],
             )
-            
+
             if fast_result["validation_passed"] and fast_result["fast_triggers"] is not None:
                 fast_trace = fast_result["fast_triggers"][0]
-                
-                # Calculate CFD with real hardware parameters
+
                 cfd_result, cfdtime, fast_filter, cfd_errors = calculate_CFD(
                     fast_trace[np.newaxis, :],
-                    CFD_threshold=self.hardware_params.get("CFD_threshold", 50),  # Real hardware parameter
-                    w=self.hardware_params.get("CFD_delay", 5),                   # Real hardware parameter  
-                    FF_threshold=self.hardware_params.get("FF_threshold", 100)    # Real hardware parameter
+                    CFD_threshold=self.hardware_params.get("CFD_threshold", 50),
+                    w=self.hardware_params.get("CFD_delay", 5),
+                    FF_threshold=self.hardware_params.get("FF_threshold", 100)
                 )
-                
+
                 if cfd_result is not None and len(cfd_result) > 0:
                     signal = cfd_result[0]
-                    # Resize to match original trace length if needed
                     target_length = len(latest_trace)
                     if len(signal) != target_length:
                         signal = self._resize_trace_to_match(signal, target_length, "cfd")
@@ -2415,24 +2381,30 @@ class TracesPlotter(QWidget):
             if energy_samples >= fpga_trace_len:
                 return None  # Energy filter longer than trace
 
-            traces_fpga = convert_trace_to_FPGA(working_trace[np.newaxis, :])
-
             fast_result = compute_fast_trigger_validation(
-                traces_fpga,
+                working_trace[np.newaxis, :],
                 L=self.hardware_params["fast_L"],
                 G=self.hardware_params["fast_G"],
                 threshold=self.hardware_params["fast_threshold"],
             )
 
             if fast_result["validation_passed"]:
+                traces_fpga = convert_trace_to_FPGA(working_trace[np.newaxis, :])
+                fast_L = self.hardware_params.get("fast_L", 2)
+                fast_G = self.hardware_params.get("fast_G", 2)
+                filter_loss = (2 * fast_L + fast_G - 1) * 5
+                trigger_indices_fpga = [
+                    (idx + filter_loss) // 5
+                    for idx in fast_result["trigger_indices"]
+                ]
                 energy_result = compute_energy_filter(
                     traces_fpga,
-                    R=self.hardware_params["energy_R"],     # Real hardware parameter
-                    L=self.hardware_params["energy_L"],     # Real hardware parameter (L-G-L controls!)
-                    G=self.hardware_params["energy_G"],     # Real hardware parameter (L-G-L controls!)
-                    P=self.hardware_params["energy_P"],     # Real hardware parameter
-                    decay_ns=self.hardware_params["decay_ns"], # Real hardware parameter
-                    trigger_indices=fast_result["trigger_indices"],
+                    R=self.hardware_params["energy_R"],
+                    L=self.hardware_params["energy_L"],
+                    G=self.hardware_params["energy_G"],
+                    P=self.hardware_params["energy_P"],
+                    decay_ns=self.hardware_params["decay_ns"],
+                    trigger_indices=trigger_indices_fpga,
                     baseline_index=fast_result["baseline_stats"]["baseline_index"],
                 )
                 
@@ -2467,23 +2439,26 @@ class TracesPlotter(QWidget):
             R = self.hardware_params["energy_R"]
             P = self.hardware_params["energy_P"]
 
-            # Convert to FPGA format
-            fpga_trace = convert_trace_to_FPGA(np.array([working_trace]), R)
-            
-            # Get fast trigger position first 
+            # Get fast trigger position first (raw input — no double conversion)
             fast_result = compute_fast_trigger_validation(
-                fpga_trace, 
+                np.array([working_trace]),
                 self.hardware_params["fast_L"],
                 self.hardware_params["fast_G"],
                 self.hardware_params["fast_threshold"],
                 baseline_index=50
             )
+            # Convert to FPGA format for energy filter
+            fpga_trace = convert_trace_to_FPGA(np.array([working_trace]), R)
             
             if not fast_result["validation_passed"] or not fast_result["trigger_indices"]:
                 return {"error": "No valid trigger found"}
                 
-            trigger_index = fast_result["trigger_indices"][0]
-            
+            # Convert raw-rate trigger indices to FPGA positions for energy filter
+            fast_L_v = self.hardware_params["fast_L"]
+            fast_G_v = self.hardware_params["fast_G"]
+            filter_loss = (2 * fast_L_v + fast_G_v - 1) * 5
+            trigger_index = (fast_result["trigger_indices"][0] + filter_loss) // 5
+
             # Use energy filter computation instead
             energy_result = compute_energy_filter(fpga_trace, R, L, G, baseline_index=50)
             energy_data = energy_result["energy_results"][0] if energy_result.get("energy_results") else []

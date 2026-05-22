@@ -66,6 +66,8 @@ class FastTrigger(QWidget):
         # get N colors for plotting
         self.colors = cm.get_cmap("jet")(np.linspace(0, 1, self.N))
         self.triggers = np.zeros(self.N)
+        self.triggers_fpga = np.zeros(self.N)
+        self._fast_filter_loss = 0
         self.baseline_index = 1
         self.energy_values = np.zeros(self.N)
 
@@ -196,20 +198,27 @@ class FastTrigger(QWidget):
         if self.data_FPGA.max() == 0:
             return
 
-        result = compute_fast_trigger_validation(self.data_FPGA, L=L, G=G, threshold=T)
+        result = compute_fast_trigger_validation(self.raw_data, L=L, G=G, threshold=T)
 
         if result["validation_passed"]:
             self.fast_triggers = result["fast_triggers"]
+            # trigger_indices are in 2 ns filter-output coords.
+            # Store raw-rate for plotting and FPGA-rate for energy.
+            self._fast_filter_loss = (2 * L + G - 1) * 5  # raw samples
             self.triggers = result["trigger_indices"]
+            self.triggers_fpga = [
+                (idx + self._fast_filter_loss) // 5
+                for idx in self.triggers
+            ]
             baseline_stats = result["baseline_stats"]
 
-            # plots traces
+            # plots traces (raw-rate signal, 2 ns per sample)
             for i, trace in enumerate(self.fast_triggers):
                 self.fast_plot.axes.plot(
                     trace, color=self.colors[i], drawstyle="steps-mid"
                 )
 
-            # plot triggers
+            # plot triggers on the raw-rate trace
             for i, positions in enumerate(self.triggers):
                 for p in positions:
                     self.fast_plot.axes.axvline(p, color=self.colors[i])
@@ -224,7 +233,7 @@ class FastTrigger(QWidget):
             self.fast_plot.axes.set_title("Fast Trigger: cannot calculate noise level")
             self.baseline_index = 1
 
-        self.fast_plot.axes.set_xlabel("FPGA cycles")
+        self.fast_plot.axes.set_xlabel("2 ns samples")
         self.fast_plot.canvas.draw()
         self.update_energies()
 
@@ -305,10 +314,10 @@ class FastTrigger(QWidget):
                 pad = np.ones(pad_length) * int(baseline_pad)
                 trace = np.concatenate([pad, trace, pad])
 
-            if len(self.triggers[i]):
-                # calculate trigger position in new time units
+            if len(self.triggers_fpga[i]):
+                # calculate trigger position in energy-domain time units
                 trigger_pos = (
-                    int(self.triggers[i][0]) // self.slow_filter_range - 2 * L - G + P
+                    int(self.triggers_fpga[i][0]) // self.slow_filter_range - 2 * L - G + P
                 )
                 if pad_data:
                     trigger_pos += pad_length
@@ -321,7 +330,7 @@ class FastTrigger(QWidget):
                 result[k - 2 * L - G + 1] = (
                     4 * (-c1 * S1 + c2 * S2 + c3 * S3) - baseline
                 )
-                if len(self.triggers[i]):
+                if len(self.triggers_fpga[i]):
                     if k - 2 * L - G + 1 == trigger_pos:
                         print(
                             f"[yellow]INFO[/] found peaksample position {i}: ",
@@ -333,7 +342,7 @@ class FastTrigger(QWidget):
                         self.energy_values[i] = result[k - 2 * L - G + 1]
 
             self.cfd_plot.axes.plot(result, color=self.colors[i], drawstyle="steps-mid")
-            if len(self.triggers[i]):
+            if len(self.triggers_fpga[i]):
                 if 0 < trigger_pos < len(result):
                     self.cfd_plot.axes.plot(
                         trigger_pos, result[trigger_pos], "o", color=self.colors[i]
@@ -373,7 +382,7 @@ class FastTrigger(QWidget):
             G=G,
             P=P,
             decay_ns=decay_ns,
-            trigger_indices=self.triggers,
+            trigger_indices=self.triggers_fpga,
             baseline_index=self.baseline_index,
         )
 
@@ -406,7 +415,7 @@ class FastTrigger(QWidget):
         L = self.energy_linearity.value["L"]
 
         linearity_result = compute_energy_linearity(
-            self.data_FPGA, self.triggers, self.energy_values, self.baseline_index, L
+            self.data_FPGA, self.triggers_fpga, self.energy_values, self.baseline_index, L
         )
 
         self.energy_linearity_plot.axes.clear()

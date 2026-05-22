@@ -420,7 +420,9 @@ def compute_fast_trigger_validation(
     Parameters
     ----------
     traces : np.ndarray
-        Raw trace data (converted to FPGA cycles)
+        Raw ADC trace data at 2 ns sampling (500 MHz). Do NOT pre-convert
+        with convert_trace_to_FPGA — calculate_filter handles that internally.
+        Shape (N, M) for N traces of M samples.
     L : int
         Fast filter L parameter in FPGA units
     G : int
@@ -432,7 +434,12 @@ def compute_fast_trigger_validation(
 
     Returns
     -------
-    Dict containing fast trigger results matching trace_analysis.py output
+    dict
+        fast_triggers : np.ndarray — filter output at 2 ns rate (repeat-expanded)
+        trigger_indices : list[np.ndarray] — threshold-crossing indices in
+            the 2 ns filter output (shorter than input by (2L+G-1)*5 samples)
+        baseline_stats : dict — noise estimates
+        validation_passed : bool
     """
 
     # Convert L, G from FPGA units to microseconds for calculate_filter

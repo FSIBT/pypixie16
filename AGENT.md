@@ -401,4 +401,3 @@ logdir = /path/to/logs
 - **Documentation:** https://pypixie16.readthedocs.io/
 - **Issues:** https://bitbucket.org/berkeleylab/pypixie16/issues
 - **License:** BSD License
-- **Contact:** apersaud@lbl.gov (primary maintainer)
