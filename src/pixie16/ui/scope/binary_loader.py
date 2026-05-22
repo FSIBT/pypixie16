@@ -5,6 +5,7 @@ Binary file loader that integrates with scope's existing Start/Stop buttons
 
 import time
 import os
+import struct
 from pathlib import Path
 
 import numpy as np
@@ -22,10 +23,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-try:
-    import pixie16
-except ImportError:
-    pixie16 = None
+from pixie16.read import read_list_mode_data_as_events
 
 
 class BinaryReplayThread(QThread):
@@ -82,20 +80,10 @@ class BinaryReplayThread(QThread):
                 if self.is_mca_mode:
                     self._process_event_for_mca(event)
 
-                # Feed event to the appropriate scope processor
+                # Feed event through the same pipeline as live data
                 try:
-                    if self.parent_scope.current_mode == "listmode_histogram":
+                    if self.parent_scope.current_mode == "list_mode":
                         self.parent_scope.process_list_mode_event(event)
-                    elif self.parent_scope.current_mode == "listmode_traces":
-                        trace_data = getattr(event, "trace", np.random.random(100))
-                        if hasattr(
-                            self.parent_scope.spectrum_tab, "add_event_with_trace"
-                        ):
-                            self.parent_scope.spectrum_tab.add_event_with_trace(
-                                event, trace_data
-                            )
-                        else:
-                            self.parent_scope.process_traces_event(event)
                 except Exception as e:
                     print(f"Error processing event {i}: {e}")
 
@@ -175,42 +163,16 @@ class BinaryLoadingThread(QThread):
             size_mb = file_size / (1024 * 1024)
             self.progress.emit(f"Reading {size_mb:.1f} MB file...")
 
-            if pixie16:
-                self.progress.emit("Parsing events...")
-                events = list(
-                    pixie16.read.read_list_mode_data_as_events([self.filename])
-                )
-                events.sort(key=lambda x: x.timestamp)
-                self.progress.emit(f"Loaded {len(events)} events")
-                self.finished.emit(events, self.filename)
-            else:
-                self.progress.emit("pixie16 not available, generating dummy data...")
-                events = self._generate_dummy_events()
-                self.finished.emit(events, self.filename)
+            self.progress.emit("Parsing events...")
+            events = list(
+                read_list_mode_data_as_events([self.filename])
+            )
+            events.sort(key=lambda x: x.timestamp)
+            self.progress.emit(f"Loaded {len(events)} events")
+            self.finished.emit(events, self.filename)
 
         except Exception as e:
             self.failed.emit(f"Loading failed: {str(e)}")
-
-    def _generate_dummy_events(self):
-        events = []
-        base_timestamp = int(time.time() * 1e8)
-        for i in range(5000):
-            event = type(
-                "Event",
-                (),
-                {
-                    "channel": np.random.randint(0, 16),
-                    "timestamp": base_timestamp
-                    + i * 100000
-                    + np.random.randint(-10000, 10000),
-                    "energy": np.random.randint(100, 4000),
-                    "trace": np.random.randint(0, 4096, np.random.randint(100, 1000))
-                    if np.random.random() > 0.3
-                    else [],
-                },
-            )()
-            events.append(event)
-        return events
 
 
 class BinaryFileLoader(QWidget):
@@ -260,7 +222,7 @@ class BinaryFileLoader(QWidget):
         file_layout.addLayout(file_row)
 
         # File info
-        self.file_label = QLabel("No file loaded - using live/dummy data")
+        self.file_label = QLabel("No file loaded")
         self.file_label.setStyleSheet("font-size: 11px; color: gray;")
         file_layout.addWidget(self.file_label)
 
@@ -322,12 +284,17 @@ class BinaryFileLoader(QWidget):
         if not filename:
             return
 
-        # Check file size and warn for large files
         try:
+            # Validate file before loading
+            error = self._validate_binary_file(filename)
+            if error:
+                QMessageBox.critical(self, "Invalid File", error)
+                return
+
             file_size = os.path.getsize(filename)
             size_mb = file_size / (1024 * 1024)
 
-            if size_mb > 500:  # Warn for files > 500MB
+            if size_mb > 500:
                 reply = QMessageBox.question(
                     self,
                     "Large File Warning",
@@ -336,7 +303,7 @@ class BinaryFileLoader(QWidget):
                 )
                 if reply != QMessageBox.StandardButton.Yes:
                     return
-            
+
             # Check for CFD and warn about timestamp accuracy
             self._check_cfd_warning()
 
@@ -345,6 +312,69 @@ class BinaryFileLoader(QWidget):
 
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Cannot access file: {e}")
+
+    @staticmethod
+    def _validate_binary_file(filename):
+        """Validate that a file looks like a Pixie-16 list mode binary.
+
+        Returns an error string on failure, or None if the file is valid.
+        """
+        file_size = os.path.getsize(filename)
+        if file_size == 0:
+            return "File is empty."
+        if file_size < 16:
+            return f"File is too small ({file_size} bytes) to contain a Pixie-16 event header (minimum 16 bytes)."
+
+        # Read the first event header (4 x 32-bit words) and sanity-check
+        try:
+            with open(filename, "rb") as f:
+                raw = f.read(16)
+        except OSError as e:
+            return f"Cannot read file: {e}"
+
+        w0, w1, w2, w3 = struct.unpack_from("<4I", raw, 0)
+
+        event_length = (w0 >> 17) & 0x3FFF
+        header_length = (w0 >> 12) & 0x1F
+        channel = w0 & 0xF
+        slot = (w0 >> 4) & 0xF
+        energy = w3 & 0xFFFF
+
+        # Header length must be 4, 6, 8, 10, 12, or 14 (standard Pixie-16 values)
+        valid_header_lengths = {4, 6, 8, 10, 12, 14}
+        if header_length not in valid_header_lengths:
+            return (
+                f"Invalid header length {header_length} in first event.\n"
+                f"Expected one of {sorted(valid_header_lengths)}.\n\n"
+                f"This file does not appear to be a Pixie-16 list mode binary."
+            )
+
+        # Event length must be >= header length
+        if event_length < header_length:
+            return (
+                f"Corrupt first event: event length ({event_length}) "
+                f"< header length ({header_length})."
+            )
+
+        # Event length should not exceed file size (in 32-bit words)
+        if event_length * 4 > file_size:
+            return (
+                f"First event length ({event_length} words = {event_length * 4} bytes) "
+                f"exceeds file size ({file_size} bytes). File may be truncated or corrupt."
+            )
+
+        # Channel must be 0-15
+        if channel > 15:
+            return f"Invalid channel number {channel} in first event (expected 0-15)."
+
+        # Slot must be 2-14 (standard PXI slot range)
+        if slot < 2 or slot > 14:
+            return (
+                f"Suspicious slot number {slot} in first event (expected 2-14).\n"
+                f"This file may not be a valid Pixie-16 list mode binary."
+            )
+
+        return None  # Validation passed
 
     def _check_cfd_warning(self):
         try:
@@ -432,14 +462,14 @@ class BinaryFileLoader(QWidget):
             self.stop_replay()
 
         # Update UI
-        self.file_label.setText("No file loaded - using live/dummy data")
+        self.file_label.setText("No file loaded")
         self.file_label.setStyleSheet("font-size: 11px; color: gray;")
         self.clear_button.setEnabled(False)
         self.redo_button.setEnabled(False)
         self.progress_bar.setVisible(False)
         self.status_label.setText("Ready")
 
-        print("Binary file cleared - back to live/dummy mode")
+        print("Binary file cleared")
 
     def start_replay(self):
         if not self.is_binary_mode or not self.events:
@@ -576,7 +606,7 @@ class BinaryFileLoader(QWidget):
         if self.is_binary_mode:
             return f"Binary: {self.current_file.name} ({self.total_events:,} events)"
         else:
-            return "Live/Dummy data"
+            return "Live data"
 
     def set_parent_scope(self, scope):
         self.parent_scope = scope
