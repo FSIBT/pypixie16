@@ -126,13 +126,15 @@ class BinaryReplayThread(QThread):
             channel = getattr(event, "channel", 0)
             energy = getattr(event, "energy", 0)
 
-            if channel in self.mca_histograms:
-                # Convert energy to bin number (assuming 16-bit energy range)
-                bin_number = int((energy / 65536.0) * 32768)
-                bin_number = max(0, min(bin_number, 32767))
+            if energy < 0 or channel not in self.mca_histograms:
+                return
 
-                # Accumulate in histogram
-                self.mca_histograms[channel][bin_number] += 1
+            # Convert energy to bin number (assuming 16-bit energy range)
+            bin_number = int((energy / 65536.0) * 32768)
+            bin_number = max(0, min(bin_number, 32767))
+
+            # Accumulate in histogram
+            self.mca_histograms[channel][bin_number] += 1
         except Exception as e:
             print(f"Error processing MCA event: {e}")
 
@@ -378,24 +380,22 @@ class BinaryFileLoader(QWidget):
 
     def _check_cfd_warning(self):
         try:
-            # Check if parent scope has CFD settings
-            if hasattr(self.parent, 'traces_plotter'):
-                traces_plotter = self.parent.traces_plotter
-                
-                # Check if CFD trace type is enabled
-                if (hasattr(traces_plotter, 'trace_types') and 
-                    traces_plotter.trace_types.get('cfd', False)):
-                    
-                    QMessageBox.warning(
-                        self,
-                        "CFD Timing Warning",
-                        "CFD (Constant Fraction Discriminator) is currently enabled.\n\n"
-                        "When loading binary files with CFD enabled, timestamps may be "
-                        "inaccurate due to timing differences between the hardware CFD "
-                        "and software simulation.\n\n"
-                        "For accurate timing analysis of recorded data, consider "
-                        "disabling CFD trace display or use live data acquisition instead.",
-                    )
+            if not self.parent_scope or not hasattr(self.parent_scope, 'spectrum_tab'):
+                return
+            spectrum_tab = self.parent_scope.spectrum_tab
+
+            if (hasattr(spectrum_tab, 'trace_types') and
+                    spectrum_tab.trace_types.get('cfd', False)):
+                QMessageBox.warning(
+                    self,
+                    "CFD Timing Warning",
+                    "CFD (Constant Fraction Discriminator) is currently enabled.\n\n"
+                    "When loading binary files with CFD enabled, timestamps may be "
+                    "inaccurate due to timing differences between the hardware CFD "
+                    "and software simulation.\n\n"
+                    "For accurate timing analysis of recorded data, consider "
+                    "disabling CFD trace display or use live data acquisition instead.",
+                )
         except Exception as e:
             print(f"Warning: Could not check CFD status: {e}")
 
@@ -583,11 +583,9 @@ class BinaryFileLoader(QWidget):
 
         print(f"Redoing replay of {self.current_file.name}")
 
-        # If currently replaying, stop it first
+        # If currently replaying, stop it first (stop() already joins the thread)
         if self.replay_thread and self.replay_thread.isRunning():
             self.stop_replay()
-            # Wait a bit for thread to stop
-            time.sleep(0.1)
 
         # Clear any existing data in the scope
         if hasattr(self.parent_scope, "clear_data"):
