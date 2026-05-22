@@ -29,6 +29,7 @@ from pixie16.read import read_list_mode_data_as_events
 class BinaryReplayThread(QThread):
     progress_update = pyqtSignal(int, int)  # current, total
     mca_histogram_update = pyqtSignal(dict)  # For MCA mode: {channel: histogram}
+    event_ready = pyqtSignal(object)  # single event, auto-queued to GUI thread
     replay_finished = pyqtSignal()
 
     def __init__(self, events, parent_scope, binary_loader):
@@ -80,12 +81,8 @@ class BinaryReplayThread(QThread):
                 if self.is_mca_mode:
                     self._process_event_for_mca(event)
 
-                # Feed event through the same pipeline as live data
-                try:
-                    if self.parent_scope.current_mode == "list_mode":
-                        self.parent_scope.process_list_mode_event(event)
-                except Exception as e:
-                    print(f"Error processing event {i}: {e}")
+                # Emit to GUI thread via queued signal (thread-safe)
+                self.event_ready.emit(event)
 
             current_index = batch_end
 
@@ -490,9 +487,12 @@ class BinaryFileLoader(QWidget):
             )
             # fmt: on
 
-            # Connect signals
+            # Connect signals (event_ready auto-queues to GUI thread)
             self.replay_thread.progress_update.connect(self.update_progress)
             self.replay_thread.replay_finished.connect(self.on_replay_finished)
+            self.replay_thread.event_ready.connect(
+                self.parent_scope.process_list_mode_event
+            )
 
             # Connect MCA-specific signal
             self.replay_thread.mca_histogram_update.connect(self._update_mca_display)

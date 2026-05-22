@@ -296,6 +296,7 @@ class PixieScopeApp(QMainWindow):
         
         # Binary loader
         self.binary_loader = BinaryFileLoader(parent_scope=self)
+        self.binary_loader.replay_stopped.connect(self._on_replay_stopped)
         self.binary_loader.setSizePolicy(
             QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum
         )
@@ -867,6 +868,30 @@ class PixieScopeApp(QMainWindow):
                 except RuntimeError:
                     pass
             print(f"Error stopping acquisition: {e}")
+
+    def _on_replay_stopped(self):
+        """Handle binary replay completion or stop — reset UI and timers."""
+        if not self.is_acquiring:
+            return
+        # Stop live update timers
+        if (
+            hasattr(self, "spectrum_tab")
+            and self.spectrum_tab
+            and hasattr(self.spectrum_tab, "stop_live_updates")
+        ):
+            try:
+                self.spectrum_tab.stop_live_updates()
+            except RuntimeError:
+                pass
+        self.is_acquiring = False
+        if not self.shutdown_in_progress:
+            try:
+                self.start_btn.setEnabled(True)
+                self.stop_btn.setEnabled(False)
+                self.status_label.setText("Status: Replay finished")
+                self.info_bar.setText("Binary replay completed")
+            except RuntimeError:
+                pass
 
     def clear_data(self):
         try:
