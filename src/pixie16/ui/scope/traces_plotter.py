@@ -2742,28 +2742,32 @@ class TracesPlotter(QWidget):
         trace_types_layout = QGridLayout()
         
         raw_traces_cb = QCheckBox("Raw")
-        raw_traces_cb.setChecked(True)
+        raw_traces_cb.setChecked(self.trace_types.get("raw", True))
         raw_traces_cb.toggled.connect(lambda: self.toggle_trace_type("raw"))
         trace_types_layout.addWidget(raw_traces_cb, 0, 0)
         self.raw_traces_cb = raw_traces_cb
-        
+
         fast_trigger_cb = QCheckBox("FastTrig")
+        fast_trigger_cb.setChecked(self.trace_types.get("fast_trigger", False))
         fast_trigger_cb.toggled.connect(lambda: self.toggle_trace_type("fast_trigger"))
         trace_types_layout.addWidget(fast_trigger_cb, 0, 1)
         self.fast_trigger_cb = fast_trigger_cb
-        
+
         energy_filter_cb = QCheckBox("Energy")
+        energy_filter_cb.setChecked(self.trace_types.get("energy_filter", False))
         energy_filter_cb.toggled.connect(lambda: self.toggle_trace_type("energy_filter"))
         trace_types_layout.addWidget(energy_filter_cb, 1, 0)
         self.energy_filter_cb = energy_filter_cb
-        
+
         cfd_cb = QCheckBox("CFD")
+        cfd_cb.setChecked(self.trace_types.get("cfd", False))
         cfd_cb.toggled.connect(lambda: self.toggle_trace_type("cfd"))
         trace_types_layout.addWidget(cfd_cb, 1, 1)
         self.cfd_cb = cfd_cb
 
         lgl_cb = QCheckBox("LGL")
         lgl_cb.setToolTip("Show LGL_fast and LGL_energy trapezoidal integration regions")
+        lgl_cb.setChecked(self.show_lgl_regions)
         lgl_cb.toggled.connect(self.toggle_lgl_regions)
         trace_types_layout.addWidget(lgl_cb, 2, 0)
         self.show_lgl_cb = lgl_cb
