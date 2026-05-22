@@ -51,12 +51,6 @@ class ROISelector:
         self.roi_data.append((start, end, name))
         return len(self.roi_regions) - 1
 
-    def remove_roi(self, roi_id: int):
-        if 0 <= roi_id < len(self.roi_regions):
-            self.plot_widget.removeItem(self.roi_regions[roi_id])
-            del self.roi_regions[roi_id]
-            del self.roi_data[roi_id]
-
     def clear_all_rois(self):
         for r in self.roi_regions:
             self.plot_widget.removeItem(r)
@@ -88,10 +82,6 @@ class FWHMResultsTable(QTableWidget):
         self.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         self.setAlternatingRowColors(True)
         self.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
-
-    def set_units(self, units: str):
-        self._units = units
-        self._update_headers()
 
     def _update_headers(self):
         u = self._units

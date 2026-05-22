@@ -28,7 +28,7 @@ from PyQt6.QtWidgets import (
     QScrollArea,
     QMessageBox,
 )
-from PyQt6.QtCore import QTimer, QThread, pyqtSignal, Qt
+from PyQt6.QtCore import QTimer, pyqtSignal, Qt
 import pyqtgraph as pg
 
 import pixie16 as px
@@ -47,97 +47,6 @@ from ...analyze import (
 from .traces_replay import TraceReplayWidget, StoredTrace
 from .coincidence_logic_tab import CoincidenceLogicTab
 from .persistence_histogram import PersistenceHistogram
-
-class WindowOptimizationWorker(QThread):
-    progress = pyqtSignal(int)
-    result = pyqtSignal(dict)
-    status = pyqtSignal(str)
-
-    def __init__(self, coincidence_events, window_range, center_channel):
-        super().__init__()
-        self.coincidence_events = coincidence_events
-        self.window_range = window_range  # (min_ns, max_ns, step_ns)
-        self.center_channel = center_channel
-
-    def run(self):
-        min_window, max_window, step = self.window_range
-        results = {}
-
-        total_steps = int((max_window - min_window) / step) + 1
-
-        for i, window_ns in enumerate(np.arange(min_window, max_window + step, step)):
-            self.status.emit(f"Testing {window_ns:.1f}ns window...")
-
-            valid_coincidences = 0
-            total_time_diffs = []
-
-            for coinc_event in self.coincidence_events:
-                # Count events within this window
-                events_in_window = []
-                for event, trace in coinc_event.associated_events:
-                    time_diff = abs(
-                        self._calculate_time_difference(
-                            event.timestamp, coinc_event.center_event.timestamp
-                        )
-                    )
-
-                    if time_diff <= window_ns:
-                        events_in_window.append((event, time_diff))
-                        total_time_diffs.append(time_diff)
-
-                if events_in_window:
-                    valid_coincidences += 1
-
-            # Calculate statistics
-            efficiency = (
-                valid_coincidences / len(self.coincidence_events)
-                if self.coincidence_events
-                else 0
-            )
-            mean_dt = np.mean(total_time_diffs) if total_time_diffs else 0
-            std_dt = np.std(total_time_diffs) if total_time_diffs else 0
-
-            results[window_ns] = {
-                "coincidences": valid_coincidences,
-                "efficiency": efficiency,
-                "mean_dt": mean_dt,
-                "std_dt": std_dt,
-                "total_events": len(total_time_diffs),
-            }
-
-            self.progress.emit(int((i + 1) / total_steps * 100))
-
-        self.result.emit(results)
-        self.status.emit("Optimization complete")
-
-    def _calculate_time_difference(self, timestamp1, timestamp2):
-        dt_ticks = timestamp1 - timestamp2
-        dt_ns = dt_ticks * 10.0  # Convert to nanoseconds
-        return dt_ns
-    
-
-
-class CoincidenceEvent:
-    def __init__(self, center_event, center_trace, associated_events_with_traces):
-        self.center_event = center_event
-        self.center_trace = center_trace
-        self.associated_events = []
-        self.time_differences = []
-
-        for event, trace in associated_events_with_traces:
-            self.associated_events.append((event, trace))
-            # Handle timestamp units properly
-            dt_ns = self._calculate_time_difference(
-                event.timestamp, center_event.timestamp
-            )
-            self.time_differences.append(dt_ns)
-
-    def _calculate_time_difference(self, timestamp1, timestamp2):
-        # Timestamps are typically in 10ns units
-        dt_ticks = timestamp1 - timestamp2
-        dt_ns = dt_ticks * 10.0  # Convert to nanoseconds
-        return dt_ns
-
 
 class TracesPlotter(QWidget):
     # Signal for hardware parameter changes

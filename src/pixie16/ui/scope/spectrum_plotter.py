@@ -345,13 +345,6 @@ class ContinuousSpectrumPlotter(QWidget):
         if channel in self.channels:
             self.energy_data[channel].append(energy)
 
-    def add_energy_events(self, channel, energies):
-        if channel in self.channels:
-            if isinstance(energies, list | np.ndarray):
-                self.energy_data[channel].extend(energies)
-            else:
-                self.energy_data[channel].append(energies)
-                
     def add_trace_for_energy_calculation(self, channel, trace, hardware_params=None):
         """
         Add raw trace data and calculate energy from it when in calculated energy mode

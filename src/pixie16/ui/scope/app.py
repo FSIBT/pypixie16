@@ -73,26 +73,11 @@ class PixieHardwareManager:
     def is_initialized(self):
         return self.hw_manager.state.is_initialized
 
-    @property
-    def is_running(self):
-        return self.hw_manager.state.is_running
-
-    @property
-    def current_mode(self):
-        return self.hw_manager.state.current_mode
-
-    @property
-    def enabled_channels(self):
-        return self.hw_manager.state.enabled_channels
-
     def initialize_system(self) -> bool:
         return self.hw_manager.initialize_system()
 
     def start_histogram_mode(self) -> bool:
         return self.hw_manager.start_mode("histogram")
-
-    def start_list_mode(self) -> bool:
-        return self.hw_manager.start_mode("list")
 
     def start_traces_mode(self) -> bool:
         return self.hw_manager.start_mode("traces")
@@ -109,46 +94,22 @@ class PixieHardwareManager:
     def cleanup(self):
         self.hw_manager.cleanup()
 
-    # New methods for dynamic parameter management
     def update_parameter(
         self, param_name: str, value, module: int = 0, channel: int = 0
     ) -> bool:
         return self.hw_manager.update_parameter(param_name, value, module, channel)
 
-    def update_parameters(
-        self, params: dict, module: int = 0, channel: int = 0
-    ) -> bool:
-        return self.hw_manager.update_parameters(params, module, channel)
-
-    def get_parameter(self, param_name: str, module: int = 0, channel: int = 0):
-        return self.hw_manager.get_parameter(param_name, module, channel)
-
     def refresh_parameters(self, module: int = 0, channel: int = 0):
         self.hw_manager.refresh_parameter_cache(module, channel)
 
-    def get_hardware_timing_parameters(self, channel: int = 0) -> dict:
-        return self.hw_manager.get_hardware_timing_parameters(channel)
-
     def get_all_parameters(self, module: int = 0, channel: int = 0) -> dict:
         return self.hw_manager.get_all_parameters(module, channel)
-
-    def read_parameter_from_hardware(self, param_name: str, module: int = 0, channel: int = 0):
-        return self.hw_manager.read_parameter_from_hardware(param_name, module, channel)
-
-    def refresh_parameter_cache(self, module: int = 0, channel: int = 0):
-        return self.hw_manager.refresh_parameter_cache(module, channel)
-
-    def is_parameter_cached(self, param_name: str, module: int = 0, channel: int = 0) -> bool:
-        return self.hw_manager.is_parameter_cached(param_name, module, channel)
 
     def read_from_dictionary(self, settings_dict: dict) -> bool:
         return self.hw_manager.read_from_dictionary(settings_dict)
 
     def load_default_settings(self) -> bool:
         return self.hw_manager.load_default_settings()
-
-    def get_state(self):
-        return self.hw_manager.get_state()
 
 
 class PixieScopeApp(QMainWindow):

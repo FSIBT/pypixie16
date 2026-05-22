@@ -806,14 +806,3 @@ class DynamicPixieHardwareManager:
     def get_state(self) -> HardwareState:
         return self.state
 
-    def is_parameter_cached(
-        self, param_name: str, module: int = 0, channel: int = 0
-    ) -> bool:
-        try:
-            return (
-                module in self.state.current_parameters
-                and channel in self.state.current_parameters[module]
-                and param_name in self.state.current_parameters[module][channel]
-            )
-        except:
-            return False

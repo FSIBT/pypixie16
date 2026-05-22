@@ -605,5 +605,3 @@ class BinaryFileLoader(QWidget):
         else:
             return "Live data"
 
-    def set_parent_scope(self, scope):
-        self.parent_scope = scope

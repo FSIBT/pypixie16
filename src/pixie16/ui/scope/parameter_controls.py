@@ -683,6 +683,3 @@ class ParameterControls(QGroupBox):
             self.status_message.emit(error_msg)
             QMessageBox.warning(self, "Save Error", error_msg)
 
-    def set_module_channel(self, module: int, channel: int):
-        self.module_spin.setValue(module)
-        self.channel_spin.setValue(channel)
