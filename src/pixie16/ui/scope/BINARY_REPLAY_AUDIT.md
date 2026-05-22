@@ -195,18 +195,34 @@ same conditional.
 
 ---
 
+## Additional fixes applied (not in original audit)
+
+- **Signal accumulation on tab switch:** Old control widget signals are now
+  blocked via `_cleanup_old_controls()` before creating new widgets, preventing
+  exponential slowdown from duplicate connections.
+- **`_apply_timer` not stopped on close:** Now stopped and deleted in
+  `closeEvent()` before widget cleanup.
+- **Mode switch leaks old spectrum_tab:** `on_mode_changed()` now stops timers,
+  disconnects signals, and calls `deleteLater()` on the old tab.
+- **Replay thread `stop()` has no timeout:** Now uses `wait(3000)` with a 3s
+  timeout and `terminate()` fallback to prevent window freeze.
+
 ## Summary Table
 
-| # | Severity | Issue | File(s) |
-|---|----------|-------|---------|
-| 1 | CRITICAL | Replay completion doesn't reset app state / stop timers | app.py, binary_loader.py |
-| 2 | CRITICAL | Replay thread calls GUI methods from background thread | binary_loader.py |
-| 3 | HIGH | MCA mode flag static during replay | binary_loader.py |
-| 4 | HIGH | Silent data loss during large replays | traces_plotter.py, spectrum_plotter.py |
-| 5 | MEDIUM | Redundant sleep in redo_replay | binary_loader.py |
-| 6 | MEDIUM | Energy -1 default maps to bin 0 | binary_loader.py |
-| 7 | MEDIUM | Coincidence timestamp buffers too small for replay rates | coincidence_logic_tab.py |
-| 8 | MEDIUM | Trace length not validated against hardware parameter | traces_plotter.py |
-| 9 | LOW | CFD warning checks wrong parent reference | binary_loader.py |
-| 10 | LOW | replay_rate_hz unsynchronized (safe in CPython) | binary_loader.py |
-| 11 | LOW | Missing hasattr check for cumulative_mca_data | binary_loader.py |
+| # | Severity | Issue | File(s) | Status |
+|---|----------|-------|---------|--------|
+| 1 | CRITICAL | Replay completion doesn't reset app state / stop timers | app.py, binary_loader.py | FIXED |
+| 2 | CRITICAL | Replay thread calls GUI methods from background thread | binary_loader.py | FIXED |
+| 3 | HIGH | MCA mode flag static during replay | binary_loader.py | Open |
+| 4 | HIGH | Silent data loss during large replays | traces_plotter.py, spectrum_plotter.py | Open |
+| 5 | MEDIUM | Redundant sleep in redo_replay | binary_loader.py | FIXED |
+| 6 | MEDIUM | Energy -1 default maps to bin 0 | binary_loader.py | FIXED |
+| 7 | MEDIUM | Coincidence timestamp buffers too small for replay rates | coincidence_logic_tab.py | Open |
+| 8 | MEDIUM | Trace length not validated against hardware parameter | traces_plotter.py | Open |
+| 9 | LOW | CFD warning checks wrong parent reference | binary_loader.py | FIXED |
+| 10 | LOW | replay_rate_hz unsynchronized (safe in CPython) | binary_loader.py | Won't fix |
+| 11 | LOW | Missing hasattr check for cumulative_mca_data | binary_loader.py | Open |
+| — | CRITICAL | Signal connections accumulate on tab switch | traces_plotter.py | FIXED |
+| — | HIGH | `_apply_timer` not stopped on window close | app.py | FIXED |
+| — | HIGH | Mode switch leaks old spectrum_tab + ghost timers | app.py | FIXED |
+| — | HIGH | Replay thread stop() blocks forever | binary_loader.py | FIXED |

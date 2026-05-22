@@ -143,7 +143,10 @@ class BinaryReplayThread(QThread):
 
     def stop(self):
         self.is_running = False
-        self.wait()
+        if not self.wait(3000):  # 3 second timeout
+            print("WARNING: Replay thread did not exit within 3s, terminating")
+            self.terminate()
+            self.wait(1000)
 
 
 class BinaryLoadingThread(QThread):

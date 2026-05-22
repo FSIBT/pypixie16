@@ -2695,8 +2695,21 @@ class TracesPlotter(QWidget):
             # Return to live mode for hardware validation
             self.hardware_status_label.setText("Hardware Status: Live mode resumed")
 
+    def _cleanup_old_controls(self):
+        """Disconnect signals from the previous control widget to prevent duplicates."""
+        for attr in ("channel_combo", "polarity_combo", "replay_widget",
+                      "raw_traces_cb", "fast_trigger_cb", "energy_filter_cb",
+                      "cfd_cb", "show_lgl_cb", "energy_L_spin", "energy_G_spin",
+                      "single_persistence_cb"):
+            widget = getattr(self, attr, None)
+            if widget is not None:
+                try:
+                    widget.blockSignals(True)
+                except RuntimeError:
+                    pass  # widget already deleted
+
     def create_single_channel_controls_widget(self):
-        # Always recreate to avoid stale cached widget after reparenting
+        self._cleanup_old_controls()
         widget = QWidget()
         layout = QVBoxLayout()
         layout.setContentsMargins(5, 5, 5, 5)

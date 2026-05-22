@@ -474,21 +474,31 @@ class PixieScopeApp(QMainWindow):
         
         # Clean up old spectrum tab
         if hasattr(self, "spectrum_tab") and self.spectrum_tab:
+            # Stop all timers before removing widget
             if hasattr(self.spectrum_tab, "stop_live_updates"):
                 self.spectrum_tab.stop_live_updates()
-            
+            if hasattr(self.spectrum_tab, "update_timer") and self.spectrum_tab.update_timer:
+                self.spectrum_tab.update_timer.stop()
+
             if hasattr(self.spectrum_tab, "request_right_panel_swap"):
                 try:
                     self.spectrum_tab.request_right_panel_swap.disconnect()
-                except:
+                except RuntimeError:
                     pass
-            
+            if hasattr(self.spectrum_tab, "parameter_changed"):
+                try:
+                    self.spectrum_tab.parameter_changed.disconnect()
+                except RuntimeError:
+                    pass
+
             # Restore default controls when leaving any mode that had custom panels
             if old_mode in ["listmode_traces", "list_mode"]:
                 self.swap_right_panel_controls(None)
-            
+
             self.left_layout.removeWidget(self.spectrum_tab)
             self.spectrum_tab.setParent(None)
+            self.spectrum_tab.deleteLater()
+            self.spectrum_tab = None
         
         # Create new spectrum tab
         if self.current_mode == "mca_mode":
@@ -1768,6 +1778,12 @@ class PixieScopeApp(QMainWindow):
             
             # Stop all timers
             print("  Stopping timers...")
+            if hasattr(self, '_apply_timer') and self._apply_timer:
+                self._apply_timer.stop()
+                self._apply_timer.deleteLater()
+                self._apply_timer = None
+                self._pending_params = []
+
             if hasattr(self, "status_timer") and self.status_timer:
                 self.status_timer.stop()
                 self.status_timer.deleteLater()
