@@ -41,19 +41,14 @@ class BinaryReplayThread(QThread):
         self.is_paused = False
 
         self.mca_histograms = {}
-        self.is_mca_mode = False
         self.last_mca_update = 0
         self.mca_update_interval = 2.0  # Update MCA display every 2 seconds
 
-        # Initialize MCA histograms if in MCA mode
-        if (
-            hasattr(parent_scope, "current_mode")
-            and parent_scope.current_mode == "mca_mode"
-        ):
-            self.is_mca_mode = True
+        # Pre-allocate MCA histograms for all channels so they're ready
+        # if the user switches to MCA mode mid-replay
+        if hasattr(parent_scope, "channel_numbers"):
             for ch in parent_scope.channel_numbers:
                 self.mca_histograms[ch] = np.zeros(32768, dtype=np.int64)
-            print("MCA mode detected - will accumulate histograms during replay")
 
     def run(self):
         self.is_running = True
@@ -78,22 +73,23 @@ class BinaryReplayThread(QThread):
 
                 event = self.events[i]
 
-                if self.is_mca_mode:
+                # Check current_mode dynamically so mode switches mid-replay
+                # are respected
+                current_mode = self.parent_scope.current_mode
+                if current_mode == "mca_mode":
                     self._process_event_for_mca(event)
-
-                # Emit to GUI thread via queued signal (thread-safe)
-                self.event_ready.emit(event)
+                elif current_mode == "list_mode":
+                    self.event_ready.emit(event)
 
             current_index = batch_end
 
             # Emit progress update
             self.progress_update.emit(current_index, len(self.events))
 
-            # Emit MCA histogram update
-            if self.is_mca_mode:
+            # Emit MCA histogram update periodically
+            if self.parent_scope.current_mode == "mca_mode":
                 current_time = time.time()
                 if (current_time - self.last_mca_update) >= self.mca_update_interval:
-                    # Convert to int32
                     display_histograms = {}
                     for ch, hist in self.mca_histograms.items():
                         display_histograms[ch] = np.clip(
@@ -106,7 +102,7 @@ class BinaryReplayThread(QThread):
             time.sleep(delay_between_batches)
 
         # Final MCA update
-        if self.is_mca_mode and self.mca_histograms:
+        if self.parent_scope.current_mode == "mca_mode" and self.mca_histograms:
             display_histograms = {}
             for ch, hist in self.mca_histograms.items():
                 display_histograms[ch] = np.clip(
@@ -528,7 +524,7 @@ class BinaryFileLoader(QWidget):
                     )
 
             # Update internal MCA data storage
-            if hasattr(self.parent_scope, "mca_data"):
+            if hasattr(self.parent_scope, "mca_data") and hasattr(self.parent_scope, "cumulative_mca_data"):
                 for channel, histogram in histograms.items():
                     if channel in self.parent_scope.mca_data:
                         self.parent_scope.mca_data[channel] = histogram
