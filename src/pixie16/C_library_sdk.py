@@ -232,16 +232,19 @@ valid_channel_parameter_names = [
 ]
 
 
-def converter_IEEE754_to_ulong(x: float) -> ctypes.c_ulong:
+def converter_IEEE754_to_ulong(x: float) -> ctypes.c_uint32:
     """Converts a floating point number to a 32 bit integers representation."""
     a = (ctypes.c_float * 1)(x)
-    b = ctypes.cast(a, ctypes.POINTER(ctypes.c_ulong))
+    b = ctypes.cast(a, ctypes.POINTER(ctypes.c_uint32))
     return b.contents
 
 
-def converter_ulong_to_IEEE754(x: ctypes.c_ulong) -> float:
+def converter_ulong_to_IEEE754(x: ctypes.c_uint32) -> float:
     """Converts a 32bit integer into a float."""
-    a = (ctypes.c_ulong * 1)(x)
+    # accept either a plain int or a ctypes integer instance (e.g. c_uint)
+    if isinstance(x, ctypes._SimpleCData):
+        x = x.value
+    a = (ctypes.c_uint32 * 1)(x)
     b = ctypes.cast(a, ctypes.POINTER(ctypes.c_float))
     return b.contents
 
