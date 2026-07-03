@@ -695,7 +695,7 @@ class ParameterControls(QGroupBox):
                     self._connect_parameter_widget(param_name, widget)
 
     def _disconnect_widget_signals(self, widget):
-        if isinstance(widget | (QSpinBox | QDoubleSpinBox)):
+        if isinstance(widget, (QSpinBox | QDoubleSpinBox)):
             widget.valueChanged.disconnect()
         elif isinstance(widget, QComboBox):
             widget.currentTextChanged.disconnect()
