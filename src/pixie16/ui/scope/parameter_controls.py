@@ -134,10 +134,16 @@ class ParameterControls(QGroupBox):
         # Create scroll area for parameter content
         self.param_scroll_area = QScrollArea()
         self.param_scroll_area.setWidgetResizable(True)
-        self.param_scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
-        self.param_scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
-        self.param_scroll_area.setMaximumHeight(400)  # Limit height to prevent panel from becoming too tall
-        
+        self.param_scroll_area.setHorizontalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAsNeeded
+        )
+        self.param_scroll_area.setVerticalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAsNeeded
+        )
+        self.param_scroll_area.setMaximumHeight(
+            400
+        )  # Limit height to prevent panel from becoming too tall
+
         # Create widget to hold scrollable content
         self.param_content_widget = QWidget()
         content_layout = QVBoxLayout()
@@ -161,7 +167,7 @@ class ParameterControls(QGroupBox):
         content_layout.addWidget(button_group)
 
         self.param_content_widget.setLayout(content_layout)
-        
+
         # Set the scrollable widget
         self.param_scroll_area.setWidget(self.param_content_widget)
         self.param_scroll_area.setVisible(False)
@@ -542,7 +548,9 @@ class ParameterControls(QGroupBox):
         layout.addWidget(self.save_preset_btn, 1, 0)
 
         self.load_default_btn = QPushButton("Defaults")
-        self.load_default_btn.setToolTip("Load default parameter values from built-in defaults")
+        self.load_default_btn.setToolTip(
+            "Load default parameter values from built-in defaults"
+        )
         layout.addWidget(self.load_default_btn, 1, 1)
 
         self.load_dict_btn = QPushButton("From File")
@@ -721,15 +729,18 @@ class ParameterControls(QGroupBox):
 
     def load_preset(self):
         try:
-            if hasattr(self.parent(), 'data_storage_manager'):
+            if hasattr(self.parent(), "data_storage_manager"):
                 data_manager = self.parent().data_storage_manager
                 default_dir = data_manager.get_data_directory() / "sessions"
                 default_dir.mkdir(parents=True, exist_ok=True)
             else:
                 default_dir = Path.home() / "PIXIE16_settings"
-                
+
             file_path, _ = QFileDialog.getOpenFileName(
-                self, "Load Parameter Preset", str(default_dir), "JSON Files (*.json);;All Files (*)"
+                self,
+                "Load Parameter Preset",
+                str(default_dir),
+                "JSON Files (*.json);;All Files (*)",
             )
 
             if file_path:
@@ -738,20 +749,30 @@ class ParameterControls(QGroupBox):
 
                 # Load settings to GUI first
                 self.set_all_parameters(preset)
-                
+
                 # Apply to hardware using parent's hardware manager (if available)
-                if hasattr(self.parent(), 'pixie_hw') and self.parent().pixie_hw:
+                if hasattr(self.parent(), "pixie_hw") and self.parent().pixie_hw:
                     try:
                         success = self.parent().pixie_hw.read_from_dictionary(preset)
                         if success:
-                            self.status_message.emit(f"Loaded preset from {Path(file_path).name} and applied to hardware")
+                            self.status_message.emit(
+                                f"Loaded preset from {Path(file_path).name} and applied to hardware"
+                            )
                         else:
-                            self.status_message.emit(f"Loaded preset from {Path(file_path).name} to GUI only (hardware apply failed)")
+                            self.status_message.emit(
+                                f"Loaded preset from {Path(file_path).name} to GUI only (hardware apply failed)"
+                            )
                     except Exception as hw_error:
-                        logger.warning(f"Failed to apply preset to hardware: {hw_error}")
-                        self.status_message.emit(f"Loaded preset from {Path(file_path).name} to GUI only (hardware error)")
+                        logger.warning(
+                            f"Failed to apply preset to hardware: {hw_error}"
+                        )
+                        self.status_message.emit(
+                            f"Loaded preset from {Path(file_path).name} to GUI only (hardware error)"
+                        )
                 else:
-                    self.status_message.emit(f"Loaded preset from {Path(file_path).name} to GUI only (no hardware access)")
+                    self.status_message.emit(
+                        f"Loaded preset from {Path(file_path).name} to GUI only (no hardware access)"
+                    )
 
         except Exception as e:
             error_msg = f"Error loading preset: {e}"
@@ -762,15 +783,16 @@ class ParameterControls(QGroupBox):
     def save_preset(self):
         try:
             # Get unified data directory as default location
-            if hasattr(self.parent(), 'data_storage_manager'):
+            if hasattr(self.parent(), "data_storage_manager"):
                 data_manager = self.parent().data_storage_manager
             else:
                 from .data_manager import DataSettingsManager
+
                 data_manager = DataSettingsManager()
             default_dir = data_manager.get_data_directory() / "sessions"
             default_dir.mkdir(parents=True, exist_ok=True)
             default_path = default_dir / f"pixie_preset_{int(time.time())}.json"
-            
+
             file_path, _ = QFileDialog.getSaveFileName(
                 self,
                 "Save Parameter Preset",
