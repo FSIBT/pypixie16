@@ -272,83 +272,58 @@ class DynamicPixieHardwareManager:
         "HOST_RT_PRESET",
     }
 
-    # Bit parameters that require change_setting_from_dict instead of direct set
-    BIT_PARAMETERS = {"Gain", "GoodChannel", "CaptureTrace"}
+    # Bit parameters that must be routed through change_setting_from_dict
+    # (these are bit fields within CHANNEL_CSRA, not standalone parameters).
+    # change_setting_from_dict reads CSRA, flips the right bit, and writes it back.
+    BIT_PARAMETERS = {"Gain", "GoodChannel", "CaptureTrace", "Polarity"}
+
+    # UI-only parameters that have no direct SDK equivalent.
+    # These are display/debug values and must NOT be sent to the hardware.
+    UI_ONLY_PARAMETERS = {"ENERGY_L", "ENERGY_G"}
 
     def _apply_parameter_to_hardware(
         self, param_name: str, value: any, module: int, channel: int
     ) -> bool:
         try:
-            if param_name in self.MODULE_PARAMETERS:
-                px.control.set_module_parameter(param_name, value, module)
-            elif param_name == "Polarity":
-                raw_csra = px.SDK.read_single_channel_parameter(
-                    "CHANNEL_CSRA", module, channel, convert_bit_pattern=False
-                )
-                current_csra = int(raw_csra)
-                if value == "negative":
-                    new_csra = current_csra | 1
-                else:
-                    new_csra = current_csra & ~1
-                px.control.set_channel_parameter(
-                    "CHANNEL_CSRA", new_csra, module, channel
-                )
+            if param_name in self.UI_ONLY_PARAMETERS:
+                logger.debug(f"Skipping UI-only parameter {param_name}")
+                return True
+            elif param_name in self.MODULE_PARAMETERS:
+                readback = px.control.set_module_parameter(param_name, value, module)
+                logger.debug(f"Module param {param_name}: wrote={value}, readback={readback}")
             elif param_name in self.BIT_PARAMETERS:
                 settings = {"channels": [(module, channel)], param_name: value}
                 px.control.change_setting_from_dict(settings, call_pixie=True)
             else:
-                px.control.set_channel_parameter(param_name, value, module, channel)
+                readback = px.control.set_channel_parameter(param_name, value, module, channel)
+                if readback is not None:
+                    # Check if hardware accepted the value
+                    try:
+                        diff = abs(float(readback) - float(value))
+                        tolerance = max(1.0, abs(float(value)) * 0.01)  # 1% or 1 unit
+                        if diff > tolerance:
+                            logger.warning(
+                                f"{param_name}: wrote {value} but hardware returned {readback} "
+                                f"on M{module}:Ch{channel}"
+                            )
+                            print(f"  WARNING: {param_name} wrote={value} but hardware has {readback}")
+                    except (ValueError, TypeError):
+                        pass
             return True
         except Exception as e:
-            logger.error(f"Hardware update failed for {param_name}: {e}")
+            logger.error(
+                f"Hardware update failed for {param_name} on M{module}:Ch{channel}: {e}"
+            )
             return False
 
     def _apply_parameters_to_hardware(
         self, params: dict[str, any], module: int, channel: int
     ) -> bool:
-        try:
-            standard_params = {}
-            special_params = {}
-
-            for name, value in params.items():
-                if name in ["GoodChannel", "CaptureTrace", "Gain", "Polarity"]:
-                    special_params[name] = value
-                else:
-                    standard_params[name] = value
-
-            # Apply standard parameters first
-            for name, value in standard_params.items():
-                px.control.set_channel_parameter(name, value, module, channel)
-
-            # Handle polarity specially - needs bit manipulation of ChanCSRa
-            if "Polarity" in special_params:
-                polarity = special_params["Polarity"]
-                try:
-                    # Read current ChanCSRa value
-                    raw_csra = px.SDK.read_single_channel_parameter("CHANNEL_CSRA", module, channel, convert_bit_pattern=False)
-                    current_csra = int(raw_csra)  # Convert to Python int for bit operations
-                    if polarity == "negative":
-                        # Set bit 0 for negative polarity
-                        new_csra = current_csra | 1
-                    else:
-                        # Clear bit 0 for positive polarity
-                        new_csra = current_csra & ~1
-                    px.control.set_channel_parameter("CHANNEL_CSRA", new_csra, module, channel)
-                    logger.info(f"Set polarity to {polarity} on M{module}:Ch{channel}")
-                except Exception as e:
-                    logger.error(f"Failed to set polarity: {e}")
-
-            # Handle other special parameters
-            other_special = {k: v for k, v in special_params.items() if k != "Polarity"}
-            if other_special:
-                settings = {"channels": [(module, channel)], **other_special}
-                px.control.change_setting_from_dict(settings, call_pixie=True)
-
-            return True
-
-        except Exception as e:
-            logger.error(f"Batch hardware update failed: {e}")
-            return False
+        all_ok = True
+        for name, value in params.items():
+            if not self._apply_parameter_to_hardware(name, value, module, channel):
+                all_ok = False
+        return all_ok
 
     def _is_valid_parameter(self, name: str, value: any) -> bool:
         if name == "TRIGGER_THRESHOLD":
@@ -686,9 +661,15 @@ class DynamicPixieHardwareManager:
             "TRACE_DELAY",
             "VOFFSET",
             "BASELINE_PERCENT",
+            "BASELINE_AVERAGE",
+            "BLCUT",
+            "XDT",
+            "EMIN",
+            "CFDDelay",
+            "CFDScale",
+            "CFDThresh",
             "ChanTrigStretch",
-            "ExternDelayLen", 
-            "FastTrigBackLen",
+            "ExternDelayLen",
             "MultiplicityMaskL",
             "MultiplicityMaskH",
         ]
@@ -825,14 +806,3 @@ class DynamicPixieHardwareManager:
     def get_state(self) -> HardwareState:
         return self.state
 
-    def is_parameter_cached(
-        self, param_name: str, module: int = 0, channel: int = 0
-    ) -> bool:
-        try:
-            return (
-                module in self.state.current_parameters
-                and channel in self.state.current_parameters[module]
-                and param_name in self.state.current_parameters[module][channel]
-            )
-        except:
-            return False

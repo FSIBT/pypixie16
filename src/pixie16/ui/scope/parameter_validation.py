@@ -214,7 +214,7 @@ class PixieParameterValidator:
                 name="CFDDelay",
                 data_type=float,
                 min_value=0.0,
-                max_value=2.0,  # μs
+                max_value=0.63,  # μs (63 FPGA ticks × 10ns)
                 unit="μs",
                 description="CFD delay time",
                 dsp_variable="CFDDELAY",
@@ -440,6 +440,16 @@ class PixieParameterValidator:
             if value > 80.0:
                 logger.warning(
                     f"M{module}:Ch{channel} - Long traces ({value} μs) increase data volume significantly"
+                )
+
+        # Reject filter times that would exceed half the trace length.
+        # The fast filter needs 2*L + G FPGA ticks; FPGA trace is ~trace_μs/0.01/5.
+        # As a safe limit, reject rise/flat times > trace_length/2.
+        elif name in ("TRIGGER_RISETIME", "TRIGGER_FLATTOP"):
+            if value > 0.5:
+                logger.warning(
+                    f"M{module}:Ch{channel} - Large trigger {name}={value} μs may not fit "
+                    f"within short traces. If plotting fails, reduce this value."
                 )
 
         return True, value, ""

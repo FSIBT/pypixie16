@@ -91,13 +91,6 @@ class DataSettingsManager:
                 
         return base_path / filename
         
-    def get_disk_usage(self) -> tuple:
-        try:
-            stat = self.data_directory.stat() if self.data_directory.exists() else None
-            # This is a simple implementation - could be enhanced with actual disk usage
-            return (0, 0)  # (used_bytes, free_bytes)
-        except Exception:
-            return (0, 0)
 
 
 class DataStoragePanel(QGroupBox):    

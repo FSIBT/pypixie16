@@ -289,26 +289,6 @@ class ChannelDisplayControls(QGroupBox):
         self.update_selected_channels()
         self.channels_changed.emit(self.selected_channels)
 
-    def select_channel_range(self, start, end):
-        print(f"ChannelControls: Selecting channels {start} to {end - 1}")
-
-        # First deselect all
-        for checkbox in self.channel_checkboxes.values():
-            checkbox.blockSignals(True)
-            checkbox.setChecked(False)
-            checkbox.blockSignals(False)
-
-        # Then select the range
-        for channel in range(start, end):
-            if channel in self.channel_checkboxes:
-                checkbox = self.channel_checkboxes[channel]
-                checkbox.blockSignals(True)
-                checkbox.setChecked(True)
-                checkbox.blockSignals(False)
-
-        self.update_selected_channels()
-        self.channels_changed.emit(self.selected_channels)
-
     def update_channel_statistics(self, channel_stats):
         for channel, count in channel_stats.items():
             if channel in self.channel_stats_labels:
@@ -338,11 +318,3 @@ class ChannelDisplayControls(QGroupBox):
                 self.update_selected_channels()
                 self.channels_changed.emit(self.selected_channels)
 
-    def get_selected_module_channel_pairs(self):
-        selected_pairs = []
-        for mod_ch_pair in self.module_channel_pairs:
-            if isinstance(mod_ch_pair, tuple):
-                module, channel = mod_ch_pair
-                if channel in self.selected_channels:
-                    selected_pairs.append((module, channel))
-        return selected_pairs

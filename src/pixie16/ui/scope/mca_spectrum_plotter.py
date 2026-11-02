@@ -96,6 +96,7 @@ class MCASpectrumPlotter(QWidget):
         self.plot_widget.addLegend()
 
         self.plot_widget.setBackground("w")
+        self.plot_widget.getViewBox().sigRangeChangedManually.connect(self._on_user_zoom)
 
         # Set log scale by default
         self.plot_widget.setLogMode(False, True)
@@ -335,8 +336,14 @@ class MCASpectrumPlotter(QWidget):
     def toggle_auto_scale(self, enabled):
         """Toggle auto scaling"""
         self.auto_scale = enabled
-        if not enabled:
-            self.plot_widget.setXRange(self.energy_min, self.energy_max)
+        if enabled:
+            self.plot_widget.autoRange()
+
+    def _on_user_zoom(self, _mask):
+        """Called when the user manually zooms/pans. Disables auto-scale."""
+        if self.auto_scale:
+            self.auto_scale = False
+            self.auto_scale_cb.setChecked(False)
 
     def clear_data(self):
         """Clear all MCA data"""
@@ -470,9 +477,14 @@ class MCASpectrumPlotter(QWidget):
             else:
                 self.stats_label.setText("No channels selected for display")
 
-            # Auto scale if enabled
+            # One-shot auto-range (does not re-enable continuous auto-range,
+            # so a manual zoom will stick until user re-checks Auto Scale)
             if self.auto_scale and total_counts > 0:
-                self.plot_widget.autoRange()
+                y_min, y_max = self.plot_widget.getViewBox().childrenBounds()[1]
+                if y_min is not None and y_max is not None:
+                    padding = (y_max - y_min) * 0.05 or 1
+                    self.plot_widget.setYRange(y_min - padding, y_max + padding)
+                self.plot_widget.setXRange(self.energy_min, self.energy_max)
 
         except Exception as e:
             print(f"Error updating MCA plots: {e}")

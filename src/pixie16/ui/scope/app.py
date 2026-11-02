@@ -73,26 +73,11 @@ class PixieHardwareManager:
     def is_initialized(self):
         return self.hw_manager.state.is_initialized
 
-    @property
-    def is_running(self):
-        return self.hw_manager.state.is_running
-
-    @property
-    def current_mode(self):
-        return self.hw_manager.state.current_mode
-
-    @property
-    def enabled_channels(self):
-        return self.hw_manager.state.enabled_channels
-
     def initialize_system(self) -> bool:
         return self.hw_manager.initialize_system()
 
     def start_histogram_mode(self) -> bool:
         return self.hw_manager.start_mode("histogram")
-
-    def start_list_mode(self) -> bool:
-        return self.hw_manager.start_mode("list")
 
     def start_traces_mode(self) -> bool:
         return self.hw_manager.start_mode("traces")
@@ -109,46 +94,22 @@ class PixieHardwareManager:
     def cleanup(self):
         self.hw_manager.cleanup()
 
-    # New methods for dynamic parameter management
     def update_parameter(
         self, param_name: str, value, module: int = 0, channel: int = 0
     ) -> bool:
         return self.hw_manager.update_parameter(param_name, value, module, channel)
 
-    def update_parameters(
-        self, params: dict, module: int = 0, channel: int = 0
-    ) -> bool:
-        return self.hw_manager.update_parameters(params, module, channel)
-
-    def get_parameter(self, param_name: str, module: int = 0, channel: int = 0):
-        return self.hw_manager.get_parameter(param_name, module, channel)
-
     def refresh_parameters(self, module: int = 0, channel: int = 0):
         self.hw_manager.refresh_parameter_cache(module, channel)
 
-    def get_hardware_timing_parameters(self, channel: int = 0) -> dict:
-        return self.hw_manager.get_hardware_timing_parameters(channel)
-
     def get_all_parameters(self, module: int = 0, channel: int = 0) -> dict:
         return self.hw_manager.get_all_parameters(module, channel)
-
-    def read_parameter_from_hardware(self, param_name: str, module: int = 0, channel: int = 0):
-        return self.hw_manager.read_parameter_from_hardware(param_name, module, channel)
-
-    def refresh_parameter_cache(self, module: int = 0, channel: int = 0):
-        return self.hw_manager.refresh_parameter_cache(module, channel)
-
-    def is_parameter_cached(self, param_name: str, module: int = 0, channel: int = 0) -> bool:
-        return self.hw_manager.is_parameter_cached(param_name, module, channel)
 
     def read_from_dictionary(self, settings_dict: dict) -> bool:
         return self.hw_manager.read_from_dictionary(settings_dict)
 
     def load_default_settings(self) -> bool:
         return self.hw_manager.load_default_settings()
-
-    def get_state(self):
-        return self.hw_manager.get_state()
 
 
 class PixieScopeApp(QMainWindow):
@@ -204,7 +165,7 @@ class PixieScopeApp(QMainWindow):
         self.live_reader = None
         self.data_source = None
         self.is_acquiring = False
-        self.current_mode = "mca_mode"
+        self.current_mode = "list_mode"
 
         # Timers
         self.acquisition_timer = None
@@ -273,10 +234,19 @@ class PixieScopeApp(QMainWindow):
         control_panel = self.create_control_panel()
         self.left_layout.addWidget(control_panel)
 
-        # Initialize with MCA plotter by default
-        self.spectrum_tab = MCASpectrumPlotter(
-            channels=self.channel_numbers, title="PIXIE-16 MCA Spectra"
+        # Initialize with List Mode (TracesPlotter) by default
+        if 6 not in self.channel_numbers:
+            print(f"WARNING: Channel 6 not in enabled channels {self.channel_numbers}, adding it...")
+            self.channel_numbers = list(self.channel_numbers) + [6]
+
+        self.spectrum_tab = TracesPlotter(
+            channels=self.channel_numbers,
+            title="PIXIE-16 List Mode",
+            hardware_manager=self.pixie_hw,
         )
+        self.spectrum_tab.parameter_changed.connect(self.handle_traces_parameter_change)
+        if hasattr(self.spectrum_tab, "request_right_panel_swap"):
+            self.spectrum_tab.request_right_panel_swap.connect(self.swap_right_panel_controls)
         self.left_layout.addWidget(self.spectrum_tab)
 
         # Right side - controls
@@ -287,6 +257,7 @@ class PixieScopeApp(QMainWindow):
         
         # Binary loader
         self.binary_loader = BinaryFileLoader(parent_scope=self)
+        self.binary_loader.replay_stopped.connect(self._on_replay_stopped)
         self.binary_loader.setSizePolicy(
             QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum
         )
@@ -311,10 +282,9 @@ class PixieScopeApp(QMainWindow):
             title="Parameters",
             module_type="500MHz",
         )
-        self.parameter_controls.parameter_changed.connect(self.handle_parameter_change)
-        self.parameter_controls.apply_all_requested.connect(self.handle_apply_all_parameters)
+        self.parameter_controls.parameter_changed.connect(self.apply_all_parameters)
         self.parameter_controls.status_message.connect(self.update_info_bar)
-        self.parameter_controls.read_hw_btn.clicked.connect(self.read_parameters_from_hardware)
+        self.parameter_controls.request_read_hardware.connect(self.read_parameters_from_hardware)
         self.parameter_controls.load_default_btn.clicked.connect(self.load_default_settings)
         self.parameter_controls.load_dict_btn.clicked.connect(self.load_settings_from_file)
         default_controls_layout.addWidget(self.parameter_controls)
@@ -378,7 +348,7 @@ class PixieScopeApp(QMainWindow):
         # Mode selection
         top_layout.addWidget(QLabel("Mode:"))
         self.mode_combo = QComboBox()
-        self.mode_combo.addItems(["MCA Mode", "List Mode"])
+        self.mode_combo.addItems(["List Mode", "MCA Mode"])
         self.mode_combo.currentTextChanged.connect(self.on_mode_changed)
         top_layout.addWidget(self.mode_combo)
 
@@ -465,21 +435,31 @@ class PixieScopeApp(QMainWindow):
         
         # Clean up old spectrum tab
         if hasattr(self, "spectrum_tab") and self.spectrum_tab:
+            # Stop all timers before removing widget
             if hasattr(self.spectrum_tab, "stop_live_updates"):
                 self.spectrum_tab.stop_live_updates()
-            
+            if hasattr(self.spectrum_tab, "update_timer") and self.spectrum_tab.update_timer:
+                self.spectrum_tab.update_timer.stop()
+
             if hasattr(self.spectrum_tab, "request_right_panel_swap"):
                 try:
                     self.spectrum_tab.request_right_panel_swap.disconnect()
-                except:
+                except RuntimeError:
                     pass
-            
+            if hasattr(self.spectrum_tab, "parameter_changed"):
+                try:
+                    self.spectrum_tab.parameter_changed.disconnect()
+                except RuntimeError:
+                    pass
+
             # Restore default controls when leaving any mode that had custom panels
             if old_mode in ["listmode_traces", "list_mode"]:
                 self.swap_right_panel_controls(None)
-            
+
             self.left_layout.removeWidget(self.spectrum_tab)
             self.spectrum_tab.setParent(None)
+            self.spectrum_tab.deleteLater()
+            self.spectrum_tab = None
         
         # Create new spectrum tab
         if self.current_mode == "mca_mode":
@@ -510,19 +490,11 @@ class PixieScopeApp(QMainWindow):
         self.info_bar.setText(f"Mode changed: {old_mode} → {self.current_mode}")
 
     def handle_traces_parameter_change(self, param_name, value, module, channel):
+        """Handle parameter changes from the traces plotter's own controls."""
         try:
             if not self.dummy_mode and self.pixie_hw:
-                success = self.pixie_hw.update_parameter(
-                    param_name, value, module, channel
-                )
-                if success:
-                    self.update_info_bar(
-                        f"Hardware Validation: {param_name} = {value} on M{module}:Ch{channel}"
-                    )
-                else:
-                    self.update_info_bar(
-                        f"Hardware Validation: Failed to set {param_name} on M{module}:Ch{channel}"
-                    )
+                # Use the same batch mechanism
+                self.apply_all_parameters(param_name, value, module, channel)
             else:
                 self.update_info_bar(
                     f"DUMMY MODE - Hardware Validation: {param_name} = {value}"
@@ -868,6 +840,30 @@ class PixieScopeApp(QMainWindow):
                     pass
             print(f"Error stopping acquisition: {e}")
 
+    def _on_replay_stopped(self):
+        """Handle binary replay completion or stop — reset UI and timers."""
+        if not self.is_acquiring:
+            return
+        # Stop live update timers
+        if (
+            hasattr(self, "spectrum_tab")
+            and self.spectrum_tab
+            and hasattr(self.spectrum_tab, "stop_live_updates")
+        ):
+            try:
+                self.spectrum_tab.stop_live_updates()
+            except RuntimeError:
+                pass
+        self.is_acquiring = False
+        if not self.shutdown_in_progress:
+            try:
+                self.start_btn.setEnabled(True)
+                self.stop_btn.setEnabled(False)
+                self.status_label.setText("Status: Replay finished")
+                self.info_bar.setText("Binary replay completed")
+            except RuntimeError:
+                pass
+
     def clear_data(self):
         try:
             # Clear MCA data
@@ -957,126 +953,188 @@ class PixieScopeApp(QMainWindow):
         except Exception as e:
             print(f"Error updating display channels: {e}")
 
-    def handle_parameter_change(self, param_name, value, module, channel):
-        try:
-            # Validate parameter
+    # Mapping from SDK parameter names to traces_plotter hardware_params keys.
+    # Conversion: None = direct copy, otherwise a callable (value) -> plotter value.
+    _PARAM_TO_PLOTTER = {
+        "TRIGGER_THRESHOLD": ("fast_threshold", None),
+        "TRIGGER_RISETIME": ("fast_L", lambda v: int(round(v / 0.01))),  # μs → FPGA ticks
+        "TRIGGER_FLATTOP": ("fast_G", lambda v: int(round(v / 0.01))),   # μs → FPGA ticks
+        "ENERGY_RISETIME": ("energy_L", lambda v: int(round(v / 0.01))), # μs → steps
+        "ENERGY_FLATTOP": ("energy_G", lambda v: int(round(v / 0.01))),  # μs → steps
+        "TAU": ("decay_ns", lambda v: v * 1000),                         # μs → ns
+        "EMIN": ("energy_P", None),                                      # peak sample
+        "CFDDelay": ("CFD_delay", None),                                 # FPGA ticks
+        "CFDThresh": ("CFD_threshold", None),                            # ADC units
+        "ENERGY_L": ("energy_L", None),                                  # UI-only, direct FPGA steps
+        "ENERGY_G": ("energy_G", None),                                  # UI-only, direct FPGA steps
+    }
+
+    def apply_all_parameters(self, param_name, value, module, channel):
+        """Called for each parameter from Apply to Channel. Batches via a timer."""
+        # Accumulate parameters to apply
+        if not hasattr(self, '_pending_params'):
+            self._pending_params = []
+
+        self._pending_params.append((param_name, value, module, channel))
+
+        # Debounce: schedule the actual apply after all signals have been emitted
+        if not hasattr(self, '_apply_timer') or self._apply_timer is None:
+            self._apply_timer = QTimer(self)
+            self._apply_timer.setSingleShot(True)
+            self._apply_timer.timeout.connect(self._execute_apply_batch)
+
+        self._apply_timer.start(50)  # 50ms debounce
+
+    def _execute_apply_batch(self):
+        """Stop acquisition, apply params, read back, restart. All synchronous."""
+        params = self._pending_params
+        self._pending_params = []
+
+        if not params:
+            return
+
+        was_acquiring = self.is_acquiring
+        module = params[0][2]
+        channel = params[0][3]
+
+        print(f"APPLY: was_acquiring={was_acquiring}, params={[(p[0],p[1]) for p in params]}")
+
+        # Fully stop everything before touching the SDK
+        if was_acquiring:
+            self.stop_acquisition()
+
+        # Kill any lingering FIFO timer to prevent concurrent SDK access
+        if hasattr(self, "data_timer") and self.data_timer:
+            self.data_timer.stop()
+            self.data_timer = None
+
+        # Process pending events so any in-flight timer callbacks complete
+        QApplication.processEvents()
+
+        # Ensure hardware run is fully ended before writing params
+        if not self.dummy_mode:
+            try:
+                import pixie16 as px
+                time.sleep(0.3)  # Let any in-flight SDK calls finish
+                px.control.end_run()
+                time.sleep(0.3)  # Let DSP fully stop
+                run_active = px.control.check_run_status()
+                print(f"  Run status after end_run: {'ACTIVE' if run_active else 'STOPPED'}")
+            except Exception as e:
+                print(f"  end_run check failed: {e}")
+
+        self.update_info_bar("Applying parameters to hardware...")
+        QApplication.processEvents()
+
+        # Apply all parameters to hardware
+        success_count = 0
+        for param_name, value, mod, ch in params:
             is_valid, corrected_value, error_msg = (
-                self.parameter_validator.validate_parameter(
-                    param_name, value, module, channel
-                )
+                self.parameter_validator.validate_parameter(param_name, value, mod, ch)
             )
-
             if not is_valid:
-                self.update_info_bar(f"Parameter validation failed: {error_msg}")
-                return
-
-            # Apply to hardware
+                print(f"  SKIP {param_name}={value} - validation failed: {error_msg}")
+                continue
             if not self.dummy_mode:
-                success = self.pixie_hw.update_parameter(
-                    param_name, corrected_value, module, channel
-                )
-                if success:
-                    self.update_info_bar(
-                        f"Set {param_name} = {corrected_value} on M{module}:Ch{channel}"
-                    )
-                else:
-                    self.update_info_bar(
-                        f"Failed to set {param_name} on M{module}:Ch{channel}"
-                    )
+                result = self.pixie_hw.update_parameter(param_name, corrected_value, mod, ch)
+                print(f"  {'OK' if result else 'FAIL'} {param_name}={corrected_value} → M{mod}:Ch{ch}")
+                if result:
+                    success_count += 1
             else:
-                self.update_info_bar(
-                    f"DUMMY MODE - {param_name} = {corrected_value} on M{module}:Ch{channel}"
-                )
+                success_count += 1
 
-        except Exception as e:
-            error_msg = f"Error setting {param_name}: {e}"
-            self.update_info_bar(error_msg)
-            logger.error(error_msg)
+        written_names = {p[0] for p in params}
+        print(f"  Applied {success_count}/{len(params)} params. Reading back from M{module}:Ch{channel}...")
+        if not self.dummy_mode and self.pixie_hw.is_initialized:
+            try:
+                self.pixie_hw.refresh_parameters(module, channel)
+                readback_params = self.pixie_hw.get_all_parameters(module, channel)
+                if readback_params:
+                    # Only update spinboxes + plotter for params we actually wrote
+                    applied_readback = {
+                        name: readback_params[name]
+                        for name in written_names
+                        if name in readback_params
+                    }
+                    for name, val in applied_readback.items():
+                        print(f"  READ-BACK {name} = {val}")
+                    self.parameter_controls.set_all_parameters(applied_readback)
+                    for p_name, p_value in applied_readback.items():
+                        self._sync_parameter_to_plotter(p_name, p_value, channel)
+            except Exception as e:
+                print(f"  Read-back failed: {e}")
 
-    def handle_apply_all_parameters(self, params_dict, module, channel):
-        try:
-            validated_params = self.parameter_validator.validate_parameter_set(
-                params_dict, module, channel
-            )
+        # Clear trace buffers if trace params changed (old data is stale/wrong size)
+        written_names = {p[0] for p in params}
+        if written_names & {"TRACE_LENGTH", "TRACE_DELAY"}:
+            plotter = getattr(self, "spectrum_tab", None)
+            if plotter and hasattr(plotter, "clear_data"):
+                plotter.clear_data()
+                print(f"  Cleared trace buffers ({written_names & {'TRACE_LENGTH', 'TRACE_DELAY'}} changed)")
 
-            # Stop current run
-            was_acquiring = self.is_acquiring
-            if was_acquiring:
-                self.update_info_bar("Stopping run to apply parameters...")
-                self.stop_acquisition()
-                self.clear_data()
-                time.sleep(0.5)
+        self.update_info_bar(
+            f"Applied {success_count}/{len(params)} parameters to M{module}:Ch{channel}"
+        )
 
-            # Apply parameters to hardware
-            if not self.dummy_mode:
-                success = self.pixie_hw.update_parameters(
-                    validated_params, module, channel
-                )
-                if success:
-                    self.update_info_bar(
-                        f"Applied {len(validated_params)} parameters to M{module}:Ch{channel}"
-                    )
-                else:
-                    self.update_info_bar(
-                        f"Failed to apply parameters to M{module}:Ch{channel}"
-                    )
-                    return
-            else:
-                self.update_info_bar(
-                    f"DUMMY MODE - Applied {len(validated_params)} parameters"
-                )
+        # Always restart
+        print("APPLY DONE: restarting acquisition...")
+        self.start_acquisition()
 
-            if was_acquiring:
-                self.update_info_bar("Restarting acquisition...")
-                time.sleep(0.5)
-                success = self.start_acquisition()
-                if success:
-                    self.update_info_bar("Parameters applied and acquisition restarted")
-                else:
-                    self.update_info_bar(
-                        "ERROR: Failed to restart acquisition after parameter update"
-                    )
+    def _sync_parameter_to_plotter(self, param_name, value, channel):
+        """Push a parameter change into the traces plotter's internal state."""
+        plotter = getattr(self, "spectrum_tab", None)
+        if plotter is None or not hasattr(plotter, "hardware_params"):
+            return
 
-        except Exception as e:
-            error_msg = f"Error applying parameters: {e}"
-            self.update_info_bar(error_msg)
-            logger.error(error_msg)
-            # Try to restart acquisition anyway
-            if was_acquiring and not self.is_acquiring:
-                try:
-                    self.start_acquisition()
-                except:
-                    pass
+        # Handle TRACE_DELAY separately (per-channel dict, different storage)
+        if param_name == "TRACE_DELAY":
+            plotter.trace_delay_ns[channel] = value * 1000  # μs → ns
+            return
+
+        # Handle Polarity (per-channel, stored in channel_polarity dict)
+        if param_name == "Polarity":
+            is_normal = (value == "positive") if isinstance(value, str) else bool(value)
+            plotter.channel_polarity[channel] = is_normal
+            return
+
+        mapping = self._PARAM_TO_PLOTTER.get(param_name)
+        if mapping is None:
+            return
+
+        plotter_key, converter = mapping
+        plotter_value = converter(value) if converter else value
+        plotter.hardware_params[plotter_key] = plotter_value
 
     def read_parameters_from_hardware(self):
-        try:
-            module = self.parameter_controls.module_spin.value()
-            channel = self.parameter_controls.channel_spin.value()
+        """Read parameters synchronously. The PIXIE SDK is not thread-safe."""
+        module = self.parameter_controls.module_spin.value()
+        channel = self.parameter_controls.channel_spin.value()
 
-            if not self.dummy_mode and self.pixie_hw.is_initialized:
-                # Refresh parameter cache from hardware
+        if not self.dummy_mode and self.pixie_hw.is_initialized:
+            self.update_info_bar(f"Reading parameters from M{module}:Ch{channel}...")
+            QApplication.processEvents()
+            try:
                 self.pixie_hw.refresh_parameters(module, channel)
+                current_params = self.pixie_hw.get_all_parameters(module, channel)
+                self._finish_read_parameters(current_params, module, channel)
+            except Exception as e:
+                self.update_info_bar(f"Error reading parameters: {e}")
+                logger.error(f"Error reading parameters from hardware: {e}")
+        else:
+            self.update_info_bar("Hardware not available for parameter reading")
 
-                # Get parameters and update UI
-                current_params = self.pixie_hw.hw_manager.get_all_parameters(
-                    module, channel
-                )
-                if current_params:
-                    self.parameter_controls.set_all_parameters(current_params)
-                    self.update_info_bar(
-                        f"Read {len(current_params)} parameters from M{module}:Ch{channel}"
-                    )
-                else:
-                    self.update_info_bar(
-                        f"No parameters found for M{module}:Ch{channel}"
-                    )
-            else:
-                self.update_info_bar("Hardware not available for parameter reading")
-
-        except Exception as e:
-            error_msg = f"Error reading parameters from hardware: {e}"
-            self.update_info_bar(error_msg)
-            logger.error(error_msg)
+    def _finish_read_parameters(self, params, module, channel):
+        """Update UI with parameters read from hardware (runs on GUI thread)."""
+        if params:
+            self.parameter_controls.set_all_parameters(params)
+            # Sync to plotter so plots use the correct values for this channel
+            for p_name, p_value in params.items():
+                self._sync_parameter_to_plotter(p_name, p_value, channel)
+            self.update_info_bar(
+                f"Read {len(params)} parameters from M{module}:Ch{channel}"
+            )
+        else:
+            self.update_info_bar(f"No parameters found for M{module}:Ch{channel}")
 
     def load_default_settings(self):
         try:
@@ -1085,9 +1143,11 @@ class PixieScopeApp(QMainWindow):
                 # Refresh UI with loaded params
                 module = self.parameter_controls.module_spin.value()
                 channel = self.parameter_controls.channel_spin.value()
-                current_params = self.pixie_hw.hw_manager.get_all_parameters(module, channel)
+                current_params = self.pixie_hw.get_all_parameters(module, channel)
                 if current_params:
                     self.parameter_controls.set_all_parameters(current_params)
+                    for p_name, p_value in current_params.items():
+                        self._sync_parameter_to_plotter(p_name, p_value, channel)
                 self.update_info_bar("Loaded default settings successfully")
             else:
                 self.update_info_bar("Failed to load default settings")
@@ -1112,9 +1172,11 @@ class PixieScopeApp(QMainWindow):
             if success:
                 module = self.parameter_controls.module_spin.value()
                 channel = self.parameter_controls.channel_spin.value()
-                current_params = self.pixie_hw.hw_manager.get_all_parameters(module, channel)
+                current_params = self.pixie_hw.get_all_parameters(module, channel)
                 if current_params:
                     self.parameter_controls.set_all_parameters(current_params)
+                    for p_name, p_value in current_params.items():
+                        self._sync_parameter_to_plotter(p_name, p_value, channel)
                 self.update_info_bar(f"Loaded settings from {file_path}")
             else:
                 self.update_info_bar("Failed to load settings from file")
@@ -1659,6 +1721,11 @@ class PixieScopeApp(QMainWindow):
         try:
             print("Shutting down Complete PIXIE-16 Scope...")
 
+            # Close any secondary/child windows (detached plots, dialogs, etc.)
+            for child in self.findChildren(QWidget):
+                if child.isWindow() and child is not self:
+                    child.close()
+
             # Stop acquisition first
             if self.is_acquiring:
                 print("  Stopping acquisition...")
@@ -1672,6 +1739,12 @@ class PixieScopeApp(QMainWindow):
             
             # Stop all timers
             print("  Stopping timers...")
+            if hasattr(self, '_apply_timer') and self._apply_timer:
+                self._apply_timer.stop()
+                self._apply_timer.deleteLater()
+                self._apply_timer = None
+                self._pending_params = []
+
             if hasattr(self, "status_timer") and self.status_timer:
                 self.status_timer.stop()
                 self.status_timer.deleteLater()
