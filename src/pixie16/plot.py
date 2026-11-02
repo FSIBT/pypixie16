@@ -20,6 +20,8 @@ Typical Usage
 >>> plot.create_title_page("Analysis Report", pdf=pdf_pages)
 """
 
+from __future__ import annotations
+
 from functools import wraps
 import random
 from typing import Union, Optional

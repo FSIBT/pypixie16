@@ -28,7 +28,7 @@ data pipeline. Data can be easily moved from one tasks to the next and
 each tasks runs in a separate process to parallelize operation and to
 not impeded the rate at which data is taken.
 
-Pypixie16 comes already with some predifined tasks in `pixie16.tasks`. These include:
+Pypixie16 comes already with some predefined tasks in `pixie16.pipeline.tasks`. These include:
 
 * taking data
 * providing dummy data from a file (no Pixi16 needed), this is useful for debugging

@@ -16,7 +16,7 @@ Submodules
    pixie16.plot
    pixie16.scan
    pixie16.pipeline
-   pixie16.tasks
+   pixie16.pipeline.tasks
 
 Subpackages
 -----------
