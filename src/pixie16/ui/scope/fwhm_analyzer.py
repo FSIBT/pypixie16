@@ -4,7 +4,7 @@ Provides peak detection and Full Width Half Maximum analysis for spectrum data
 """
 
 import numpy as np
-from typing import Dict, List, Tuple, Optional, Any, Union
+from typing import Dict, List, Optional, Any, Union
 import logging
 
 try:
@@ -43,22 +43,6 @@ class EnergyCalibration:
         else:
             return channel  # Pass-through
             
-    def energy_to_channel(self, energy: Union[float, np.ndarray]) -> Union[float, np.ndarray]:
-        if self.calibration_type == "linear" and len(self.coefficients) >= 2:
-            # channel = (E - b) / a
-            a, b = self.coefficients[0], self.coefficients[1]
-            if a != 0:
-                return (energy - b) / a
-        return energy  # Fallback
-        
-    def calibrate_spectrum_x_axis(self, channels: np.ndarray) -> np.ndarray:
-        return self.channel_to_energy(channels)
-        
-    def get_energy_range(self, channel_range: Tuple[int, int]) -> Tuple[float, float]:
-        start_ch, end_ch = channel_range
-        start_energy = self.channel_to_energy(start_ch)
-        end_energy = self.channel_to_energy(end_ch)
-        return (start_energy, end_energy)
 
 
 def numpy_gaussian_filter1d(data, sigma):

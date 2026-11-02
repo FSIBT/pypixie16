@@ -255,6 +255,7 @@ class CoincidenceLogicTab(QWidget):
         self.ch_a_event_count = 0
         self.ch_b_event_count = 0
         self.coincidence_count = 0
+        self._data_dirty = False  # Set True when new data arrives, cleared after redraw
 
         # Track timestamps of events that had a real trigger (above threshold)
         self.triggered_timestamps = deque(maxlen=500)
@@ -507,6 +508,7 @@ class CoincidenceLogicTab(QWidget):
         self.binary_plot.setBackground("w")
         self.binary_plot.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self.binary_plot.setMinimumHeight(200)
+        self.binary_plot.getViewBox().sigRangeChangedManually.connect(self._on_user_zoom)
         
         layout.addWidget(self.binary_plot, 1)
         
@@ -731,6 +733,14 @@ class CoincidenceLogicTab(QWidget):
     
     def toggle_auto_scale(self, enabled):
         self.auto_scale = enabled
+        if enabled:
+            self.binary_plot.autoRange()
+
+    def _on_user_zoom(self, _mask):
+        """Called when the user manually zooms/pans. Disables auto-scale."""
+        if self.auto_scale:
+            self.auto_scale = False
+            self.auto_scale_cb.setChecked(False)
         if not enabled:
             self.binary_plot.disableAutoRange()
     
@@ -764,6 +774,7 @@ class CoincidenceLogicTab(QWidget):
             return
 
         try:
+            self._data_dirty = True
             self.event_buffer.append((event, trace_data))
 
             if event.channel == self.channel_a:
@@ -796,9 +807,9 @@ class CoincidenceLogicTab(QWidget):
     def _record_delta_t(self, event_timestamp, arriving_channel_id):
         """Record delta-T (timestamp_B - timestamp_A) for coincident event pairs.
 
-        Uses the validation_window to determine if events are coincident.
+        Only compares against the most recent event from the other channel
+        to avoid false coincidences from deep buffer searches.
         """
-        # event.timestamp is already in nanoseconds (EVTTIME * 10)
         window_ns = self.hardware_params.get("validation_window", 1000)
 
         if arriving_channel_id == 'B':
@@ -809,17 +820,13 @@ class CoincidenceLogicTab(QWidget):
         if len(other_timestamps) == 0:
             return
 
-        # Find nearest event in the other channel within window
-        other_ts = np.array(other_timestamps)
-        diffs = np.abs(other_ts - event_timestamp)
-        nearest_idx = np.argmin(diffs)
-        if diffs[nearest_idx] <= window_ns:
-            nearest_ts = other_ts[nearest_idx]
+        # Only compare against the most recent event from the other channel
+        nearest_ts = other_timestamps[-1]
+        time_diff = abs(nearest_ts - event_timestamp)
+        if time_diff <= window_ns:
             if arriving_channel_id == 'B':
-                # B arrived, nearest is A: delta_t = B - A
                 delta_t_ns = event_timestamp - nearest_ts
             else:
-                # A arrived, nearest is B: delta_t = B - A
                 delta_t_ns = nearest_ts - event_timestamp
             self.delta_t_values.append(delta_t_ns)
     
@@ -853,20 +860,14 @@ class CoincidenceLogicTab(QWidget):
                     # Non-reference channel: offset by timestamp difference to nearest coincident ref event
                     ref_timestamps = self.ch_a_timestamps if self.reference_channel_id == 'A' else self.ch_b_timestamps
                     window_ns = self.hardware_params.get("validation_window", 1000)
+                    timestamp_diff_ns = 0
                     if len(ref_timestamps) > 0:
-                        ref_ts = np.array(ref_timestamps)
-                        diffs = np.abs(ref_ts - event_timestamp)
-                        nearest_idx = np.argmin(diffs)
-                        if diffs[nearest_idx] <= window_ns:
-                            nearest_ref_ts = ref_ts[nearest_idx]
-                            # Signed offset in ns (positive = this channel is later)
-                            timestamp_diff_ns = event_timestamp - nearest_ref_ts
-                        else:
-                            # No coincident reference event — skip this event
-                            return None
-                        time_axis = np.arange(trace_length) * self.sampling_period_ns - trigger_time_ns + timestamp_diff_ns
-                    else:
-                        time_axis = np.arange(trace_length) * self.sampling_period_ns - trigger_time_ns
+                        # Only use the most recent reference event
+                        latest_ref_ts = ref_timestamps[-1]
+                        time_diff = abs(latest_ref_ts - event_timestamp)
+                        if time_diff <= window_ns:
+                            timestamp_diff_ns = event_timestamp - latest_ref_ts
+                    time_axis = np.arange(trace_length) * self.sampling_period_ns - trigger_time_ns + timestamp_diff_ns
                         
             else:
                 # Fallback - trigger aligned
@@ -946,67 +947,54 @@ class CoincidenceLogicTab(QWidget):
                     chan_trig[coinc_idx:coinc_end_idx] = 1
                     self.coincidence_count += 1
             
-            # STEP 4: Channel Validation Trigger - FIXED timing, not dependent on coincidence
-            # Green validation windows should be stable and not move
-            chan_stretch_ns = self.hardware_params["chan_trig_stretch"]
+            # STEPS 4-6 only fire when there is a real coincidence (chan_trig)
             chan_validation_trig = np.zeros(trace_length, dtype=np.int8)
-
-            # Use external_delay_len parameter for validation timing
-            ext_delay_ns = self.hardware_params["external_delay_len"]
-            validation_delay_ns = bp_delay_ns + ext_delay_ns
-            validation_start_time = first_trigger_time_ns + validation_delay_ns
-            validation_end_time = validation_start_time + chan_stretch_ns
-            
-            val_start_idx = np.searchsorted(time_axis, validation_start_time)
-            val_end_idx = np.searchsorted(time_axis, validation_end_time)
-            
-            if val_start_idx < trace_length and val_end_idx <= trace_length:
-                chan_validation_trig[val_start_idx:val_end_idx] = 1
-            
-            # STEP 5: Local Fast for Processing
-            # Adjust timing to center blue signal in middle of green (chan_validation_trig)
             local_fast_for_processing = np.zeros(trace_length, dtype=np.int8)
-            
-            if np.any(chan_validation_trig > 0):
-                # Find the green signal boundaries
-                green_start_idx = np.where(chan_validation_trig > 0)[0][0]
-                green_end_idx = np.where(chan_validation_trig > 0)[0][-1]
-                green_duration_samples = green_end_idx - green_start_idx + 1
-                
-                # Center the blue signal in the green signal
-                blue_pulse_samples = int(10 / self.sampling_period_ns)  # 10ns pulse
-                blue_center_idx = green_start_idx + green_duration_samples // 2
-                blue_start_idx = max(0, blue_center_idx - blue_pulse_samples // 2)
-                blue_end_idx = min(trace_length, blue_start_idx + blue_pulse_samples)
-                
-                if blue_start_idx < trace_length:
-                    local_fast_for_processing[blue_start_idx:blue_end_idx] = 1
-                    
-                # Update validation statistics
-                stats_key = "ch_a_validation_stats" if channel_id == 'A' else "ch_b_validation_stats"
-                stats = getattr(self, stats_key)
-                stats["total_events"] += 1
-                
-                # Track cross-channel events and alignment
-                if other_had_trigger:
-                    stats["cross_channel_events"] += 1
-                    # Check if the cross-channel alignment is good (validation window overlaps properly)
-                    if np.any(chan_validation_trig > 0):
-                        stats["cross_channel_aligned"] += 1
-                
-                # Check if blue is inside green (should always be true now with centering)
-                blue_in_green = np.any(local_fast_for_processing & chan_validation_trig)
-                if blue_in_green:
-                    stats["blue_in_green_count"] += 1
-            
-            # STEP 6: Validated Trigger for Processing
-            validated_trig_for_processing = local_fast_for_processing & chan_validation_trig
-            
-            # Update yellow validation statistics
+            validated_trig_for_processing = np.zeros(trace_length, dtype=np.int8)
+
             stats_key = "ch_a_validation_stats" if channel_id == 'A' else "ch_b_validation_stats"
             stats = getattr(self, stats_key)
-            if np.any(validated_trig_for_processing > 0):
-                stats["yellow_valid_count"] += 1
+            stats["total_events"] += 1
+
+            if other_had_trigger:
+                # STEP 4: Channel Validation Trigger (green window)
+                chan_stretch_ns = self.hardware_params["chan_trig_stretch"]
+                ext_delay_ns = self.hardware_params["external_delay_len"]
+                validation_delay_ns = bp_delay_ns + ext_delay_ns
+                validation_start_time = first_trigger_time_ns + validation_delay_ns
+                validation_end_time = validation_start_time + chan_stretch_ns
+
+                val_start_idx = np.searchsorted(time_axis, validation_start_time)
+                val_end_idx = np.searchsorted(time_axis, validation_end_time)
+
+                if val_start_idx < trace_length and val_end_idx <= trace_length:
+                    chan_validation_trig[val_start_idx:val_end_idx] = 1
+
+                # STEP 5: Local Fast for Processing (blue pulse centered in green)
+                if np.any(chan_validation_trig > 0):
+                    green_indices = np.where(chan_validation_trig > 0)[0]
+                    green_start_idx = green_indices[0]
+                    green_duration_samples = green_indices[-1] - green_start_idx + 1
+
+                    blue_pulse_samples = int(10 / self.sampling_period_ns)
+                    blue_center_idx = green_start_idx + green_duration_samples // 2
+                    blue_start_idx = max(0, blue_center_idx - blue_pulse_samples // 2)
+                    blue_end_idx = min(trace_length, blue_start_idx + blue_pulse_samples)
+
+                    if blue_start_idx < trace_length:
+                        local_fast_for_processing[blue_start_idx:blue_end_idx] = 1
+
+                # STEP 6: Validated Trigger for Processing (AND of steps 4 & 5)
+                validated_trig_for_processing = local_fast_for_processing & chan_validation_trig
+
+                # Update validation statistics
+                stats["cross_channel_events"] += 1
+                if np.any(chan_validation_trig > 0):
+                    stats["cross_channel_aligned"] += 1
+                if np.any(local_fast_for_processing & chan_validation_trig):
+                    stats["blue_in_green_count"] += 1
+                if np.any(validated_trig_for_processing > 0):
+                    stats["yellow_valid_count"] += 1
             
             return {
                 "local_fast_trigger": local_fast_trigger,
@@ -1028,13 +1016,13 @@ class CoincidenceLogicTab(QWidget):
         if window_ns is None:
             window_ns = self.hardware_params.get("validation_window", 1000)
 
-        # Only match against events that had a real trigger (above threshold)
-        # event.timestamp is in nanoseconds, so compare directly in ns
+        # Only compare against the MOST RECENT event from the other channel.
+        # Searching through all 500 buffered timestamps causes false coincidences
+        # at any reasonable event rate.
         for ch, ts in reversed(self.triggered_timestamps):
             if ch == other_channel:
                 time_diff_ns = abs(ts - event_timestamp)
-                if time_diff_ns <= window_ns:
-                    return True
+                return time_diff_ns <= window_ns  # Only check the latest one
 
         return False
     
@@ -1074,6 +1062,12 @@ class CoincidenceLogicTab(QWidget):
     def update_visualization(self):
         """Update plot data via setData() on pre-created items. Never clears."""
         try:
+            # Skip redraw if no new data arrived since last update — prevents
+            # the display from flashing when a channel has no coincidence events.
+            if not self._data_dirty:
+                return
+            self._data_dirty = False
+
             data = self.binary_data.get_latest_data()
 
             has_ch_a = data['ch_a']['local_fast_trigger'] is not None
@@ -1083,7 +1077,7 @@ class CoincidenceLogicTab(QWidget):
                 elapsed = time.time() - self.last_update_time
                 if elapsed > 2.0:
                     self.status_label.setText(
-                        f"No data - Ch{self.channel_a}(A) Ch{self.channel_b}(B)"
+                        f"Waiting for coincidence\u2026 Ch{self.channel_a}(A) Ch{self.channel_b}(B)"
                     )
                     self.last_update_time = time.time()
                 return
@@ -1121,13 +1115,12 @@ class CoincidenceLogicTab(QWidget):
                     for step in self._STEPS_B:
                         self._update_trace('B', step, None, None)
 
-            # X-range: only update when auto_scale is on, do it once after
-            # all setData() calls to avoid per-item view shifts (the jiggle).
+            # One-shot x-range fit after all setData() calls.
             if self.auto_scale:
-                self.binary_plot.enableAutoRange(axis='x')
-                # Immediately disable so the next setData() round doesn't
-                # trigger auto-range again mid-update.
-                self.binary_plot.disableAutoRange()
+                x_min, x_max = self.binary_plot.getViewBox().childrenBounds()[0]
+                if x_min is not None and x_max is not None:
+                    padding = (x_max - x_min) * 0.05 or 1
+                    self.binary_plot.setXRange(x_min - padding, x_max + padding)
 
             self.plot_histograms()
             self._update_status_labels()
