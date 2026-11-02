@@ -6,6 +6,16 @@ and this project tries to adhere to [Semantic Versioning](https://semver.org/spe
 
 ## [Unreleased]
 
+### Breaking changes
+- `pixie16.tasks` moved to `pixie16.pipeline.tasks`, so for example use
+  `from pixie16.pipeline.tasks import TakeData`
+- `pixie16.pipeline` is now a package and `Task` and `Pipeline` were
+  refactored, so custom tasks may need to be updated
+- The `SetDefaults` task was removed
+- Python 3.9 and the `fast` extra (`cbitstruct`) are no longer supported
+- `Settings` now uses the same values as settings dicts, e.g., times are
+  in us instead of raw FPGA values
+
 ### Added
 - Python 3.14 added to CI
 - new pixie16-scope: live view of data and ability to replay binary data files
@@ -42,6 +52,13 @@ and this project tries to adhere to [Semantic Versioning](https://semver.org/spe
 - Tasks: improved queue management and status reporting frequency
 
 ### Fixed
+- pixie16-scope: crashes from concurrent calls into the C library and
+  from filters that do not fit into the trace length
+- pixie16-scope: hardware parameters are applied asynchronously and only
+  when requested, and acquisition restarts after applying them
+- pixie16-scope: trace alignment and energy, fast trigger, SCA and
+  coincidence logic displays
+- pixie16-scope: replay of binary files, including format validation
 - Handling of output file numbering in `run_list_mode`
 - Don't remove channels variable when using `change_setting_from_dict`
 - ListModeDataReader in combination with Streamreader could get stuck
