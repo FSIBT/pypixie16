@@ -48,7 +48,8 @@ def validator_500mhz():
 def real_hardware_manager():
     hw_manager = DynamicPixieHardwareManager(physical_slot=2, dummy_mode=False)
     try:
-        hw_manager.initialize_system()
+        if not hw_manager.initialize_system():
+            pytest.skip("Hardware not available")
         yield hw_manager
     except Exception as e:
         pytest.skip(f"Hardware not available: {e}")
@@ -96,6 +97,7 @@ def invalid_parameters():
 # HARDWARE CONNECTION TESTS
 # ============================================================================
 
+@pytest.mark.hardware
 class TestHardwareConnection:
     
     def test_hardware_initialization(self, real_hardware_manager):
@@ -135,6 +137,7 @@ class TestHardwareConnection:
 # PARAMETER HARDWARE SYNCHRONIZATION TESTS
 # ============================================================================
 
+@pytest.mark.hardware
 class TestParameterHardwareSync:
     
     def test_parameter_write_read_verification(self, real_hardware_manager):
@@ -243,6 +246,7 @@ class TestParameterHardwareSync:
 # HARDWARE ERROR HANDLING TESTS
 # ============================================================================
 
+@pytest.mark.hardware
 class TestHardwareErrorHandling:
     
     def test_invalid_parameter_rejection(self, real_hardware_manager):
@@ -302,6 +306,7 @@ class TestHardwareErrorHandling:
 # ACQUISITION MODE TESTS WITH REAL HARDWARE
 # ============================================================================
 
+@pytest.mark.hardware
 class TestAcquisitionModes:
     
     def test_histogram_mode_hardware(self, real_hardware_manager):
@@ -385,6 +390,7 @@ class TestAcquisitionModes:
 # REAL-TIME PARAMETER UPDATE TESTS
 # ============================================================================
 
+@pytest.mark.hardware
 class TestRealTimeUpdates:
     
     def test_live_threshold_adjustment(self, real_hardware_manager):
@@ -432,6 +438,7 @@ class TestRealTimeUpdates:
 # HARDWARE SPECIFICATIONS VALIDATION
 # ============================================================================
 
+@pytest.mark.hardware
 class TestHardwareSpecifications:
     
     def test_adc_resolution_verification(self, real_hardware_manager):
@@ -492,6 +499,7 @@ class TestHardwareSpecifications:
 # COMPREHENSIVE SYSTEM INTEGRATION TEST
 # ============================================================================
 
+@pytest.mark.hardware
 class TestSystemIntegration:
     
     def test_complete_hardware_integration_workflow(self, real_hardware_manager, validator_500mhz):
