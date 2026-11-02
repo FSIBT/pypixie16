@@ -28,6 +28,8 @@ and this project tries to adhere to [Semantic Versioning](https://semver.org/spe
 - Function `timestamps_and_sizes_from_files_generator` for efficient event scanning
 
 ### Changed
+- The repository moved from Bitbucket to https://github.com/FSIBT/pypixie16
+- CI now runs on GitHub Actions and releases are published on `v*` tags
 - List mode reader performance: 4.25x faster (51K → 217K events/sec)
 - Updated copyright year to 2026
 - Updated author list in pyproject.toml

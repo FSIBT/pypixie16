@@ -18,7 +18,7 @@ pip install -U pypixie16
 
 Alternatively you can also install clone the git repository using
 ```
-git clone https://bitbucket.org/berkeleylab/pypixie16.git
+git clone https://github.com/FSIBT/pypixie16.git
 ```
 
 You can then install the module in developer mode using
