@@ -478,5 +478,5 @@ Steps 1-2 fire for every event regardless. Steps 3-6 only fire when there's a re
 - **XIA Pixie-16 Manual:** https://xia.com/support/pixie-16/ (requires login)
 - **XIA SDK API Reference:** Included with SDK installation
 - **pypixie16 docs:** https://pypixie16.readthedocs.io/
-- **Repository:** https://bitbucket.org/berkeleylab/pypixie16
+- **Repository:** https://github.com/FSIBT/pypixie16
 - **Primary maintainer:** apersaud@lbl.gov
