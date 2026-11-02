@@ -20,7 +20,7 @@ before submitting any code.
 To get a copy of the repository, you can clone it using
 
 ```
-git clone git@bitbucket.org:berkeleylab/pypixie16.git
+git clone git@github.com:FSIBT/pypixie16.git
 ```
 
 To enable the git-pre-commit hooks, please run
@@ -32,5 +32,19 @@ pre-commit install
 
 from within the git repository.
 
-And use the [issue tracker](https://bitbucket.org/berkeleylab/pypixie16/issues?status=new&status=open) and pull requests in bitbucket.
+And use the [issue tracker](https://github.com/FSIBT/pypixie16/issues) and pull requests on GitHub.
 
+## Making a release
+
+Move the entries in `CHANGELOG.md` from *Unreleased* to a new section
+for the version, commit this to `main`, and then create and push a tag
+that starts with `v`:
+
+```
+git tag -a v3.2.0 -m "Release 3.2.0"
+git push origin v3.2.0
+```
+
+The tag runs the tests, waits for a maintainer to approve the deployment
+in GitHub Actions, publishes the package on PyPI and creates a GitHub
+release that uses the changelog section as release notes.
