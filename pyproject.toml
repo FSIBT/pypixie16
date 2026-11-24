@@ -58,7 +58,7 @@ classifiers = [
 ]
 
 [project.optional-dependencies]
-test = ["pytest", "pytest-cov", "pytest-benchmark"]
+test = ["pytest", "pytest-cov", "pytest-benchmark", "fastparquet"]
 docs = [
     "alabaster",
     "markupsafe",
@@ -79,6 +79,10 @@ pixie16-binary-browser = "pixie16.cli.binary_browser:main"
 pixie16-coincidence = "pixie16.cli.coincidence:main"
 pixie16-scope = "pixie16.cli.scope:main"
 pixie16-daq = "pixie16.cli.pixie_daq:main"
+
+[tool.uv]
+# only use releases that are at least a week old (supply-chain cooldown)
+exclude-newer = "7 days"
 
 [tool.setuptools.packages.find]
 where = ["src"]
